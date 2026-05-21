@@ -1,0 +1,65 @@
+name: Backend CI (Testy i Sprawdzanie Kodu)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+
+jobs:
+  test-and-verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: energy_advisor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Sprawdzenie kodu 
+      uses: actions/checkout@v4
+
+    - name: Konfiguracja Pythona
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Przygotowanie środowiska 
+      run: |
+        echo "POSTGRES_USER=postgres" >> .env
+        echo "POSTGRES_PASSWORD=postgres" >> .env
+        echo "POSTGRES_DB=energy_advisor_test" >> .env
+        cp .env backend/
+
+    - name: Instalacja bibliotek i narzędzi
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install ruff
+
+    - name: Sprawdzanie czystości kodu (Ruff Lint)
+      run: |
+        cd backend
+        ruff check .
+
+    - name: Walidacja bazy danych (Alembic)
+      run: |
+        cd backend
+        alembic upgrade head
+      env:
+        PGCLIENTENCODING: utf-8

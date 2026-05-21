@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import create_engine
 
 from alembic import context
 import sys
@@ -10,7 +10,6 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.database import database_url, Base
-from app.models.models import Tariff, TariffRate
 
 
 
@@ -86,7 +85,6 @@ def run_migrations_offline() -> None:
 #         with context.begin_transaction():
 #             context.run_migrations()
 
-from sqlalchemy import create_engine
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
