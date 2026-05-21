@@ -40,11 +40,16 @@ def seed_tariffs():
         end_dt = start_dt + timedelta(minutes=14, seconds=59)
         
         hr = start_dt.hour
-        if 0 <= hr < 6: price = 0.65
-        elif 6 <= hr < 10: price = 1.20
-        elif 10 <= hr < 15: price = 0.40
-        elif 15 <= hr < 20: price = 2.10
-        else: price = 1.00
+        if 0 <= hr < 6:
+            price = 0.65
+        elif 6 <= hr < 10:
+            price = 1.20
+        elif 10 <= hr < 15:
+            price = 0.40
+        elif 15 <= hr < 20:
+            price = 2.10
+        else:
+            price = 1.00
         
         price += (i % 4) * 0.02
         
