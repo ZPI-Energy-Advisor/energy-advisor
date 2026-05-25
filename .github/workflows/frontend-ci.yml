@@ -1,0 +1,35 @@
+name: Frontend CI (Testy i Budowanie)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pobranie kodu
+        uses: actions/checkout@v4
+
+      - name: Konfiguracja Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalacja paczek (NPM)
+        run: |
+          cd frontend
+          npm install
+
+      - name: Weryfikacja budowania kodu (Vite Build)
+        run: |
+          cd frontend
+          npm run build
