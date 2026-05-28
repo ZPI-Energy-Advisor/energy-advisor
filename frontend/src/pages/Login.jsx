@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
+import { GoogleLogin } from "@react-oauth/google";
 
 function Login() {
   // Stany dla pól formularza
@@ -10,8 +11,34 @@ function Login() {
   // Stan przełączający między Logowaniem (false) a Rejestracją (true)
   const [isRegister, setIsRegister] = useState(false);
 
+  // --- LOGIKA GOOGLE SSO ---
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      const token = credentialResponse.credential;
+
+      // Wysyłamy token z frontu do backendu FastAPI
+      const response = await axios.post("http://localhost:8000/auth/google", {
+        id_token: token,
+      });
+
+      setMessage(`Sukces Google! Zalogowano jako: ${response.data.user.email}`);
+      // W przyszłości połączysz to z nawigacją do wewnątrz Energy Advisor (np. navigate('/dashboard'))
+    } catch (error) {
+      if (error.response && error.response.data.detail) {
+        setMessage(`Błąd autoryzacji Google: ${error.response.data.detail}`);
+      } else {
+        setMessage("Błąd połączenia z serwerem podczas logowania Google.");
+      }
+    }
+  };
+
+  const handleGoogleError = () => {
+    setMessage("Błąd wygenerowania okna logowania Google.");
+  };
+
+  // --- LOGIKA FORMULARZA LOKALNEGO ---
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Blokujemy przeładowanie strony
+    e.preventDefault();
     setMessage("");
 
     if (!email || !password) {
@@ -21,7 +48,6 @@ function Login() {
 
     try {
       if (isRegister) {
-        // Uderzamy do nowego endpointu rejestracji
         const response = await axios.post(
           "http://localhost:8000/auth/register",
           {
@@ -30,9 +56,8 @@ function Login() {
           },
         );
         setMessage(`Sukces! Zarejestrowano konto: ${response.data.user.email}`);
-        setIsRegister(false); // Przełączamy na logowanie po sukcesie
+        setIsRegister(false);
       } else {
-        // Tutaj w przyszłości będzie logika logowania lokalnego
         setMessage(
           "Logowanie e-mail/hasło będzie zaprogramowane w kolejnym tasku.",
         );
@@ -116,6 +141,28 @@ function Login() {
               {message}
             </div>
           )}
+
+          {/* SEKCJA GOOGLE SSO */}
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-2 text-gray-500">
+                  lub {isRegister ? "zarejestruj" : "zaloguj"} przez
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={handleGoogleError}
+                useOneTap
+              />
+            </div>
+          </div>
 
           {/* Przełącznik widoków */}
           <div className="mt-6 text-center">
