@@ -16,7 +16,6 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     if not REQUIRED_COLUMNS.issubset(set(df.columns)):
         raise HTTPException(status_code=422, detail="Brak wymaganych kolumn (Data, Wartość kWh, Rodzaj)")
 
-
     df['Rodzaj'] = df['Rodzaj'].astype(str).str.strip().str.lower()
     df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.').astype(float)
     df = df[df['Rodzaj'].str.contains('pobór|pobor', na=False)].copy()
@@ -58,6 +57,20 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
             "total_usage_kwh": round(total_usage, 2),
             "estimated_cost_pln": round(total_cost, 2)
         }
+
+    def format_hour_label(dt_obj):
+        if dt_obj.minute == 0:
+            new_hour = (dt_obj.hour - 1)
+            if dt_obj.hour == 00:
+                new_hour= 23
+            return f"{new_hour:02d}:00"
+        return f"{dt_obj.hour:02d}:00"
+    
+
+    df_15min['hour'] = df_15min['Dokładny Czas'].apply(format_hour_label)
+    hourly_data = df_15min.groupby('hour')['Wartość kWh'].sum().round(2).reset_index()
+    hourly_data = hourly_data.rename(columns={'Wartość kWh': 'kwh'})
+    results_dict["chart_hourly"] = hourly_data.to_dict('records')
 
     df_15min['date'] = df_15min['Dokładny Czas'].dt.date.astype(str)
     daily_data = df_15min.groupby('date')['Wartość kWh'].sum().round(2).reset_index()
