@@ -57,7 +57,6 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
         }
 
     unique_dates = df['Data'].str.split(' ').str[0].unique()
-    
     results_dict["statistics"] = {
         "days_analyzed": len(unique_dates)
     }
