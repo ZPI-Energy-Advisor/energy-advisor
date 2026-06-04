@@ -16,15 +16,18 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     if not REQUIRED_COLUMNS.issubset(set(df.columns)):
         raise HTTPException(status_code=422, detail="Brak wymaganych kolumn (Data, Wartość kWh, Rodzaj)")
 
+
     df['Rodzaj'] = df['Rodzaj'].astype(str).str.strip().str.lower()
     df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.').astype(float)
     df = df[df['Rodzaj'].str.contains('pobór|pobor', na=False)].copy()
 
+    df['Data'] = df['Data'].str.strip().str.replace('24:00', '23:59')
+    df['Data'] = pd.to_datetime(df['Data'], format='%Y-%m-%d %H:%M')
+
     df_15min = df.loc[df.index.repeat(4)].reset_index(drop=True)
     df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / 4.0
-    df_15min['Data'] = df_15min['Data'].str.strip().str.replace('24:00', '00:00')
     
-    base_timestamps = pd.to_datetime(df_15min['Data'], format='%Y-%m-%d %H:%M')
+    base_timestamps = df_15min['Data']
     minute_offsets = np.tile([-45, -30, -15, 0], len(df))
     df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
     df_15min['Czas_Baza'] = df_15min['Dokładny Czas'].dt.time
@@ -56,9 +59,13 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
             "estimated_cost_pln": round(total_cost, 2)
         }
 
-    unique_dates = df['Data'].str.split(' ').str[0].unique()
+    df_15min['date'] = df_15min['Dokładny Czas'].dt.date.astype(str)
+    daily_data = df_15min.groupby('date')['Wartość kWh'].sum().round(2).reset_index()
+    daily_data = daily_data.rename(columns={'Wartość kWh': 'kwh'})
+    results_dict["chart_daily"] = daily_data.to_dict('records')
+    
     results_dict["statistics"] = {
-        "days_analyzed": len(unique_dates)
+        "days_analyzed": int(df_15min['date'].nunique())
     }
 
     return results_dict
