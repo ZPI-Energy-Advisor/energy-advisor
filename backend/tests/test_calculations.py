@@ -1,5 +1,4 @@
 import pytest
-import pandas as pd
 from datetime import datetime
 from io import BytesIO
 from unittest.mock import MagicMock
