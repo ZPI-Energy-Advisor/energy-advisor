@@ -29,12 +29,11 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
             "Rodzaj energii": "Rodzaj"
         })
     elif "Data" in df.columns and "Wartość kWh" in df.columns:
-        pass
+        is_day_first = False 
     else:
         raise HTTPException(status_code=422, detail="Nierozpoznany format pliku. Brak wymaganych kolumn.")
 
     df = df.dropna(subset=['Wartość kWh', 'Data', 'Rodzaj'])
-    
     df['Rodzaj'] = df['Rodzaj'].astype(str).str.strip().str.lower()
     
     df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.', regex=False)
@@ -50,8 +49,7 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
 
     is_numeric = df['Data'].str.match(r'^\d+(\.\d+)?$')
     
-    text_dates = pd.to_datetime(df.loc[~is_numeric, 'Data'], format='mixed', dayfirst=True, errors='coerce')
-    
+    text_dates = pd.to_datetime(df.loc[~is_numeric, 'Data'], format='mixed', dayfirst=is_day_first, errors='coerce')
     numeric_dates = pd.to_datetime(pd.to_numeric(df.loc[is_numeric, 'Data']), unit='D', origin='1899-12-30')
     
     df['Data'] = pd.concat([text_dates, numeric_dates]).sort_index()
