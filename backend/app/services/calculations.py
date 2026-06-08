@@ -28,6 +28,7 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
             "Wartosc[kWh/kvar]": "Wartość kWh",
             "Rodzaj energii": "Rodzaj"
         })
+        is_day_first = True
     elif "Data" in df.columns and "Wartość kWh" in df.columns:
         is_day_first = False 
     else:

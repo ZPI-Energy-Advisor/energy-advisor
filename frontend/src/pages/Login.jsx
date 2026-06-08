@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { GoogleLogin } from "@react-oauth/google";
+import { useNavigate } from "react-router-dom";
 
 function Login() {
   // Stany dla pól formularza
@@ -8,21 +9,21 @@ function Login() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
 
-  // Stan przełączający między Logowaniem (false) a Rejestracją (true)
   const [isRegister, setIsRegister] = useState(false);
 
-  // --- LOGIKA GOOGLE SSO ---
+  const navigate = useNavigate();
+
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
       const token = credentialResponse.credential;
-
-      // Wysyłamy token z frontu do backendu FastAPI
       const response = await axios.post("http://localhost:8000/auth/google", {
         id_token: token,
       });
 
-      setMessage(`Sukces Google! Zalogowano jako: ${response.data.user.email}`);
-      // W przyszłości połączysz to z nawigacją do wewnątrz Energy Advisor (np. navigate('/dashboard'))
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      
+      navigate("/dashboard");
+      
     } catch (error) {
       if (error.response && error.response.data.detail) {
         setMessage(`Błąd autoryzacji Google: ${error.response.data.detail}`);
@@ -36,7 +37,6 @@ function Login() {
     setMessage("Błąd wygenerowania okna logowania Google.");
   };
 
-  // --- LOGIKA FORMULARZA LOKALNEGO ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
@@ -58,13 +58,30 @@ function Login() {
         setMessage(`Sukces! Zarejestrowano konto: ${response.data.user.email}`);
         setIsRegister(false);
       } else {
-        setMessage(
-          "Logowanie e-mail/hasło będzie zaprogramowane w kolejnym tasku.",
+        const response = await axios.post(
+          "http://localhost:8000/auth/login",
+          {
+            email: email,
+            password: password,
+          }
         );
+        
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+        navigate("/dashboard");
       }
     } catch (error) {
       if (error.response && error.response.data.detail) {
-        setMessage(`Błąd: ${error.response.data.detail}`);
+        const detail = error.response.data.detail;
+        
+        // Sprawdzamy, czy błąd to tablica obiektów (czyli błąd walidacji z Pydantica)
+        if (Array.isArray(detail)) {
+          // Wyciągamy 'msg' z pierwszego błędu i ucinamy domyślny prefix "Value error, "
+          const cleanMessage = detail[0].msg.replace('Value error, ', '');
+          setMessage(`Błąd: ${cleanMessage}`);
+        } else {
+          // Standardowy błąd tekstowy (np. zły login/hasło)
+          setMessage(`Błąd: ${detail}`);
+        }
       } else {
         setMessage("Błąd połączenia z serwerem.");
       }
@@ -73,7 +90,6 @@ function Login() {
 
   return (
     <div className="flex min-h-screen w-full bg-white">
-      {/* LEWA KOLUMNA */}
       <div className="hidden w-1/2 flex-col items-center justify-center bg-slate-900 px-12 lg:flex">
         <h1 className="mb-4 text-5xl font-bold tracking-tight text-white">
           Energy Advisor
@@ -84,7 +100,6 @@ function Login() {
         <div className="mt-8 h-1 w-16 rounded bg-emerald-500"></div>
       </div>
 
-      {/* PRAWA KOLUMNA */}
       <div className="flex w-full flex-col items-center justify-center px-8 lg:w-1/2">
         <div className="w-full max-w-md space-y-8">
           <div>
@@ -98,7 +113,6 @@ function Login() {
             </p>
           </div>
 
-          {/* Formularz lokalny */}
           <form onSubmit={handleSubmit} className="mt-8 space-y-6">
             <div className="space-y-4">
               <div>
@@ -135,14 +149,12 @@ function Login() {
             </button>
           </form>
 
-          {/* Wiadomości zwrotne z systemu */}
           {message && (
             <div className="mt-4 text-center text-sm font-medium text-emerald-600 bg-emerald-50 p-2 rounded">
               {message}
             </div>
           )}
 
-          {/* SEKCJA GOOGLE SSO */}
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -164,7 +176,6 @@ function Login() {
             </div>
           </div>
 
-          {/* Przełącznik widoków */}
           <div className="mt-6 text-center">
             <button
               type="button"
