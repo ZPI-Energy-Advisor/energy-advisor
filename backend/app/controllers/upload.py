@@ -9,7 +9,7 @@ router = APIRouter(
     tags=["Upload & Simulation"]
 )
 
-@router.post("/")
+@router.post("")
 async def upload_energy_data(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db)

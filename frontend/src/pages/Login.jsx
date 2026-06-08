@@ -58,13 +58,30 @@ function Login() {
         setMessage(`Sukces! Zarejestrowano konto: ${response.data.user.email}`);
         setIsRegister(false);
       } else {
-        setMessage(
-          "Logowanie e-mail/hasło będzie zaprogramowane w kolejnym tasku.",
+        const response = await axios.post(
+          "http://localhost:8000/auth/login",
+          {
+            email: email,
+            password: password,
+          }
         );
+        
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+        navigate("/dashboard");
       }
     } catch (error) {
       if (error.response && error.response.data.detail) {
-        setMessage(`Błąd: ${error.response.data.detail}`);
+        const detail = error.response.data.detail;
+        
+        // Sprawdzamy, czy błąd to tablica obiektów (czyli błąd walidacji z Pydantica)
+        if (Array.isArray(detail)) {
+          // Wyciągamy 'msg' z pierwszego błędu i ucinamy domyślny prefix "Value error, "
+          const cleanMessage = detail[0].msg.replace('Value error, ', '');
+          setMessage(`Błąd: ${cleanMessage}`);
+        } else {
+          // Standardowy błąd tekstowy (np. zły login/hasło)
+          setMessage(`Błąd: ${detail}`);
+        }
       } else {
         setMessage("Błąd połączenia z serwerem.");
       }
