@@ -3,7 +3,7 @@ import numpy as np
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.models import Tariff, TariffRate
-    
+
 def format_hour_label(dt_obj):
     if dt_obj.minute == 0:
         new_hour = (dt_obj.hour - 1) % 24
@@ -28,22 +28,38 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
             "Wartosc[kWh/kvar]": "Wartość kWh",
             "Rodzaj energii": "Rodzaj"
         })
-        date_format = '%d.%m.%Y %H:%M'
     elif "Data" in df.columns and "Wartość kWh" in df.columns:
-        date_format = '%Y-%m-%d %H:%M'
+        pass
     else:
         raise HTTPException(status_code=422, detail="Nierozpoznany format pliku. Brak wymaganych kolumn.")
 
+    df = df.dropna(subset=['Wartość kWh', 'Data', 'Rodzaj'])
+    
     df['Rodzaj'] = df['Rodzaj'].astype(str).str.strip().str.lower()
-    df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.').astype(float)
+    
+    df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.', regex=False)
+    df['Wartość kWh'] = pd.to_numeric(df['Wartość kWh'], errors='coerce')
+    df = df.dropna(subset=['Wartość kWh'])
+
     df = df[df['Rodzaj'].str.contains('pobór|pobor|pobrana', na=False)].copy()
 
-    df['Data'] = df['Data'].str.strip().str.replace('24:00', '23:59')
-    df['Data'] = pd.to_datetime(df['Data'], format=date_format)
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.")
+
+    df['Data'] = df['Data'].astype(str).str.strip().str.replace('24:00', '23:59')
+
+    is_numeric = df['Data'].str.match(r'^\d+(\.\d+)?$')
+    
+    text_dates = pd.to_datetime(df.loc[~is_numeric, 'Data'], format='mixed', dayfirst=True, errors='coerce')
+    
+    numeric_dates = pd.to_datetime(pd.to_numeric(df.loc[is_numeric, 'Data']), unit='D', origin='1899-12-30')
+    
+    df['Data'] = pd.concat([text_dates, numeric_dates]).sort_index()
+    df = df.dropna(subset=['Data'])
 
     mask_midnight = df['Data'].dt.time == pd.to_datetime('00:00:00').time()
     df.loc[mask_midnight, 'Data'] = df.loc[mask_midnight, 'Data'] - pd.Timedelta(minutes=1)
- 
+
     df_15min = df.loc[df.index.repeat(4)].reset_index(drop=True)
     df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / 4.0
     
@@ -70,7 +86,6 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
 
         df_15min[f'Cena_{tariff.name}'] = df_15min['Czas_Baza'].apply(get_price)
         df_15min[f'Koszt_{tariff.name}'] = df_15min['Wartość kWh'] * df_15min[f'Cena_{tariff.name}']
-
         total_cost = float(df_15min[f'Koszt_{tariff.name}'].sum())
 
         results_dict["tariffs"][tariff.name] = {
@@ -88,14 +103,19 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     daily_data = df_15min.groupby('date')['Wartość kWh'].sum().round(2).reset_index()
     daily_data = daily_data.rename(columns={'Wartość kWh': 'kwh'})
     results_dict["chart_daily"] = daily_data.to_dict('records')
-     
+    
     first_date = df_15min['date'].min()
     last_date = df_15min['date'].max()
+    
+    daily_counts = df_15min.groupby('date').size()
+    incomplete_days = daily_counts[daily_counts < 96].index.tolist()
     
     results_dict["statistics"] = {
         "days_analyzed": int(df_15min['date'].nunique()),
         "data_start": first_date,
-        "data_end": last_date
+        "data_end": last_date,
+        "incomplete_days": incomplete_days,
+        "has_missing_data": len(incomplete_days) > 0
     }
 
     return results_dict
