@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard"; 
+import ImportPage from "./pages/ImportPage";
 import "./index.css";
 import Layout from "./components/Layout";
 
@@ -15,6 +16,7 @@ function App() {
           <Route path="/" element={<Login />} />
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/upload" element={<ImportPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
