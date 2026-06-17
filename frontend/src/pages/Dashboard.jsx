@@ -38,26 +38,29 @@ function Dashboard() {
     };
 
     const fetchSimulation = async () => {
-      const simId = localStorage.getItem("last_simulation_id");
-
-      if (!simId) {
+      if (!user || !user.id) {
         setIsLoading(false);
         return;
       }
 
       try {
         const response = await axios.get(
-          `http://localhost:8000/results/${simId}`,
+          `http://localhost:8000/results/user/${user.id}`,
         );
-        const tariffName = user.current_tariff || "G11";
-        const specificTariffData = response.data.results.tariffs[tariffName];
 
-        setSimulationData({
-          ...specificTariffData,
-          chart_hourly: response.data.results.chart_hourly,
-          chart_15min: response.data.results.chart_15min,
-          chart_daily: response.data.results.chart_daily,
-        });
+        if (response.data.status === "no_data" || !response.data.results) {
+          setSimulationData(null);
+        } else {
+          const tariffName = user.current_tariff || "G11";
+          const specificTariffData = response.data.results.tariffs[tariffName];
+
+          setSimulationData({
+            ...specificTariffData,
+            chart_hourly: response.data.results.chart_hourly,
+            chart_15min: response.data.results.chart_15min,
+            chart_daily: response.data.results.chart_daily,
+          });
+        }
       } catch (err) {
         console.error("Błąd pobierania symulacji:", err);
         setError("Nie udało się pobrać wyników symulacji.");
