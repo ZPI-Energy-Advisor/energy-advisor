@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 function Dashboard() {
   const [user, setUser] = useState(
@@ -8,12 +18,14 @@ function Dashboard() {
   );
 
   const [availableTariffs, setAvailableTariffs] = useState([]);
-
   const [simulationData, setSimulationData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const [chartResolution, setChartResolution] = useState("1h");
+  const [chartMetric, setChartMetric] = useState("kwh");
 
   useEffect(() => {
     const fetchTariffs = async () => {
@@ -40,7 +52,12 @@ function Dashboard() {
         const tariffName = user.current_tariff || "G11";
         const specificTariffData = response.data.results.tariffs[tariffName];
 
-        setSimulationData(specificTariffData);
+        setSimulationData({
+          ...specificTariffData,
+          chart_hourly: response.data.results.chart_hourly,
+          chart_15min: response.data.results.chart_15min,
+          chart_daily: response.data.results.chart_daily,
+        });
       } catch (err) {
         console.error("Błąd pobierania symulacji:", err);
         setError("Nie udało się pobrać wyników symulacji.");
@@ -74,12 +91,69 @@ function Dashboard() {
     }
   };
 
+  const getChartData = () => {
+    if (!simulationData) return [];
+
+    let sourceData = [];
+    let labelKey = "hour";
+
+    switch (chartResolution) {
+      case "15m":
+        sourceData = simulationData.chart_15min || [];
+        labelKey = "time";
+        break;
+      case "1h":
+        sourceData = simulationData.chart_hourly || [];
+        labelKey = "hour";
+        break;
+      case "1d":
+        sourceData = simulationData.chart_daily || [];
+        labelKey = "date";
+        break;
+      default:
+        sourceData = simulationData.chart_hourly || [];
+    }
+
+    return sourceData.map((item) => ({
+      label: item[labelKey],
+      value:
+        chartMetric === "kwh"
+          ? item.kwh
+          : item[`cost_${user.current_tariff || "G11"}`] || 0,
+    }));
+  };
+
+  const chartData = getChartData();
+  const chartColor = chartMetric === "kwh" ? "#10b981" : "#3b82f6";
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const unit = chartMetric === "kwh" ? "kWh" : "PLN";
+      const prefix = chartResolution === "1d" ? "Dzień:" : "Godzina:";
+
+      return (
+        <div className="bg-white p-3 border border-gray-100 shadow-xl rounded-lg min-w-[120px]">
+          <p className="text-gray-500 font-medium text-sm mb-1">
+            {prefix} {label}
+          </p>
+          <p
+            className={`font-bold text-xl ${chartMetric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
+          >
+            {payload[0].value}{" "}
+            <span className="text-sm font-normal">{unit}</span>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   if (isLoading) {
     return <div className="p-10 text-gray-500">Ładowanie danych z bazy...</div>;
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto pb-12">
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-8">
         Mój profil zużycia
       </h2>
@@ -229,11 +303,117 @@ function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 min-h-[400px] flex items-center justify-center">
-            <p className="text-gray-400 font-medium">
-              Wkrótce pojawi się tutaj prawdziwy wykres z biblioteki Recharts
-              (ZPI-23)
-            </p>
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-4">
+              <h3 className="text-lg font-bold text-gray-900">
+                Profil {chartMetric === "kwh" ? "zużycia energii" : "kosztów"}
+              </h3>
+
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  <button
+                    onClick={() => setChartMetric("kwh")}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      chartMetric === "kwh"
+                        ? "bg-white text-emerald-700 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Zużycie (kWh)
+                  </button>
+                  <button
+                    onClick={() => setChartMetric("pln")}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      chartMetric === "pln"
+                        ? "bg-white text-blue-700 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Koszty (PLN)
+                  </button>
+                </div>
+
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  <button
+                    onClick={() => setChartResolution("15m")}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      chartResolution === "15m"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    15 min
+                  </button>
+                  <button
+                    onClick={() => setChartResolution("1h")}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      chartResolution === "1h"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Godzinowo
+                  </button>
+                  <button
+                    onClick={() => setChartResolution("1d")}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      chartResolution === "1d"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Dziennie
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-[400px] w-full">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#f1f5f9"
+                    />
+                    <XAxis
+                      dataKey="label"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: "#64748b" }}
+                      dy={10}
+                      minTickGap={20}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: "#64748b" }}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      cursor={{ fill: "#f8fafc" }}
+                    />
+                    <Bar
+                      dataKey="value"
+                      radius={[4, 4, 0, 0]}
+                      animationDuration={1000}
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={chartColor} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400">
+                  Wybierz inny przedział czasu lub wgraj dane.
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}
