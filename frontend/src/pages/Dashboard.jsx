@@ -99,7 +99,7 @@ function Dashboard() {
             wykresy.
           </p>
           <Link
-            to="/import"
+            to="/upload"
             className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors"
           >
             Przejdź do Importu Danych
