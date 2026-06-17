@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import axios from "axios";
 
 function ResultsPage() {
+  const user = JSON.parse(localStorage.getItem("user")) || {};
+
   const [tariffsData, setTariffsData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -113,6 +115,7 @@ function ResultsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {tariffsData.map((tariff) => {
                 const isCheapest = tariff.name === cheapestTariff.name;
+                const isCurrent = tariff.name === user.current_tariff;
 
                 return (
                   <tr
@@ -124,8 +127,15 @@ function ResultsPage() {
                     }
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-bold text-gray-900">
-                        {tariff.name}
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-gray-900">
+                          {tariff.name}
+                        </span>
+                        {isCurrent && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                            Twoja taryfa
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">

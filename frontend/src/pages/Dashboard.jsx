@@ -13,6 +13,7 @@ function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   useEffect(() => {
     const fetchTariffs = async () => {
@@ -136,37 +137,94 @@ function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
-              <p className="text-sm font-medium text-gray-500 mb-2">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative">
+              <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 rounded-t-lg"></div>
+
+              <p className="text-sm font-medium text-gray-500 mb-3">
                 Aktualna taryfa
               </p>
-              <div className="relative flex items-center">
-                <select
-                  value={user.current_tariff || ""}
-                  onChange={handleTariffChange}
-                  disabled={isUpdating || availableTariffs.length === 0}
-                  className="w-full text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-emerald-500 focus:border-emerald-600 focus:outline-none cursor-pointer transition-colors pb-1 appearance-none"
+
+              <div className="relative">
+                <div
+                  onClick={() =>
+                    !isUpdating &&
+                    availableTariffs.length > 0 &&
+                    setIsDropdownOpen(!isDropdownOpen)
+                  }
+                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-xl font-bold py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${isUpdating || availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
-                  {availableTariffs.map((tariff) => (
-                    <option key={tariff} value={tariff} className="text-lg">
-                      {tariff}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                  <span>
+                    {user.current_tariff
+                      ? `Taryfa ${user.current_tariff}`
+                      : "Wybierz taryfę"}
+                  </span>
                   <svg
-                    className="fill-current h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
+                    className={`h-6 w-6 text-emerald-600 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M19 9l-7 7-7-7"
+                    />
                   </svg>
                 </div>
+
+                {isDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setIsDropdownOpen(false)}
+                    ></div>
+
+                    <div className="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
+                      {availableTariffs.map((tariff) => (
+                        <div
+                          key={tariff}
+                          onClick={() => {
+                            handleTariffChange({ target: { value: tariff } });
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`px-4 py-3 text-lg font-medium cursor-pointer transition-colors ${
+                            user.current_tariff === tariff
+                              ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
+                              : "text-gray-700 hover:bg-gray-50 hover:text-emerald-600 border-l-4 border-transparent"
+                          }`}
+                        >
+                          Taryfa {tariff}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
+
               {isUpdating && (
-                <span className="text-xs text-emerald-500 mt-1 block">
-                  Zapisywanie w bazie...
-                </span>
+                <div className="mt-3 flex items-center text-sm text-emerald-600 font-medium">
+                  <svg
+                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-emerald-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Aktualizacja w bazie...
+                </div>
               )}
             </div>
           </div>
