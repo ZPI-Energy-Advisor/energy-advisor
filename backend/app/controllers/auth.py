@@ -142,3 +142,23 @@ async def login_local(payload: LoginLocalRequest, db: Session = Depends(get_db))
             "current_tariff": user.current_tariff
         }
     }
+    
+class TariffUpdateRequest(BaseModel):
+    email: str
+    new_tariff: str
+
+@router.patch("/current-tariff")
+async def update_tariff(payload: TariffUpdateRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Nie znaleziono użytkownika.")
+
+    user.current_tariff = payload.new_tariff
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "status": "success",
+        "new_tariff": user.current_tariff
+    }
