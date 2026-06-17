@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.models import Simulation, User
@@ -12,22 +12,20 @@ router = APIRouter(
 @router.post("")
 async def upload_energy_data(
     file: UploadFile = File(...), 
+    user_email: str = Form(...),
     db: Session = Depends(get_db)
 ):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Wymagany plik .csv")
 
+    user = db.query(User).filter(User.email == user_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Nie znaleziono zalogowanego użytkownika.")
+
     simulation_results = calculate_all_tariffs(file.file, db)
 
-    dummy_user = db.query(User).first()
-    if not dummy_user:
-        dummy_user = User(email="test@advisor.pl")
-        db.add(dummy_user)
-        db.commit()
-        db.refresh(dummy_user)
-
     new_simulation = Simulation(
-        user_id=dummy_user.id,
+        user_id=user.id,
         results=simulation_results
     )
     
@@ -40,6 +38,5 @@ async def upload_energy_data(
         "simulation_id": str(new_simulation.id),
         "file_name": file.filename,
         "summary": simulation_results,
-        "message": "Symulacja dla wszystkich taryf zakończona i zapisana w bazie!"
+        "message": "Symulacja zakończona i zapisana na Twoim koncie!"
     }
-

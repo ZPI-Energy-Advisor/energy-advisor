@@ -49,8 +49,17 @@ function ImportPage() {
     setIsUploading(true);
     setError(null);
 
+    const user = JSON.parse(localStorage.getItem("user"));
+
+    if (!user || !user.email) {
+      setError("Brak danych użytkownika. Zaloguj się ponownie.");
+      setIsUploading(false);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("user_email", user.email);
 
     try {
       const response = await axios.post(
