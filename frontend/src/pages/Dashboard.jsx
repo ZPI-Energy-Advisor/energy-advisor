@@ -71,7 +71,7 @@ function Dashboard() {
 
     fetchTariffs();
     fetchSimulation();
-  }, [user.current_tariff]);
+  }, [user.current_tariff, user.id]);
 
   const handleTariffChange = async (e) => {
     const newTariff = e.target.value;
@@ -142,7 +142,7 @@ function Dashboard() {
           <p
             className={`font-bold text-xl ${chartMetric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
           >
-            {payload[0].value}{" "}
+            {Number(payload[0].value).toFixed(2)}{" "}
             <span className="text-sm font-normal">{unit}</span>
           </p>
         </div>
@@ -157,64 +157,64 @@ function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
-      <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-8">
+      <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Mój profil zużycia
       </h2>
 
       {error && (
-        <div className="mb-4 p-4 text-red-600 bg-red-50 rounded-lg">
+        <div className="mb-4 p-4 text-red-600 bg-red-50 rounded-lg text-sm md:text-base">
           {error}
         </div>
       )}
 
       {!simulationData ? (
-        <div className="bg-white p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
+        <div className="bg-white p-8 md:p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
           <h3 className="text-xl font-bold text-gray-800 mb-2">
             Brak danych do analizy
           </h3>
-          <p className="text-gray-500 mb-6">
+          <p className="text-gray-500 mb-6 text-sm md:text-base">
             Wgraj swój plik z historią zużycia prądu, aby zobaczyć koszty i
             wykresy.
           </p>
           <Link
             to="/upload"
-            className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors"
+            className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors w-full sm:w-auto"
           >
             Przejdź do Importu Danych
           </Link>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
+            <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
               <p className="text-sm font-medium text-gray-500 mb-2">
                 Szacowane koszty miesięczne
               </p>
               <div className="flex items-baseline gap-2">
-                <h3 className="text-3xl font-bold text-gray-900">
+                <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
                   {simulationData.estimated_cost_pln}
                 </h3>
-                <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-sm">
+                <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-xs md:text-sm">
                   PLN
                 </span>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
+            <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
               <p className="text-sm font-medium text-gray-500 mb-2">
                 Całkowite zużycie
               </p>
               <div className="flex items-baseline gap-2">
-                <h3 className="text-3xl font-bold text-gray-900">
+                <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
                   {simulationData.total_usage_kwh}
                 </h3>
-                <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-sm">
+                <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-xs md:text-sm">
                   kWh
                 </span>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative">
+            <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative sm:col-span-2 md:col-span-1">
               <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 rounded-t-lg"></div>
 
               <p className="text-sm font-medium text-gray-500 mb-3">
@@ -228,7 +228,7 @@ function Dashboard() {
                     availableTariffs.length > 0 &&
                     setIsDropdownOpen(!isDropdownOpen)
                   }
-                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-xl font-bold py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${isUpdating || availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-lg md:text-xl font-bold py-2 md:py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${isUpdating || availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span>
                     {user.current_tariff
@@ -236,7 +236,7 @@ function Dashboard() {
                       : "Wybierz taryfę"}
                   </span>
                   <svg
-                    className={`h-6 w-6 text-emerald-600 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
+                    className={`h-5 w-5 md:h-6 md:w-6 text-emerald-600 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -265,7 +265,7 @@ function Dashboard() {
                             handleTariffChange({ target: { value: tariff } });
                             setIsDropdownOpen(false);
                           }}
-                          className={`px-4 py-3 text-lg font-medium cursor-pointer transition-colors ${
+                          className={`px-4 py-3 text-base md:text-lg font-medium cursor-pointer transition-colors ${
                             user.current_tariff === tariff
                               ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
                               : "text-gray-700 hover:bg-gray-50 hover:text-emerald-600 border-l-4 border-transparent"
@@ -280,7 +280,7 @@ function Dashboard() {
               </div>
 
               {isUpdating && (
-                <div className="mt-3 flex items-center text-sm text-emerald-600 font-medium">
+                <div className="mt-3 flex items-center text-xs md:text-sm text-emerald-600 font-medium">
                   <svg
                     className="animate-spin -ml-1 mr-2 h-4 w-4 text-emerald-600"
                     fill="none"
@@ -306,17 +306,17 @@ function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-4">
+          <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
               <h3 className="text-lg font-bold text-gray-900">
                 Profil {chartMetric === "kwh" ? "zużycia energii" : "kosztów"}
               </h3>
 
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex bg-gray-100 p-1 rounded-lg">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex bg-gray-100 p-1 rounded-lg w-full sm:w-auto">
                   <button
                     onClick={() => setChartMetric("kwh")}
-                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all ${
                       chartMetric === "kwh"
                         ? "bg-white text-emerald-700 shadow-sm"
                         : "text-gray-500 hover:text-gray-700"
@@ -326,7 +326,7 @@ function Dashboard() {
                   </button>
                   <button
                     onClick={() => setChartMetric("pln")}
-                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all ${
                       chartMetric === "pln"
                         ? "bg-white text-blue-700 shadow-sm"
                         : "text-gray-500 hover:text-gray-700"
@@ -336,10 +336,10 @@ function Dashboard() {
                   </button>
                 </div>
 
-                <div className="flex bg-gray-100 p-1 rounded-lg">
+                <div className="flex bg-gray-100 p-1 rounded-lg w-full sm:w-auto overflow-x-auto">
                   <button
                     onClick={() => setChartResolution("15m")}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`flex-1 sm:flex-none px-2 md:px-3 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all whitespace-nowrap ${
                       chartResolution === "15m"
                         ? "bg-white text-gray-900 shadow-sm"
                         : "text-gray-500 hover:text-gray-700"
@@ -349,29 +349,29 @@ function Dashboard() {
                   </button>
                   <button
                     onClick={() => setChartResolution("1h")}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`flex-1 sm:flex-none px-2 md:px-3 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all whitespace-nowrap ${
                       chartResolution === "1h"
                         ? "bg-white text-gray-900 shadow-sm"
                         : "text-gray-500 hover:text-gray-700"
                     }`}
                   >
-                    Godzinowo
+                    1 godz
                   </button>
                   <button
                     onClick={() => setChartResolution("1d")}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`flex-1 sm:flex-none px-2 md:px-3 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all whitespace-nowrap ${
                       chartResolution === "1d"
                         ? "bg-white text-gray-900 shadow-sm"
                         : "text-gray-500 hover:text-gray-700"
                     }`}
                   >
-                    Dziennie
+                    Dni
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="h-[400px] w-full">
+            <div className="h-[300px] md:h-[400px] w-full">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
@@ -387,14 +387,14 @@ function Dashboard() {
                       dataKey="label"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fontSize: 12, fill: "#64748b" }}
+                      tick={{ fontSize: 10, fill: "#64748b" }}
                       dy={10}
                       minTickGap={20}
                     />
                     <YAxis
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fontSize: 12, fill: "#64748b" }}
+                      tick={{ fontSize: 10, fill: "#64748b" }}
                     />
                     <Tooltip
                       content={<CustomTooltip />}
@@ -412,7 +412,7 @@ function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="h-full flex items-center justify-center text-gray-400 text-center px-4 text-sm md:text-base">
                   Wybierz inny przedział czasu lub wgraj dane.
                 </div>
               )}

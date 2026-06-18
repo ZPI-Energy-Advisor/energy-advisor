@@ -4,13 +4,10 @@ import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 
 function Login() {
-  // Stany dla pól formularza
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
-
   const [isRegister, setIsRegister] = useState(false);
-
   const navigate = useNavigate();
 
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -21,7 +18,6 @@ function Login() {
       });
 
       localStorage.setItem("user", JSON.stringify(response.data.user));
-
       navigate("/dashboard");
     } catch (error) {
       if (error.response && error.response.data.detail) {
@@ -69,13 +65,10 @@ function Login() {
       if (error.response && error.response.data.detail) {
         const detail = error.response.data.detail;
 
-        // Sprawdzamy, czy błąd to tablica obiektów (czyli błąd walidacji z Pydantica)
         if (Array.isArray(detail)) {
-          // Wyciągamy 'msg' z pierwszego błędu i ucinamy domyślny prefix "Value error, "
           const cleanMessage = detail[0].msg.replace("Value error, ", "");
           setMessage(`Błąd: ${cleanMessage}`);
         } else {
-          // Standardowy błąd tekstowy (np. zły login/hasło)
           setMessage(`Błąd: ${detail}`);
         }
       } else {
@@ -87,22 +80,26 @@ function Login() {
   return (
     <div className="flex min-h-screen w-full bg-white">
       <div className="hidden w-1/2 flex-col items-center justify-center bg-slate-900 px-12 lg:flex">
-        <h1 className="mb-4 text-5xl font-bold tracking-tight text-white">
+        <h1 className="mb-4 text-5xl font-bold tracking-tight text-white text-center">
           Energy Advisor
         </h1>
-        <p className="text-lg text-slate-300">
+        <p className="text-lg text-slate-300 text-center">
           Zoptymalizuj koszty prądu w swoim domu
         </p>
         <div className="mt-8 h-1 w-16 rounded bg-emerald-500"></div>
       </div>
 
-      <div className="flex w-full flex-col items-center justify-center px-8 lg:w-1/2">
+      <div className="flex w-full flex-col items-center justify-center px-4 sm:px-8 lg:w-1/2">
         <div className="w-full max-w-md space-y-8">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">
+          <div className="text-center sm:text-left">
+            {/* Logo widoczne tylko na mobile dla spójności */}
+            <h1 className="lg:hidden mb-8 text-3xl font-bold tracking-tight text-slate-900">
+              Energy<span className="text-emerald-500">Advisor</span>
+            </h1>
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
               {isRegister ? "Rejestracja" : "Logowanie"}
             </h2>
-            <p className="mt-2 text-gray-600">
+            <p className="mt-2 text-sm sm:text-base text-gray-600">
               {isRegister
                 ? "Utwórz nowe konto użytkownika"
                 : "Wprowadź dane dostępowe"}
@@ -139,14 +136,14 @@ function Login() {
 
             <button
               type="submit"
-              className="flex w-full justify-center rounded-md border border-transparent bg-emerald-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="flex w-full justify-center rounded-md border border-transparent bg-emerald-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
             >
               {isRegister ? "Zarejestruj się" : "Zaloguj się"}
             </button>
           </form>
 
           {message && (
-            <div className="mt-4 text-center text-sm font-medium text-emerald-600 bg-emerald-50 p-2 rounded">
+            <div className="mt-4 text-center text-sm font-medium text-emerald-600 bg-emerald-50 p-3 rounded">
               {message}
             </div>
           )}
