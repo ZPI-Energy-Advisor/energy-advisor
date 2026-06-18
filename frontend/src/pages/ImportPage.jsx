@@ -98,12 +98,12 @@ function ImportPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-8">
+      <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Prześlij plik CSV
       </h2>
 
       {successMsg ? (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-10 text-center shadow-sm">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-6 md:p-10 text-center shadow-sm">
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -120,11 +120,11 @@ function ImportPage() {
               />
             </svg>
           </div>
-          <h3 className="text-2xl font-bold text-emerald-800 mb-2">Sukces!</h3>
+          <h3 className="text-xl md:text-2xl font-bold text-emerald-800 mb-2">Sukces!</h3>
           <p className="text-emerald-600 mb-6">{successMsg}</p>
           <button
             onClick={() => navigate("/dashboard")}
-            className="bg-emerald-600 text-white px-8 py-3 rounded font-medium hover:bg-emerald-700 transition-colors"
+            className="w-full sm:w-auto bg-emerald-600 text-white px-8 py-3 rounded font-medium hover:bg-emerald-700 transition-colors"
           >
             Zobacz wyniki na Dashboardzie
           </button>
@@ -135,14 +135,14 @@ function ImportPage() {
             <div className="space-y-4">
               <div
                 {...getRootProps()}
-                className={`border-2 border-dashed rounded-lg p-16 text-center cursor-pointer transition-colors ${
+                className={`border-2 border-dashed rounded-lg p-8 md:p-16 text-center cursor-pointer transition-colors ${
                   isDragActive
                     ? "border-emerald-500 bg-emerald-50"
                     : "border-gray-300 bg-gray-50 hover:bg-gray-100"
                 }`}
               >
                 <input {...getInputProps()} />
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2">
                   {isDragActive
                     ? "Upuść plik tutaj..."
                     : "Przeciągnij i upuść plik tutaj"}
@@ -150,23 +150,23 @@ function ImportPage() {
                 <p className="text-sm text-gray-500 mb-6">Format: CSV</p>
                 <button
                   type="button"
-                  className="bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 transition-colors"
+                  className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 transition-colors"
                 >
                   Wybierz plik
                 </button>
               </div>
 
               {error && (
-                <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center font-medium">
+                <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center text-sm md:text-base font-medium">
                   {error}
                 </div>
               )}
             </div>
           ) : (
-            <div className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="p-4 md:p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
               <div className="flex justify-between items-start mb-6">
-                <div>
-                  <p className="font-medium text-gray-900">{file.name}</p>
+                <div className="overflow-hidden pr-4">
+                  <p className="font-medium text-gray-900 truncate">{file.name}</p>
                   <p className="text-sm text-gray-500">
                     Rozmiar: {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
@@ -174,7 +174,7 @@ function ImportPage() {
                 {!isUploading && (
                   <button
                     onClick={handleRemoveFile}
-                    className="text-gray-400 hover:text-red-500 transition-colors p-2 -mr-2"
+                    className="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors p-2 -mr-2"
                     title="Usuń i wybierz inny plik"
                   >
                     <svg
@@ -224,7 +224,7 @@ function ImportPage() {
                 <button
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className={`px-6 py-2 rounded font-medium text-white transition-colors flex items-center ${
+                  className={`w-full sm:w-auto px-6 py-2 rounded font-medium text-white transition-colors flex justify-center items-center ${
                     isUploading
                       ? "bg-gray-400 cursor-not-allowed"
                       : "bg-emerald-600 hover:bg-emerald-700"
@@ -262,7 +262,7 @@ function ImportPage() {
             </div>
           )}
 
-          <div className="mt-8 bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+          <div className="mt-8 bg-white border border-gray-200 p-4 md:p-6 rounded-lg shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Instrukcja</h3>
             <ol className="list-decimal list-inside text-gray-600 space-y-2 text-sm">
               <li>Zaloguj się do portalu operatora (np. Tauron eLicznik).</li>
