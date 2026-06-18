@@ -46,7 +46,8 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     if df.empty:
         raise HTTPException(status_code=400, detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.")
 
-    df['Data'] = df['Data'].astype(str).str.strip().str.replace('24:00', '23:59')
+    mask_24 = df['Data'].astype(str).str.contains('24:00')
+    df['Data'] = df['Data'].astype(str).str.strip().str.replace('24:00', '00:00')
 
     is_numeric = df['Data'].str.match(r'^\d+(\.\d+)?$')
     
@@ -56,17 +57,17 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     df['Data'] = pd.concat([text_dates, numeric_dates]).sort_index()
     df = df.dropna(subset=['Data'])
 
-    mask_midnight = df['Data'].dt.time == pd.to_datetime('00:00:00').time()
-    df.loc[mask_midnight, 'Data'] = df.loc[mask_midnight, 'Data'] - pd.Timedelta(minutes=1)
+    df.loc[mask_24, 'Data'] = df.loc[mask_24, 'Data'] + pd.Timedelta(days=1)
 
     df_15min = df.loc[df.index.repeat(4)].reset_index(drop=True)
     df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / 4.0
     
     base_timestamps = df_15min['Data']
-    minute_offsets = np.tile([-45, -30, -15, 0], len(df))
+    
+    minute_offsets = np.tile([-60, -45, -30, -15], len(df))
     df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
     df_15min['Czas_Baza'] = df_15min['Dokładny Czas'].dt.time
-
+    
     tariffs = db.query(Tariff).all()
     if not tariffs:
         raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
@@ -74,9 +75,9 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     results_dict = {"tariffs": {}}
     total_usage = float(df_15min['Wartość kWh'].sum())
 
-    # Tworzymy listę na nowe kolumny kosztowe
     cost_columns = []
-
+    price_columns = []
+    
     for tariff in tariffs:
         rates = db.query(TariffRate).filter(TariffRate.tariff_id == tariff.id).all()
         
@@ -86,12 +87,14 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
                     return float(rate.price_per_kwh)
             return 0.0
 
-        # Nazywamy kolumnę np. cost_G11, cost_G12
+        price_col_name = f'price_{tariff.name}'
         cost_col_name = f'cost_{tariff.name}'
+        
+        price_columns.append(price_col_name)
         cost_columns.append(cost_col_name)
 
-        df_15min[f'Cena_{tariff.name}'] = df_15min['Czas_Baza'].apply(get_price)
-        df_15min[cost_col_name] = df_15min['Wartość kWh'] * df_15min[f'Cena_{tariff.name}']
+        df_15min[price_col_name] = df_15min['Czas_Baza'].apply(get_price)
+        df_15min[cost_col_name] = df_15min['Wartość kWh'] * df_15min[price_col_name]
         
         total_cost = float(df_15min[cost_col_name].sum())
 
@@ -101,21 +104,23 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
             "estimated_cost_pln": round(total_cost, 2)
         }
 
-    # Definiujemy, które kolumny chcemy grupować i sumować na wykresach
-    columns_to_aggregate = ['Wartość kWh'] + cost_columns
+    columns_to_aggregate = ['Wartość kWh'] + cost_columns + price_columns
 
-    # --- AGREGACJE ---
+    df_15min['date'] = df_15min['Dokładny Czas'].dt.date.astype(str)
+
     df_15min['time_15m'] = df_15min['Dokładny Czas'].dt.strftime('%H:%M')
-    data_15min = df_15min.groupby('time_15m')[columns_to_aggregate].sum().round(2).reset_index()
+    data_15min = df_15min.groupby('time_15m')[columns_to_aggregate].mean().round(2).reset_index()
     data_15min = data_15min.rename(columns={'Wartość kWh': 'kwh', 'time_15m': 'time'})
     results_dict["chart_15min"] = data_15min.to_dict('records')
     
     df_15min['hour'] = df_15min['Dokładny Czas'].apply(format_hour_label)
-    hourly_data = df_15min.groupby('hour')[columns_to_aggregate].sum().round(2).reset_index()
+    
+    daily_hourly_sum = df_15min.groupby(['date', 'hour'])[columns_to_aggregate].sum().reset_index()
+    
+    hourly_data = daily_hourly_sum.groupby('hour')[columns_to_aggregate].mean().round(2).reset_index()
     hourly_data = hourly_data.rename(columns={'Wartość kWh': 'kwh'})
     results_dict["chart_hourly"] = hourly_data.to_dict('records')
 
-    df_15min['date'] = df_15min['Dokładny Czas'].dt.date.astype(str)
     daily_data = df_15min.groupby('date')[columns_to_aggregate].sum().round(2).reset_index()
     daily_data = daily_data.rename(columns={'Wartość kWh': 'kwh'})
     results_dict["chart_daily"] = daily_data.to_dict('records')
