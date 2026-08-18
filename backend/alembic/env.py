@@ -1,16 +1,13 @@
+import os
+import sys
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-from sqlalchemy import create_engine
-
 from alembic import context
-import sys
-import os
+from sqlalchemy import create_engine, pool
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.database import database_url, Base
-
+from app.database import Base, database_url
 
 os.environ["PGCLIENTENCODING"] = "utf-8"
 

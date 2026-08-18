@@ -1,21 +1,20 @@
+import datetime
 import uuid
 
+from app.database import Base
 from sqlalchemy import (
+    DECIMAL,
     Column,
+    Date,
+    DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
-    ForeignKey,
-    DECIMAL,
     Time,
-    DateTime,
-    Date,
 )
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
-from app.database import Base
-import datetime
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.dialects.postgresql import JSONB
 
 
 class Tariff(Base):

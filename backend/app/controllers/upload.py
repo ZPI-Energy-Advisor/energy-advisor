@@ -1,8 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
-from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.models import Simulation, User
 from app.services.calculations import calculate_all_tariffs
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/upload", tags=["Upload & Simulation"])
 

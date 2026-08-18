@@ -1,6 +1,7 @@
-import requests
-from unittest.mock import MagicMock, patch
 from datetime import date
+from unittest.mock import MagicMock, patch
+
+import requests
 from app.services.pse_api import ensure_dynamic_prices
 
 

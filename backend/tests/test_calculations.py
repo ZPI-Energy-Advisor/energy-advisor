@@ -1,10 +1,10 @@
-import pytest
 from datetime import datetime
 from io import BytesIO
 from unittest.mock import MagicMock, patch
-from fastapi import HTTPException
 
-from app.services.calculations import format_hour_label, calculate_all_tariffs
+import pytest
+from app.services.calculations import calculate_all_tariffs, format_hour_label
+from fastapi import HTTPException
 
 
 def _get_mock_db():

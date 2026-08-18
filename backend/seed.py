@@ -1,6 +1,7 @@
+from datetime import time
+
 from app.database import SessionLocal
 from app.models.models import Tariff, TariffRate
-from datetime import time
 
 
 def seed_tariffs():

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.models import Tariff
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/tariffs", tags=["Tariffs"])
 

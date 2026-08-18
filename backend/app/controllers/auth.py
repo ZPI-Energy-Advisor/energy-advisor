@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-import httpx
 import re
-from pydantic import BaseModel, field_validator
-from passlib.context import CryptContext
 
+import httpx
 from app.database import get_db
 from app.models.models import User
+from fastapi import APIRouter, Depends, HTTPException, status
+from passlib.context import CryptContext
+from pydantic import BaseModel, field_validator
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 

@@ -1,11 +1,9 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from app.models.models import DynamicPrice, Tariff, TariffRate
+from app.services.pse_api import ensure_dynamic_prices
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-
-from app.models.models import Tariff, TariffRate
-from app.services.pse_api import ensure_dynamic_prices
-from app.models.models import DynamicPrice
 
 
 def format_hour_label(dt_obj):
@@ -23,7 +21,7 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
         file_obj.seek(0)
         df = pd.read_csv(file_obj, sep=";", encoding="windows-1250")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Błąd odczytu pliku: {e}")
+        raise HTTPException(status_code=400, detail=f"Błąd odczytu pliku: {e}") from e
 
     df.columns = df.columns.str.strip()
 
@@ -56,7 +54,8 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     if df.empty:
         raise HTTPException(
             status_code=400,
-            detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.",
+            detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) " \
+            "lub dane są puste.",
         )
 
     mask_24 = df["Data"].astype(str).str.contains("24:00")

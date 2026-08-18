@@ -1,7 +1,8 @@
-import requests
 from datetime import date
-from sqlalchemy.orm import Session
+
+import requests
 from app.models.models import DynamicPrice
+from sqlalchemy.orm import Session
 
 
 def ensure_dynamic_prices(start_date: date, end_date: date, db: Session):
@@ -21,7 +22,10 @@ def ensure_dynamic_prices(start_date: date, end_date: date, db: Session):
     start_str = start_date.strftime("%Y-%m-%d")
     end_str = end_date.strftime("%Y-%m-%d")
 
-    url = f"https://api.raporty.pse.pl/api/rce-pln?$filter=business_date ge '{start_str}' and business_date le '{end_str}'"
+    url = (
+    "https://api.raporty.pse.pl/api/rce-pln?"
+    f"$filter=business_date ge '{start_str}' and business_date le '{end_str}'"
+    )
 
     try:
         response = requests.get(url, timeout=15)
