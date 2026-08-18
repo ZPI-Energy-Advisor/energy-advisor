@@ -1,0 +1,9 @@
+[tool.ruff]
+select = ["E", "F", "I", "B", "BLE", "DTZ"]
+ignore = [
+    "B008",
+    "BLE001",
+    "B023",
+    "DTZ001",
+    "DTZ007",
+]

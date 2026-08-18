@@ -1,17 +1,13 @@
+import os
+import sys
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-from sqlalchemy import create_engine
-
 from alembic import context
-import sys
-import os
+from sqlalchemy import create_engine, pool
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.database import database_url, Base
-
-
+from app.database import Base, database_url
 
 os.environ["PGCLIENTENCODING"] = "utf-8"
 
@@ -50,7 +46,7 @@ def run_migrations_offline() -> None:
 
     """
     url = database_url
-    #url = config.get_main_option("sqlalchemy.url")
+    # url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -89,22 +85,18 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     url = database_url
-    
+
     connectable = create_engine(
-        url, 
-        poolclass=pool.NullPool,
-        connect_args={"client_encoding": "utf8"}
+        url, poolclass=pool.NullPool, connect_args={"client_encoding": "utf8"}
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, 
-            target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
-            
+
+
 if context.is_offline_mode():
     run_migrations_offline()
 else:
