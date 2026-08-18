@@ -9,16 +9,17 @@ app = FastAPI(title="Energy Advisor API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], 
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth_router)
 app.include_router(upload_router)
 app.include_router(results_router)
 app.include_router(tariffs_router)
+
 
 @app.get("/")
 def read_root():
