@@ -18,10 +18,9 @@ function Dashboard() {
   );
 
   const [availableTariffs, setAvailableTariffs] = useState([]);
-  const [simulationData, setSimulationData] = useState(null);
+  const [fullResults, setFullResults] = useState(null); 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [chartResolution, setChartResolution] = useState("1h");
@@ -31,7 +30,11 @@ function Dashboard() {
     const fetchTariffs = async () => {
       try {
         const response = await axios.get("http://localhost:8000/tariffs");
-        setAvailableTariffs(response.data.tariffs);
+        const tariffsList = response.data.tariffs || [];
+        if (!tariffsList.includes("Dynamiczna")) {
+          tariffsList.push("Dynamiczna");
+        }
+        setAvailableTariffs(tariffsList);
       } catch (err) {
         console.error("Błąd pobierania listy taryf:", err);
       }
@@ -42,24 +45,12 @@ function Dashboard() {
         setIsLoading(false);
         return;
       }
-
       try {
         const response = await axios.get(
           `http://localhost:8000/results/user/${user.id}`,
         );
-
-        if (response.data.status === "no_data" || !response.data.results) {
-          setSimulationData(null);
-        } else {
-          const tariffName = user.current_tariff || "G11";
-          const specificTariffData = response.data.results.tariffs[tariffName];
-
-          setSimulationData({
-            ...specificTariffData,
-            chart_hourly: response.data.results.chart_hourly,
-            chart_15min: response.data.results.chart_15min,
-            chart_daily: response.data.results.chart_daily,
-          });
+        if (response.data.status !== "no_data" && response.data.results) {
+          setFullResults(response.data.results);
         }
       } catch (err) {
         console.error("Błąd pobierania symulacji:", err);
@@ -71,28 +62,32 @@ function Dashboard() {
 
     fetchTariffs();
     fetchSimulation();
-  }, [user.current_tariff, user.id]);
+  }, [user.id]);
 
-  const handleTariffChange = async (e) => {
-    const newTariff = e.target.value;
-    setIsUpdating(true);
+  const handleTariffChange = async (newTariff) => {
+    setIsDropdownOpen(false);
+    
+    const updatedUser = { ...user, current_tariff: newTariff };
+    setUser(updatedUser);
+    localStorage.setItem("user", JSON.stringify(updatedUser));
 
     try {
       await axios.patch("http://localhost:8000/auth/current-tariff", {
         email: user.email,
         new_tariff: newTariff,
       });
-
-      const updatedUser = { ...user, current_tariff: newTariff };
-      setUser(updatedUser);
-      localStorage.setItem("user", JSON.stringify(updatedUser));
     } catch (err) {
-      console.error("Błąd zmiany taryfy:", err);
-      alert("Wystąpił błąd podczas zmiany taryfy na serwerze.");
-    } finally {
-      setIsUpdating(false);
+      console.error("Błąd zapisu taryfy na serwerze:", err);
     }
   };
+
+  const tariffName = user.current_tariff || "G11";
+  const simulationData = fullResults ? {
+    ...fullResults.tariffs[tariffName],
+    chart_hourly: fullResults.chart_hourly,
+    chart_15min: fullResults.chart_15min,
+    chart_daily: fullResults.chart_daily,
+  } : null;
 
   const getChartData = () => {
     if (!simulationData) return [];
@@ -105,10 +100,6 @@ function Dashboard() {
         sourceData = simulationData.chart_15min || [];
         labelKey = "time";
         break;
-      case "1h":
-        sourceData = simulationData.chart_hourly || [];
-        labelKey = "hour";
-        break;
       case "1d":
         sourceData = simulationData.chart_daily || [];
         labelKey = "date";
@@ -117,13 +108,14 @@ function Dashboard() {
         sourceData = simulationData.chart_hourly || [];
     }
 
-    return sourceData.map((item) => ({
-      label: item[labelKey],
-      value:
-        chartMetric === "kwh"
-          ? item.kwh
-          : item[`cost_${user.current_tariff || "G11"}`] || 0,
-    }));
+    return sourceData.map((item) => {
+      const costVal = item[`cost_${tariffName}`] ?? item[`Koszt_${tariffName}`] ?? 0;
+      
+      return {
+        label: item[labelKey],
+        value: chartMetric === "kwh" ? item.kwh : costVal,
+      };
+    });
   };
 
   const chartData = getChartData();
@@ -173,8 +165,7 @@ function Dashboard() {
             Brak danych do analizy
           </h3>
           <p className="text-gray-500 mb-6 text-sm md:text-base">
-            Wgraj swój plik z historią zużycia prądu, aby zobaczyć koszty i
-            wykresy.
+            Wgraj swój plik z historią zużycia prądu, aby zobaczyć koszty i wykresy.
           </p>
           <Link
             to="/upload"
@@ -223,48 +214,28 @@ function Dashboard() {
 
               <div className="relative">
                 <div
-                  onClick={() =>
-                    !isUpdating &&
-                    availableTariffs.length > 0 &&
-                    setIsDropdownOpen(!isDropdownOpen)
-                  }
-                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-lg md:text-xl font-bold py-2 md:py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${isUpdating || availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-lg md:text-xl font-bold py-2 md:py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between`}
                 >
-                  <span>
-                    {user.current_tariff
-                      ? `Taryfa ${user.current_tariff}`
-                      : "Wybierz taryfę"}
-                  </span>
+                  <span>Taryfa {user.current_tariff || "G11"}</span>
                   <svg
                     className={`h-5 w-5 md:h-6 md:w-6 text-emerald-600 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M19 9l-7 7-7-7"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
 
                 {isDropdownOpen && (
                   <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setIsDropdownOpen(false)}
-                    ></div>
-
+                    <div className="fixed inset-0 z-10" onClick={() => setIsDropdownOpen(false)}></div>
                     <div className="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
                       {availableTariffs.map((tariff) => (
                         <div
                           key={tariff}
-                          onClick={() => {
-                            handleTariffChange({ target: { value: tariff } });
-                            setIsDropdownOpen(false);
-                          }}
+                          onClick={() => handleTariffChange(tariff)}
                           className={`px-4 py-3 text-base md:text-lg font-medium cursor-pointer transition-colors ${
                             user.current_tariff === tariff
                               ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
@@ -278,31 +249,6 @@ function Dashboard() {
                   </>
                 )}
               </div>
-
-              {isUpdating && (
-                <div className="mt-3 flex items-center text-xs md:text-sm text-emerald-600 font-medium">
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-emerald-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Aktualizacja w bazie...
-                </div>
-              )}
             </div>
           </div>
 
@@ -378,33 +324,11 @@ function Dashboard() {
                     data={chartData}
                     margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#f1f5f9"
-                    />
-                    <XAxis
-                      dataKey="label"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                      dy={10}
-                      minTickGap={20}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                    />
-                    <Tooltip
-                      content={<CustomTooltip />}
-                      cursor={{ fill: "#f8fafc" }}
-                    />
-                    <Bar
-                      dataKey="value"
-                      radius={[4, 4, 0, 0]}
-                      animationDuration={1000}
-                    >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#64748b" }} dy={10} minTickGap={20} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#64748b" }} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f8fafc" }} />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]} animationDuration={1000}>
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={chartColor} />
                       ))}

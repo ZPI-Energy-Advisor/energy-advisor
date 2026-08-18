@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DECIMAL, Time, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DECIMAL, Time, DateTime, Date
 from sqlalchemy.orm import relationship
 from app.database import Base
 import datetime
@@ -50,3 +50,11 @@ class Simulation(Base):
     results = Column(JSONB, nullable=False)
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class DynamicPrice(Base):
+    __tablename__ = "dynamic_prices"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, index=True, nullable=False)
+    hour = Column(String(5), nullable=False)
+    price_per_kwh = Column(DECIMAL(10, 4), nullable=False)

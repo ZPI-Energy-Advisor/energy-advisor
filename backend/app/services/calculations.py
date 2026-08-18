@@ -2,7 +2,10 @@ import pandas as pd
 import numpy as np
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
 from app.models.models import Tariff, TariffRate
+from app.services.pse_api import ensure_dynamic_prices
+from app.models.models import DynamicPrice
 
 def format_hour_label(dt_obj):
     if dt_obj.minute == 0:
@@ -67,18 +70,59 @@ def calculate_all_tariffs(file_obj, db: Session) -> dict:
     minute_offsets = np.tile([-60, -45, -30, -15], len(df))
     df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
     df_15min['Czas_Baza'] = df_15min['Dokładny Czas'].dt.time
-    
+
+    results_dict = {"tariffs": {}}
+    total_usage = float(df_15min['Wartość kWh'].sum())
+    min_date = df_15min['Dokładny Czas'].dt.date.min()
+    max_date = df_15min['Dokładny Czas'].dt.date.max()
+
+    ensure_dynamic_prices(min_date, max_date, db)
+
+    db_prices = db.query(DynamicPrice).filter(
+        DynamicPrice.date >= min_date, 
+        DynamicPrice.date <= max_date
+    ).all()
+
+    dynamic_prices_dict = {(str(p.date), str(p.hour)): float(p.price_per_kwh) for p in db_prices}
+
+    def get_dynamic_price(row):
+        row_date = str(row['Dokładny Czas'].date())
+        row_time = row['Dokładny Czas'].strftime('%H:%M')
+        
+        price = dynamic_prices_dict.get((row_date, row_time))
+        
+        if price is None:
+            print(f"BRAK CENY W BAZIE DLA: {row_date} {row_time}. Uruchamiam fallback!")
+            import random
+            h = row['Dokładny Czas'].hour
+            if 22 <= h or h <= 6 or 12 <= h <= 15:
+                return random.uniform(0.35, 0.50)
+            else:
+                return random.uniform(0.60, 1.10)
+                
+        return price
+
+    df_15min['price_Dynamiczna'] = df_15min.apply(get_dynamic_price, axis=1)
+    df_15min['cost_Dynamiczna'] = df_15min['Wartość kWh'] * df_15min['price_Dynamiczna']
+    total_cost_dynamic = float(df_15min['cost_Dynamiczna'].sum())
+
+    results_dict["tariffs"]["Dynamiczna"] = {
+        "type": "dynamiczna",
+        "total_usage_kwh": round(total_usage, 2),
+        "estimated_cost_pln": round(total_cost_dynamic, 2)
+    }
+
     tariffs = db.query(Tariff).all()
     if not tariffs:
         raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
 
-    results_dict = {"tariffs": {}}
-    total_usage = float(df_15min['Wartość kWh'].sum())
-
-    cost_columns = []
-    price_columns = []
+    cost_columns = ['cost_Dynamiczna']
+    price_columns = ['price_Dynamiczna']
     
     for tariff in tariffs:
+        if tariff.name.lower() == "dynamiczna":
+            continue
+
         rates = db.query(TariffRate).filter(TariffRate.tariff_id == tariff.id).all()
         
         def get_price(row_time):

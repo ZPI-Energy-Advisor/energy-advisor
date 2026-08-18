@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
 from io import BytesIO
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 
 from app.services.calculations import format_hour_label, calculate_all_tariffs
@@ -17,6 +17,9 @@ def _get_mock_db():
     mock_rate.time_start = datetime.strptime("00:00:00", "%H:%M:%S").time()
     mock_rate.time_end = datetime.strptime("23:59:59", "%H:%M:%S").time()
     mock_rate.price_per_kwh = 1.0
+    
+    mock_rate.date = datetime(2024, 1, 1).date()
+    mock_rate.hour = "00:00"
 
     mock_db.query().all.return_value = [mock_tariff]
     mock_db.query().filter().all.return_value = [mock_rate]
@@ -28,7 +31,8 @@ def test_format_hour_label():
     assert format_hour_label(datetime(2025, 8, 9, 1, 0)) == "00:00"
     assert format_hour_label(datetime(2025, 8, 9, 0, 0)) == "23:00"
 
-def test_calculate_old_format_success():
+@patch('app.services.calculations.ensure_dynamic_prices')
+def test_calculate_old_format_success(mock_ensure):
     csv_content = """Data;Wartość kWh;Rodzaj
     2024-11-03 1:00;0,65;pobór
     2024-11-03 2:00;0,50;pobór
@@ -40,7 +44,8 @@ def test_calculate_old_format_success():
     assert results["statistics"]["data_start"] == "2024-11-03"
     assert results["tariffs"]["G11"]["total_usage_kwh"] == 2.15
 
-def test_calculate_new_format_with_excel_bug_and_oddanie():
+@patch('app.services.calculations.ensure_dynamic_prices')
+def test_calculate_new_format_with_excel_bug_and_oddanie(mock_ensure):
     csv_content = """Data i godzina;Wartosc[kWh/kvar];Rodzaj energii
 07.06.2026 01:00;1,00;pobór
 07.06.2026 02:00;5,00;oddanie
