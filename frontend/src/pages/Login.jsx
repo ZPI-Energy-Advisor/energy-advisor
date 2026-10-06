@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import axios from "axios";
+import apiClient from "../api/client";
 import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 
@@ -13,7 +13,7 @@ function Login() {
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
       const token = credentialResponse.credential;
-      const response = await axios.post("http://localhost:8000/auth/google", {
+      const response = await apiClient.post("/auth/google", {
         id_token: token,
       });
 
@@ -43,8 +43,8 @@ function Login() {
 
     try {
       if (isRegister) {
-        const response = await axios.post(
-          "http://localhost:8000/auth/register",
+        const response = await apiClient.post(
+          "/auth/register",
           {
             email: email,
             password: password,
@@ -53,7 +53,7 @@ function Login() {
         setMessage(`Sukces! Zarejestrowano konto: ${response.data.user.email}`);
         setIsRegister(false);
       } else {
-        const response = await axios.post("http://localhost:8000/auth/login", {
+        const response = await apiClient.post("/auth/login", {
           email: email,
           password: password,
         });

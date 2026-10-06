@@ -4,10 +4,12 @@ from io import BytesIO
 from unittest.mock import MagicMock
 from fastapi import HTTPException
 
-from app.services.calculations import format_hour_label, calculate_all_tariffs
+from app.services.calculation_service import CalculationService
 
-def _get_mock_db():
-    mock_db = MagicMock()
+format_hour_label = CalculationService.format_hour_label
+
+def _get_mock_repository():
+    mock_repository = MagicMock()
     mock_tariff = MagicMock()
     mock_tariff.id = 1
     mock_tariff.name = "G11"
@@ -18,9 +20,9 @@ def _get_mock_db():
     mock_rate.time_end = datetime.strptime("23:59:59", "%H:%M:%S").time()
     mock_rate.price_per_kwh = 1.0
 
-    mock_db.query().all.return_value = [mock_tariff]
-    mock_db.query().filter().all.return_value = [mock_rate]
-    return mock_db
+    mock_repository.get_all.return_value = [mock_tariff]
+    mock_repository.get_rates_for_tariff.return_value = [mock_rate]
+    return mock_repository
 
 def test_format_hour_label():
     assert format_hour_label(datetime(2025, 8, 9, 14, 15)) == "14:00"
@@ -35,7 +37,7 @@ def test_calculate_old_format_success():
     2024-11-03 24:00;1,00;pobór"""
     
     dummy_file = BytesIO(csv_content.encode('utf-8'))
-    results = calculate_all_tariffs(dummy_file, _get_mock_db())
+    results = CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
 
     assert results["statistics"]["data_start"] == "2024-11-03"
     assert results["tariffs"]["G11"]["total_usage_kwh"] == 2.15
@@ -47,7 +49,7 @@ def test_calculate_new_format_with_excel_bug_and_oddanie():
 46181;2,00;pobór"""
     
     dummy_file = BytesIO(csv_content.encode('utf-8'))
-    results = calculate_all_tariffs(dummy_file, _get_mock_db())
+    results = CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
 
     assert results["tariffs"]["G11"]["total_usage_kwh"] == 3.00
     
@@ -64,7 +66,7 @@ def test_calculate_only_oddanie_raises_400():
     dummy_file = BytesIO(csv_content.encode('utf-8'))
     
     with pytest.raises(HTTPException) as exc_info:
-        calculate_all_tariffs(dummy_file, _get_mock_db())
+        CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
     
     assert exc_info.value.status_code == 400
     assert "tylko dane o oddaniu" in str(exc_info.value.detail)
@@ -75,7 +77,7 @@ def test_calculate_bad_columns_raises_422():
     dummy_file = BytesIO(csv_content.encode('utf-8'))
     
     with pytest.raises(HTTPException) as exc_info:
-        calculate_all_tariffs(dummy_file, _get_mock_db())
+        CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
     
     assert exc_info.value.status_code == 422
     assert "Nierozpoznany format" in str(exc_info.value.detail)

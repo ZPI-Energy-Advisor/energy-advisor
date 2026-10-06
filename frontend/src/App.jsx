@@ -6,6 +6,7 @@ import ImportPage from "./pages/ImportPage";
 import ResultsPage from "./pages/ResultsPage";
 import "./index.css";
 import Layout from "./components/Layout";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
   const GOOGLE_CLIENT_ID =
@@ -16,10 +17,12 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Login />} />
-          <Route element={<Layout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/upload" element={<ImportPage />} />
-            <Route path="/results" element={<ResultsPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/upload" element={<ImportPage />} />
+              <Route path="/results" element={<ResultsPage />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>

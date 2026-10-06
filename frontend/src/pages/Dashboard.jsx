@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import apiClient from "../api/client";
 import {
   BarChart,
   Bar,
@@ -30,7 +30,7 @@ function Dashboard() {
   useEffect(() => {
     const fetchTariffs = async () => {
       try {
-        const response = await axios.get("http://localhost:8000/tariffs");
+        const response = await apiClient.get("/tariffs/");
         setAvailableTariffs(response.data.tariffs);
       } catch (err) {
         console.error("Błąd pobierania listy taryf:", err);
@@ -44,9 +44,7 @@ function Dashboard() {
       }
 
       try {
-        const response = await axios.get(
-          `http://localhost:8000/results/user/${user.id}`,
-        );
+        const response = await apiClient.get(`/results/user/${user.id}`);
 
         if (response.data.status === "no_data" || !response.data.results) {
           setSimulationData(null);
@@ -78,7 +76,7 @@ function Dashboard() {
     setIsUpdating(true);
 
     try {
-      await axios.patch("http://localhost:8000/auth/current-tariff", {
+      await apiClient.patch("/tariffs/current-tariff", {
         email: user.email,
         new_tariff: newTariff,
       });
@@ -260,18 +258,18 @@ function Dashboard() {
                     <div className="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
                       {availableTariffs.map((tariff) => (
                         <div
-                          key={tariff}
+                          key={tariff.id}
                           onClick={() => {
-                            handleTariffChange({ target: { value: tariff } });
+                            handleTariffChange({ target: { value: tariff.name } });
                             setIsDropdownOpen(false);
                           }}
                           className={`px-4 py-3 text-base md:text-lg font-medium cursor-pointer transition-colors ${
-                            user.current_tariff === tariff
+                            user.current_tariff === tariff.name
                               ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
                               : "text-gray-700 hover:bg-gray-50 hover:text-emerald-600 border-l-4 border-transparent"
                           }`}
                         >
-                          Taryfa {tariff}
+                          Taryfa {tariff.name}
                         </div>
                       ))}
                     </div>

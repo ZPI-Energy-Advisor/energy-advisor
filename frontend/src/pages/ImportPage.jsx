@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import apiClient from "../api/client";
 
 function ImportPage() {
   const [file, setFile] = useState(null);
@@ -62,8 +62,8 @@ function ImportPage() {
     formData.append("user_email", user.email);
 
     try {
-      const response = await axios.post(
-        "http://localhost:8000/upload",
+      const response = await apiClient.post(
+        "/upload",
         formData,
         {
           headers: {
@@ -77,8 +77,6 @@ function ImportPage() {
           },
         },
       );
-
-      localStorage.setItem("last_simulation_id", response.data.simulation_id);
 
       setSuccessMsg(
         response.data.message || "Plik został pomyślnie przetworzony!",
