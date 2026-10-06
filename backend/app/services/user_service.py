@@ -20,21 +20,3 @@ class UserService:
             "status": "success",
             "new_tariff": user.current_tariff,
         }
-class UserService:
-    def __init__(self, repository: UserRepository):
-        self.repository = repository
-    
-    def update_user_tariff(self, tariff_payload: dict) -> dict:
-        user = db.query(User).filter(User.email == payload.email).first()
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="Nie znaleziono użytkownika.")
-
-        user.current_tariff = payload.new_tariff
-        db.commit()
-        db.refresh(user)
-
-        return {
-            "status": "success",
-            "new_tariff": user.current_tariff
-        }

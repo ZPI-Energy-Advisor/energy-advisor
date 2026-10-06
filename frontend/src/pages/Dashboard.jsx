@@ -30,8 +30,8 @@ function Dashboard() {
   useEffect(() => {
     const fetchTariffs = async () => {
       try {
-        const response = await axios.get("http://localhost:8000/tariffs");
-        setAvailableTariffs(response.data.tariffs);
+        const response = await axios.get("http://localhost:8000/api/v1/tariffs/");
+        setAvailableTariffs(response.data.tariffs.map((t) => t.name));
       } catch (err) {
         console.error("Błąd pobierania listy taryf:", err);
       }
@@ -45,7 +45,7 @@ function Dashboard() {
 
       try {
         const response = await axios.get(
-          `http://localhost:8000/results/user/${user.id}`,
+          `http://localhost:8000/api/v1/results/user/${user.id}`,
         );
 
         if (response.data.status === "no_data" || !response.data.results) {
@@ -78,7 +78,7 @@ function Dashboard() {
     setIsUpdating(true);
 
     try {
-      await axios.patch("http://localhost:8000/auth/current-tariff", {
+      await axios.patch("http://localhost:8000/api/v1/tariffs/current-tariff", {
         email: user.email,
         new_tariff: newTariff,
       });

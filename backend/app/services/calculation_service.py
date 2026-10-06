@@ -13,6 +13,7 @@ class CalculationService:
         self.db = db
 
     # DO WYDZIELENIA DO utils.py
+    @staticmethod
     def format_hour_label(dt_obj):
         if dt_obj.minute == 0:
             new_hour = (dt_obj.hour - 1) % 24
@@ -20,7 +21,7 @@ class CalculationService:
         return f"{dt_obj.hour:02d}:00"
 
 
-    def calculate_all_tariffs(file_obj) -> dict:
+    def calculate_all_tariffs(self, file_obj) -> dict:
         try:
             file_obj.seek(0)
             df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
@@ -123,7 +124,7 @@ class CalculationService:
         data_15min = data_15min.rename(columns={'Wartość kWh': 'kwh', 'time_15m': 'time'})
         results_dict["chart_15min"] = data_15min.to_dict('records')
         
-        df_15min['hour'] = df_15min['Dokładny Czas'].apply(format_hour_label)
+        df_15min['hour'] = df_15min['Dokładny Czas'].apply(self.format_hour_label)
         
         daily_hourly_sum = df_15min.groupby(['date', 'hour'])[columns_to_aggregate].sum().reset_index()
         
