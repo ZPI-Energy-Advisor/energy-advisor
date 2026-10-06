@@ -15,5 +15,8 @@ class TariffRepository:
     def get_by_id(self, tariff_id: int):
         return self.db.query(Tariff).filter(Tariff.id == tariff_id).first()
 
+    def get_by_name(self, name: str):
+        return self.db.query(Tariff).filter(Tariff.name == name).first()
+
     def get_rates_for_tariff(self, tariff_id: int):
         return self.db.query(TariffRate).filter(TariffRate.tariff_id == tariff_id).all()

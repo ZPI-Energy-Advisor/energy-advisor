@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import apiClient from "../api/client";
 import {
   LineChart,
   Line,
@@ -27,17 +27,18 @@ function ResultsPage() {
 
   useEffect(() => {
     const fetchResults = async () => {
-      const simId = localStorage.getItem("last_simulation_id");
-      if (!simId) {
+      if (!user.id) {
         setIsLoading(false);
         return;
       }
 
       try {
-        const response = await axios.get(
-          `http://localhost:8000/api/v1/results/${simId}`,
-        );
+        const response = await apiClient.get(`/results/user/${user.id}`);
         const results = response.data.results;
+
+        if (response.data.status === "no_data" || !results) {
+          return;
+        }
 
         const tariffsObj = results.tariffs;
         const tariffsArray = Object.keys(tariffsObj).map((key) => ({
@@ -56,7 +57,7 @@ function ResultsPage() {
     };
 
     fetchResults();
-  }, []);
+  }, [user.id]);
 
   if (isLoading) {
     return (

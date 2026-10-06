@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 
@@ -17,5 +17,5 @@ class TariffListResponse(BaseModel):
 
 
 class TariffUpdateRequest(BaseModel):
-    email: str
+    email: EmailStr
     new_tariff: str

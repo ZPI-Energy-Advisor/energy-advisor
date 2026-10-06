@@ -50,8 +50,7 @@ class AuthService:
         if not user.oauth_id:
             user.oauth_provider = "google"
             user.oauth_id = google_id
-            self.repository.db.commit()
-            self.repository.db.refresh(user)
+            self.repository.save(user)
 
         return user
 

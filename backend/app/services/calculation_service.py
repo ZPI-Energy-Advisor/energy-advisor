@@ -1,18 +1,15 @@
 import numpy as np
 import pandas as pd
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 
-from app.models.Tariff import Tariff
-from app.models.TariffRate import TariffRate
+from app.repositories.tariff_repository import TariffRepository
 
 
 
 class CalculationService:
-    def __init__(self, db: Session):
-        self.db = db
+    def __init__(self, tariff_repository: TariffRepository):
+        self.tariff_repository = tariff_repository
 
-    # DO WYDZIELENIA DO utils.py
     @staticmethod
     def format_hour_label(dt_obj):
         if dt_obj.minute == 0:
@@ -79,7 +76,7 @@ class CalculationService:
         df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
         df_15min['Czas_Baza'] = df_15min['Dokładny Czas'].dt.time
         
-        tariffs = self.db.query(Tariff).all()
+        tariffs = self.tariff_repository.get_all()
         if not tariffs:
             raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
 
@@ -88,15 +85,18 @@ class CalculationService:
 
         cost_columns = []
         price_columns = []
-        
+        unique_times = df_15min['Czas_Baza'].unique()
+
         for tariff in tariffs:
-            rates = self.db.query(TariffRate).filter(TariffRate.tariff_id == tariff.id).all()
-            
-            def get_price(row_time):
+            rates = self.tariff_repository.get_rates_for_tariff(tariff.id)
+
+            def get_price(row_time, rates=rates):
                 for rate in rates:
                     if rate.time_start <= row_time <= rate.time_end:
                         return float(rate.price_per_kwh)
                 return 0.0
+
+            price_by_time = {t: get_price(t) for t in unique_times}
 
             price_col_name = f'price_{tariff.name}'
             cost_col_name = f'cost_{tariff.name}'
@@ -104,7 +104,7 @@ class CalculationService:
             price_columns.append(price_col_name)
             cost_columns.append(cost_col_name)
 
-            df_15min[price_col_name] = df_15min['Czas_Baza'].apply(get_price)
+            df_15min[price_col_name] = df_15min['Czas_Baza'].map(price_by_time)
             df_15min[cost_col_name] = df_15min['Wartość kWh'] * df_15min[price_col_name]
             
             total_cost = float(df_15min[cost_col_name].sum())
