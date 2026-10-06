@@ -1,4 +1,3 @@
-from sqlalchemy.orm import Session
 
 from app.repositories.tariff_repository import TariffRepository
 from app.schemas.tariff import TariffListResponse, TariffOut

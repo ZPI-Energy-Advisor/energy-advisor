@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
 
-from app.api.deps import get_simulation_service
+from app.api.v1.deps import get_simulation_service
 from app.services.simulation_service import SimulationService
 from app.schemas.simulation import SimulationResultResponse
 
