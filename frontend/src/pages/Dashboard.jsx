@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import apiClient from "../api/client";
 import {
   BarChart,
   Bar,
@@ -30,8 +30,8 @@ function Dashboard() {
   useEffect(() => {
     const fetchTariffs = async () => {
       try {
-        const response = await axios.get("http://localhost:8000/api/v1/tariffs/");
-        setAvailableTariffs(response.data.tariffs.map((t) => t.name));
+        const response = await apiClient.get("/tariffs/");
+        setAvailableTariffs(response.data.tariffs);
       } catch (err) {
         console.error("Błąd pobierania listy taryf:", err);
       }
@@ -44,9 +44,7 @@ function Dashboard() {
       }
 
       try {
-        const response = await axios.get(
-          `http://localhost:8000/api/v1/results/user/${user.id}`,
-        );
+        const response = await apiClient.get(`/results/user/${user.id}`);
 
         if (response.data.status === "no_data" || !response.data.results) {
           setSimulationData(null);
@@ -78,7 +76,7 @@ function Dashboard() {
     setIsUpdating(true);
 
     try {
-      await axios.patch("http://localhost:8000/api/v1/tariffs/current-tariff", {
+      await apiClient.patch("/tariffs/current-tariff", {
         email: user.email,
         new_tariff: newTariff,
       });

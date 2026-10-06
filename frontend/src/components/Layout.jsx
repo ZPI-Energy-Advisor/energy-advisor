@@ -9,7 +9,6 @@ function Layout() {
 
   const handleLogout = () => {
     localStorage.removeItem("user");
-    localStorage.removeItem("last_simulation_id");
     navigate("/");
   };
 

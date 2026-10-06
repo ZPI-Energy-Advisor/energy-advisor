@@ -29,8 +29,11 @@ def get_user_repository(db: Session = Depends(get_db)) -> UserRepository:
 def get_auth_service(repository: UserRepository = Depends(get_user_repository)) -> AuthService:
     return AuthService(repository)
 
-def get_user_service(repository: UserRepository = Depends(get_user_repository)) -> UserService:
-    return UserService(repository)
+def get_user_service(
+    repository: UserRepository = Depends(get_user_repository),
+    tariff_repository: TariffRepository = Depends(get_tariff_repository),
+) -> UserService:
+    return UserService(repository, tariff_repository)
 
 
 def get_simulation_repository(db: Session = Depends(get_db)) -> SimulationRepository:
@@ -41,8 +44,8 @@ def get_simulation_service(repository: SimulationRepository = Depends(get_simula
     return SimulationService(repository)
 
 
-def get_calculation_service(db: Session = Depends(get_db)) -> CalculationService:
-    return CalculationService(db)
+def get_calculation_service(tariff_repository: TariffRepository = Depends(get_tariff_repository)) -> CalculationService:
+    return CalculationService(tariff_repository)
 
 
 def get_upload_service(
