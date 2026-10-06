@@ -1,6 +1,10 @@
+from datetime import datetime, time, timedelta
+
 from app.database import SessionLocal
-from app.models.models import Tariff, TariffRate
-from datetime import time, datetime, timedelta
+from app.models.Tariff import Tariff
+from app.models.TariffRate import TariffRate
+
+
 
 def seed_tariffs():
     db = SessionLocal()

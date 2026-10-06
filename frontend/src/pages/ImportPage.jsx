@@ -63,7 +63,7 @@ function ImportPage() {
 
     try {
       const response = await axios.post(
-        "http://localhost:8000/upload",
+        "http://localhost:8000/api/v1/upload",
         formData,
         {
           headers: {
