@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from sqlalchemy.orm import Session
 
-from app.api.deps import get_upload_service
+from app.api.v1.deps import get_upload_service
 from app.schemas.simulation import UploadSimulationResponse
 from app.services.upload_service import UploadService
 

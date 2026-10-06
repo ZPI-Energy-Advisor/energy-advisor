@@ -1,5 +1,4 @@
 from fastapi import HTTPException, UploadFile
-from sqlalchemy.orm import Session
 
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository

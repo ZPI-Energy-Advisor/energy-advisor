@@ -260,18 +260,18 @@ function Dashboard() {
                     <div className="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
                       {availableTariffs.map((tariff) => (
                         <div
-                          key={tariff}
+                          key={tariff.id}
                           onClick={() => {
-                            handleTariffChange({ target: { value: tariff } });
+                            handleTariffChange({ target: { value: tariff.name } });
                             setIsDropdownOpen(false);
                           }}
                           className={`px-4 py-3 text-base md:text-lg font-medium cursor-pointer transition-colors ${
-                            user.current_tariff === tariff
+                            user.current_tariff === tariff.name
                               ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
                               : "text-gray-700 hover:bg-gray-50 hover:text-emerald-600 border-l-4 border-transparent"
                           }`}
                         >
-                          Taryfa {tariff}
+                          Taryfa {tariff.name}
                         </div>
                       ))}
                     </div>
