@@ -7,17 +7,21 @@ from app.services.user_service import UserService
 
 
 
-router = APIRouter(prefix="/tariffs", tags=["Tariffs"])
+# router = APIRouter(
+#     prefix="/tariffs", 
+#     tags=["Tariffs"],
+#     dependencies=[Depends(get_tariff_service), Depends(get_user_service)]
+#     )
 
 
-@router.get("/", response_model=TariffListResponse)
-def get_all_tariffs(service: TariffService = Depends(get_tariff_service)):
-    return service.get_all()
+# @router.get("/", response_model=TariffListResponse)
+# def get_all_tariffs(service: TariffService = Depends(get_tariff_service)):
+#     return service.get_all()
 
 
-@router.patch("/current-tariff")
-def update_user_tariff(
-    payload: TariffUpdateRequest,
-    service: UserService = Depends(get_user_service),
-):
-    return service.update_current_tariff(payload.email, payload.new_tariff)
+# @router.patch("/current-tariff")
+# def update_user_tariff(
+#     payload: TariffUpdateRequest,
+#     service: UserService = Depends(get_user_service),
+# ):
+#     return service.update_current_tariff(payload.email, payload.new_tariff)

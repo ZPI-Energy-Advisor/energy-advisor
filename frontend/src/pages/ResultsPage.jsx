@@ -27,13 +27,13 @@ function ResultsPage() {
 
   useEffect(() => {
     const fetchResults = async () => {
-      if (!user.id) {
+      if (!user) {
         setIsLoading(false);
         return;
       }
 
       try {
-        const response = await apiClient.get(`/results/user/${user.id}`);
+        const response = await apiClient.get("/results");
         const results = response.data.results;
 
         if (response.data.status === "no_data" || !results) {

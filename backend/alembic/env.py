@@ -11,6 +11,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app.database import database_url, Base
 
+from app.models.User import User
+from app.models.Token import Token
+from app.models.Simulation import Simulation
+from app.models.Tariff import Tariff
+from app.models.TariffRate import TariffRate
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"

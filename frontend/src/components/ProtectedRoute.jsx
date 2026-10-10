@@ -11,7 +11,7 @@ function getStoredUser() {
 function ProtectedRoute() {
   const user = getStoredUser();
 
-  if (!user || !user.id) {
+  if (!user || !user.id || !localStorage.getItem("access_token")) {
     return <Navigate to="/" replace />;
   }
 

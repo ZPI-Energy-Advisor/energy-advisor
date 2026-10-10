@@ -1,0 +1,24 @@
+{
+    "devices": [
+        {
+            "device_id": "123e4567",
+            "device_name": "Pralka Bosch",
+            "device_type": "Washing Machine",
+            "device_category": "AGD"
+        }
+    ],
+    "energy_usage": [
+        {
+            "device_id": "123e4567",
+            "action_start": "2026-10-04T13:30:00Z",
+            "action_end": "2026-10-04T15:30:00Z",
+            "energy_use_kwh": 2.15
+        },
+        {
+            "device_id": "123e4567",
+            "action_start": "2026-10-04T17:30:00Z",
+            "action_end": "2026-10-04T18:30:00Z",
+            "energy_use_kwh": 2.15
+        }
+    ]
+}

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import apiClient from "../api/client";
+import apiClient, { saveAuthResponse } from "../api/client";
 import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 
@@ -14,10 +14,10 @@ function Login() {
     try {
       const token = credentialResponse.credential;
       const response = await apiClient.post("/auth/google", {
-        id_token: token,
+        google_code: token,
       });
 
-      localStorage.setItem("user", JSON.stringify(response.data.user));
+      saveAuthResponse(response.data, null);
       navigate("/dashboard");
     } catch (error) {
       if (error.response && error.response.data.detail) {
@@ -50,15 +50,15 @@ function Login() {
             password: password,
           },
         );
-        setMessage(`Sukces! Zarejestrowano konto: ${response.data.user.email}`);
-        setIsRegister(false);
+        saveAuthResponse(response.data, email);
+        navigate("/dashboard");
       } else {
         const response = await apiClient.post("/auth/login", {
           email: email,
           password: password,
         });
 
-        localStorage.setItem("user", JSON.stringify(response.data.user));
+        saveAuthResponse(response.data, email);
         navigate("/dashboard");
       }
     } catch (error) {
