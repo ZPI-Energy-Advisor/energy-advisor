@@ -28,29 +28,34 @@ function Dashboard() {
   const [chartMetric, setChartMetric] = useState("kwh");
 
   useEffect(() => {
-    const fetchTariffs = async () => {
-      try {
-        const response = await apiClient.get("/tariffs/");
-        setAvailableTariffs(response.data.tariffs);
-      } catch (err) {
-        console.error("Błąd pobierania listy taryf:", err);
-      }
-    };
-
     const fetchSimulation = async () => {
-      if (!user || !user.id) {
+      if (!user) {
         setIsLoading(false);
         return;
       }
 
       try {
-        const response = await apiClient.get(`/results/user/${user.id}`);
+        const response = await apiClient.get("/results");
 
         if (response.data.status === "no_data" || !response.data.results) {
           setSimulationData(null);
         } else {
-          const tariffName = user.current_tariff || "G11";
-          const specificTariffData = response.data.results.tariffs[tariffName];
+          const tariffs = response.data.results.tariffs || {};
+          const tariffNames = Object.keys(tariffs);
+          const tariffName = tariffs[user.current_tariff]
+            ? user.current_tariff
+            : tariffNames[0];
+          const specificTariffData = tariffs[tariffName];
+
+          setAvailableTariffs(
+            tariffNames.map((name, index) => ({ id: index, name })),
+          );
+
+          if (tariffName && tariffName !== user.current_tariff) {
+            const updatedUser = { ...user, current_tariff: tariffName };
+            setUser(updatedUser);
+            localStorage.setItem("user", JSON.stringify(updatedUser));
+          }
 
           setSimulationData({
             ...specificTariffData,
@@ -67,29 +72,14 @@ function Dashboard() {
       }
     };
 
-    fetchTariffs();
     fetchSimulation();
   }, [user.current_tariff, user.id]);
 
-  const handleTariffChange = async (e) => {
+  const handleTariffChange = (e) => {
     const newTariff = e.target.value;
-    setIsUpdating(true);
-
-    try {
-      await apiClient.patch("/tariffs/current-tariff", {
-        email: user.email,
-        new_tariff: newTariff,
-      });
-
-      const updatedUser = { ...user, current_tariff: newTariff };
-      setUser(updatedUser);
-      localStorage.setItem("user", JSON.stringify(updatedUser));
-    } catch (err) {
-      console.error("Błąd zmiany taryfy:", err);
-      alert("Wystąpił błąd podczas zmiany taryfy na serwerze.");
-    } finally {
-      setIsUpdating(false);
-    }
+    const updatedUser = { ...user, current_tariff: newTariff };
+    setUser(updatedUser);
+    localStorage.setItem("user", JSON.stringify(updatedUser));
   };
 
   const getChartData = () => {

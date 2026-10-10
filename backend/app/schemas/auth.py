@@ -1,15 +1,12 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.services.auth_service import AuthService
 
 
-class GoogleAuthRequest(BaseModel):
-    id_token: str
-
 
 class RegisterLocalRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=72)
 
     @field_validator("password")
     @classmethod
@@ -21,3 +18,16 @@ class RegisterLocalRequest(BaseModel):
 class LoginLocalRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class GoogleAuthRequest(BaseModel):
+    google_code: str = Field(min_length=1)
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=1)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str

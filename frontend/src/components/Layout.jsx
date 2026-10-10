@@ -1,15 +1,30 @@
 import React, { useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { FiHome, FiUploadCloud, FiPieChart, FiLogOut, FiMenu, FiX } from "react-icons/fi";
+import apiClient from "../api/client";
 
 function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("user");
-    navigate("/");
+  const handleLogout = async () => {
+    const refreshToken = localStorage.getItem("refresh_token");
+
+    try {
+      if (refreshToken) {
+        await apiClient.post("/auth/logout", {
+          refresh_token: refreshToken,
+        });
+      }
+    } catch (error) {
+      console.error("Nie udało się unieważnić sesji na backendzie.", error);
+    } finally {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("user");
+      navigate("/");
+    }
   };
 
   const isActive = (path) => location.pathname === path;

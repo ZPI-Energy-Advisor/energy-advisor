@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import HTTPException, UploadFile
 
 from app.repositories.simulation_repository import SimulationRepository
@@ -12,13 +14,13 @@ class UploadService:
         self.user_repository = user_repository
         self.simulation_repository = simulation_repository
 
-    def process_upload(self, file: UploadFile, user_email: str):
+    def process_upload(self, file: UploadFile, user_id: UUID):
+        
         if not file.filename or not file.filename.endswith(".csv"):
-            raise HTTPException(status_code=400, detail="Wymagany plik .csv")
-
-        user = self.user_repository.get_by_email(user_email)
-        if not user:
-            raise HTTPException(status_code=404, detail="Nie znaleziono zalogowanego użytkownika.")
+            raise HTTPException(
+                status_code=400, 
+                detail="Wymagany plik .csv"
+            )
 
         simulation_results = self.calculation_service.calculate_all_tariffs(file.file)
         new_simulation = self.simulation_repository.create(
