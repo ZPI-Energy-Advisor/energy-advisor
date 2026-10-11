@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401 - rejestruje tabelę dla FK
 from app.models.Simulation import Simulation
 
 
@@ -10,8 +11,8 @@ class SimulationRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, *, user_id: UUID, results):
-        simulation = Simulation(user_id=user_id, results=results)
+    def create(self, *, user_id: UUID, energy_data_file_id: UUID, results):
+        simulation = Simulation(user_id=user_id, energy_data_file_id=energy_data_file_id, results=results)
         self.db.add(simulation)
         self.db.commit()
         self.db.refresh(simulation)
@@ -21,6 +22,14 @@ class SimulationRepository:
         return (
             self.db.query(Simulation)
             .filter(Simulation.user_id == user_id)
+            .order_by(Simulation.created_at.desc(), Simulation.id.desc())
+            .first()
+        )
+
+    def get_latest_by_file_id(self, energy_data_file_id: UUID):
+        return (
+            self.db.query(Simulation)
+            .filter(Simulation.energy_data_file_id == energy_data_file_id)
             .order_by(Simulation.created_at.desc(), Simulation.id.desc())
             .first()
         )

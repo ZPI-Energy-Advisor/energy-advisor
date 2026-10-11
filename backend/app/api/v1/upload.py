@@ -1,7 +1,6 @@
-from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 
-from app.models import User
+from app.models.User import User
 from app.api.v1.deps import get_authenticated_user, get_upload_service
 from app.schemas.simulation import UploadSimulationResponse
 from app.services.upload_service import UploadService

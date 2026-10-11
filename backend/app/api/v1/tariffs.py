@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends
+# from fastapi import APIRouter, Depends
 
-from app.api.v1.deps import get_tariff_service, get_user_service
-from app.schemas.tariff import TariffListResponse, TariffUpdateRequest
-from app.services.tariff_service import TariffService
-from app.services.user_service import UserService
+# from app.api.v1.deps import get_tariff_service, get_user_service
+# from app.schemas.tariff import TariffListResponse, TariffUpdateRequest
+# from app.services.tariff_service import TariffService
+# from app.services.user_service import UserService
 
 
 
