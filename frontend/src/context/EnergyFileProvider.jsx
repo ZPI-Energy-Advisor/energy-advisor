@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { EnergyFileContext } from "./energyFileContext";
-import { getApiErrorMessage } from "../utils/energyFiles";
+import { ALL_FILES_ID, getApiErrorMessage } from "../utils/energyFiles";
 
 const PAGE_SIZE = 20;
 
@@ -42,6 +42,10 @@ export function EnergyFileProvider({ children }) {
   const [totalPages, setTotalPages] = useState(0);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState(null);
+  // Podsumowanie źródła "Wszystkie pliki" (zakres i liczba plików) albo null, gdy brak gotowych plików.
+  const [aggregate, setAggregate] = useState(null);
+  const [deletingFileId, setDeletingFileId] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
 
   // fileData zawiera { file, simulation_id, results } ostatnio poprawnie pobranego pliku.
   const [fileData, setFileData] = useState(null);
@@ -67,6 +71,7 @@ export function EnergyFileProvider({ children }) {
       setTotal(data.total);
       setPage(data.page);
       setTotalPages(data.total_pages);
+      setAggregate(data.aggregate ?? null);
       return data.items;
     } catch (error) {
       if (requestId !== latestPageRequestRef.current) return null;
@@ -146,26 +151,52 @@ export function EnergyFileProvider({ children }) {
     [loadFileData, selectedFileId],
   );
 
+  const selectFirstCompleted = useCallback(
+    async (items) => {
+      const firstCompleted = items.find((file) => file.status === "completed");
+      if (firstCompleted && (await selectFile(firstCompleted.id))) return;
+      // Nie ma już żadnego pliku z danymi - nie ma też czego pokazywać.
+      setFileData(null);
+      setDataError(null);
+    },
+    [selectFile],
+  );
+
   const initialize = useCallback(async () => {
     const items = await loadFilesPage(1);
     if (items) {
       const storedFileId = readStoredFileId(userId);
       const restored = storedFileId ? await selectFile(storedFileId) : false;
-
-      if (!restored) {
-        const firstCompleted = items.find(
-          (file) => file.status === "completed",
-        );
-        if (firstCompleted) {
-          await selectFile(firstCompleted.id);
-        } else {
-          // Zapamiętany plik nie istnieje lub nie ma danych, a innych gotowych plików brak.
-          setDataError(null);
-        }
-      }
+      if (!restored) await selectFirstCompleted(items);
     }
     setIsReady(true);
-  }, [loadFilesPage, selectFile, userId]);
+  }, [loadFilesPage, selectFile, selectFirstCompleted, userId]);
+
+  const deleteFile = useCallback(
+    async (fileId) => {
+      setDeletingFileId(fileId);
+      setDeleteError(null);
+      try {
+        await apiClient.delete(`/energy-files/${fileId}`);
+      } catch (error) {
+        setDeleteError(getApiErrorMessage(error, "Nie udało się usunąć pliku."));
+        return false;
+      } finally {
+        setDeletingFileId(null);
+      }
+
+      // Usunięcie jedynego pliku na ostatniej stronie cofa na poprzednią.
+      const pageToLoad = files.length === 1 && page > 1 ? page - 1 : page;
+      const items = (await loadFilesPage(pageToLoad)) ?? [];
+
+      // Dane zbiorcze zmieniły się, a usunięty plik nie może być dalej wyświetlany.
+      if (selectedFileId === fileId || selectedFileId === ALL_FILES_ID) {
+        if (!(await selectFile(ALL_FILES_ID))) await selectFirstCompleted(items);
+      }
+      return true;
+    },
+    [files.length, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted],
+  );
 
   // Start odroczony do mikrozadania: przy podwójnym montowaniu (StrictMode)
   // pierwsze wywołanie zostaje anulowane i dane pobierane są tylko raz.
@@ -202,6 +233,11 @@ export function EnergyFileProvider({ children }) {
       goToPage: fetchFilesPage,
       refreshFiles,
       reload,
+      aggregate,
+      deleteFile,
+      deletingFileId,
+      deleteError,
+      clearDeleteError: () => setDeleteError(null),
 
       selectedFile: fileData?.file ?? null,
       selectedFileId,
@@ -223,6 +259,10 @@ export function EnergyFileProvider({ children }) {
       isReady,
     }),
     [
+      aggregate,
+      deleteFile,
+      deletingFileId,
+      deleteError,
       selectedFileId,
       applyDateRange,
       rangeError,

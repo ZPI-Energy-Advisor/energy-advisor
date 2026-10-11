@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import { FiFileText } from "react-icons/fi";
+import { FiFileText, FiLayers } from "react-icons/fi";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { FILES_TABLE_ANCHOR, formatDateRange } from "../utils/energyFiles";
+import { ALL_FILES_ID, FILES_TABLE_ANCHOR, formatDateRange, formatFilesCount } from "../utils/energyFiles";
 
 // Pokazuje, z którego pliku pochodzą wyświetlane dane. Sam wybór odbywa się
 // w tabeli "Twoje pliki" na stronie importu.
@@ -10,16 +10,23 @@ function SelectedFileBar() {
 
   if (!selectedFile) return null;
 
+  const isAggregate = selectedFile.id === ALL_FILES_ID;
   const details = [
     formatDateRange(selectedFile),
     selectedFile.days_count != null && `${selectedFile.days_count} dni`,
     selectedFile.records_count != null && `${selectedFile.records_count} rekordów`,
+    isAggregate && formatFilesCount(selectedFile.files_count),
   ].filter(Boolean);
+  const skippedFiles = isAggregate ? selectedFile.skipped_files ?? [] : [];
 
   return (
     <div className="mb-6 md:mb-8">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm bg-white border border-gray-100 rounded-lg shadow-sm px-4 py-3">
-        <FiFileText className="text-emerald-600 shrink-0" />
+        {isAggregate ? (
+          <FiLayers className="text-emerald-600 shrink-0" />
+        ) : (
+          <FiFileText className="text-emerald-600 shrink-0" />
+        )}
         <span className="text-gray-500">Dane z:</span>
         <span className="font-bold text-gray-900 truncate max-w-full" title={selectedFile.file_name}>
           {selectedFile.file_name}
@@ -33,6 +40,13 @@ function SelectedFileBar() {
           Zmień
         </Link>
       </div>
+
+      {skippedFiles.length > 0 && (
+        <p className="mt-2 p-3 text-sm text-amber-800 bg-amber-50 rounded-lg">
+          Pominięto {formatFilesCount(skippedFiles.length)} wgrane przed wprowadzeniem łączenia danych:{" "}
+          {skippedFiles.map((file) => file.file_name).join(", ")}. Wgraj je ponownie, aby uwzględnić ich dane.
+        </p>
+      )}
 
       {dataError && (
         <div className="mt-2 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">

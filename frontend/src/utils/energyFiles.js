@@ -1,9 +1,24 @@
 export const FILES_TABLE_ANCHOR = "pliki";
 
+// Wirtualne źródło łączące dane ze wszystkich plików użytkownika (liczone przez backend).
+export const ALL_FILES_ID = "all";
+
 export const formatDate = (isoDate) => {
   if (!isoDate) return "";
   const [year, month, day] = isoDate.slice(0, 10).split("-");
   return `${day}.${month}.${year}`;
+};
+
+// "1 pliku", "2 plików" - dopełniacz po "z" ma tylko dwie formy.
+export const pluralizeFiles = (count) => (count === 1 ? "pliku" : "plików");
+
+// "1 plik", "3 pliki", "5 plików", "22 pliki".
+export const formatFilesCount = (count) => {
+  if (count === 1) return "1 plik";
+  const lastDigit = count % 10;
+  const lastTwoDigits = count % 100;
+  const isFew = lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14);
+  return `${count} ${isFew ? "pliki" : "plików"}`;
 };
 
 export const formatDateRange = (file) => {
@@ -99,3 +114,17 @@ export const buildQuickRanges = (bounds) => {
 
 // Wyniki z pustego zakresu mają statystyki z zerową liczbą dni.
 export const hasDataInRange = (results) => (results?.statistics?.days_analyzed ?? 1) > 0;
+
+// Uzupełnia wiersze wykresu dziennego o dni bez danych ({ date, missing: true }) między
+// pierwszym a ostatnim dniem, żeby przerwy były widoczne na osi zamiast znikać.
+export const fillMissingDays = (rows) => {
+  if (rows.length < 2) return rows;
+  const byDate = new Map(rows.map((row) => [row.date, row]));
+  const filled = [];
+  const last = Date.parse(rows.at(-1).date);
+  for (let time = Date.parse(rows[0].date); time <= last; time += 86_400_000) {
+    const date = new Date(time).toISOString().slice(0, 10);
+    filled.push(byDate.get(date) ?? { date, missing: true });
+  }
+  return filled;
+};

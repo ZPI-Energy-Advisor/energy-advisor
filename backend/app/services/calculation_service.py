@@ -123,6 +123,38 @@ class CalculationService:
         return cls.summarize_usage(usage, results["slot_prices"])
 
     @staticmethod
+    def merge_usage(sources: list[dict]) -> tuple[dict, list[dict]]:
+        """Scala serie zużycia kilku plików w jedną.
+
+        `sources` muszą być posortowane od najstarszego do najnowszego uploadu. Dla każdego
+        kwadransu wygrywa pomiar z nowszego pliku; brak pomiaru w nowszym pliku nie kasuje
+        wartości ze starszego, więc pliki wzajemnie uzupełniają luki. Pomiary z różnych plików
+        nigdy się nie sumują - identyczne rekordy z dwóch plików liczą się raz.
+
+        Zwraca scaloną serię i dla każdego źródła liczbę dni oraz kwadransów, które
+        ostatecznie z niego pochodzą.
+        """
+        merged = {}
+        owners = {}
+        for index, source in enumerate(sources):
+            for day, day_slots in source["usage_15min"].items():
+                merged_slots = merged.setdefault(day, [None] * SLOTS_PER_DAY)
+                day_owners = owners.setdefault(day, [None] * SLOTS_PER_DAY)
+                for slot, kwh in enumerate(day_slots):
+                    if kwh is not None:
+                        merged_slots[slot] = kwh
+                        day_owners[slot] = index
+
+        contributions = [{"days_used": 0, "slots_used": 0} for _ in sources]
+        for day_owners in owners.values():
+            day_sources = {owner for owner in day_owners if owner is not None}
+            for owner in day_sources:
+                contributions[owner]["days_used"] += 1
+                contributions[owner]["slots_used"] += day_owners.count(owner)
+
+        return dict(sorted(merged.items())), contributions
+
+    @staticmethod
     def _slot_prices(rates) -> list[float]:
         def get_price(slot_time):
             for rate in rates:

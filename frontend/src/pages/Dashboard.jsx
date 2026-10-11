@@ -4,7 +4,7 @@ import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { hasDataInRange, resolveTariffName } from "../utils/energyFiles";
+import { fillMissingDays, hasDataInRange, resolveTariffName } from "../utils/energyFiles";
 import {
   BarChart,
   Bar,
@@ -29,8 +29,14 @@ function ChartTooltip({ active, payload, label, metric, resolution }) {
         <p
           className={`font-bold text-xl ${metric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
         >
-          {Number(payload[0].value).toFixed(2)}{" "}
-          <span className="text-sm font-normal">{unit}</span>
+          {payload[0].value == null ? (
+            <span className="text-sm font-medium text-gray-400">Brak danych</span>
+          ) : (
+            <>
+              {Number(payload[0].value).toFixed(2)}{" "}
+              <span className="text-sm font-normal">{unit}</span>
+            </>
+          )}
         </p>
       </div>
     );
@@ -87,7 +93,8 @@ function Dashboard() {
         labelKey = "hour";
         break;
       case "1d":
-        sourceData = simulationData.chart_daily || [];
+        // Dni bez pomiarów (np. przerwa między plikami) zostają pustym miejscem na osi.
+        sourceData = fillMissingDays(simulationData.chart_daily || []);
         labelKey = "date";
         break;
       default:
@@ -96,8 +103,9 @@ function Dashboard() {
 
     return sourceData.map((item) => ({
       label: item[labelKey],
-      value:
-        chartMetric === "kwh"
+      value: item.missing
+        ? null
+        : chartMetric === "kwh"
           ? item.kwh
           : item[`cost_${currentTariff}`] || 0,
     }));

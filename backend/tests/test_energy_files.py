@@ -88,7 +88,7 @@ def test_list_empty(db):
     response = client.get("/api/v1/energy-files", headers=_headers(user))
 
     assert response.status_code == 200
-    assert response.json() == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 0}
+    assert response.json() == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 0, "aggregate": None}
 
 
 def test_list_pagination(db):
@@ -365,3 +365,291 @@ def test_range_on_file_without_usage_series(db):
 
     assert response.status_code == 409
     assert "Wgraj go ponownie" in response.json()["detail"]
+
+
+SLOT_PRICES = {"G11": {"type": "stala", "prices": [1.0] * 96}}
+
+
+def _days(start, count, kwh_per_slot):
+    first = datetime.date.fromisoformat(start)
+    return {(first + datetime.timedelta(days=i)).isoformat(): [kwh_per_slot] * 96 for i in range(count)}
+
+
+def _series_results(usage):
+    return {**CalculationService.summarize_usage(usage, SLOT_PRICES), "usage_15min": usage, "slot_prices": SLOT_PRICES}
+
+
+def _create_series_file(db, user, usage, *, name, uploaded_at):
+    """Plik z prawdziwą serią 15-minutową; zakres dat wynika z danych."""
+    results = _series_results(usage)
+    energy_file = EnergyDataFile(
+        user_id=user.id,
+        file_name=name,
+        uploaded_at=uploaded_at,
+        data_start=datetime.date.fromisoformat(min(usage)),
+        data_end=datetime.date.fromisoformat(max(usage)),
+        records_count=results["statistics"]["records_count"],
+        status=EnergyDataFile.STATUS_COMPLETED,
+    )
+    db.add(energy_file)
+    db.commit()
+    db.add(Simulation(user_id=user.id, energy_data_file_id=energy_file.id, results=results))
+    db.commit()
+    db.refresh(energy_file)
+    return energy_file
+
+
+def _all_data(user, query=""):
+    return client.get(f"/api/v1/energy-files/all/data{query}", headers=_headers(user))
+
+
+def _list(user):
+    return client.get("/api/v1/energy-files", headers=_headers(user)).json()
+
+
+def _delete(user, file_id):
+    return client.delete(f"/api/v1/energy-files/{file_id}", headers=_headers(user))
+
+
+def _total_kwh(user):
+    return _all_data(user).json()["results"]["tariffs"]["G11"]["total_usage_kwh"]
+
+
+T0 = datetime.datetime(2026, 1, 1, 12, 0)
+T1 = T0 + datetime.timedelta(hours=1)
+T2 = T0 + datetime.timedelta(hours=2)
+
+
+def test_first_upload_makes_file_and_aggregate_available(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 30, 0.25), name="czerwiec.csv", uploaded_at=T0)
+
+    listing = _list(user)
+
+    assert [item["file_name"] for item in listing["items"]] == ["czerwiec.csv"]
+    assert listing["aggregate"] == {
+        "id": "all",
+        "file_name": "Wszystkie pliki",
+        "data_start": "2024-06-01",
+        "data_end": "2024-06-30",
+        "files_count": 1,
+        "days_count": 30,
+        "label": "Wszystkie pliki (01.06.2024 – 30.06.2024)",
+    }
+
+
+def test_aggregate_summary_ignores_failed_and_other_users_files(db):
+    user = _create_user(db)
+    other = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 5, 0.25), name="moj.csv", uploaded_at=T0)
+    _create_series_file(db, other, _days("2023-01-01", 5, 0.25), name="cudzy.csv", uploaded_at=T0)
+    _create_file(db, user, name="zly.csv", status=EnergyDataFile.STATUS_FAILED, with_simulation=False)
+
+    listing = _list(user)
+
+    assert listing["total"] == 2
+    assert listing["aggregate"]["files_count"] == 1
+    assert listing["aggregate"]["data_start"] == "2024-06-01"
+
+
+def test_single_file_shows_only_its_data(db):
+    user = _create_user(db)
+    june = _create_series_file(db, user, _days("2024-06-01", 30, 0.25), name="czerwiec.csv", uploaded_at=T0)
+    _create_series_file(db, user, _days("2024-07-01", 31, 0.5), name="lipiec.csv", uploaded_at=T1)
+
+    body = _get_data(user, june).json()
+
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 30 * 24
+    assert {row["date"][:7] for row in body["results"]["chart_daily"]} == {"2024-06"}
+
+
+def test_all_files_data_with_gap_between_files(db):
+    user = _create_user(db)
+    january = _create_series_file(db, user, _days("2024-01-01", 31, 0.25), name="styczen.csv", uploaded_at=T0)
+    march = _create_series_file(db, user, _days("2024-03-01", 31, 0.5), name="marzec.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["file"]["id"] == "all"
+    assert body["file"]["data_start"] == "2024-01-01" and body["file"]["data_end"] == "2024-03-31"
+    assert body["file"]["files_count"] == 2
+    assert body["simulation_id"] is None
+    assert [f["id"] for f in body["file"]["files"]] == [str(january.id), str(march.id)]
+    results = body["results"]
+    assert results["tariffs"]["G11"]["total_usage_kwh"] == 31 * 24 + 31 * 48
+    assert results["statistics"]["days_analyzed"] == 62
+    assert not any(row["date"].startswith("2024-02") for row in results["chart_daily"])
+    assert "usage_15min" not in results
+
+
+def test_all_files_data_range_inside_gap_is_empty(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-01-01", 31, 0.25), name="styczen.csv", uploaded_at=T0)
+    _create_series_file(db, user, _days("2024-03-01", 31, 0.5), name="marzec.csv", uploaded_at=T1)
+
+    response = _all_data(user, "?from=2024-02-01&to=2024-02-29")
+
+    assert response.status_code == 200
+    assert response.json()["results"]["statistics"]["days_analyzed"] == 0
+    assert response.json()["results"]["chart_daily"] == []
+
+
+def test_all_files_data_overlap_newer_upload_wins(db):
+    user = _create_user(db)
+    older = _create_series_file(db, user, _days("2024-05-01", 61, 0.25), name="maj-czerwiec.csv", uploaded_at=T0)
+    newer = _create_series_file(db, user, _days("2024-06-01", 61, 0.5), name="czerwiec-lipiec.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    daily = {row["date"]: row["kwh"] for row in body["results"]["chart_daily"]}
+    assert daily["2024-05-31"] == 24.0  # tylko starszy plik
+    assert daily["2024-06-15"] == 48.0  # czerwiec w obu plikach - wygrywa nowszy, bez sumowania
+    assert daily["2024-07-31"] == 48.0  # tylko nowszy plik
+    assert len(daily) == 31 + 30 + 31
+    contributions = {f["id"]: f["days_used"] for f in body["file"]["files"]}
+    assert contributions == {str(older.id): 31, str(newer.id): 61}
+    assert body["file"]["records_count"] == len(daily) * 24
+
+
+def test_all_files_data_older_upload_with_newer_data_loses_overlap(db):
+    # O pierwszeństwie decyduje data uploadu, a nie to, który plik ma późniejsze daty pomiarów.
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 30, 0.5), name="wgrany-pozniej.csv", uploaded_at=T1)
+    _create_series_file(db, user, _days("2024-06-15", 30, 0.25), name="wgrany-wczesniej.csv", uploaded_at=T0)
+
+    daily = {row["date"]: row["kwh"] for row in _all_data(user).json()["results"]["chart_daily"]}
+
+    assert daily["2024-06-20"] == 48.0
+    assert daily["2024-07-10"] == 24.0
+
+
+def test_all_files_data_duplicate_upload_is_not_doubled(db):
+    user = _create_user(db)
+    usage = _days("2024-06-01", 30, 0.25)
+    _create_series_file(db, user, usage, name="czerwiec.csv", uploaded_at=T0)
+    _create_series_file(db, user, usage, name="czerwiec (kopia).csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 30 * 24
+    assert body["file"]["records_count"] == 30 * 24
+    assert [f["days_used"] for f in body["file"]["files"]] == [0, 30]
+
+
+def test_all_files_data_for_range_and_validation(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-01-01", 31, 0.25), name="styczen.csv", uploaded_at=T0)
+    _create_series_file(db, user, _days("2024-03-01", 31, 0.5), name="marzec.csv", uploaded_at=T1)
+
+    ranged = _all_data(user, "?from=2024-01-31&to=2024-03-01").json()
+
+    assert [row["date"] for row in ranged["results"]["chart_daily"]] == ["2024-01-31", "2024-03-01"]
+    assert ranged["date_from"] == "2024-01-31" and ranged["date_to"] == "2024-03-01"
+    assert _all_data(user, "?from=2023-12-31").status_code == 422
+    assert _all_data(user, "?from=2024-03-02&to=2024-03-01").status_code == 422
+
+
+def test_all_files_data_excludes_other_users_files(db):
+    user = _create_user(db)
+    other = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 2, 0.25), name="moj.csv", uploaded_at=T0)
+    _create_series_file(db, other, _days("2024-06-01", 2, 10.0), name="cudzy.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["file"]["files_count"] == 1
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+
+
+def test_all_files_data_without_files(db):
+    user = _create_user(db)
+
+    response = _all_data(user)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Nie masz jeszcze poprawnie zaimportowanych plików."
+
+
+def test_all_files_data_skips_files_without_usage_series(db):
+    user = _create_user(db)
+    legacy = _create_file(db, user, name="stary.csv")
+    _create_series_file(db, user, _days("2024-06-01", 2, 0.25), name="nowy.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["file"]["files_count"] == 1
+    assert [f["id"] for f in body["file"]["skipped_files"]] == [str(legacy.id)]
+
+
+def test_all_files_data_only_legacy_files(db):
+    user = _create_user(db)
+    _create_file(db, user, name="stary.csv")
+
+    response = _all_data(user)
+
+    assert response.status_code == 409
+    assert "Wgraj je ponownie" in response.json()["detail"]
+
+
+def test_new_upload_updates_aggregate(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 30, 0.25), name="czerwiec.csv", uploaded_at=T0)
+
+    response = _upload(user, _StubCalculationService(result=_series_results(_days("2024-07-01", 31, 0.5))))
+
+    assert response.status_code == 200
+    listing = _list(user)
+    assert listing["aggregate"]["files_count"] == 2
+    assert listing["aggregate"]["data_end"] == "2024-07-31"
+    assert _total_kwh(user) == 30 * 24 + 31 * 48
+
+
+def test_delete_file_updates_aggregate(db):
+    user = _create_user(db)
+    june = _create_series_file(db, user, _days("2024-06-01", 30, 0.25), name="czerwiec.csv", uploaded_at=T0)
+    july = _create_series_file(db, user, _days("2024-07-01", 31, 0.5), name="lipiec.csv", uploaded_at=T1)
+
+    response = _delete(user, july.id)
+
+    assert response.status_code == 204
+    assert db.query(Simulation).filter(Simulation.energy_data_file_id == july.id).count() == 0
+    listing = _list(user)
+    assert [item["id"] for item in listing["items"]] == [str(june.id)]
+    assert listing["aggregate"]["data_end"] == "2024-06-30"
+    assert _total_kwh(user) == 30 * 24
+
+
+def test_delete_newer_overlapping_file_restores_older_values(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 30, 0.25), name="stary.csv", uploaded_at=T0)
+    newer = _create_series_file(db, user, _days("2024-06-01", 30, 0.5), name="nowy.csv", uploaded_at=T2)
+    assert _total_kwh(user) == 30 * 48
+
+    _delete(user, newer.id)
+
+    assert _total_kwh(user) == 30 * 24
+
+
+def test_delete_last_file_removes_aggregate(db):
+    user = _create_user(db)
+    only = _create_series_file(db, user, _days("2024-06-01", 2, 0.25), name="jedyny.csv", uploaded_at=T0)
+
+    _delete(user, only.id)
+
+    assert _list(user)["aggregate"] is None
+    assert _all_data(user).status_code == 409
+
+
+def test_delete_other_users_or_missing_file(db):
+    owner = _create_user(db)
+    intruder = _create_user(db)
+    energy_file = _create_series_file(db, owner, _days("2024-06-01", 2, 0.25), name="cudzy.csv", uploaded_at=T0)
+
+    assert _delete(intruder, energy_file.id).status_code == 404
+    assert _delete(owner, uuid.uuid4()).status_code == 404
+    assert _list(owner)["total"] == 1
+
+
+def test_aggregate_endpoints_require_token():
+    assert client.get("/api/v1/energy-files/all/data").status_code == 401
+    assert client.delete(f"/api/v1/energy-files/{uuid.uuid4()}").status_code == 401

@@ -158,3 +158,98 @@ def test_range_without_data_returns_empty_results():
     assert ranged["chart_daily"] == [] and ranged["chart_hourly"] == [] and ranged["chart_15min"] == []
     assert ranged["tariffs"]["G11"] == {"type": "stala", "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
     assert ranged["statistics"]["days_analyzed"] == 0
+
+
+def _day(kwh, slots=range(96)):
+    """Doba z wartością kWh w podanych kwadransach i brakiem pomiaru w pozostałych."""
+    selected = set(slots)
+    return [kwh if slot in selected else None for slot in range(96)]
+
+
+def _source(usage):
+    return {"usage_15min": usage}
+
+
+def test_merge_single_file_keeps_its_data():
+    usage = {"2024-01-01": _day(0.25), "2024-01-02": _day(0.5)}
+
+    merged, contributions = CalculationService.merge_usage([_source(usage)])
+
+    assert merged == usage
+    assert contributions == [{"days_used": 2, "slots_used": 192}]
+
+
+def test_merge_files_with_gap_keeps_gap_empty():
+    january = {"2024-01-30": _day(0.25), "2024-01-31": _day(0.25)}
+    march = {"2024-03-01": _day(0.5)}
+
+    merged, contributions = CalculationService.merge_usage([_source(january), _source(march)])
+
+    assert list(merged) == ["2024-01-30", "2024-01-31", "2024-03-01"]
+    assert contributions == [{"days_used": 2, "slots_used": 192}, {"days_used": 1, "slots_used": 96}]
+
+
+def test_merge_overlap_newer_upload_wins():
+    older = {"2024-06-01": _day(0.25), "2024-06-02": _day(0.25)}
+    newer = {"2024-06-02": _day(0.75), "2024-06-03": _day(0.75)}
+
+    merged, contributions = CalculationService.merge_usage([_source(older), _source(newer)])
+
+    assert merged["2024-06-01"] == _day(0.25)
+    assert merged["2024-06-02"] == _day(0.75)
+    assert merged["2024-06-03"] == _day(0.75)
+    assert contributions == [{"days_used": 1, "slots_used": 96}, {"days_used": 2, "slots_used": 192}]
+
+
+def test_merge_order_decides_which_overlap_wins():
+    first = {"2024-06-01": _day(0.25)}
+    second = {"2024-06-01": _day(0.75)}
+
+    merged, _ = CalculationService.merge_usage([_source(second), _source(first)])
+
+    assert merged["2024-06-01"] == _day(0.25)
+
+
+def test_merge_identical_files_does_not_double_usage():
+    usage = {"2024-06-01": _day(0.25), "2024-06-02": _day(0.25)}
+
+    merged, contributions = CalculationService.merge_usage([_source(usage), _source(dict(usage))])
+
+    assert merged == usage
+    total = sum(kwh for day in merged.values() for kwh in day)
+    assert total == pytest.approx(48.0)
+    # Starszy plik nie dostarcza już niczego - wszystkie kwadranse przejął nowszy.
+    assert contributions == [{"days_used": 0, "slots_used": 0}, {"days_used": 2, "slots_used": 192}]
+
+
+def test_merge_partial_day_is_completed_by_older_file():
+    older = {"2024-06-01": _day(0.25)}
+    newer = {"2024-06-01": _day(0.75, slots=range(48))}
+
+    merged, contributions = CalculationService.merge_usage([_source(older), _source(newer)])
+
+    assert merged["2024-06-01"][:48] == [0.75] * 48
+    assert merged["2024-06-01"][48:] == [0.25] * 48
+    assert contributions == [{"days_used": 1, "slots_used": 48}, {"days_used": 1, "slots_used": 48}]
+
+
+def test_merge_newer_file_inside_older_range():
+    older = {f"2024-06-{day:02d}": _day(0.25) for day in range(1, 31)}
+    newer = {"2024-06-10": _day(1.0), "2024-06-11": _day(1.0)}
+
+    merged, contributions = CalculationService.merge_usage([_source(older), _source(newer)])
+
+    assert len(merged) == 30
+    assert merged["2024-06-09"] == _day(0.25) and merged["2024-06-10"] == _day(1.0)
+    assert contributions == [{"days_used": 28, "slots_used": 28 * 96}, {"days_used": 2, "slots_used": 192}]
+
+
+def test_merge_missing_slots_in_both_files_stay_missing():
+    older = {"2024-06-01": _day(0.25, slots=range(0, 10))}
+    newer = {"2024-06-01": _day(0.75, slots=range(5, 20))}
+
+    merged, _ = CalculationService.merge_usage([_source(older), _source(newer)])
+
+    assert merged["2024-06-01"][:5] == [0.25] * 5
+    assert merged["2024-06-01"][5:20] == [0.75] * 15
+    assert merged["2024-06-01"][20:] == [None] * 76
