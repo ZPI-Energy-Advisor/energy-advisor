@@ -143,6 +143,7 @@ class CalculationService:
         incomplete_days = daily_counts[daily_counts < 96].index.tolist()
         
         results_dict["statistics"] = {
+            "records_count": int(len(df)),
             "days_analyzed": int(df_15min['date'].nunique()),
             "data_start": first_date,
             "data_end": last_date,

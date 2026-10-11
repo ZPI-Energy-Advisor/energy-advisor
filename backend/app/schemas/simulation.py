@@ -16,6 +16,7 @@ class SimulationResultResponse(BaseModel):
 class UploadSimulationResponse(BaseModel):
     status: str
     simulation_id: str
+    file_id: str
     file_name: str
     summary: dict[str, Any]
     message: str

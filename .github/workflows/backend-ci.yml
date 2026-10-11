@@ -45,6 +45,8 @@ jobs:
           echo "POSTGRES_PASSWORD=postgres" >> .env
           echo "POSTGRES_DB=energy_advisor_test" >> .env
           echo "POSTGRES_HOST=localhost" >> .env
+          echo "JWT_SECRET_KEY=ci-test-secret-key-not-for-production" >> .env
+          echo "GOOGLE_CLIENT_ID=ci-test-client-id.apps.googleusercontent.com" >> .env
           cp .env backend/
 
       - name: Instalacja bibliotek i narzędzi

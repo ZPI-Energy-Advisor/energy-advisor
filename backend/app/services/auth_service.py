@@ -129,7 +129,7 @@ class AuthService:
 
             return self.generate_auth_tokens(user.id)
         
-        except ValueError as e:
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Nieprawidłowy lub wygasły token autoryzacyjny Google",

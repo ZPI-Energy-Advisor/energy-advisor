@@ -7,17 +7,18 @@ from fastapi.security import OAuth2PasswordBearer
 
 from app.models.User import User
 from app.database import get_db
+from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.tariff_service import TariffService
 from app.services.calculation_service import CalculationService
+from app.services.energy_file_service import EnergyFileService
 from app.services.simulation_service import SimulationService
 from app.services.upload_service import UploadService
 from app.services.user_service import UserService
 from app.config import SECRET_KEY, SIGNATURE_ALGORITHM
-from app.models.User import User
 
 
 
@@ -56,12 +57,27 @@ def get_calculation_service(tariff_repository: TariffRepository = Depends(get_ta
     return CalculationService(tariff_repository)
 
 
+def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:
+    return EnergyDataFileRepository(db)
+
+
+def get_energy_file_service(
+    file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
+    simulation_repository: SimulationRepository = Depends(get_simulation_repository),
+) -> EnergyFileService:
+    return EnergyFileService(file_repository, simulation_repository)
+
+
 def get_upload_service(
     calculation_service: CalculationService = Depends(get_calculation_service),
-    user_repository: UserRepository = Depends(get_user_repository),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
+    energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
 ) -> UploadService:
-    return UploadService(calculation_service=calculation_service, user_repository=user_repository, simulation_repository=simulation_repository)
+    return UploadService(
+        calculation_service=calculation_service,
+        simulation_repository=simulation_repository,
+        energy_file_repository=energy_file_repository,
+    )
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
