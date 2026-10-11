@@ -18,6 +18,8 @@ from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401
 from app.models.Simulation import Simulation  # noqa: F401
 from app.models.Tariff import Tariff  # noqa: F401
 from app.models.TariffRate import TariffRate  # noqa: F401
+from app.models.DynamicPriceObservation import DynamicPriceObservation  # noqa: F401
+from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"

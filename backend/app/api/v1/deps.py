@@ -1,12 +1,15 @@
+import secrets
+from typing import Iterator
 from uuid import UUID
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
 
 
 from app.models.User import User
 from app.database import get_db
+from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.tariff_repository import TariffRepository
@@ -14,11 +17,16 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.tariff_service import TariffService
 from app.services.calculation_service import CalculationService
+from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
+from app.services.price_sync_service import PriceSyncService
+from app.services.pricing_strategies import build_pricing_strategies
 from app.services.simulation_service import SimulationService
 from app.services.upload_service import UploadService
 from app.services.user_service import UserService
-from app.config import SECRET_KEY, SIGNATURE_ALGORITHM
+from app.providers.prices.pse_provider import PseRcePriceProvider
+from app.core.price_sync_factory import build_http_client, build_price_sync_service
+from app.config import PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
 
 
 
@@ -53,8 +61,50 @@ def get_simulation_service(repository: SimulationRepository = Depends(get_simula
     return SimulationService(repository)
 
 
-def get_calculation_service(tariff_repository: TariffRepository = Depends(get_tariff_repository)) -> CalculationService:
-    return CalculationService(tariff_repository)
+def get_dynamic_price_repository(db: Session = Depends(get_db)) -> DynamicPriceRepository:
+    return DynamicPriceRepository(db)
+
+
+def get_calculation_service(
+    tariff_repository: TariffRepository = Depends(get_tariff_repository),
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> CalculationService:
+    strategies = build_pricing_strategies(tariff_repository, dynamic_price_repository)
+    return CalculationService(tariff_repository, pricing_strategies=strategies)
+
+
+def get_dynamic_price_service(
+    repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> DynamicPriceService:
+    return DynamicPriceService(repository, source=PseRcePriceProvider.source)
+
+
+def get_price_sync_service(db: Session = Depends(get_db)) -> Iterator[PriceSyncService]:
+    http_client = build_http_client()
+    try:
+        yield build_price_sync_service(db, http_client)
+    finally:
+        http_client.close()
+
+
+def get_price_sync_admin_key() -> str | None:
+    return PRICE_SYNC_ADMIN_KEY
+
+
+def require_price_sync_admin_key(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    admin_key: str | None = Depends(get_price_sync_admin_key),
+) -> None:
+    if not admin_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ręczna synchronizacja jest wyłączona (brak PRICE_SYNC_ADMIN_KEY).",
+        )
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, admin_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Nieprawidłowy klucz administracyjny.",
+        )
 
 
 def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:

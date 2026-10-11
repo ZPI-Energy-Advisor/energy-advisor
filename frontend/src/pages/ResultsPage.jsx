@@ -80,9 +80,12 @@ function ResultsPage() {
   );
   const currentTariff = resolveTariffName(results?.tariffs, user.current_tariff);
 
+  const pricedTariffs = tariffsData.filter(
+    (tariff) => tariff.estimated_cost_pln != null,
+  );
   const cheapestTariff =
-    tariffsData.length > 0
-      ? tariffsData.reduce((prev, curr) =>
+    pricedTariffs.length > 0
+      ? pricedTariffs.reduce((prev, curr) =>
           prev.estimated_cost_pln < curr.estimated_cost_pln ? prev : curr,
         )
       : null;
@@ -181,11 +184,25 @@ function ResultsPage() {
                           <div
                             className={`text-base md:text-lg font-bold ${isCheapest ? "text-emerald-700" : "text-gray-900"}`}
                           >
-                            {Number(tariff.estimated_cost_pln).toFixed(2)}{" "}
-                            <span className="text-xs md:text-sm font-normal text-gray-500">
-                              PLN
-                            </span>
+                            {tariff.estimated_cost_pln != null ? (
+                              <>
+                                {Number(tariff.estimated_cost_pln).toFixed(2)}{" "}
+                                <span className="text-xs md:text-sm font-normal text-gray-500">
+                                  PLN
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-sm font-normal text-gray-500">
+                                brak danych
+                              </span>
+                            )}
                           </div>
+                          {tariff.price_coverage != null &&
+                            tariff.price_coverage < 1 && (
+                              <div className="text-[10px] md:text-xs text-amber-600">
+                                ceny dla {Math.round(tariff.price_coverage * 100)}% okresu
+                              </div>
+                            )}
                         </td>
                         <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right">
                           <div className="text-gray-900 font-medium text-sm md:text-base">

@@ -146,7 +146,7 @@ function Dashboard() {
               </p>
               <div className="flex items-baseline gap-2">
                 <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
-                  {simulationData.estimated_cost_pln}
+                  {simulationData.estimated_cost_pln ?? "—"}
                 </h3>
                 <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-xs md:text-sm">
                   PLN

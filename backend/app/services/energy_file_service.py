@@ -116,8 +116,10 @@ class EnergyFileService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
         usage, contributions = CalculationService.merge_usage(sources)
-        # Ceny bierzemy z najnowszego importu - odpowiadają aktualnemu zestawowi taryf.
-        merged_results = {"usage_15min": usage, "slot_prices": sources[-1]["slot_prices"]}
+        # Ceny stałe bierzemy z najnowszego importu (aktualny zestaw taryf), a ceny
+        # dynamiczne łączymy po dniach, bo każdy plik ma ceny tylko dla swojego okresu.
+        slot_prices = CalculationService.merge_slot_prices([source["slot_prices"] for source in sources])
+        merged_results = {"usage_15min": usage, "slot_prices": slot_prices}
 
         data_start, data_end = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
         if date_from is None and date_to is None:

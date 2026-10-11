@@ -18,3 +18,5 @@ bcrypt==4.0.1
 PyJWT
 google-auth
 requests
+APScheduler>=3.10,<4
+tzdata

@@ -1,10 +1,15 @@
+import math
+
 import pytest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 from app.services.calculation_service import CalculationService, public_results
+from app.services.pricing_strategies import DynamicMarketPricing
 
 format_hour_label = CalculationService.format_hour_label
 
@@ -253,3 +258,122 @@ def test_merge_missing_slots_in_both_files_stay_missing():
     assert merged["2024-06-01"][:5] == [0.25] * 5
     assert merged["2024-06-01"][5:20] == [0.75] * 15
     assert merged["2024-06-01"][20:] == [None] * 76
+
+
+def _dynamic_tariff(markup="0.40", vat="0.23"):
+    return SimpleNamespace(id=2, name="Dynamiczna", type="dynamiczna", markup_pln_kwh=Decimal(markup), vat_rate=Decimal(vat))
+
+
+class _FakeDynamicPriceRepository:
+    def __init__(self, prices_by_start):
+        self.prices_by_start = prices_by_start
+
+    def get_prices_between(self, source, start_utc, end_utc):
+        return {start: price for start, price in self.prices_by_start.items() if start_utc <= start < end_utc}
+
+
+def _dynamic_pricing(prices_by_start):
+    return DynamicMarketPricing(_FakeDynamicPriceRepository(prices_by_start), "pse_rce")
+
+
+def test_dynamic_pricing_maps_local_slots_to_utc_in_winter():
+    # 2025-01-01 00:00 w Warszawie (CET) = 2024-12-31 23:00 UTC
+    first_slot_utc = datetime(2024, 12, 31, 23, 0, tzinfo=timezone.utc)
+    pricing = _dynamic_pricing({first_slot_utc: Decimal("500")})
+
+    slot_prices = pricing.slot_prices(_dynamic_tariff("0", "0"), [date(2025, 1, 1)])
+
+    day_prices = slot_prices["prices_by_day"]["2025-01-01"]
+    assert slot_prices["type"] == "dynamiczna"
+    assert day_prices[0] == pytest.approx(0.5)
+    assert day_prices[1:] == [None] * 95  # brak ceny nie jest zastępowany żadną wartością
+
+
+def test_dynamic_pricing_maps_local_slots_to_utc_in_summer():
+    # 2025-07-01 00:00 w Warszawie (CEST) = 2025-06-30 22:00 UTC
+    pricing = _dynamic_pricing({datetime(2025, 6, 30, 22, 0, tzinfo=timezone.utc): Decimal("-100")})
+
+    day_prices = pricing.slot_prices(_dynamic_tariff("0", "0"), [date(2025, 7, 1)])["prices_by_day"]["2025-07-01"]
+
+    assert day_prices[0] == pytest.approx(-0.1)
+
+
+def test_dynamic_pricing_takes_markup_and_vat_from_tariff():
+    first_slot_utc = datetime(2024, 12, 31, 23, 0, tzinfo=timezone.utc)
+    pricing = _dynamic_pricing({first_slot_utc: Decimal("500")})
+
+    cheap = pricing.slot_prices(_dynamic_tariff("0.10", "0.08"), [date(2025, 1, 1)])
+    no_params = pricing.slot_prices(SimpleNamespace(name="X", type="dynamiczna", markup_pln_kwh=None, vat_rate=None), [date(2025, 1, 1)])
+
+    assert cheap["prices_by_day"]["2025-01-01"][0] == pytest.approx((0.5 + 0.10) * 1.08)
+    assert no_params["prices_by_day"]["2025-01-01"][0] == pytest.approx(0.5)
+
+
+def _dynamic_slot_prices(days_with_prices):
+    return {
+        "G11": {"type": "stala", "prices": [1.0] * 96},
+        "Dynamiczna": {"type": "dynamiczna", "prices_by_day": days_with_prices},
+    }
+
+
+def test_summary_reports_dynamic_price_coverage_and_extrapolates_cost():
+    usage = {"2025-01-01": _day(0.25), "2025-01-02": _day(0.25)}
+    slot_prices = _dynamic_slot_prices({"2025-01-01": [2.0] * 96})  # brak cen dla 2025-01-02
+
+    summary = CalculationService.summarize_usage(usage, slot_prices)
+    dynamic = summary["tariffs"]["Dynamiczna"]
+
+    assert dynamic["price_coverage"] == 0.5
+    assert dynamic["missing_price_intervals"] == 96
+    # 24 kWh pokryte po 2 zł, brakujące 24 kWh wycenione tą samą średnią ceną
+    assert dynamic["estimated_cost_pln"] == 96.0
+    assert summary["tariffs"]["G11"] == {"type": "stala", "total_usage_kwh": 48.0, "estimated_cost_pln": 48.0}
+    # dzień bez cen to null na wykresie (nie 0 PLN), a profil godzinowy liczy się tylko z dni z ceną
+    second_day = next(row for row in summary["chart_daily"] if row["date"] == "2025-01-02")
+    assert second_day["cost_Dynamiczna"] is None
+    assert second_day["price_Dynamiczna"] is None
+    assert {row["cost_Dynamiczna"] for row in summary["chart_hourly"]} == {2.0}
+    # NaN nie jest poprawnym JSON-em - w żadnym wykresie nie może go być
+    for chart in ("chart_15min", "chart_hourly", "chart_daily"):
+        assert not any(
+            isinstance(value, float) and math.isnan(value) for row in summary[chart] for value in row.values()
+        )
+
+
+def test_summary_without_any_dynamic_prices_has_no_cost():
+    usage = {"2023-01-01": _day(0.25)}
+
+    dynamic = CalculationService.summarize_usage(usage, _dynamic_slot_prices({}))["tariffs"]["Dynamiczna"]
+
+    assert dynamic["estimated_cost_pln"] is None
+    assert dynamic["price_coverage"] == 0.0
+
+
+def test_merge_slot_prices_combines_dynamic_days_from_all_files():
+    older = _dynamic_slot_prices({"2025-01-01": [1.0] * 96, "2025-01-02": [1.0] * 96})
+    newer = _dynamic_slot_prices({"2025-01-02": [2.0] * 48 + [None] * 48, "2025-01-03": [3.0] * 96})
+    newer["G11"] = {"type": "stala", "prices": [1.5] * 96}
+
+    merged = CalculationService.merge_slot_prices([older, newer])
+
+    assert merged["G11"] == {"type": "stala", "prices": [1.5] * 96}
+    by_day = merged["Dynamiczna"]["prices_by_day"]
+    assert list(by_day) == ["2025-01-01", "2025-01-02", "2025-01-03"]
+    assert by_day["2025-01-02"] == [2.0] * 48 + [1.0] * 48
+
+
+def test_calculate_all_tariffs_uses_registered_strategy_per_tariff_type():
+    repository = _get_mock_repository()
+    repository.get_all.return_value = [repository.get_all.return_value[0], _dynamic_tariff("0", "0")]
+    # 2024-05-01 00:00 CEST = 2024-04-30 22:00 UTC; ceny dla całej doby
+    start = datetime(2024, 4, 30, 22, 0, tzinfo=timezone.utc)
+    pricing = _dynamic_pricing({start + timedelta(minutes=15 * i): Decimal("1000") for i in range(96)})
+
+    results = CalculationService(repository, pricing_strategies={"dynamiczna": pricing}).calculate_all_tariffs(
+        _hourly_csv({"2024-05-01": 1.0})
+    )
+
+    assert results["tariffs"]["G11"]["estimated_cost_pln"] == 24.0
+    assert results["tariffs"]["Dynamiczna"]["estimated_cost_pln"] == 24.0
+    assert results["tariffs"]["Dynamiczna"]["price_coverage"] == 1.0
+    assert results["slot_prices"]["Dynamiczna"]["prices_by_day"]["2024-05-01"] == [1.0] * 96
