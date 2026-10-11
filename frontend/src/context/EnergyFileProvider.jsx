@@ -1,0 +1,198 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import apiClient from "../api/client";
+import { EnergyFileContext } from "./energyFileContext";
+import { getApiErrorMessage } from "../utils/energyFiles";
+
+const PAGE_SIZE = 20;
+
+const getStoredUserId = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user"))?.id ?? null;
+  } catch {
+    return null;
+  }
+};
+
+// Klucz zależy od użytkownika, żeby po zmianie konta nie podpowiadać cudzego wyboru.
+const storageKey = (userId) => `selected_energy_file:${userId}`;
+
+const readStoredFileId = (userId) => {
+  try {
+    return localStorage.getItem(storageKey(userId));
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredFileId = (userId, fileId) => {
+  try {
+    localStorage.setItem(storageKey(userId), fileId);
+  } catch {
+    // brak dostępu do localStorage - wybór zostanie tylko w stanie aplikacji
+  }
+};
+
+export function EnergyFileProvider({ children }) {
+  const [userId] = useState(getStoredUserId);
+
+  // files to pozycje aktualnie wyświetlanej strony tabeli.
+  const [files, setFiles] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [filesError, setFilesError] = useState(null);
+
+  // fileData zawiera { file, simulation_id, results } ostatnio poprawnie pobranego pliku.
+  const [fileData, setFileData] = useState(null);
+  const [pendingFileId, setPendingFileId] = useState(null);
+  const [dataError, setDataError] = useState(null);
+  const [isReady, setIsReady] = useState(false);
+
+  const latestRequestRef = useRef(0);
+  const latestPageRequestRef = useRef(0);
+
+  // Stan ustawiany jest dopiero po odpowiedzi API, więc można to wywołać prosto z efektu.
+  // Przy błędzie zostaje poprzednio wyświetlona strona.
+  const loadFilesPage = useCallback(async (pageToLoad) => {
+    const requestId = ++latestPageRequestRef.current;
+    try {
+      const { data } = await apiClient.get("/energy-files", {
+        params: { page: pageToLoad, page_size: PAGE_SIZE },
+      });
+      if (requestId !== latestPageRequestRef.current) return null;
+      setFilesError(null);
+      setFiles(data.items);
+      setTotal(data.total);
+      setPage(data.page);
+      setTotalPages(data.total_pages);
+      return data.items;
+    } catch (error) {
+      if (requestId !== latestPageRequestRef.current) return null;
+      setFilesError(getApiErrorMessage(error, "Nie udało się pobrać listy plików."));
+      return null;
+    }
+  }, []);
+
+  const fetchFilesPage = useCallback(
+    async (pageToLoad) => {
+      setIsLoadingFiles(true);
+      try {
+        return await loadFilesPage(pageToLoad);
+      } finally {
+        setIsLoadingFiles(false);
+      }
+    },
+    [loadFilesPage],
+  );
+
+  // Dane podmieniane są dopiero po udanej odpowiedzi - błąd nie kasuje tego,
+  // co jest aktualnie wyświetlane.
+  const selectFile = useCallback(
+    async (fileId) => {
+      const requestId = ++latestRequestRef.current;
+      setPendingFileId(fileId);
+      setDataError(null);
+      try {
+        const { data } = await apiClient.get(`/energy-files/${fileId}/data`);
+        if (requestId !== latestRequestRef.current) return false;
+        setFileData(data);
+        writeStoredFileId(userId, fileId);
+        return true;
+      } catch (error) {
+        if (requestId !== latestRequestRef.current) return false;
+        setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku."));
+        return false;
+      } finally {
+        if (requestId === latestRequestRef.current) setPendingFileId(null);
+      }
+    },
+    [userId],
+  );
+
+  const initialize = useCallback(async () => {
+    const items = await loadFilesPage(1);
+    if (items) {
+      const storedFileId = readStoredFileId(userId);
+      const restored = storedFileId ? await selectFile(storedFileId) : false;
+
+      if (!restored) {
+        const firstCompleted = items.find((file) => file.status === "completed");
+        if (firstCompleted) {
+          await selectFile(firstCompleted.id);
+        } else {
+          // Zapamiętany plik nie istnieje lub nie ma danych, a innych gotowych plików brak.
+          setDataError(null);
+        }
+      }
+    }
+    setIsReady(true);
+  }, [loadFilesPage, selectFile, userId]);
+
+  // Start odroczony do mikrozadania: przy podwójnym montowaniu (StrictMode)
+  // pierwsze wywołanie zostaje anulowane i dane pobierane są tylko raz.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) initialize();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialize]);
+
+  const reload = useCallback(async () => {
+    setIsLoadingFiles(true);
+    try {
+      await initialize();
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  }, [initialize]);
+
+  // Nowe pliki trafiają na początek listy, więc odświeżenie wraca na 1. stronę.
+  const refreshFiles = useCallback(() => fetchFilesPage(1), [fetchFilesPage]);
+
+  const value = useMemo(
+    () => ({
+      files,
+      total,
+      page,
+      totalPages,
+      isLoadingFiles,
+      filesError,
+      goToPage: fetchFilesPage,
+      refreshFiles,
+      reload,
+
+      selectedFile: fileData?.file ?? null,
+      selectedFileId: fileData?.file?.id ?? null,
+      results: fileData?.results ?? null,
+      pendingFileId,
+      isLoadingData: pendingFileId !== null,
+      dataError,
+      clearDataError: () => setDataError(null),
+      selectFile,
+
+      isReady,
+    }),
+    [
+      files,
+      total,
+      page,
+      totalPages,
+      isLoadingFiles,
+      filesError,
+      fetchFilesPage,
+      refreshFiles,
+      reload,
+      fileData,
+      pendingFileId,
+      dataError,
+      selectFile,
+      isReady,
+    ],
+  );
+
+  return <EnergyFileContext.Provider value={value}>{children}</EnergyFileContext.Provider>;
+}

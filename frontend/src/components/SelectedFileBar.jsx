@@ -1,0 +1,49 @@
+import { Link } from "react-router-dom";
+import { FiFileText } from "react-icons/fi";
+import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import { FILES_TABLE_ANCHOR, formatDateRange } from "../utils/energyFiles";
+
+// Pokazuje, z którego pliku pochodzą wyświetlane dane. Sam wybór odbywa się
+// w tabeli "Twoje pliki" na stronie importu.
+function SelectedFileBar() {
+  const { selectedFile, isLoadingData, dataError, clearDataError } = useEnergyFiles();
+
+  if (!selectedFile) return null;
+
+  const details = [
+    formatDateRange(selectedFile),
+    selectedFile.days_count != null && `${selectedFile.days_count} dni`,
+    selectedFile.records_count != null && `${selectedFile.records_count} rekordów`,
+  ].filter(Boolean);
+
+  return (
+    <div className="mb-6 md:mb-8">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm bg-white border border-gray-100 rounded-lg shadow-sm px-4 py-3">
+        <FiFileText className="text-emerald-600 shrink-0" />
+        <span className="text-gray-500">Dane z:</span>
+        <span className="font-bold text-gray-900 truncate max-w-full" title={selectedFile.file_name}>
+          {selectedFile.file_name}
+        </span>
+        <span className="text-gray-500">{details.join(" · ")}</span>
+        {isLoadingData && <span className="text-emerald-600 text-xs">Ładowanie...</span>}
+        <Link
+          to={`/upload#${FILES_TABLE_ANCHOR}`}
+          className="ml-auto font-medium text-emerald-700 hover:underline"
+        >
+          Zmień
+        </Link>
+      </div>
+
+      {dataError && (
+        <div className="mt-2 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
+          <span>{dataError} Wyświetlane są nadal dane poprzednio wybranego pliku.</span>
+          <button type="button" onClick={clearDataError} className="font-medium hover:underline shrink-0" aria-label="Zamknij komunikat">
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default SelectedFileBar;
