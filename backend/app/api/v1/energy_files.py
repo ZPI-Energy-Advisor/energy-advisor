@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -28,7 +29,9 @@ def list_energy_files(
 @router.get("/{file_id}/data", response_model=EnergyDataFileDataResponse)
 def get_energy_file_data(
     file_id: UUID,
+    date_from: date | None = Query(None, alias="from", description="Początek zakresu (RRRR-MM-DD), włącznie."),
+    date_to: date | None = Query(None, alias="to", description="Koniec zakresu (RRRR-MM-DD), włącznie."),
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
-    return service.get_file_data(file_id, user.id)
+    return service.get_file_data(file_id, user.id, date_from, date_to)

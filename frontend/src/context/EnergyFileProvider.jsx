@@ -47,6 +47,7 @@ export function EnergyFileProvider({ children }) {
   const [fileData, setFileData] = useState(null);
   const [pendingFileId, setPendingFileId] = useState(null);
   const [dataError, setDataError] = useState(null);
+  const [rangeError, setRangeError] = useState(null);
   const [isReady, setIsReady] = useState(false);
 
   const latestRequestRef = useRef(0);
@@ -69,7 +70,9 @@ export function EnergyFileProvider({ children }) {
       return data.items;
     } catch (error) {
       if (requestId !== latestPageRequestRef.current) return null;
-      setFilesError(getApiErrorMessage(error, "Nie udało się pobrać listy plików."));
+      setFilesError(
+        getApiErrorMessage(error, "Nie udało się pobrać listy plików."),
+      );
       return null;
     }
   }, []);
@@ -87,27 +90,60 @@ export function EnergyFileProvider({ children }) {
   );
 
   // Dane podmieniane są dopiero po udanej odpowiedzi - błąd nie kasuje tego,
-  // co jest aktualnie wyświetlane.
+  // co jest aktualnie wyświetlane. Bez zakresu backend zwraca cały okres pliku.
+  const loadFileData = useCallback(async (fileId, range, onError) => {
+    const requestId = ++latestRequestRef.current;
+    setPendingFileId(fileId);
+    setDataError(null);
+    setRangeError(null);
+    try {
+      const { data } = await apiClient.get(`/energy-files/${fileId}/data`, {
+        params: range ? { from: range.from, to: range.to } : undefined,
+      });
+      if (requestId !== latestRequestRef.current) return false;
+      setFileData(data);
+      return true;
+    } catch (error) {
+      if (requestId !== latestRequestRef.current) return false;
+      onError(error);
+      return false;
+    } finally {
+      if (requestId === latestRequestRef.current) setPendingFileId(null);
+    }
+  }, []);
+
+  // Zmiana pliku zawsze wraca do pełnego okresu - każdy plik ma inny zakres dat.
   const selectFile = useCallback(
     async (fileId) => {
-      const requestId = ++latestRequestRef.current;
-      setPendingFileId(fileId);
-      setDataError(null);
-      try {
-        const { data } = await apiClient.get(`/energy-files/${fileId}/data`);
-        if (requestId !== latestRequestRef.current) return false;
-        setFileData(data);
-        writeStoredFileId(userId, fileId);
-        return true;
-      } catch (error) {
-        if (requestId !== latestRequestRef.current) return false;
-        setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku."));
-        return false;
-      } finally {
-        if (requestId === latestRequestRef.current) setPendingFileId(null);
-      }
+      const loaded = await loadFileData(fileId, null, (error) =>
+        setDataError(
+          getApiErrorMessage(
+            error,
+            "Nie udało się pobrać danych wybranego pliku.",
+          ),
+        ),
+      );
+      if (loaded) writeStoredFileId(userId, fileId);
+      return loaded;
     },
-    [userId],
+    [loadFileData, userId],
+  );
+
+  const selectedFileId = fileData?.file?.id ?? null;
+
+  const applyDateRange = useCallback(
+    (range) => {
+      if (!selectedFileId) return Promise.resolve(false);
+      return loadFileData(selectedFileId, range, (error) =>
+        setRangeError(
+          getApiErrorMessage(
+            error,
+            "Nie udało się pobrać danych dla wybranego zakresu.",
+          ),
+        ),
+      );
+    },
+    [loadFileData, selectedFileId],
   );
 
   const initialize = useCallback(async () => {
@@ -117,7 +153,9 @@ export function EnergyFileProvider({ children }) {
       const restored = storedFileId ? await selectFile(storedFileId) : false;
 
       if (!restored) {
-        const firstCompleted = items.find((file) => file.status === "completed");
+        const firstCompleted = items.find(
+          (file) => file.status === "completed",
+        );
         if (firstCompleted) {
           await selectFile(firstCompleted.id);
         } else {
@@ -166,7 +204,7 @@ export function EnergyFileProvider({ children }) {
       reload,
 
       selectedFile: fileData?.file ?? null,
-      selectedFileId: fileData?.file?.id ?? null,
+      selectedFileId,
       results: fileData?.results ?? null,
       pendingFileId,
       isLoadingData: pendingFileId !== null,
@@ -174,9 +212,20 @@ export function EnergyFileProvider({ children }) {
       clearDataError: () => setDataError(null),
       selectFile,
 
+      dateRange:
+        fileData?.date_from && fileData?.date_to
+          ? { from: fileData.date_from, to: fileData.date_to }
+          : null,
+      applyDateRange,
+      rangeError,
+      clearRangeError: () => setRangeError(null),
+
       isReady,
     }),
     [
+      selectedFileId,
+      applyDateRange,
+      rangeError,
       files,
       total,
       page,
@@ -194,5 +243,9 @@ export function EnergyFileProvider({ children }) {
     ],
   );
 
-  return <EnergyFileContext.Provider value={value}>{children}</EnergyFileContext.Provider>;
+  return (
+    <EnergyFileContext.Provider value={value}>
+      {children}
+    </EnergyFileContext.Provider>
+  );
 }

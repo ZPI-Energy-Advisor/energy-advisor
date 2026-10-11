@@ -13,6 +13,7 @@ from app.models.EnergyDataFile import EnergyDataFile
 from app.models.Simulation import Simulation
 from app.models.User import User
 from app.services.auth_service import AuthService
+from app.services.calculation_service import CalculationService
 from main import app
 
 
@@ -259,3 +260,108 @@ def test_upload_failure_marks_file_as_failed(db):
     assert len(files) == 1
     assert files[0]["status"] == "failed"
     assert files[0]["error_message"] == "Nierozpoznany format"
+
+
+def _results_with_series():
+    # 03.11 - 0,25 kWh w każdym slocie, 04.11 - brak pomiarów, 05.11 - 0,5 kWh w każdym slocie.
+    usage = {"2024-11-03": [0.25] * 96, "2024-11-05": [0.5] * 96}
+    slot_prices = {"G11": {"type": "stala", "prices": [1.0] * 96}}
+    results = CalculationService.summarize_usage(usage, slot_prices)
+    return {**results, "usage_15min": usage, "slot_prices": slot_prices}
+
+
+def _create_file_with_series(db, user):
+    energy_file = _create_file(db, user, with_simulation=False)
+    db.add(Simulation(user_id=user.id, energy_data_file_id=energy_file.id, results=_results_with_series()))
+    db.commit()
+    return energy_file
+
+
+def _get_data(user, energy_file, query=""):
+    return client.get(f"/api/v1/energy-files/{energy_file.id}/data{query}", headers=_headers(user))
+
+
+def test_get_file_data_without_range_returns_whole_period(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    body = _get_data(user, energy_file).json()
+
+    assert body["date_from"] == "2024-11-03"
+    assert body["date_to"] == "2024-11-05"
+    assert "usage_15min" not in body["results"] and "slot_prices" not in body["results"]
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 72.0
+
+
+def test_get_file_data_for_range(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    response = _get_data(user, energy_file, "?from=2024-11-04&to=2024-11-05")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["date_from"] == "2024-11-04"
+    assert body["date_to"] == "2024-11-05"
+    assert [row["date"] for row in body["results"]["chart_daily"]] == ["2024-11-05"]
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+    assert "usage_15min" not in body["results"]
+
+
+def test_get_file_data_for_range_with_one_bound(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    body = _get_data(user, energy_file, "?to=2024-11-03").json()
+
+    assert body["date_from"] == "2024-11-03"
+    assert body["date_to"] == "2024-11-03"
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 24.0
+
+
+def test_get_file_data_for_range_without_measurements(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    response = _get_data(user, energy_file, "?from=2024-11-04&to=2024-11-04")
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert results["chart_daily"] == []
+    assert results["statistics"]["days_analyzed"] == 0
+
+
+@pytest.mark.parametrize(
+    "query, message",
+    [
+        ("?from=2024-11-05&to=2024-11-03", "Data początkowa nie może być późniejsza"),
+        ("?from=2024-11-01&to=2024-11-04", "Zakres musi mieścić się"),
+        ("?from=2024-11-04&to=2024-11-30", "Zakres musi mieścić się"),
+    ],
+    ids=["odwrocona-kolejnosc", "przed-poczatkiem-danych", "po-koncu-danych"],
+)
+def test_get_file_data_rejects_invalid_range(db, query, message):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    response = _get_data(user, energy_file, query)
+
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
+
+
+def test_get_file_data_rejects_malformed_date(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    assert _get_data(user, energy_file, "?from=03.11.2024").status_code == 422
+
+
+def test_range_on_file_without_usage_series(db):
+    user = _create_user(db)
+    energy_file = _create_file(db, user)
+
+    response = _get_data(user, energy_file, "?from=2024-11-03&to=2024-11-04")
+
+    assert response.status_code == 409
+    assert "Wgraj go ponownie" in response.json()["detail"]

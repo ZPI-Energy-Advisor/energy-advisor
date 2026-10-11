@@ -45,4 +45,7 @@ class EnergyDataFileDataResponse(BaseModel):
     file: EnergyDataFileOut
     simulation_id: str
     created_at: datetime | None = None
+    # Zakres dat, którego dotyczą wyniki (oba końce włącznie).
+    date_from: date | None = None
+    date_to: date | None = None
     results: dict[str, Any]

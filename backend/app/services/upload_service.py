@@ -6,7 +6,7 @@ from fastapi import HTTPException, UploadFile
 from app.models.EnergyDataFile import EnergyDataFile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
-from app.services.calculation_service import CalculationService
+from app.services.calculation_service import CalculationService, public_results
 
 
 
@@ -58,7 +58,7 @@ class UploadService:
             "simulation_id": str(new_simulation.id),
             "file_id": str(energy_file.id),
             "file_name": file.filename,
-            "summary": simulation_results,
+            "summary": public_results(simulation_results),
             "message": "Symulacja zakończona i zapisana na Twoim koncie!",
         }
 

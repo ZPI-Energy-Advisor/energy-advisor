@@ -1,10 +1,10 @@
 import pytest
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 from unittest.mock import MagicMock
 from fastapi import HTTPException
 
-from app.services.calculation_service import CalculationService
+from app.services.calculation_service import CalculationService, public_results
 
 format_hour_label = CalculationService.format_hour_label
 
@@ -81,3 +81,80 @@ def test_calculate_bad_columns_raises_422():
     
     assert exc_info.value.status_code == 422
     assert "Nierozpoznany format" in str(exc_info.value.detail)
+
+def _hourly_csv(daily_values):
+    """CSV z pełnymi dobami (01:00-24:00); każdy dzień ma stałe zużycie godzinowe."""
+    lines = ["Data;Wartość kWh;Rodzaj"]
+    for day, kwh in daily_values.items():
+        for hour in range(1, 25):
+            lines.append(f"{day} {hour}:00;{str(kwh).replace('.', ',')};pobór")
+    return BytesIO("\n".join(lines).encode("utf-8"))
+
+
+def _results_for_days():
+    csv_file = _hourly_csv({"2024-05-01": 1.0, "2024-05-02": 2.0, "2024-05-03": 3.0})
+    return CalculationService(_get_mock_repository()).calculate_all_tariffs(csv_file)
+
+
+def test_results_contain_usage_series_for_ranges():
+    results = _results_for_days()
+
+    assert list(results["usage_15min"]) == ["2024-05-01", "2024-05-02", "2024-05-03"]
+    assert all(len(slots) == 96 and None not in slots for slots in results["usage_15min"].values())
+    assert results["slot_prices"]["G11"] == {"type": "stala", "prices": [1.0] * 96}
+    assert public_results(results).keys() == {"tariffs", "chart_15min", "chart_hourly", "chart_daily", "statistics"}
+
+
+def test_full_range_matches_import_results():
+    results = _results_for_days()
+
+    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 1), date(2024, 5, 3))
+
+    assert ranged == public_results(results)
+
+
+def test_range_limits_charts_totals_and_statistics():
+    results = _results_for_days()
+
+    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 2), date(2024, 5, 3))
+
+    assert [row["date"] for row in ranged["chart_daily"]] == ["2024-05-02", "2024-05-03"]
+    assert ranged["tariffs"]["G11"]["total_usage_kwh"] == 120.0
+    assert ranged["tariffs"]["G11"]["estimated_cost_pln"] == 120.0
+    assert ranged["statistics"]["data_start"] == "2024-05-02"
+    assert ranged["statistics"]["data_end"] == "2024-05-03"
+    assert ranged["statistics"]["days_analyzed"] == 2
+    assert ranged["statistics"]["records_count"] == 48
+
+
+def test_range_end_date_is_inclusive():
+    results = _results_for_days()
+
+    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 2), date(2024, 5, 2))
+
+    assert [row["date"] for row in ranged["chart_daily"]] == ["2024-05-02"]
+    assert ranged["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+
+
+@pytest.mark.parametrize("chart, points", [("chart_hourly", 24), ("chart_15min", 96)])
+def test_range_applies_to_every_resolution(chart, points):
+    results = _results_for_days()
+
+    first_day = CalculationService.calculate_for_range(results, date(2024, 5, 1), date(2024, 5, 1))
+    last_day = CalculationService.calculate_for_range(results, date(2024, 5, 3), date(2024, 5, 3))
+
+    # Profil doby liczony jest tylko z dni w zakresie: 1 kWh/h w pierwszym dniu, 3 kWh/h w ostatnim.
+    per_point = 1.0 if chart == "chart_hourly" else 0.25
+    assert len(first_day[chart]) == points
+    assert {row["kwh"] for row in first_day[chart]} == {per_point}
+    assert {row["kwh"] for row in last_day[chart]} == {round(per_point * 3, 2)}
+
+
+def test_range_without_data_returns_empty_results():
+    results = _results_for_days()
+
+    ranged = CalculationService.calculate_for_range(results, date(2024, 6, 1), date(2024, 6, 30))
+
+    assert ranged["chart_daily"] == [] and ranged["chart_hourly"] == [] and ranged["chart_15min"] == []
+    assert ranged["tariffs"]["G11"] == {"type": "stala", "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
+    assert ranged["statistics"]["days_analyzed"] == 0
