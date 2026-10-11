@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { FiHome, FiUploadCloud, FiPieChart, FiLogOut, FiMenu, FiX } from "react-icons/fi";
 import apiClient from "../api/client";
+import { EnergyFileProvider } from "../context/EnergyFileProvider";
 
 function Layout() {
   const location = useLocation();
@@ -110,7 +111,11 @@ function Layout() {
       </div>
 
       <div className="flex-1 p-4 md:p-10 overflow-y-auto h-full w-full">
-        <Outlet />
+        {/* Provider w Layoucie przeżywa przejścia między stronami, więc wybrany
+            plik i jego dane zostają przy nawigacji Dashboard <-> wyniki. */}
+        <EnergyFileProvider>
+          <Outlet />
+        </EnergyFileProvider>
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import apiClient from "../api/client";
+import { useState } from "react";
+import SelectedFileBar from "../components/SelectedFileBar";
+import NoFileData from "../components/NoFileData";
+import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import { resolveTariffName } from "../utils/energyFiles";
 import {
   LineChart,
   Line,
@@ -12,58 +14,69 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-function ResultsPage() {
-  const user = JSON.parse(localStorage.getItem("user")) || {};
+function ChartTooltip({ active, payload, label, metricType }) {
+  if (active && payload && payload.length) {
+    const unit = metricType === "price" ? "PLN/kWh" : "PLN";
 
-  const [tariffsData, setTariffsData] = useState([]);
-  const [fullSimulationData, setFullSimulationData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+    return (
+      <div className="bg-white p-3 md:p-4 border border-gray-100 shadow-xl rounded-xl min-w-[150px] md:min-w-[180px]">
+        <p className="text-gray-500 font-medium text-xs md:text-sm mb-2 md:mb-3 border-b border-gray-100 pb-2">
+          Godzina: {label}
+        </p>
+        <div className="space-y-1.5 md:space-y-2">
+          {payload.map((entry, index) => {
+            const cleanName = entry.name
+              .replace("cost_", "Taryfa ")
+              .replace("price_", "Taryfa ");
+
+            return (
+              <div
+                key={index}
+                className="flex justify-between items-center gap-3 md:gap-4"
+              >
+                <span className="text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2">
+                  <span
+                    className="w-2 h-2 rounded-full inline-block"
+                    style={{ backgroundColor: entry.color }}
+                  ></span>
+                  {cleanName}
+                </span>
+                <span className="font-bold text-gray-900 text-sm md:text-base">
+                  {Number(entry.value).toFixed(2)}{" "}
+                  <span className="text-[10px] md:text-xs text-gray-500 font-normal">
+                    {unit}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function ResultsPage() {
+  const [user] = useState(() => JSON.parse(localStorage.getItem("user")) || {});
+  const { isReady, results, isLoadingData } = useEnergyFiles();
 
   const [timeResolution, setTimeResolution] = useState("1h");
   const [metricType, setMetricType] = useState("cost");
 
   const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
 
-  useEffect(() => {
-    const fetchResults = async () => {
-      if (!user) {
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        const response = await apiClient.get("/results");
-        const results = response.data.results;
-
-        if (response.data.status === "no_data" || !results) {
-          return;
-        }
-
-        const tariffsObj = results.tariffs;
-        const tariffsArray = Object.keys(tariffsObj).map((key) => ({
-          name: key,
-          ...tariffsObj[key],
-        }));
-
-        setTariffsData(tariffsArray);
-        setFullSimulationData(results);
-      } catch (err) {
-        console.error("Błąd pobierania:", err);
-        setError("Nie udało się pobrać wyników analizy.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchResults();
-  }, [user.id]);
-
-  if (isLoading) {
+  if (!isReady) {
     return (
       <div className="p-10 text-gray-500">Kalkulowanie opłacalności...</div>
     );
   }
+
+  const fullSimulationData = results;
+  const tariffsData = Object.entries(results?.tariffs ?? {}).map(
+    ([name, tariff]) => ({ name, ...tariff }),
+  );
+  const currentTariff = resolveTariffName(results?.tariffs, user.current_tariff);
 
   const cheapestTariff =
     tariffsData.length > 0
@@ -84,80 +97,24 @@ function ResultsPage() {
     }
   }
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      const prefix = timeResolution === "15m" ? "Godzina:" : "Godzina:";
-      const unit = metricType === "price" ? "PLN/kWh" : "PLN";
-
-      return (
-        <div className="bg-white p-3 md:p-4 border border-gray-100 shadow-xl rounded-xl min-w-[150px] md:min-w-[180px]">
-          <p className="text-gray-500 font-medium text-xs md:text-sm mb-2 md:mb-3 border-b border-gray-100 pb-2">
-            {prefix} {label}
-          </p>
-          <div className="space-y-1.5 md:space-y-2">
-            {payload.map((entry, index) => {
-              const cleanName = entry.name
-                .replace("cost_", "Taryfa ")
-                .replace("price_", "Taryfa ");
-
-              return (
-                <div
-                  key={index}
-                  className="flex justify-between items-center gap-3 md:gap-4"
-                >
-                  <span className="text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2">
-                    <span
-                      className="w-2 h-2 rounded-full inline-block"
-                      style={{ backgroundColor: entry.color }}
-                    ></span>
-                    {cleanName}
-                  </span>
-                  <span className="font-bold text-gray-900 text-sm md:text-base">
-                    {Number(entry.value).toFixed(2)}{" "}
-                    <span className="text-[10px] md:text-xs text-gray-500 font-normal">
-                      {unit}
-                    </span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
     <div className="max-w-6xl mx-auto pb-12">
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Analiza opłacalności taryf
       </h2>
 
-      {error && (
-        <div className="mb-4 p-4 text-red-600 bg-red-50 rounded-lg text-sm md:text-base">
-          {error}
-        </div>
-      )}
+      <SelectedFileBar />
 
       {tariffsData.length === 0 ? (
-        <div className="bg-white p-8 md:p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
-          <h3 className="text-xl font-bold text-gray-800 mb-2">
-            Brak wyników symulacji
-          </h3>
-          <p className="text-gray-500 mb-6 text-sm md:text-base">
-            Wgraj plik CSV z danymi godzinowymi, aby wygenerować tabelę
-            porównawczą.
-          </p>
-          <Link
-            to="/upload"
-            className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors w-full sm:w-auto"
-          >
-            Przejdź do Importu Danych
-          </Link>
-        </div>
+        <NoFileData
+          emptyTitle="Brak wyników symulacji"
+          emptyDescription="Wgraj plik CSV z danymi godzinowymi, aby wygenerować tabelę porównawczą."
+        />
       ) : (
-        <>
+        <div
+          className={`transition-opacity ${isLoadingData ? "opacity-60" : ""}`}
+          aria-busy={isLoadingData}
+        >
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-8 w-full overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -192,7 +149,7 @@ function ResultsPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {tariffsData.map((tariff) => {
                     const isCheapest = tariff.name === cheapestTariff.name;
-                    const isCurrent = tariff.name === user.current_tariff;
+                    const isCurrent = tariff.name === currentTariff;
 
                     return (
                       <tr
@@ -328,7 +285,7 @@ function ResultsPage() {
                       tickLine={false}
                       tick={{ fontSize: 10, fill: "#64748b" }}
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<ChartTooltip metricType={metricType} />} />
                     <Legend
                       verticalAlign="top"
                       height={36}
@@ -367,7 +324,7 @@ function ResultsPage() {
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );

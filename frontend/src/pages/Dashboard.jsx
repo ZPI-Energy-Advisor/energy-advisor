@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import apiClient from "../api/client";
+import { useState } from "react";
+import SelectedFileBar from "../components/SelectedFileBar";
+import NoFileData from "../components/NoFileData";
+import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import { resolveTariffName } from "../utils/energyFiles";
 import {
   BarChart,
   Bar,
@@ -12,68 +14,53 @@ import {
   Cell,
 } from "recharts";
 
+function ChartTooltip({ active, payload, label, metric, resolution }) {
+  if (active && payload && payload.length) {
+    const unit = metric === "kwh" ? "kWh" : "PLN";
+    const prefix = resolution === "1d" ? "Dzień:" : "Godzina:";
+
+    return (
+      <div className="bg-white p-3 border border-gray-100 shadow-xl rounded-lg min-w-[120px]">
+        <p className="text-gray-500 font-medium text-sm mb-1">
+          {prefix} {label}
+        </p>
+        <p
+          className={`font-bold text-xl ${metric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
+        >
+          {Number(payload[0].value).toFixed(2)}{" "}
+          <span className="text-sm font-normal">{unit}</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
 function Dashboard() {
   const [user, setUser] = useState(
-    JSON.parse(localStorage.getItem("user")) || {},
+    () => JSON.parse(localStorage.getItem("user")) || {},
   );
+  const { isReady, results, isLoadingData } = useEnergyFiles();
 
-  const [availableTariffs, setAvailableTariffs] = useState([]);
-  const [simulationData, setSimulationData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [chartResolution, setChartResolution] = useState("1h");
   const [chartMetric, setChartMetric] = useState("kwh");
 
-  useEffect(() => {
-    const fetchSimulation = async () => {
-      if (!user) {
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        const response = await apiClient.get("/results");
-
-        if (response.data.status === "no_data" || !response.data.results) {
-          setSimulationData(null);
-        } else {
-          const tariffs = response.data.results.tariffs || {};
-          const tariffNames = Object.keys(tariffs);
-          const tariffName = tariffs[user.current_tariff]
-            ? user.current_tariff
-            : tariffNames[0];
-          const specificTariffData = tariffs[tariffName];
-
-          setAvailableTariffs(
-            tariffNames.map((name, index) => ({ id: index, name })),
-          );
-
-          if (tariffName && tariffName !== user.current_tariff) {
-            const updatedUser = { ...user, current_tariff: tariffName };
-            setUser(updatedUser);
-            localStorage.setItem("user", JSON.stringify(updatedUser));
-          }
-
-          setSimulationData({
-            ...specificTariffData,
-            chart_hourly: response.data.results.chart_hourly,
-            chart_15min: response.data.results.chart_15min,
-            chart_daily: response.data.results.chart_daily,
-          });
+  // Wszystko poniżej wynika z danych aktualnie wybranego pliku, więc zmiana
+  // pliku przełącza wykres, statystyki i taryfę bez dodatkowych zapytań.
+  const tariffs = results?.tariffs ?? {};
+  const availableTariffs = Object.keys(tariffs);
+  const currentTariff = resolveTariffName(tariffs, user.current_tariff);
+  const simulationData =
+    results && currentTariff
+      ? {
+          ...tariffs[currentTariff],
+          chart_hourly: results.chart_hourly,
+          chart_15min: results.chart_15min,
+          chart_daily: results.chart_daily,
         }
-      } catch (err) {
-        console.error("Błąd pobierania symulacji:", err);
-        setError("Nie udało się pobrać wyników symulacji.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSimulation();
-  }, [user.current_tariff, user.id]);
+      : null;
 
   const handleTariffChange = (e) => {
     const newTariff = e.target.value;
@@ -85,7 +72,7 @@ function Dashboard() {
   const getChartData = () => {
     if (!simulationData) return [];
 
-    let sourceData = [];
+    let sourceData;
     let labelKey = "hour";
 
     switch (chartResolution) {
@@ -110,36 +97,14 @@ function Dashboard() {
       value:
         chartMetric === "kwh"
           ? item.kwh
-          : item[`cost_${user.current_tariff || "G11"}`] || 0,
+          : item[`cost_${currentTariff}`] || 0,
     }));
   };
 
   const chartData = getChartData();
   const chartColor = chartMetric === "kwh" ? "#10b981" : "#3b82f6";
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      const unit = chartMetric === "kwh" ? "kWh" : "PLN";
-      const prefix = chartResolution === "1d" ? "Dzień:" : "Godzina:";
-
-      return (
-        <div className="bg-white p-3 border border-gray-100 shadow-xl rounded-lg min-w-[120px]">
-          <p className="text-gray-500 font-medium text-sm mb-1">
-            {prefix} {label}
-          </p>
-          <p
-            className={`font-bold text-xl ${chartMetric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
-          >
-            {Number(payload[0].value).toFixed(2)}{" "}
-            <span className="text-sm font-normal">{unit}</span>
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  if (isLoading) {
+  if (!isReady) {
     return <div className="p-10 text-gray-500">Ładowanie danych z bazy...</div>;
   }
 
@@ -149,30 +114,18 @@ function Dashboard() {
         Mój profil zużycia
       </h2>
 
-      {error && (
-        <div className="mb-4 p-4 text-red-600 bg-red-50 rounded-lg text-sm md:text-base">
-          {error}
-        </div>
-      )}
+      <SelectedFileBar />
 
       {!simulationData ? (
-        <div className="bg-white p-8 md:p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
-          <h3 className="text-xl font-bold text-gray-800 mb-2">
-            Brak danych do analizy
-          </h3>
-          <p className="text-gray-500 mb-6 text-sm md:text-base">
-            Wgraj swój plik z historią zużycia prądu, aby zobaczyć koszty i
-            wykresy.
-          </p>
-          <Link
-            to="/upload"
-            className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors w-full sm:w-auto"
-          >
-            Przejdź do Importu Danych
-          </Link>
-        </div>
+        <NoFileData
+          emptyTitle="Brak danych do analizy"
+          emptyDescription="Wgraj swój plik z historią zużycia prądu, aby zobaczyć koszty i wykresy."
+        />
       ) : (
-        <>
+        <div
+          className={`transition-opacity ${isLoadingData ? "opacity-60" : ""}`}
+          aria-busy={isLoadingData}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
             <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
               <p className="text-sm font-medium text-gray-500 mb-2">
@@ -212,15 +165,14 @@ function Dashboard() {
               <div className="relative">
                 <div
                   onClick={() =>
-                    !isUpdating &&
                     availableTariffs.length > 0 &&
                     setIsDropdownOpen(!isDropdownOpen)
                   }
-                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-lg md:text-xl font-bold py-2 md:py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${isUpdating || availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-lg md:text-xl font-bold py-2 md:py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span>
-                    {user.current_tariff
-                      ? `Taryfa ${user.current_tariff}`
+                    {currentTariff
+                      ? `Taryfa ${currentTariff}`
                       : "Wybierz taryfę"}
                   </span>
                   <svg
@@ -246,51 +198,26 @@ function Dashboard() {
                     ></div>
 
                     <div className="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
-                      {availableTariffs.map((tariff) => (
+                      {availableTariffs.map((tariffName) => (
                         <div
-                          key={tariff.id}
+                          key={tariffName}
                           onClick={() => {
-                            handleTariffChange({ target: { value: tariff.name } });
+                            handleTariffChange({ target: { value: tariffName } });
                             setIsDropdownOpen(false);
                           }}
                           className={`px-4 py-3 text-base md:text-lg font-medium cursor-pointer transition-colors ${
-                            user.current_tariff === tariff.name
+                            currentTariff === tariffName
                               ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
                               : "text-gray-700 hover:bg-gray-50 hover:text-emerald-600 border-l-4 border-transparent"
                           }`}
                         >
-                          Taryfa {tariff.name}
+                          Taryfa {tariffName}
                         </div>
                       ))}
                     </div>
                   </>
                 )}
               </div>
-
-              {isUpdating && (
-                <div className="mt-3 flex items-center text-xs md:text-sm text-emerald-600 font-medium">
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-emerald-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Aktualizacja w bazie...
-                </div>
-              )}
             </div>
           </div>
 
@@ -385,7 +312,12 @@ function Dashboard() {
                       tick={{ fontSize: 10, fill: "#64748b" }}
                     />
                     <Tooltip
-                      content={<CustomTooltip />}
+                      content={
+                        <ChartTooltip
+                          metric={chartMetric}
+                          resolution={chartResolution}
+                        />
+                      }
                       cursor={{ fill: "#f8fafc" }}
                     />
                     <Bar
@@ -393,7 +325,7 @@ function Dashboard() {
                       radius={[4, 4, 0, 0]}
                       animationDuration={1000}
                     >
-                      {chartData.map((entry, index) => (
+                      {chartData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={chartColor} />
                       ))}
                     </Bar>
@@ -406,7 +338,7 @@ function Dashboard() {
               )}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,9 @@
-import React, { useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
+import EnergyFilesTable from "../components/EnergyFilesTable";
+import { useEnergyFiles } from "../hooks/useEnergyFiles";
 
 function ImportPage() {
   const [file, setFile] = useState(null);
@@ -11,6 +13,7 @@ function ImportPage() {
   const [successMsg, setSuccessMsg] = useState(null);
 
   const navigate = useNavigate();
+  const { refreshFiles, selectFile } = useEnergyFiles();
 
   const onDrop = useCallback((acceptedFiles) => {
     if (acceptedFiles.length > 0) {
@@ -73,9 +76,15 @@ function ImportPage() {
         response.data.message || "Plik został pomyślnie przetworzony!",
       );
       setIsUploading(false);
+
+      // Nowo wgrany plik od razu trafia na listę i staje się wybranym.
+      refreshFiles();
+      selectFile(response.data.file_id);
     } catch (err) {
       setIsUploading(false);
       setProgress(0);
+      // Nieudany import też jest zapisywany (status "błąd"), więc odświeżamy listę.
+      refreshFiles();
 
       if (err.response && err.response.data && err.response.data.detail) {
         setError(err.response.data.detail);
@@ -261,6 +270,8 @@ function ImportPage() {
           </div>
         </>
       )}
+
+      <EnergyFilesTable />
     </div>
   );
 }
