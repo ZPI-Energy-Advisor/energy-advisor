@@ -1,5 +1,7 @@
+from datetime import date
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.EnergyDataFile import EnergyDataFile
@@ -46,3 +48,36 @@ class EnergyDataFileRepository:
             )
             .first()
         )
+
+    def list_completed_by_user_id(self, user_id: UUID) -> list[EnergyDataFile]:
+        """Poprawnie zaimportowane pliki użytkownika, od najstarszego uploadu."""
+        return (
+            self.db.query(EnergyDataFile)
+            .filter(
+                EnergyDataFile.user_id == user_id,
+                EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
+            )
+            .order_by(EnergyDataFile.uploaded_at.asc(), EnergyDataFile.id.asc())
+            .all()
+        )
+
+    def get_completed_summary(self, user_id: UUID) -> tuple[int, date | None, date | None]:
+        """Liczba poprawnych plików użytkownika oraz najwcześniejsza i najpóźniejsza data ich danych."""
+        files_count, data_start, data_end = (
+            self.db.query(
+                func.count(EnergyDataFile.id),
+                func.min(EnergyDataFile.data_start),
+                func.max(EnergyDataFile.data_end),
+            )
+            .filter(
+                EnergyDataFile.user_id == user_id,
+                EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
+            )
+            .one()
+        )
+        return files_count, data_start, data_end
+
+    def delete(self, energy_file: EnergyDataFile) -> None:
+        # Symulacje pliku usuwa baza (ON DELETE CASCADE na simulations.energy_data_file_id).
+        self.db.delete(energy_file)
+        self.db.commit()

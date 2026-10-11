@@ -1,8 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { FiChevronLeft, FiChevronRight, FiRefreshCw } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiLayers, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { FILE_STATUS_LABELS, FILES_TABLE_ANCHOR, formatDateRange } from "../utils/energyFiles";
+import {
+  ALL_FILES_ID,
+  FILE_STATUS_LABELS,
+  FILES_TABLE_ANCHOR,
+  formatDateRange,
+  pluralizeFiles,
+} from "../utils/energyFiles";
 
 function Spinner({ className = "" }) {
   return (
@@ -46,7 +52,68 @@ function EnergyFilesTable() {
     clearDataError,
     selectFile,
     isReady,
+    aggregate,
+    deleteFile,
+    deletingFileId,
+    deleteError,
+    clearDeleteError,
   } = useEnergyFiles();
+
+  const handleDelete = (file) => {
+    const message = `Usunąć plik „${file.file_name}”? Jego dane znikną także z widoku „Wszystkie pliki”. Tej operacji nie można cofnąć.`;
+    if (window.confirm(message)) deleteFile(file.id);
+  };
+
+  const renderSelectAction = (sourceId, isSelected) => {
+    if (sourceId === pendingFileId) return <Spinner className="text-emerald-600 inline-block" />;
+    if (isSelected) {
+      return (
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
+          Wyświetlany
+        </span>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          selectFile(sourceId);
+        }}
+        className="px-3 py-1.5 text-xs font-medium rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
+      >
+        Wybierz
+      </button>
+    );
+  };
+
+  const renderAggregateRow = () => {
+    const isSelected = selectedFileId === ALL_FILES_ID;
+    const dateRange = formatDateRange(aggregate);
+    const filesLabel = `łączne dane z ${aggregate.files_count} ${pluralizeFiles(aggregate.files_count)}`;
+
+    return (
+      <tr
+        onClick={() => !isSelected && selectFile(ALL_FILES_ID)}
+        aria-selected={isSelected}
+        className={`text-sm border-b-2 border-gray-200 ${isSelected ? "bg-emerald-50" : "bg-gray-50/60 hover:bg-gray-50 cursor-pointer transition-colors"}`}
+      >
+        <td className="px-4 md:px-6 py-3 md:py-4">
+          <span className={`flex items-center gap-2 font-bold ${isSelected ? "text-emerald-800" : "text-gray-900"}`}>
+            <FiLayers className="text-emerald-600 shrink-0" /> {aggregate.file_name}
+          </span>
+          <span className="block text-xs text-gray-500 truncate">
+            <span className="lg:hidden">{dateRange} · </span>
+            {filesLabel}
+          </span>
+        </td>
+        <td className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap">{dateRange}</td>
+        <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-right text-gray-400">–</td>
+        <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">automatycznie</td>
+        <td className="px-4 md:px-6 py-3 md:py-4 text-right">{renderSelectAction(ALL_FILES_ID, isSelected)}</td>
+      </tr>
+    );
+  };
 
   const location = useLocation();
   const sectionRef = useRef(null);
@@ -98,10 +165,11 @@ function EnergyFilesTable() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
+            {aggregate && renderAggregateRow()}
             {files.map((file) => {
               const isSelected = file.id === selectedFileId;
               const isAvailable = file.status === "completed";
-              const isPending = file.id === pendingFileId;
+              const isDeleting = file.id === deletingFileId;
               const dateRange = isAvailable ? formatDateRange(file) : "–";
 
               return (
@@ -139,32 +207,36 @@ function EnergyFilesTable() {
                   <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">
                     {formatUploadDate(file.uploaded_at)}
                   </td>
-                  <td className="px-4 md:px-6 py-3 md:py-4 text-right">
-                    {isPending ? (
-                      <Spinner className="text-emerald-600 inline-block" />
-                    ) : isSelected ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
-                        Wyświetlany
-                      </span>
-                    ) : isAvailable ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          selectFile(file.id);
-                        }}
-                        className="px-3 py-1.5 text-xs font-medium rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
-                      >
-                        Wybierz
-                      </button>
-                    ) : (
-                      <span
-                        className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 cursor-help text-center"
-                        title={file.error_message || undefined}
-                      >
-                        {FILE_STATUS_LABELS[file.status] || file.status}
-                      </span>
-                    )}
+                  <td className="px-4 md:px-6 py-3 md:py-4">
+                    <div className="flex items-center justify-end gap-1.5 md:gap-2">
+                      {isAvailable ? (
+                        renderSelectAction(file.id, isSelected)
+                      ) : (
+                        <span
+                          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 cursor-help text-center"
+                          title={file.error_message || undefined}
+                        >
+                          {FILE_STATUS_LABELS[file.status] || file.status}
+                        </span>
+                      )}
+                      {isDeleting ? (
+                        <Spinner className="text-red-500 shrink-0" />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleDelete(file);
+                          }}
+                          disabled={deletingFileId !== null}
+                          className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 shrink-0"
+                          title="Usuń plik"
+                          aria-label={`Usuń plik ${file.file_name}`}
+                        >
+                          <FiTrash2 />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -185,7 +257,7 @@ function EnergyFilesTable() {
         <div>
           <h3 className="font-bold text-gray-900">Twoje pliki</h3>
           <p className="text-xs md:text-sm text-gray-500">
-            Wybierz plik, którego dane mają być widoczne na Dashboardzie i w analizie taryf.
+            Wybierz pojedynczy plik albo „Wszystkie pliki”, aby zobaczyć dane na Dashboardzie i w analizie taryf. Przy nakładających się okresach liczy się nowszy import.
           </p>
         </div>
       </div>
@@ -197,6 +269,15 @@ function EnergyFilesTable() {
             {selectedFileId && " Wyświetlane są nadal dane poprzednio wybranego pliku."}
           </span>
           <button type="button" onClick={clearDataError} className="font-medium hover:underline shrink-0" aria-label="Zamknij komunikat">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {deleteError && (
+        <div className="mx-4 md:mx-6 mt-4 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
+          <span>{deleteError}</span>
+          <button type="button" onClick={clearDeleteError} className="font-medium hover:underline shrink-0" aria-label="Zamknij komunikat">
             ✕
           </button>
         </div>

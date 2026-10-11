@@ -1,21 +1,17 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, computed_field
 
 
+ALL_FILES_SOURCE_ID = "all"
+ALL_FILES_SOURCE_NAME = "Wszystkie pliki"
 
-class EnergyDataFileOut(BaseModel):
-    id: UUID
+
+class _DateRangeMixin(BaseModel):
     file_name: str
-    uploaded_at: datetime
     data_start: date | None = None
     data_end: date | None = None
-    records_count: int | None = None
-    status: str
-    error_message: str | None = None
-
-    model_config = ConfigDict(from_attributes=True)
 
     @computed_field
     @property
@@ -32,17 +28,64 @@ class EnergyDataFileOut(BaseModel):
         return f"{self.file_name} ({self.data_start:%d.%m.%Y} – {self.data_end:%d.%m.%Y})"
 
 
+class EnergyDataFileOut(_DateRangeMixin):
+    id: UUID
+    uploaded_at: datetime
+    records_count: int | None = None
+    status: str
+    error_message: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AggregateSourceSummary(_DateRangeMixin):
+    """Wirtualne źródło "Wszystkie pliki" na liście plików - zakres to suma zakresów plików."""
+
+    id: Literal["all"] = ALL_FILES_SOURCE_ID
+    file_name: str = ALL_FILES_SOURCE_NAME
+    files_count: int
+
+
+class AggregateSourceFile(BaseModel):
+    id: UUID
+    file_name: str
+    uploaded_at: datetime
+    data_start: date | None = None
+    data_end: date | None = None
+    # Ile dni / kwadransów w danych zbiorczych pochodzi z tego pliku po rozstrzygnięciu nakładań.
+    days_used: int
+    slots_used: int
+
+
+class AggregateSourceOut(_DateRangeMixin):
+    id: Literal["all"] = ALL_FILES_SOURCE_ID
+    file_name: str = ALL_FILES_SOURCE_NAME
+    status: str = "completed"
+    records_count: int
+    files_count: int
+    # Pliki, z których składa się źródło zbiorcze, od najstarszego uploadu.
+    files: list[AggregateSourceFile]
+    # Pliki wgrane przed zapisywaniem serii 15-minutowych - nie da się ich scalić.
+    skipped_files: list[AggregateSourceFile] = []
+
+
 class EnergyDataFileListResponse(BaseModel):
     items: list[EnergyDataFileOut]
     page: int
     page_size: int
     total: int
     total_pages: int
+    # None, gdy użytkownik nie ma żadnego poprawnie zaimportowanego pliku.
+    aggregate: AggregateSourceSummary | None = None
 
 
 class EnergyDataFileDataResponse(BaseModel):
     status: str
-    file: EnergyDataFileOut
-    simulation_id: str
+    file: EnergyDataFileOut | AggregateSourceOut
+    # Źródło zbiorcze nie ma jednej symulacji - jest liczone z symulacji wszystkich plików.
+    simulation_id: str | None = None
     created_at: datetime | None = None
+    # Zakres dat, którego dotyczą wyniki (oba końce włącznie).
+    date_from: date | None = None
+    date_to: date | None = None
     results: dict[str, Any]

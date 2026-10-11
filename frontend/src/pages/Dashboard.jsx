@@ -1,8 +1,10 @@
 import { useState } from "react";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
+import DateRangeFilter from "../components/DateRangeFilter";
+import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { resolveTariffName } from "../utils/energyFiles";
+import { fillMissingDays, hasDataInRange, resolveTariffName } from "../utils/energyFiles";
 import {
   BarChart,
   Bar,
@@ -27,8 +29,14 @@ function ChartTooltip({ active, payload, label, metric, resolution }) {
         <p
           className={`font-bold text-xl ${metric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
         >
-          {Number(payload[0].value).toFixed(2)}{" "}
-          <span className="text-sm font-normal">{unit}</span>
+          {payload[0].value == null ? (
+            <span className="text-sm font-medium text-gray-400">Brak danych</span>
+          ) : (
+            <>
+              {Number(payload[0].value).toFixed(2)}{" "}
+              <span className="text-sm font-normal">{unit}</span>
+            </>
+          )}
         </p>
       </div>
     );
@@ -85,7 +93,8 @@ function Dashboard() {
         labelKey = "hour";
         break;
       case "1d":
-        sourceData = simulationData.chart_daily || [];
+        // Dni bez pomiarów (np. przerwa między plikami) zostają pustym miejscem na osi.
+        sourceData = fillMissingDays(simulationData.chart_daily || []);
         labelKey = "date";
         break;
       default:
@@ -94,8 +103,9 @@ function Dashboard() {
 
     return sourceData.map((item) => ({
       label: item[labelKey],
-      value:
-        chartMetric === "kwh"
+      value: item.missing
+        ? null
+        : chartMetric === "kwh"
           ? item.kwh
           : item[`cost_${currentTariff}`] || 0,
     }));
@@ -115,12 +125,15 @@ function Dashboard() {
       </h2>
 
       <SelectedFileBar />
+      {simulationData && <DateRangeFilter />}
 
       {!simulationData ? (
         <NoFileData
           emptyTitle="Brak danych do analizy"
           emptyDescription="Wgraj swój plik z historią zużycia prądu, aby zobaczyć koszty i wykresy."
         />
+      ) : !hasDataInRange(results) ? (
+        <NoDataInRange />
       ) : (
         <div
           className={`transition-opacity ${isLoadingData ? "opacity-60" : ""}`}
@@ -129,7 +142,7 @@ function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
             <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
               <p className="text-sm font-medium text-gray-500 mb-2">
-                Szacowane koszty miesięczne
+                Szacowany koszt w okresie
               </p>
               <div className="flex items-baseline gap-2">
                 <h3 className="text-2xl md:text-3xl font-bold text-gray-900">

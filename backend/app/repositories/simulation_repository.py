@@ -34,6 +34,21 @@ class SimulationRepository:
             .first()
         )
 
+    def get_latest_by_file_ids(self, energy_data_file_ids: list[UUID]) -> dict[UUID, Simulation]:
+        """Najnowsza symulacja każdego z podanych plików, w postaci {id pliku: symulacja}."""
+        if not energy_data_file_ids:
+            return {}
+        simulations = (
+            self.db.query(Simulation)
+            .filter(Simulation.energy_data_file_id.in_(energy_data_file_ids))
+            .order_by(Simulation.created_at.desc(), Simulation.id.desc())
+            .all()
+        )
+        latest = {}
+        for simulation in simulations:
+            latest.setdefault(simulation.energy_data_file_id, simulation)
+        return latest
+
     def get_by_id(self, simulation_id: UUID):
         return self.db.query(Simulation).filter(Simulation.id == simulation_id).first()
 

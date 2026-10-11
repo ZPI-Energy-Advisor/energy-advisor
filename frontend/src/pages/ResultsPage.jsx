@@ -1,8 +1,10 @@
 import { useState } from "react";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
+import DateRangeFilter from "../components/DateRangeFilter";
+import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { resolveTariffName } from "../utils/energyFiles";
+import { hasDataInRange, resolveTariffName } from "../utils/energyFiles";
 import {
   LineChart,
   Line,
@@ -104,12 +106,15 @@ function ResultsPage() {
       </h2>
 
       <SelectedFileBar />
+      {tariffsData.length > 0 && <DateRangeFilter />}
 
       {tariffsData.length === 0 ? (
         <NoFileData
           emptyTitle="Brak wyników symulacji"
           emptyDescription="Wgraj plik CSV z danymi godzinowymi, aby wygenerować tabelę porównawczą."
         />
+      ) : !hasDataInRange(results) ? (
+        <NoDataInRange />
       ) : (
         <div
           className={`transition-opacity ${isLoadingData ? "opacity-60" : ""}`}
@@ -130,7 +135,7 @@ function ResultsPage() {
                       scope="col"
                       className="px-4 md:px-6 py-3 md:py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
                     >
-                      Miesięczny koszt
+                      Koszt w okresie
                     </th>
                     <th
                       scope="col"

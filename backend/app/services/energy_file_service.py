@@ -1,4 +1,5 @@
 import math
+from datetime import date
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -6,7 +7,15 @@ from fastapi import HTTPException, status
 from app.models.EnergyDataFile import EnergyDataFile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
-from app.schemas.energy_file import EnergyDataFileDataResponse, EnergyDataFileListResponse, EnergyDataFileOut
+from app.services.calculation_service import CalculationService, has_usage_series, public_results
+from app.schemas.energy_file import (
+    AggregateSourceFile,
+    AggregateSourceOut,
+    AggregateSourceSummary,
+    EnergyDataFileDataResponse,
+    EnergyDataFileListResponse,
+    EnergyDataFileOut,
+)
 
 
 
@@ -27,13 +36,23 @@ class EnergyFileService:
             page_size=page_size,
             total=total,
             total_pages=math.ceil(total / page_size),
+            aggregate=self._aggregate_summary(user_id),
         )
 
-    def get_file_data(self, file_id: UUID, user_id: UUID) -> EnergyDataFileDataResponse:
-        # Cudzy plik zwraca 404 tak samo jak nieistniejący - nie zdradzamy, że istnieje.
-        energy_file = self.file_repository.get_by_id_for_user(file_id, user_id)
-        if not energy_file:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono pliku.")
+    def _aggregate_summary(self, user_id: UUID) -> AggregateSourceSummary | None:
+        files_count, data_start, data_end = self.file_repository.get_completed_summary(user_id)
+        if files_count == 0:
+            return None
+        return AggregateSourceSummary(files_count=files_count, data_start=data_start, data_end=data_end)
+
+    def get_file_data(
+        self,
+        file_id: UUID,
+        user_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> EnergyDataFileDataResponse:
+        energy_file = self._get_own_file(file_id, user_id)
 
         simulation = self.simulation_repository.get_latest_by_file_id(energy_file.id)
         if energy_file.status != EnergyDataFile.STATUS_COMPLETED or not simulation:
@@ -42,10 +61,140 @@ class EnergyFileService:
                 detail=f"Dane pliku nie są dostępne (status: {energy_file.status}).",
             )
 
+        results = simulation.results
+        if date_from is None and date_to is None:
+            date_from, date_to = energy_file.data_start, energy_file.data_end
+        else:
+            date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
+            if not has_usage_series(results):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Ten plik został wgrany przed wprowadzeniem filtrowania po datach. "
+                    "Wgraj go ponownie, aby móc wybrać zakres.",
+                )
+            results = CalculationService.calculate_for_range(results, date_from, date_to)
+
         return EnergyDataFileDataResponse(
             status="success",
             file=EnergyDataFileOut.model_validate(energy_file),
             simulation_id=str(simulation.id),
             created_at=simulation.created_at,
-            results=simulation.results,
+            date_from=date_from,
+            date_to=date_to,
+            results=public_results(results),
         )
+
+    def get_all_files_data(
+        self,
+        user_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> EnergyDataFileDataResponse:
+        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
+
+        Nie są nigdzie zapisywane - liczymy je przy każdym zapytaniu z serii zapisanych przy
+        imporcie, więc dodanie lub usunięcie pliku od razu zmienia wynik.
+        """
+        files = self.file_repository.list_completed_by_user_id(user_id)
+        simulations = self.simulation_repository.get_latest_by_file_ids([file.id for file in files])
+
+        merged_files, sources, skipped_files = [], [], []
+        for energy_file in files:
+            simulation = simulations.get(energy_file.id)
+            if simulation and has_usage_series(simulation.results):
+                merged_files.append(energy_file)
+                sources.append(simulation.results)
+            else:
+                skipped_files.append(energy_file)
+
+        if not sources:
+            detail = (
+                "Twoje pliki zostały wgrane przed wprowadzeniem łączenia danych. Wgraj je ponownie."
+                if skipped_files
+                else "Nie masz jeszcze poprawnie zaimportowanych plików."
+            )
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+        usage, contributions = CalculationService.merge_usage(sources)
+        # Ceny bierzemy z najnowszego importu - odpowiadają aktualnemu zestawowi taryf.
+        merged_results = {"usage_15min": usage, "slot_prices": sources[-1]["slot_prices"]}
+
+        data_start, data_end = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
+        if date_from is None and date_to is None:
+            date_from, date_to = data_start, data_end
+        else:
+            date_from, date_to = self._resolve_range(data_start, data_end, date_from, date_to)
+
+        records_count = sum(kwh is not None for day_slots in usage.values() for kwh in day_slots) // 4
+
+        source = AggregateSourceOut(
+            data_start=data_start,
+            data_end=data_end,
+            records_count=records_count,
+            files_count=len(merged_files),
+            files=[
+                self._aggregate_file(energy_file, **contribution)
+                for energy_file, contribution in zip(merged_files, contributions)
+            ],
+            skipped_files=[self._aggregate_file(energy_file, days_used=0, slots_used=0) for energy_file in skipped_files],
+        )
+
+        return EnergyDataFileDataResponse(
+            status="success",
+            file=source,
+            date_from=date_from,
+            date_to=date_to,
+            results=public_results(CalculationService.calculate_for_range(merged_results, date_from, date_to)),
+        )
+
+    def delete_file(self, file_id: UUID, user_id: UUID) -> None:
+        self.file_repository.delete(self._get_own_file(file_id, user_id))
+
+    def _get_own_file(self, file_id: UUID, user_id: UUID) -> EnergyDataFile:
+        # Cudzy plik zwraca 404 tak samo jak nieistniejący - nie zdradzamy, że istnieje.
+        energy_file = self.file_repository.get_by_id_for_user(file_id, user_id)
+        if not energy_file:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono pliku.")
+        return energy_file
+
+    @staticmethod
+    def _aggregate_file(energy_file: EnergyDataFile, *, days_used: int, slots_used: int) -> AggregateSourceFile:
+        return AggregateSourceFile(
+            id=energy_file.id,
+            file_name=energy_file.file_name,
+            uploaded_at=energy_file.uploaded_at,
+            data_start=energy_file.data_start,
+            data_end=energy_file.data_end,
+            days_used=days_used,
+            slots_used=slots_used,
+        )
+
+    @staticmethod
+    def _resolve_range(
+        data_start: date | None,
+        data_end: date | None,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> tuple[date, date]:
+        if data_start is None or data_end is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Plik nie ma określonego zakresu dat.",
+            )
+        # Brakujący koniec zakresu oznacza granicę dostępnych danych.
+        date_from = date_from or data_start
+        date_to = date_to or data_end
+        if date_from > date_to:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Data początkowa nie może być późniejsza niż data końcowa.",
+            )
+        if date_from < data_start or date_to > data_end:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Zakres musi mieścić się w okresie dostępnych danych "
+                    f"({data_start:%d.%m.%Y} – {data_end:%d.%m.%Y})."
+                ),
+            )
+        return date_from, date_to

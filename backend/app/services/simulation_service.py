@@ -1,5 +1,6 @@
 from app.repositories.simulation_repository import SimulationRepository
 from app.schemas.simulation import SimulationResultResponse
+from app.services.calculation_service import public_results
 from uuid import UUID
 
 
@@ -16,7 +17,7 @@ class SimulationService:
             status="success",
             simulation_id=str(simulation.id),
             created_at=simulation.created_at,
-            results=simulation.results,
+            results=public_results(simulation.results),
         )
 
     def get_simulation_results(self, simulation_id: UUID, user_id: UUID):
@@ -28,5 +29,5 @@ class SimulationService:
             status="success",
             simulation_id=str(simulation.id),
             created_at=simulation.created_at,
-            results=simulation.results,
+            results=public_results(simulation.results),
         )

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { EnergyFileContext } from "./energyFileContext";
-import { getApiErrorMessage } from "../utils/energyFiles";
+import { ALL_FILES_ID, getApiErrorMessage } from "../utils/energyFiles";
 
 const PAGE_SIZE = 20;
 
@@ -42,11 +42,16 @@ export function EnergyFileProvider({ children }) {
   const [totalPages, setTotalPages] = useState(0);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState(null);
+  // Podsumowanie źródła "Wszystkie pliki" (zakres i liczba plików) albo null, gdy brak gotowych plików.
+  const [aggregate, setAggregate] = useState(null);
+  const [deletingFileId, setDeletingFileId] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
 
   // fileData zawiera { file, simulation_id, results } ostatnio poprawnie pobranego pliku.
   const [fileData, setFileData] = useState(null);
   const [pendingFileId, setPendingFileId] = useState(null);
   const [dataError, setDataError] = useState(null);
+  const [rangeError, setRangeError] = useState(null);
   const [isReady, setIsReady] = useState(false);
 
   const latestRequestRef = useRef(0);
@@ -66,10 +71,13 @@ export function EnergyFileProvider({ children }) {
       setTotal(data.total);
       setPage(data.page);
       setTotalPages(data.total_pages);
+      setAggregate(data.aggregate ?? null);
       return data.items;
     } catch (error) {
       if (requestId !== latestPageRequestRef.current) return null;
-      setFilesError(getApiErrorMessage(error, "Nie udało się pobrać listy plików."));
+      setFilesError(
+        getApiErrorMessage(error, "Nie udało się pobrać listy plików."),
+      );
       return null;
     }
   }, []);
@@ -87,27 +95,71 @@ export function EnergyFileProvider({ children }) {
   );
 
   // Dane podmieniane są dopiero po udanej odpowiedzi - błąd nie kasuje tego,
-  // co jest aktualnie wyświetlane.
+  // co jest aktualnie wyświetlane. Bez zakresu backend zwraca cały okres pliku.
+  const loadFileData = useCallback(async (fileId, range, onError) => {
+    const requestId = ++latestRequestRef.current;
+    setPendingFileId(fileId);
+    setDataError(null);
+    setRangeError(null);
+    try {
+      const { data } = await apiClient.get(`/energy-files/${fileId}/data`, {
+        params: range ? { from: range.from, to: range.to } : undefined,
+      });
+      if (requestId !== latestRequestRef.current) return false;
+      setFileData(data);
+      return true;
+    } catch (error) {
+      if (requestId !== latestRequestRef.current) return false;
+      onError(error);
+      return false;
+    } finally {
+      if (requestId === latestRequestRef.current) setPendingFileId(null);
+    }
+  }, []);
+
+  // Zmiana pliku zawsze wraca do pełnego okresu - każdy plik ma inny zakres dat.
   const selectFile = useCallback(
     async (fileId) => {
-      const requestId = ++latestRequestRef.current;
-      setPendingFileId(fileId);
-      setDataError(null);
-      try {
-        const { data } = await apiClient.get(`/energy-files/${fileId}/data`);
-        if (requestId !== latestRequestRef.current) return false;
-        setFileData(data);
-        writeStoredFileId(userId, fileId);
-        return true;
-      } catch (error) {
-        if (requestId !== latestRequestRef.current) return false;
-        setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku."));
-        return false;
-      } finally {
-        if (requestId === latestRequestRef.current) setPendingFileId(null);
-      }
+      const loaded = await loadFileData(fileId, null, (error) =>
+        setDataError(
+          getApiErrorMessage(
+            error,
+            "Nie udało się pobrać danych wybranego pliku.",
+          ),
+        ),
+      );
+      if (loaded) writeStoredFileId(userId, fileId);
+      return loaded;
     },
-    [userId],
+    [loadFileData, userId],
+  );
+
+  const selectedFileId = fileData?.file?.id ?? null;
+
+  const applyDateRange = useCallback(
+    (range) => {
+      if (!selectedFileId) return Promise.resolve(false);
+      return loadFileData(selectedFileId, range, (error) =>
+        setRangeError(
+          getApiErrorMessage(
+            error,
+            "Nie udało się pobrać danych dla wybranego zakresu.",
+          ),
+        ),
+      );
+    },
+    [loadFileData, selectedFileId],
+  );
+
+  const selectFirstCompleted = useCallback(
+    async (items) => {
+      const firstCompleted = items.find((file) => file.status === "completed");
+      if (firstCompleted && (await selectFile(firstCompleted.id))) return;
+      // Nie ma już żadnego pliku z danymi - nie ma też czego pokazywać.
+      setFileData(null);
+      setDataError(null);
+    },
+    [selectFile],
   );
 
   const initialize = useCallback(async () => {
@@ -115,19 +167,36 @@ export function EnergyFileProvider({ children }) {
     if (items) {
       const storedFileId = readStoredFileId(userId);
       const restored = storedFileId ? await selectFile(storedFileId) : false;
-
-      if (!restored) {
-        const firstCompleted = items.find((file) => file.status === "completed");
-        if (firstCompleted) {
-          await selectFile(firstCompleted.id);
-        } else {
-          // Zapamiętany plik nie istnieje lub nie ma danych, a innych gotowych plików brak.
-          setDataError(null);
-        }
-      }
+      if (!restored) await selectFirstCompleted(items);
     }
     setIsReady(true);
-  }, [loadFilesPage, selectFile, userId]);
+  }, [loadFilesPage, selectFile, selectFirstCompleted, userId]);
+
+  const deleteFile = useCallback(
+    async (fileId) => {
+      setDeletingFileId(fileId);
+      setDeleteError(null);
+      try {
+        await apiClient.delete(`/energy-files/${fileId}`);
+      } catch (error) {
+        setDeleteError(getApiErrorMessage(error, "Nie udało się usunąć pliku."));
+        return false;
+      } finally {
+        setDeletingFileId(null);
+      }
+
+      // Usunięcie jedynego pliku na ostatniej stronie cofa na poprzednią.
+      const pageToLoad = files.length === 1 && page > 1 ? page - 1 : page;
+      const items = (await loadFilesPage(pageToLoad)) ?? [];
+
+      // Dane zbiorcze zmieniły się, a usunięty plik nie może być dalej wyświetlany.
+      if (selectedFileId === fileId || selectedFileId === ALL_FILES_ID) {
+        if (!(await selectFile(ALL_FILES_ID))) await selectFirstCompleted(items);
+      }
+      return true;
+    },
+    [files.length, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted],
+  );
 
   // Start odroczony do mikrozadania: przy podwójnym montowaniu (StrictMode)
   // pierwsze wywołanie zostaje anulowane i dane pobierane są tylko raz.
@@ -164,9 +233,14 @@ export function EnergyFileProvider({ children }) {
       goToPage: fetchFilesPage,
       refreshFiles,
       reload,
+      aggregate,
+      deleteFile,
+      deletingFileId,
+      deleteError,
+      clearDeleteError: () => setDeleteError(null),
 
       selectedFile: fileData?.file ?? null,
-      selectedFileId: fileData?.file?.id ?? null,
+      selectedFileId,
       results: fileData?.results ?? null,
       pendingFileId,
       isLoadingData: pendingFileId !== null,
@@ -174,9 +248,24 @@ export function EnergyFileProvider({ children }) {
       clearDataError: () => setDataError(null),
       selectFile,
 
+      dateRange:
+        fileData?.date_from && fileData?.date_to
+          ? { from: fileData.date_from, to: fileData.date_to }
+          : null,
+      applyDateRange,
+      rangeError,
+      clearRangeError: () => setRangeError(null),
+
       isReady,
     }),
     [
+      aggregate,
+      deleteFile,
+      deletingFileId,
+      deleteError,
+      selectedFileId,
+      applyDateRange,
+      rangeError,
       files,
       total,
       page,
@@ -194,5 +283,9 @@ export function EnergyFileProvider({ children }) {
     ],
   );
 
-  return <EnergyFileContext.Provider value={value}>{children}</EnergyFileContext.Provider>;
+  return (
+    <EnergyFileContext.Provider value={value}>
+      {children}
+    </EnergyFileContext.Provider>
+  );
 }
