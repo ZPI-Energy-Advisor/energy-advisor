@@ -1,14 +1,18 @@
-from datetime import date, time
+from datetime import date
+from typing import Mapping
 
 import numpy as np
 import pandas as pd
 from fastapi import HTTPException
 
 from app.repositories.tariff_repository import TariffRepository
+from app.services.pricing_strategies import (
+    SLOT_MINUTES,
+    SLOTS_PER_DAY,
+    FixedRatePricing,
+    TariffPricingStrategy,
+)
 
-
-SLOTS_PER_DAY = 96
-SLOT_MINUTES = 15
 
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
 INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
@@ -25,8 +29,17 @@ def has_usage_series(results: dict) -> bool:
 
 
 class CalculationService:
-    def __init__(self, tariff_repository: TariffRepository):
+    def __init__(
+        self,
+        tariff_repository: TariffRepository,
+        pricing_strategies: Mapping[str, TariffPricingStrategy] | None = None,
+    ):
         self.tariff_repository = tariff_repository
+        self.default_strategy = FixedRatePricing(tariff_repository)
+        self.pricing_strategies = dict(pricing_strategies or {})
+
+    def _strategy_for(self, tariff) -> TariffPricingStrategy:
+        return self.pricing_strategies.get(tariff.type, self.default_strategy)
 
     @staticmethod
     def format_hour_label(dt_obj):
@@ -97,17 +110,15 @@ class CalculationService:
         if not tariffs:
             raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
 
+        usage = self._build_usage_series(df_15min)
+        days = [date.fromisoformat(day) for day in usage]
+
         # Ceny zapisujemy razem z wynikami, żeby przeliczenie zakresu dawało te same
         # kwoty co przy imporcie, nawet jeśli cennik w bazie później się zmieni.
         slot_prices = {
-            tariff.name: {
-                "type": tariff.type,
-                "prices": self._slot_prices(self.tariff_repository.get_rates_for_tariff(tariff.id)),
-            }
+            tariff.name: self._strategy_for(tariff).slot_prices(tariff, days)
             for tariff in tariffs
         }
-
-        usage = self._build_usage_series(df_15min)
 
         results_dict = self.summarize_usage(usage, slot_prices)
         results_dict["statistics"]["records_count"] = int(len(df))
@@ -155,17 +166,66 @@ class CalculationService:
         return dict(sorted(merged.items())), contributions
 
     @staticmethod
-    def _slot_prices(rates) -> list[float]:
-        def get_price(slot_time):
-            for rate in rates:
-                if rate.time_start <= slot_time <= rate.time_end:
-                    return float(rate.price_per_kwh)
-            return 0.0
+    def merge_slot_prices(sources: list[dict]) -> dict:
+        """Scala cenniki kilku importów (posortowanych od najstarszego).
 
-        return [
-            get_price(time(slot * SLOT_MINUTES // 60, slot * SLOT_MINUTES % 60))
-            for slot in range(SLOTS_PER_DAY)
-        ]
+        Ceny zależne od pory dnia bierzemy z najnowszego importu. Ceny dzienne (taryfa
+        dynamiczna) łączymy po dniach - nowszy import nadpisuje starszy tylko tam, gdzie ma cenę.
+        """
+        latest = sources[-1]
+        merged = {}
+        for tariff_name, tariff in latest.items():
+            if "prices_by_day" not in tariff:
+                merged[tariff_name] = tariff
+                continue
+
+            prices_by_day = {}
+            for source in sources:
+                source_days = source.get(tariff_name, {}).get("prices_by_day", {})
+                for day, day_prices in source_days.items():
+                    current = prices_by_day.get(day, [None] * SLOTS_PER_DAY)
+                    prices_by_day[day] = [
+                        new if new is not None else old for old, new in zip(current, day_prices)
+                    ]
+            merged[tariff_name] = {**tariff, "prices_by_day": dict(sorted(prices_by_day.items()))}
+        return merged
+
+    @staticmethod
+    def _price_column(tariff: dict, df_15min: pd.DataFrame) -> pd.Series:
+        if "prices_by_day" in tariff:
+            prices_by_day = tariff["prices_by_day"]
+            values = [
+                (prices_by_day.get(day) or [None] * SLOTS_PER_DAY)[slot]
+                for day, slot in zip(df_15min['date'], df_15min['slot'])
+            ]
+            return pd.Series(values, index=df_15min.index, dtype=float)
+        return pd.Series(np.asarray(tariff["prices"])[df_15min['slot']], index=df_15min.index, dtype=float)
+
+    @staticmethod
+    def _tariff_cost(tariff: dict, df_15min: pd.DataFrame, price_col: str, cost_col: str, total_usage: float) -> dict:
+        if "prices_by_day" not in tariff:
+            return {"estimated_cost_pln": round(float(df_15min[cost_col].sum()), 2)}
+
+        priced = df_15min[price_col].notna()
+        covered_usage = float(df_15min.loc[priced, 'Wartość kWh'].sum())
+        covered_cost = float(df_15min.loc[priced, cost_col].sum())
+
+        if not priced.any():
+            estimated_cost = None
+        elif not priced.all() and covered_usage > 0:
+            estimated_cost = round(covered_cost * total_usage / covered_usage, 2)
+        else:
+            estimated_cost = round(covered_cost, 2)
+
+        return {
+            "estimated_cost_pln": estimated_cost,
+            "price_coverage": round(float(priced.mean()), 4),
+            "missing_price_intervals": int((~priced).sum()),
+        }
+
+    @staticmethod
+    def _to_records(df: pd.DataFrame) -> list[dict]:
+        return df.astype(object).where(df.notna(), None).to_dict('records')
 
     @staticmethod
     def _build_usage_series(df_15min) -> dict[str, list[float | None]]:
@@ -209,15 +269,13 @@ class CalculationService:
             price_columns.append(price_col_name)
             cost_columns.append(cost_col_name)
 
-            df_15min[price_col_name] = np.asarray(tariff["prices"])[df_15min['slot']]
+            df_15min[price_col_name] = cls._price_column(tariff, df_15min)
             df_15min[cost_col_name] = df_15min['Wartość kWh'] * df_15min[price_col_name]
-
-            total_cost = float(df_15min[cost_col_name].sum())
 
             results_dict["tariffs"][tariff_name] = {
                 "type": tariff["type"],
                 "total_usage_kwh": round(total_usage, 2),
-                "estimated_cost_pln": round(total_cost, 2)
+                **cls._tariff_cost(tariff, df_15min, price_col_name, cost_col_name, total_usage),
             }
 
         columns_to_aggregate = ['Wartość kWh'] + cost_columns + price_columns
@@ -225,19 +283,19 @@ class CalculationService:
         df_15min['time_15m'] = df_15min['Dokładny Czas'].dt.strftime('%H:%M')
         data_15min = df_15min.groupby('time_15m')[columns_to_aggregate].mean().round(2).reset_index()
         data_15min = data_15min.rename(columns={'Wartość kWh': 'kwh', 'time_15m': 'time'})
-        results_dict["chart_15min"] = data_15min.to_dict('records')
+        results_dict["chart_15min"] = cls._to_records(data_15min)
         
         df_15min['hour'] = df_15min['Dokładny Czas'].apply(cls.format_hour_label)
         
-        daily_hourly_sum = df_15min.groupby(['date', 'hour'])[columns_to_aggregate].sum().reset_index()
+        daily_hourly_sum = df_15min.groupby(['date', 'hour'])[columns_to_aggregate].sum(min_count=1).reset_index()
         
         hourly_data = daily_hourly_sum.groupby('hour')[columns_to_aggregate].mean().round(2).reset_index()
         hourly_data = hourly_data.rename(columns={'Wartość kWh': 'kwh'})
-        results_dict["chart_hourly"] = hourly_data.to_dict('records')
+        results_dict["chart_hourly"] = cls._to_records(hourly_data)
 
-        daily_data = df_15min.groupby('date')[columns_to_aggregate].sum().round(2).reset_index()
+        daily_data = df_15min.groupby('date')[columns_to_aggregate].sum(min_count=1).round(2).reset_index()
         daily_data = daily_data.rename(columns={'Wartość kWh': 'kwh'})
-        results_dict["chart_daily"] = daily_data.to_dict('records')
+        results_dict["chart_daily"] = cls._to_records(daily_data)
         
         first_date = df_15min['date'].min()
         last_date = df_15min['date'].max()

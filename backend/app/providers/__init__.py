@@ -1,0 +1,1 @@
+"""Adaptery zewnętrznych źródeł danych."""
