@@ -14,6 +14,11 @@ from app.services.pricing_strategies import (
 )
 
 
+YEAR_FIRST_DATE = r'^\d{4}-\d{1,2}-\d{1,2}(?:[ T]|$)'
+DAY_OR_MONTH_FIRST_DATE = r'^(\d{1,2})[./-](\d{1,2})[./-]\d{4}(?:\s|$)'
+EXCEL_SERIAL_DATE = r'^\d+(?:\.\d+)?$'
+MIDNIGHT_24 = r'(?<=\s)24:00(?=(?::00)?$)'
+
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
 INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
 
@@ -67,10 +72,7 @@ class CalculationService:
                 "Wartosc[kWh/kvar]": "Wartość kWh",
                 "Rodzaj energii": "Rodzaj"
             })
-            is_day_first = True
-        elif "Data" in df.columns and "Wartość kWh" in df.columns:
-            is_day_first = False 
-        else:
+        elif "Data" not in df.columns or "Wartość kWh" not in df.columns:
             raise HTTPException(status_code=422, detail="Nierozpoznany format pliku. Brak wymaganych kolumn.")
 
         df = df.dropna(subset=['Wartość kWh', 'Data', 'Rodzaj'])
@@ -85,15 +87,18 @@ class CalculationService:
         if df.empty:
             raise HTTPException(status_code=400, detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.")
 
-        mask_24 = df['Data'].astype(str).str.contains('24:00')
-        df['Data'] = df['Data'].astype(str).str.strip().str.replace('24:00', '00:00')
+        # Odczyt "24:00" to koniec doby - parsujemy go jako 00:00 i przesuwamy na następny dzień.
+        df['Data'] = df['Data'].astype(str).str.strip()
+        mask_24 = df['Data'].str.contains(MIDNIGHT_24, regex=True)
+        df['Data'] = df['Data'].str.replace(MIDNIGHT_24, '00:00', regex=True)
 
-        is_numeric = df['Data'].str.match(r'^\d+(\.\d+)?$')
-        
-        text_dates = pd.to_datetime(df.loc[~is_numeric, 'Data'], format='mixed', dayfirst=is_day_first, errors='coerce')
-        numeric_dates = pd.to_datetime(pd.to_numeric(df.loc[is_numeric, 'Data']), unit='D', origin='1899-12-30')
-        
-        df['Data'] = pd.concat([text_dates, numeric_dates]).sort_index()
+        df['Data'] = self._parse_dates(df['Data'])
+        if df['Data'].isna().all():
+            raise HTTPException(
+                status_code=422,
+                detail="Nie rozpoznano formatu dat w pliku. Obsługiwane formaty: RRRR-MM-DD GG:MM, "
+                "DD.MM.RRRR GG:MM (także z / lub -) oraz daty liczbowe z Excela.",
+            )
         df = df.dropna(subset=['Data'])
 
         df.loc[mask_24, 'Data'] = df.loc[mask_24, 'Data'] + pd.Timedelta(days=1)
@@ -125,6 +130,43 @@ class CalculationService:
         results_dict["usage_15min"] = usage
         results_dict["slot_prices"] = slot_prices
         return results_dict
+
+    @staticmethod
+    def _parse_dates(values: pd.Series) -> pd.Series:
+        """Rozpoznaje format każdej daty po jej zapisie, a nie po nazwach kolumn pliku.
+
+        - RRRR-MM-DD (np. plik zapisany ponownie w Excelu) - zawsze rok, miesiąc, dzień,
+        - DD.MM.RRRR, DD/MM/RRRR, DD-MM-RRRR - kolejność dnia i miesiąca ustalana dla całego
+          pliku: jeśli gdzieś pierwsza liczba > 12, to dzień jest pierwszy; jeśli tylko druga
+          liczba bywa > 12, to plik jest w układzie MM/DD; gdy nie da się tego rozstrzygnąć,
+          przyjmujemy polski układ z dniem na początku,
+        - liczby - numer seryjny daty z Excela.
+
+        Wartości w nierozpoznanym formacie dostają NaT.
+        """
+        parsed = pd.Series(pd.NaT, index=values.index, dtype='datetime64[ns]')
+
+        year_first = values.str.match(YEAR_FIRST_DATE)
+        if year_first.any():
+            parsed[year_first] = pd.to_datetime(
+                values[year_first], format='mixed', yearfirst=True, dayfirst=False, errors='coerce'
+            )
+
+        day_or_month_first = values.str.match(DAY_OR_MONTH_FIRST_DATE)
+        if day_or_month_first.any():
+            parts = values[day_or_month_first].str.extract(DAY_OR_MONTH_FIRST_DATE).astype(int)
+            month_first = not (parts[0] > 12).any() and (parts[1] > 12).any()
+            parsed[day_or_month_first] = pd.to_datetime(
+                values[day_or_month_first], format='mixed', dayfirst=not month_first, errors='coerce'
+            )
+
+        excel_serial = values.str.match(EXCEL_SERIAL_DATE)
+        if excel_serial.any():
+            parsed[excel_serial] = pd.to_datetime(
+                pd.to_numeric(values[excel_serial]), unit='D', origin='1899-12-30'
+            )
+
+        return parsed
 
     @classmethod
     def calculate_for_range(cls, results: dict, date_from: date, date_to: date) -> dict:

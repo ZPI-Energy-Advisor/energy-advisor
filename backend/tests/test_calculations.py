@@ -377,3 +377,71 @@ def test_calculate_all_tariffs_uses_registered_strategy_per_tariff_type():
     assert results["tariffs"]["Dynamiczna"]["estimated_cost_pln"] == 24.0
     assert results["tariffs"]["Dynamiczna"]["price_coverage"] == 1.0
     assert results["slot_prices"]["Dynamiczna"]["prices_by_day"]["2024-05-01"] == [1.0] * 96
+
+
+METER_HEADER = "Data i godzina;Wartosc[kWh/kvar];Rodzaj energii"
+SIMPLE_HEADER = "Data;Wartość kWh;Rodzaj"
+
+
+def _import_dates(header, dates):
+    """Importuje plik z odczytem 1 kWh dla każdej podanej daty i zwraca dni w danych."""
+    rows = "\n".join(f"{value};1,0;pobór" for value in dates)
+    results = CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(f"{header}\n{rows}".encode("utf-8")))
+    return list(results["usage_15min"]), results["statistics"]
+
+
+@pytest.mark.parametrize("header", [METER_HEADER, SIMPLE_HEADER], ids=["kolumny-licznika", "kolumny-proste"])
+@pytest.mark.parametrize(
+    "dates, expected_days",
+    [
+        # Plik z licznika zapisany ponownie w Excelu - wcześniej 2025-02-12 stawało się 2 grudnia.
+        (["2025-02-01 01:00", "2025-02-03 01:00", "2025-02-12 01:00"], ["2025-02-01", "2025-02-03", "2025-02-12"]),
+        (["2025-2-3 1:00", "2025-02-12 01:00:00", "2025-02-13T01:00"], ["2025-02-03", "2025-02-12", "2025-02-13"]),
+        (["02.01.2025 01:00", "13.06.2025 01:00"], ["2025-01-02", "2025-06-13"]),
+        (["2.1.2025 1:00", "03.01.2025 01:00:00"], ["2025-01-02", "2025-01-03"]),
+        (["02/01/2025 01:00", "02-01-2025 02:00"], ["2025-01-02"]),
+        # Same niejednoznaczne daty (obie liczby <= 12) - polski układ, dzień pierwszy.
+        (["05.03.2025 01:00", "06.03.2025 01:00"], ["2025-03-05", "2025-03-06"]),
+        # Układ MM/DD rozpoznany po dacie, w której druga liczba jest > 12.
+        (["03/05/2025 01:00", "03/13/2025 01:00"], ["2025-03-05", "2025-03-13"]),
+    ],
+    ids=["iso", "iso-warianty", "dd.mm", "dd.mm-bez-zer-i-sekundy", "dd/mm-i-dd-mm", "niejednoznaczne", "mm/dd"],
+)
+def test_import_recognizes_date_format_by_value(header, dates, expected_days):
+    days, _ = _import_dates(header, dates)
+
+    assert days == expected_days
+
+
+@pytest.mark.parametrize(
+    "dates",
+    [["2025-02-12 24:00"], ["12.02.2025 24:00"], ["12.02.2025 24:00:00"]],
+    ids=["iso", "dd.mm", "z-sekundami"],
+)
+def test_import_midnight_24_belongs_to_the_same_day(dates):
+    days, statistics = _import_dates(METER_HEADER, dates)
+
+    assert days == ["2025-02-12"]
+    assert statistics["data_start"] == statistics["data_end"] == "2025-02-12"
+
+
+def test_import_mixed_date_formats_in_one_file():
+    # 45700 = 2025-02-12 00:00 w numeracji Excela, czyli odczyt z końca doby 11.02.
+    days, _ = _import_dates(METER_HEADER, ["2025-02-10 01:00", "10.02.2025 02:00", "45700"])
+
+    assert days == ["2025-02-10", "2025-02-11"]
+
+
+def test_import_skips_rows_with_unrecognized_dates():
+    days, statistics = _import_dates(METER_HEADER, ["2025-02-10 01:00", "jutro rano", "2025-02-11 01:00"])
+
+    assert days == ["2025-02-10", "2025-02-11"]
+    assert statistics["records_count"] == 2
+
+
+def test_import_without_any_recognized_date_raises_422():
+    with pytest.raises(HTTPException) as exc_info:
+        _import_dates(METER_HEADER, ["jutro rano", "wczoraj"])
+
+    assert exc_info.value.status_code == 422
+    assert "Nie rozpoznano formatu dat" in exc_info.value.detail
