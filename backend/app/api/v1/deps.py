@@ -75,8 +75,9 @@ def get_calculation_service(
 
 def get_dynamic_price_service(
     repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+    tariff_repository: TariffRepository = Depends(get_tariff_repository),
 ) -> DynamicPriceService:
-    return DynamicPriceService(repository, source=PseRcePriceProvider.source)
+    return DynamicPriceService(repository, source=PseRcePriceProvider.source, tariff_repository=tariff_repository)
 
 
 def get_price_sync_service(db: Session = Depends(get_db)) -> Iterator[PriceSyncService]:

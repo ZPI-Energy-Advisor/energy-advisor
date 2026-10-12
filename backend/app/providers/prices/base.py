@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -8,6 +8,19 @@ from zoneinfo import ZoneInfo
 
 # Strefa doby handlowej rynku energii w Polsce - w niej liczymy "dzień" cen i slotów z plików.
 MARKET_TIMEZONE = ZoneInfo("Europe/Warsaw")
+
+
+def local_day_bounds_utc(business_date: date) -> tuple[datetime, datetime]:
+    """Początek i koniec doby lokalnej jako momenty UTC (doba trwa 23/24/25 h)."""
+    start = datetime.combine(business_date, time(), MARKET_TIMEZONE).astimezone(timezone.utc)
+    end = datetime.combine(business_date + timedelta(days=1), time(), MARKET_TIMEZONE).astimezone(timezone.utc)
+    return start, end
+
+
+def expected_intervals(business_date: date, interval_minutes: int = 15) -> int:
+    """Liczba interwałów w dobie lokalnej - 92/100 dla kwadransów w dniach zmiany czasu."""
+    start, end = local_day_bounds_utc(business_date)
+    return int((end - start).total_seconds() // (interval_minutes * 60))
 
 
 @dataclass(frozen=True)

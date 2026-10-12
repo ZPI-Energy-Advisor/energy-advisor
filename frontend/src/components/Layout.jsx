@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
-import { FiHome, FiUploadCloud, FiPieChart, FiLogOut, FiMenu, FiX } from "react-icons/fi";
+import { FiHome, FiUploadCloud, FiPieChart, FiTrendingUp, FiLogOut, FiMenu, FiX } from "react-icons/fi";
 import apiClient from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
 
@@ -45,6 +45,11 @@ function Layout() {
       path: "/results",
       label: "Analiza Taryf",
       icon: <FiPieChart className="mr-3 text-lg" />,
+    },
+    {
+      path: "/prices",
+      label: "Ceny dynamiczne",
+      icon: <FiTrendingUp className="mr-3 text-lg" />,
     },
   ];
 

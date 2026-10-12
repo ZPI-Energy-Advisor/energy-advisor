@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ImportPage from "./pages/ImportPage";
 import ResultsPage from "./pages/ResultsPage";
+import DynamicPricesPage from "./pages/DynamicPricesPage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -22,6 +23,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/upload" element={<ImportPage />} />
               <Route path="/results" element={<ResultsPage />} />
+              <Route path="/prices" element={<DynamicPricesPage />} />
             </Route>
           </Route>
         </Routes>

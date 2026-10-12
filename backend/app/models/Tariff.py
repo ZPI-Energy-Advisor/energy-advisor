@@ -7,6 +7,11 @@ from app.database import Base
 
 class Tariff(Base):
     __tablename__ = "tariffs"
+
+    TYPE_FIXED = "stala"
+    TYPE_ZONED = "strefowa"
+    TYPE_DYNAMIC = "dynamiczna"
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), nullable=False)
     type = Column(String(50), nullable=False)

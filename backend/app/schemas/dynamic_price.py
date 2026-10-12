@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -61,3 +62,72 @@ class DynamicPriceDayResponse(BaseModel):
     business_date: date
     timezone: str
     prices: list[DynamicPriceOut]
+
+
+class PriceResolution(str, Enum):
+    QUARTER_HOUR = "15min"
+    HOUR = "hour"
+    DAY = "day"
+
+
+# Limity długości zakresu dla rozdzielczości
+MAX_HISTORY_DAYS = {
+    PriceResolution.QUARTER_HOUR: 31,
+    PriceResolution.HOUR: 92,
+    PriceResolution.DAY: None,
+}
+
+
+class PriceHistoryQuery(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    resolution: PriceResolution = PriceResolution.HOUR
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if (self.date_from is None) != (self.date_to is None):
+            raise ValueError("Podaj obie daty zakresu albo żadną")
+        if self.date_from and self.date_to:
+            if self.date_from > self.date_to:
+                raise ValueError("Data początkowa nie może być późniejsza niż data końcowa")
+            max_days = MAX_HISTORY_DAYS[self.resolution]
+            if max_days and (self.date_to - self.date_from).days + 1 > max_days:
+                raise ValueError(
+                    f"Dla rozdzielczości {self.resolution.value} zakres może obejmować maksymalnie {max_days} dni"
+                )
+        return self
+
+
+class PriceHistoryPointOut(BaseModel):
+    start: datetime 
+    price_pln_kwh: float | None
+    intervals: int
+    expected_intervals: int
+    complete: bool
+
+
+class PriceHistoryDaysOut(BaseModel):
+    total: int = 0
+    complete: int = 0
+    incomplete: list[date] = []
+    missing: list[date] = []
+
+
+class PriceHistoryResponse(BaseModel):
+    source: str
+    tariff_name: str
+    markup_pln_kwh: float
+    vat_rate: float
+    unit: str
+    timezone: str
+    resolution: PriceResolution
+    date_from: date | None = None
+    date_to: date | None = None
+    available_from: date | None = None
+    available_to: date | None = None
+    last_updated_at: datetime | None = None
+    average_price_pln_kwh: float | None = None
+    min_price_pln_kwh: float | None = None
+    max_price_pln_kwh: float | None = None
+    points: list[PriceHistoryPointOut] = []
+    days: PriceHistoryDaysOut = PriceHistoryDaysOut()

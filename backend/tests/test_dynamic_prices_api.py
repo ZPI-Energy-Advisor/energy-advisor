@@ -8,9 +8,12 @@ from fastapi.testclient import TestClient
 from app.api.v1.deps import (
     get_authenticated_user,
     get_dynamic_price_repository,
+    get_dynamic_price_service,
     get_price_sync_admin_key,
     get_price_sync_service,
 )
+from app.schemas.dynamic_price import PriceHistoryDaysOut, PriceHistoryResponse, PriceResolution
+from app.services.dynamic_price_service import DynamicTariffNotFoundError
 from app.services.price_sync_service import PriceSyncStatusSummary, SyncAlreadyRunningError
 from main import app
 
@@ -150,3 +153,73 @@ def test_get_day_prices_requires_business_date(stub):
 def test_sync_status_requires_authentication():
     app.dependency_overrides.clear()
     assert client.get("/api/v1/dynamic-prices/sync/status").status_code == 401
+
+
+class _StubHistoryService:
+    def __init__(self, error=None):
+        self.calls = []
+        self.error = error
+
+    def get_history(self, date_from, date_to, resolution):
+        self.calls.append((date_from, date_to, resolution))
+        if self.error:
+            raise self.error
+        return PriceHistoryResponse(
+            source="pse_rce", tariff_name="Dynamiczna", markup_pln_kwh=0.4, vat_rate=0.23, unit="PLN/kWh", timezone="Europe/Warsaw", resolution=resolution,
+            date_from=date_from, date_to=date_to, available_from=None, available_to=None,
+            last_updated_at=None, average_price_pln_kwh=None, min_price_pln_kwh=None, max_price_pln_kwh=None,
+            points=[], days=PriceHistoryDaysOut(),
+        )
+
+
+@pytest.fixture
+def history_stub(stub):
+    service = _StubHistoryService()
+    app.dependency_overrides[get_dynamic_price_service] = lambda: service
+    return service
+
+
+def test_history_passes_range_and_resolution(history_stub):
+    response = client.get("/api/v1/dynamic-prices/history", params={"from": "2026-10-01", "to": "2026-10-12", "resolution": "day"})
+
+    assert response.status_code == 200
+    assert response.json()["unit"] == "PLN/kWh"
+    assert history_stub.calls == [(date(2026, 10, 1), date(2026, 10, 12), PriceResolution.DAY)]
+
+
+def test_history_without_range_uses_defaults(history_stub):
+    assert client.get("/api/v1/dynamic-prices/history").status_code == 200
+    assert history_stub.calls == [(None, None, PriceResolution.HOUR)]
+
+
+@pytest.mark.parametrize("params", [
+    {"from": "2026-10-12", "to": "2026-10-01"},
+    {"from": "2026-10-01"},
+    {"from": "2026-09-01", "to": "2026-10-12", "resolution": "15min"},  # 42 dni > 31
+    {"from": "2026-01-01", "to": "2026-06-30", "resolution": "hour"},  # 181 dni > 92
+    {"resolution": "minute"},
+])
+def test_history_rejects_invalid_params(history_stub, params):
+    response = client.get("/api/v1/dynamic-prices/history", params=params)
+
+    assert response.status_code == 422
+    assert history_stub.calls == []
+
+
+def test_history_long_range_allowed_for_daily_resolution(history_stub):
+    response = client.get("/api/v1/dynamic-prices/history", params={"from": "2024-06-14", "to": "2026-10-12", "resolution": "day"})
+
+    assert response.status_code == 200
+
+
+def test_history_without_dynamic_tariff_returns_404(history_stub):
+    history_stub.error = DynamicTariffNotFoundError("Brak taryfy dynamicznej w bazie")
+
+    response = client.get("/api/v1/dynamic-prices/history")
+
+    assert response.status_code == 404
+
+
+def test_history_requires_authentication():
+    app.dependency_overrides.clear()
+    assert client.get("/api/v1/dynamic-prices/history").status_code == 401

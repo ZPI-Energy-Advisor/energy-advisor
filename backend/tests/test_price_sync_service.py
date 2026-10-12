@@ -8,12 +8,13 @@ import pytest
 
 from app.core.locks import LockNotAcquiredError
 from app.models.PriceSyncRun import PriceSyncStatus, PriceSyncTrigger
-from app.providers.prices.base import PriceDataNotAvailableError, PricePoint, PriceProviderError
-from app.services.price_sync_service import (
-    PriceSyncService,
-    SyncAlreadyRunningError,
+from app.providers.prices.base import (
+    PriceDataNotAvailableError,
+    PricePoint,
+    PriceProviderError,
     expected_intervals,
 )
+from app.services.price_sync_service import PriceSyncService, SyncAlreadyRunningError
 
 
 NOW = datetime(2026, 10, 11, 13, 0, tzinfo=timezone.utc)  # 15:00 w Warszawie
