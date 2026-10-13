@@ -20,6 +20,7 @@ from app.models.Tariff import Tariff  # noqa: F401
 from app.models.TariffRate import TariffRate  # noqa: F401
 from app.models.DynamicPriceObservation import DynamicPriceObservation  # noqa: F401
 from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
+from app.models.UserProfile import UserProfile  # noqa: F401
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"
