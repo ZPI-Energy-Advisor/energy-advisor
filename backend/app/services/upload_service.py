@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import HTTPException, UploadFile
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.schemas.user_profile import UserProfile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.calculation_service import CalculationService, public_results
@@ -70,3 +71,22 @@ class UploadService:
     @staticmethod
     def _parse_date(value):
         return date.fromisoformat(value) if value else None
+
+
+    def create_user_profile(self, user_id: UUID, profile_data: UserProfile):
+        return self.simulation_repository.create_user_profile(user_id, profile_data)
+
+    def get_user_profile(self, user_id: UUID):
+        profile = self.simulation_repository.get_user_profile(user_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
+        return UserProfile.model_validate(profile)
+
+    def create_or_update_user_profile(self, user_id: UUID, profile_data: UserProfile):
+        existing_profile = self.simulation_repository.get_user_profile(user_id)
+
+        if existing_profile:
+            profile = self.simulation_repository.update_user_profile(user_id, profile_data)
+        else:
+            profile = self.simulation_repository.create_user_profile(user_id, profile_data)
+        return UserProfile.model_validate(profile)

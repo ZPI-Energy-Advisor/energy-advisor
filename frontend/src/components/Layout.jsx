@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
-import { FiHome, FiUploadCloud, FiPieChart, FiTrendingUp, FiLogOut, FiMenu, FiX } from "react-icons/fi";
+import { FiHome, FiUploadCloud, FiPieChart, FiTrendingUp, FiLogOut, FiMenu, FiX, FiUser } from "react-icons/fi";
 import apiClient from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
 
@@ -31,6 +31,11 @@ function Layout() {
   const isActive = (path) => location.pathname === path;
 
   const navItems = [
+    {
+      path: "/profile",
+      label: "Profil",
+      icon: <FiUser className="mr-3 text-lg" />,
+    },
     {
       path: "/dashboard",
       label: "Dashboard",
