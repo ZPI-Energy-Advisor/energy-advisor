@@ -116,6 +116,7 @@ Bez Dockera ten sam efekt da cron: `0 15 * * * cd backend && python -m app.worke
 | POST | `/api/v1/dynamic-prices/sync` | nagłówek `X-Admin-Key` | ręczna synchronizacja |
 | GET | `/api/v1/dynamic-prices/sync/status` | JWT | ostatnie uruchomienie i ostatnie udane |
 | GET | `/api/v1/dynamic-prices?business_date=RRRR-MM-DD` | JWT | ceny z doby (PLN/MWh i PLN/kWh) |
+| GET | `/api/v1/dynamic-prices/history?from=&to=&resolution=` | JWT | historia cen do wykresu, średnia, kompletność dni |
 
 Szczegóły `POST /sync`:
 

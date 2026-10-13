@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import func
+from sqlalchemy import func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -84,3 +84,76 @@ class DynamicPriceRepository:
             .all()
         )
         return {business_date: count for business_date, count in rows}
+
+    def get_available_range(self, source: str) -> tuple[date | None, date | None, datetime | None]:
+        return (
+            self.db.query(
+                func.min(DynamicPriceObservation.business_date),
+                func.max(DynamicPriceObservation.business_date),
+                func.max(DynamicPriceObservation.updated_at),
+            )
+            .filter(DynamicPriceObservation.source == source)
+            .one()
+        )
+
+    def get_range_stats(self, source: str, date_from: date, date_to: date) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+        return (
+            self._in_range(
+                self.db.query(
+                    func.avg(DynamicPriceObservation.price_pln_mwh),
+                    func.min(DynamicPriceObservation.price_pln_mwh),
+                    func.max(DynamicPriceObservation.price_pln_mwh),
+                ),
+                source, date_from, date_to,
+            )
+            .one()
+        )
+
+    def get_quarter_hour_prices(self, source: str, date_from: date, date_to: date) -> list[tuple[datetime, Decimal, int]]:
+        return (
+            self._in_range(
+                self.db.query(
+                    DynamicPriceObservation.interval_start,
+                    DynamicPriceObservation.price_pln_mwh,
+                    literal(1),
+                ),
+                source, date_from, date_to,
+            )
+            .order_by(DynamicPriceObservation.interval_start)
+            .all()
+        )
+
+    def get_hourly_averages(self, source: str, date_from: date, date_to: date) -> list[tuple[datetime, Decimal, int]]:
+        hour = func.date_trunc("hour", DynamicPriceObservation.interval_start, "UTC")
+        return (
+            self._in_range(
+                self.db.query(hour, func.avg(DynamicPriceObservation.price_pln_mwh), func.count(DynamicPriceObservation.id)),
+                source, date_from, date_to,
+            )
+            .group_by(hour)
+            .order_by(hour)
+            .all()
+        )
+
+    def get_daily_averages(self, source: str, date_from: date, date_to: date) -> list[tuple[date, Decimal, int]]:
+        return (
+            self._in_range(
+                self.db.query(
+                    DynamicPriceObservation.business_date,
+                    func.avg(DynamicPriceObservation.price_pln_mwh),
+                    func.count(DynamicPriceObservation.id),
+                ),
+                source, date_from, date_to,
+            )
+            .group_by(DynamicPriceObservation.business_date)
+            .order_by(DynamicPriceObservation.business_date)
+            .all()
+        )
+
+    @staticmethod
+    def _in_range(query, source: str, date_from: date, date_to: date):
+        return query.filter(
+            DynamicPriceObservation.source == source,
+            DynamicPriceObservation.business_date >= date_from,
+            DynamicPriceObservation.business_date <= date_to,
+        )

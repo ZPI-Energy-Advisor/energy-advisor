@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Protocol
 
+from app.models.Tariff import Tariff
 from app.providers.prices.base import MARKET_TIMEZONE
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
@@ -18,6 +19,23 @@ logger = logging.getLogger(__name__)
 
 def slot_start_time(slot: int) -> time:
     return time(slot * SLOT_MINUTES // 60, slot * SLOT_MINUTES % 60)
+
+
+def tariff_price_parameters(tariff) -> tuple[Decimal, Decimal]:
+    """Narzut netto (PLN/kWh) i mnożnik VAT taryfy dynamicznej."""
+    if tariff.markup_pln_kwh is None or tariff.vat_rate is None:
+        logger.warning(
+            "Taryfa %s nie ma ustawionego narzutu lub VAT - liczę samą cenę rynkową netto", tariff.name
+        )
+    markup = Decimal(tariff.markup_pln_kwh or 0)
+    vat_multiplier = Decimal(1) + Decimal(tariff.vat_rate or 0)
+    return markup, vat_multiplier
+
+
+def consumer_price_pln_kwh(price_pln_mwh, markup: Decimal, vat_multiplier: Decimal) -> float:
+    """Cena dla klienta = (cena rynkowa netto + narzut) * (1 + VAT)."""
+    energy_pln_kwh = Decimal(price_pln_mwh) / Decimal(1000)
+    return float(round((energy_pln_kwh + markup) * vat_multiplier, 5))
 
 
 class TariffPricingStrategy(Protocol):
@@ -66,7 +84,7 @@ class DynamicMarketPricing:
         if not days:
             return {"type": tariff.type, "prices_by_day": {}}
 
-        markup, vat_multiplier = self._tariff_parameters(tariff)
+        markup, vat_multiplier = tariff_price_parameters(tariff)
 
         start_utc = self._slot_start_utc(min(days), 0)
         end_utc = self._slot_start_utc(max(days) + timedelta(days=1), 0)
@@ -79,26 +97,11 @@ class DynamicMarketPricing:
             for slot in range(SLOTS_PER_DAY):
                 price_mwh = price_mwh_by_start.get(self._slot_start_utc(day, slot))
                 day_prices.append(
-                    None if price_mwh is None else self._consumer_price(price_mwh, markup, vat_multiplier)
+                    None if price_mwh is None else consumer_price_pln_kwh(price_mwh, markup, vat_multiplier)
                 )
             prices_by_day[day.isoformat()] = day_prices
 
         return {"type": tariff.type, "prices_by_day": prices_by_day}
-
-    @staticmethod
-    def _tariff_parameters(tariff) -> tuple[Decimal, Decimal]:
-        if tariff.markup_pln_kwh is None or tariff.vat_rate is None:
-            logger.warning(
-                "Taryfa %s nie ma ustawionego narzutu lub VAT - liczę samą cenę rynkową netto", tariff.name
-            )
-        markup = Decimal(tariff.markup_pln_kwh or 0)
-        vat_multiplier = Decimal(1) + Decimal(tariff.vat_rate or 0)
-        return markup, vat_multiplier
-
-    @staticmethod
-    def _consumer_price(price_pln_mwh, markup: Decimal, vat_multiplier: Decimal) -> float:
-        energy_pln_kwh = Decimal(price_pln_mwh) / Decimal(1000)
-        return float(round((energy_pln_kwh + markup) * vat_multiplier, 5))
 
     @staticmethod
     def _slot_start_utc(day: date, slot: int) -> datetime:
@@ -115,7 +118,7 @@ def build_pricing_strategies(
     """Rejestr strategii wg Tariff.type - nowy typ taryfy = nowy wpis, bez zmian w CalculationService."""
     fixed = FixedRatePricing(tariff_repository)
     return {
-        "stala": fixed,
-        "strefowa": fixed,
-        "dynamiczna": DynamicMarketPricing(dynamic_price_repository, source=PseRcePriceProvider.source),
+        Tariff.TYPE_FIXED: fixed,
+        Tariff.TYPE_ZONED: fixed,
+        Tariff.TYPE_DYNAMIC: DynamicMarketPricing(dynamic_price_repository, source=PseRcePriceProvider.source),
     }

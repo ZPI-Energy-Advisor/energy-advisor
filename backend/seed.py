@@ -16,13 +16,13 @@ def seed_tariffs():
 
     print("Rozpoczynam zasilanie bazy taryfami (interwały 15-minutowe)...")
 
-    g11 = Tariff(name="G11", type="stala", description="Taryfa jednostrefowa - stała cena przez całą dobę.")
+    g11 = Tariff(name="G11", type=Tariff.TYPE_FIXED, description="Taryfa jednostrefowa - stała cena przez całą dobę.")
     db.add(g11)
     db.commit() 
     db.refresh(g11)
     db.add(TariffRate(tariff_id=g11.id, time_start=time(0, 0), time_end=time(23, 59, 59), price_per_kwh=1.15))
 
-    g12 = Tariff(name="G12", type="strefowa", description="Taryfa dwustrefowa - tańszy prąd w nocy i wczesnym popołudniem.")
+    g12 = Tariff(name="G12", type=Tariff.TYPE_ZONED, description="Taryfa dwustrefowa - tańszy prąd w nocy i wczesnym popołudniem.")
     db.add(g12)
     db.commit()
     db.refresh(g12)
@@ -34,7 +34,7 @@ def seed_tariffs():
 
     dynamic = Tariff(
         name="Dynamiczna",
-        type="dynamiczna",
+        type=Tariff.TYPE_DYNAMIC,
         description="Taryfa dynamiczna oparta o Rynkową Cenę Energii (RCE) publikowaną przez PSE, w interwałach 15-minutowych.",
         markup_pln_kwh=0.40,
         vat_rate=0.23,

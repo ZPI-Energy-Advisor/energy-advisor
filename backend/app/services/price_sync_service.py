@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 
 from app.core.locks import DistributedLock, LockNotAcquiredError
@@ -10,6 +10,7 @@ from app.providers.prices.base import (
     PriceDataNotAvailableError,
     PriceProvider,
     PriceProviderError,
+    expected_intervals,
 )
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.price_sync_run_repository import PriceSyncRunRepository
@@ -35,13 +36,6 @@ class PriceSyncStatusSummary:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def expected_intervals(business_date: date, interval_minutes: int = 15) -> int:
-    """Liczba interwałów w dobie lokalnej - 92/100 dla kwadransów w dniach zmiany czasu."""
-    start = datetime.combine(business_date, time(), MARKET_TIMEZONE).astimezone(timezone.utc)
-    end = datetime.combine(business_date + timedelta(days=1), time(), MARKET_TIMEZONE).astimezone(timezone.utc)
-    return int((end - start).total_seconds() // (interval_minutes * 60))
 
 
 class PriceSyncService:
