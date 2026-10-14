@@ -9,25 +9,32 @@ import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
 function App() {
-  const GOOGLE_CLIENT_ID =
-    "13518631048-hm0jlnrgj7utm440e63ri5oi93s5pfu3.apps.googleusercontent.com";
+  const routes = (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<Layout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/upload" element={<ImportPage />} />
+            <Route path="/results" element={<ResultsPage />} />
+            <Route path="/prices" element={<DynamicPricesPage />} />
+          </Route>
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+
+  if (!GOOGLE_CLIENT_ID) {
+    return routes;
+  }
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Login />} />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/upload" element={<ImportPage />} />
-              <Route path="/results" element={<ResultsPage />} />
-              <Route path="/prices" element={<DynamicPricesPage />} />
-            </Route>
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      {routes}
     </GoogleOAuthProvider>
   );
 }

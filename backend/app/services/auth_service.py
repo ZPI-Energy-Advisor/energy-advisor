@@ -99,6 +99,12 @@ class AuthService:
         
 
     def authenticate_google_user(self, google_id_token: str):
+        if not CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Logowanie przez Google nie jest skonfigurowane.",
+            )
+
         try: 
             idinfo = id_token.verify_oauth2_token(google_id_token, requests.Request(), CLIENT_ID)
             self.validate_google_token(idinfo)
