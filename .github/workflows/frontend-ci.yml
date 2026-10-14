@@ -8,8 +8,6 @@ on:
       - ".github/workflows/frontend-ci.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "frontend/**"
 
 jobs:
   build-and-verify:
@@ -30,6 +28,9 @@ jobs:
           npm install
 
       - name: Weryfikacja budowania kodu (Vite Build)
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: |
           cd frontend
           npm run build
