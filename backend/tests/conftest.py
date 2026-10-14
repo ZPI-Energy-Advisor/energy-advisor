@@ -13,18 +13,17 @@ TEST_DATABASE = _configured_db if _configured_db.endswith("_test") else f"{_conf
 os.environ["POSTGRES_DB"] = TEST_DATABASE
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
 
-import pytest 
-from alembic import command  
-from alembic.config import Config  
-from fastapi.testclient import TestClient  
-from sqlalchemy import create_engine, text  
-from sqlalchemy.engine import make_url  
+import pytest  # noqa: E402
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 
-from app.database import SessionLocal, database_url  
-from app.models.User import User  
-from app.services.auth_service import AuthService  
-from main import app  
-
+from app.database import SessionLocal, database_url  # noqa: E402
+from app.models.User import User  # noqa: E402
+from app.services.auth_service import AuthService  # noqa: E402
+from main import app  # noqa: E402
 
 
 TEST_EMAIL_DOMAIN = "tests.example.com"
