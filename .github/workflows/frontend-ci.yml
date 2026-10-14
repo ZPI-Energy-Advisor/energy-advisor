@@ -27,6 +27,11 @@ jobs:
           cd frontend
           npm install
 
+      - name: Uruchomienie testów (Vitest)
+        run: |
+          cd frontend
+          npm test
+
       - name: Weryfikacja budowania kodu (Vite Build)
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}

@@ -1,18 +1,11 @@
-import { Navigate, Outlet } from "react-router-dom";
-
-function getStoredUser() {
-  try {
-    return JSON.parse(localStorage.getItem("user"));
-  } catch {
-    return null;
-  }
-}
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { isAuthenticated } from "../api/client";
 
 function ProtectedRoute() {
-  const user = getStoredUser();
+  const location = useLocation();
 
-  if (!user || !user.id || !localStorage.getItem("access_token")) {
-    return <Navigate to="/" replace />;
+  if (!isAuthenticated()) {
+    return <Navigate to="/" replace state={{ from: location }} />;
   }
 
   return <Outlet />;

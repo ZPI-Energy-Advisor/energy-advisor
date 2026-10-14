@@ -26,6 +26,44 @@ export const saveAuthResponse = (authResponse, email) => {
   );
 };
 
+export const SESSION_EXPIRED_EVENT = "auth:session-expired";
+
+export const clearAuth = () => {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user");
+};
+
+export const isAuthenticated = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem("user"));
+    return Boolean(user?.id && localStorage.getItem("access_token"));
+  } catch {
+    return false;
+  }
+};
+
+// Backend rotuje refresh token, więc równoległe 401 muszą czekać na jeden wspólny refresh.
+let refreshPromise = null;
+
+const refreshTokens = (refreshToken) => {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${apiClient.defaults.baseURL}/auth/refresh`, {
+        refresh_token: refreshToken,
+      })
+      .then((response) => {
+        localStorage.setItem("access_token", response.data.access_token);
+        localStorage.setItem("refresh_token", response.data.refresh_token);
+        return response.data.access_token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+};
+
 apiClient.interceptors.request.use((config) => {
   const accessToken = localStorage.getItem("access_token");
   if (accessToken) {
@@ -52,18 +90,15 @@ apiClient.interceptors.response.use(
     originalRequest._retry = true;
 
     try {
-      const response = await axios.post(
-        `${apiClient.defaults.baseURL}/auth/refresh`,
-        { refresh_token: refreshToken },
-      );
-      localStorage.setItem("access_token", response.data.access_token);
-      localStorage.setItem("refresh_token", response.data.refresh_token);
-      originalRequest.headers.Authorization = `Bearer ${response.data.access_token}`;
+      const accessToken = await refreshTokens(refreshToken);
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`;
       return apiClient(originalRequest);
     } catch (refreshError) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("user");
+      // Bez odpowiedzi serwera (np. brak sieci) sesja może być nadal ważna.
+      if (refreshError.response) {
+        clearAuth();
+        window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      }
       return Promise.reject(refreshError);
     }
   },
