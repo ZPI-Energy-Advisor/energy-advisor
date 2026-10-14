@@ -24,6 +24,7 @@ class AuthService:
     def __init__(self, repository: UserRepository):
         self.repository = repository
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        self.jwt_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
     @staticmethod
@@ -44,6 +45,9 @@ class AuthService:
 
     def get_password_hash(self, password: str) -> str:
         return self.pwd_context.hash(password)
+
+    def get_token_hash(self, token: str) -> str:
+        return self.jwt_context.hash(token)
 
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
@@ -156,7 +160,7 @@ class AuthService:
 
         access_token = self.generate_token(user_id, "access", time_now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
         refresh_token = self.generate_token(user_id, "refresh", time_now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
-        hashed_refresh_token = self.pwd_context.hash(refresh_token)
+        hashed_refresh_token = self.get_token_hash(refresh_token)
         self.repository.save_refresh_token(
             user_id,
             hashed_refresh_token,
@@ -192,7 +196,7 @@ class AuthService:
                     not stored_token
                     or expires_at is None
                     or expires_at <= current_time
-                    or not self.pwd_context.verify(token, stored_token.token_hash)
+                    or not self.jwt_context.verify(token, stored_token.token_hash)
                 ):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
