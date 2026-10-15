@@ -8,12 +8,14 @@ import DynamicPricesPage from "./pages/DynamicPricesPage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import SessionExpiredListener from "./components/SessionExpiredListener";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 function App() {
   const routes = (
     <BrowserRouter>
+      <SessionExpiredListener />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route element={<ProtectedRoute />}>

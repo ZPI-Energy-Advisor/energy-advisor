@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { FiHome, FiUploadCloud, FiPieChart, FiTrendingUp, FiLogOut, FiMenu, FiX } from "react-icons/fi";
-import apiClient from "../api/client";
+import apiClient, { clearAuth } from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
 
 function Layout() {
@@ -21,9 +21,7 @@ function Layout() {
     } catch (error) {
       console.error("Nie udało się unieważnić sesji na backendzie.", error);
     } finally {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("user");
+      clearAuth();
       navigate("/");
     }
   };

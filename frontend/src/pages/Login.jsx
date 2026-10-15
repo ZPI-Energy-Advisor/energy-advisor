@@ -1,16 +1,27 @@
-import React, { useState } from "react";
-import apiClient, { saveAuthResponse } from "../api/client";
+import { useState } from "react";
+import apiClient, { isAuthenticated, saveAuthResponse } from "../api/client";
 import { GoogleLogin } from "@react-oauth/google";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+
+function getRedirectPath(from) {
+  if (!from?.pathname || from.pathname === "/") {
+    return "/dashboard";
+  }
+  return `${from.pathname}${from.search || ""}${from.hash || ""}`;
+}
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const location = useLocation();
+  const [message, setMessage] = useState(
+    location.state?.sessionExpired ? "Sesja wygasła, zaloguj się ponownie." : "",
+  );
   const [isRegister, setIsRegister] = useState(false);
   const navigate = useNavigate();
+  const redirectTo = getRedirectPath(location.state?.from);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
@@ -20,7 +31,7 @@ function Login() {
       });
 
       saveAuthResponse(response.data, null);
-      navigate("/dashboard");
+      navigate(redirectTo, { replace: true });
     } catch (error) {
       if (error.response && error.response.data.detail) {
         setMessage(`Błąd autoryzacji Google: ${error.response.data.detail}`);
@@ -53,7 +64,7 @@ function Login() {
           },
         );
         saveAuthResponse(response.data, email);
-        navigate("/dashboard");
+        navigate(redirectTo, { replace: true });
       } else {
         const response = await apiClient.post("/auth/login", {
           email: email,
@@ -61,7 +72,7 @@ function Login() {
         });
 
         saveAuthResponse(response.data, email);
-        navigate("/dashboard");
+        navigate(redirectTo, { replace: true });
       }
     } catch (error) {
       if (error.response && error.response.data.detail) {
@@ -78,6 +89,10 @@ function Login() {
       }
     }
   };
+
+  if (isAuthenticated()) {
+    return <Navigate to={redirectTo} replace />;
+  }
 
   return (
     <div className="flex min-h-screen w-full bg-white">
