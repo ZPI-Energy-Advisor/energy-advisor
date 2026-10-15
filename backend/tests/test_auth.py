@@ -109,11 +109,6 @@ def test_logout_invalidates_refresh_token(anonymous_client, new_email):
     assert _logout(anonymous_client, refresh_token).status_code == 401
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Znany błąd: bcrypt porównuje tylko 72 pierwsze bajty JWT, więc po odświeżeniu stary "
-    "refresh token nadal jest przyjmowany. Usuń xfail po naprawie.",
-)
 def test_refresh_rotates_refresh_token(anonymous_client, new_email, monkeypatch):
     old_token = _register(anonymous_client, new_email).json()["refresh_token"]
     monkeypatch.setattr("app.services.auth_service.REFRESH_TOKEN_EXPIRE_DAYS", 8)
