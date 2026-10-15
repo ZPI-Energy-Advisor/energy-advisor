@@ -1,3 +1,5 @@
+from fastapi import HTTPException, status
+
 from app.repositories.simulation_repository import SimulationRepository
 from app.schemas.simulation import SimulationResultResponse
 from app.services.calculation_service import public_results
@@ -23,7 +25,7 @@ class SimulationService:
     def get_simulation_results(self, simulation_id: UUID, user_id: UUID):
         simulation = self.repository.get_by_id_for_user(simulation_id, user_id)
         if not simulation:
-            return None
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono symulacji.")
 
         return SimulationResultResponse(
             status="success",
