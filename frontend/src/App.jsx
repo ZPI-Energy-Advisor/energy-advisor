@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import ImportPage from "./pages/ImportPage";
 import ResultsPage from "./pages/ResultsPage";
 import DynamicPricesPage from "./pages/DynamicPricesPage";
+import ProfilePage from "./pages/ProfilePage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -18,6 +19,7 @@ function App() {
         <Route path="/" element={<Login />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
+            <Route path="/profile" element={<ProfilePage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/upload" element={<ImportPage />} />
             <Route path="/results" element={<ResultsPage />} />

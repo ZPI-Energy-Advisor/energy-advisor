@@ -1,10 +1,7 @@
 from uuid import UUID
-
 from sqlalchemy.orm import Session
-
 from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401 - rejestruje tabelę dla FK
 from app.models.Simulation import Simulation
-
 
 
 class SimulationRepository:
