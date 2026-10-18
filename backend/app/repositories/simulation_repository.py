@@ -1,9 +1,7 @@
 from uuid import UUID
 from sqlalchemy.orm import Session
-from app.models.UserProfile import UserProfile as UserProfileModel
 from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401 - rejestruje tabelę dla FK
 from app.models.Simulation import Simulation
-from app.schemas.user_profile import UserProfile
 
 
 class SimulationRepository:
@@ -60,32 +58,3 @@ class SimulationRepository:
             )
             .first()
         )
-
-
-    def create_user_profile(self, user_id: UUID, profile_data: UserProfile):
-        profile = UserProfileModel(user_id=user_id, **profile_data.model_dump())
-        self.db.add(profile)
-        self.db.commit()
-        self.db.refresh(profile)
-        return profile
-
-    def get_user_profile(self, user_id: UUID):
-        return (
-            self.db.query(UserProfileModel)
-            .filter(UserProfileModel.user_id == user_id)
-            .first()
-        )
-
-
-    def update_user_profile(self, user_id: UUID, new_profile_data: UserProfile):
-        profile = self.get_user_profile(user_id)
-
-        if profile is None:
-            return None
-
-        for field, value in new_profile_data.model_dump().items():
-            setattr(profile, field, value)
-
-        self.db.commit()
-        self.db.refresh(profile)
-        return profile
