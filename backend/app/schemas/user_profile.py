@@ -165,7 +165,7 @@ class UserProfile(BaseModel):
     distribution_fees: DistributionFees = Field(default_factory=DistributionFees)
 
     @model_validator(mode="after")
-    def validate_cross_fields(self) -> "CalculatorInputProfile":
+    def validate_cross_fields(self) -> UserProfile:
         expected_zones = self.consumption_and_tariff.tariff_type.required_zones
 
         # 1. Sprawdzenie liczby stref w Net-Meteringu
