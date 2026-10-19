@@ -21,6 +21,7 @@ from app.models.TariffRate import TariffRate  # noqa: F401
 from app.models.DynamicPriceObservation import DynamicPriceObservation  # noqa: F401
 from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
 from app.models.UserProfile import UserProfile  # noqa: F401
+from app.models.NewModels import RegulatoryPeriod, CapacityFeeThreshold, TransitionFeeThreshold, TariffDefinition, OsdVariableNetworkRate, OsdSubscriptionFee, SupplierUreRate
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"
