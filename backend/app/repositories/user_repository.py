@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.models.Token import Token
 from app.models.User import User
+from app.models.UserProfile import UserProfile
+from app.schemas.user_profile import UserProfile as UserProfileSchema
 
 
 class UserRepository:
@@ -70,3 +72,36 @@ class UserRepository:
         self.db.delete(token)
         self.db.commit()
         return True
+
+    def get_profile(self, user_id: UUID) -> UserProfile | None:
+        return (
+            self.db.query(UserProfile)
+            .filter(UserProfile.user_id == user_id)
+            .first()
+        )
+
+    def create_profile(
+        self, user_id: UUID, profile_data: UserProfileSchema
+    ) -> UserProfile:
+        profile = UserProfile(
+            user_id=user_id,
+            **profile_data.model_dump(mode="json"),
+        )
+        self.db.add(profile)
+        self.db.commit()
+        self.db.refresh(profile)
+        return profile
+
+    def update_profile(
+        self, user_id: UUID, profile_data: UserProfileSchema
+    ) -> UserProfile | None:
+        profile = self.get_profile(user_id)
+        if profile is None:
+            return None
+
+        for field, value in profile_data.model_dump(mode="json").items():
+            setattr(profile, field, value)
+
+        self.db.commit()
+        self.db.refresh(profile)
+        return profile

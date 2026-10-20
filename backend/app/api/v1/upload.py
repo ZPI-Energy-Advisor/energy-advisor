@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from app.models.User import User
 from app.api.v1.deps import get_authenticated_user, get_upload_service
 from app.schemas.simulation import UploadSimulationResponse
+from app.schemas.user_profile import UserProfile
 from app.services.upload_service import UploadService
 
 
@@ -20,3 +21,18 @@ def upload_energy_data(
     service: UploadService = Depends(get_upload_service),
 ):
     return service.process_upload(file=file, user_id=user.id)
+
+@router.post("/profile", response_model=UserProfile)
+def create_or_update_user_profile(
+    profile_data: UserProfile,
+    user: User = Depends(get_authenticated_user),
+    service: UploadService = Depends(get_upload_service),
+):
+    return service.create_or_update_user_profile(user_id=user.id, profile_data=profile_data)
+
+@router.get("/profile", response_model=UserProfile)
+def get_user_profile(
+    user: User = Depends(get_authenticated_user),
+    service: UploadService = Depends(get_upload_service),
+):
+    return service.get_user_profile(user.id)
