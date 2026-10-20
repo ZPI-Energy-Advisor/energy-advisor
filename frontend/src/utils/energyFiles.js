@@ -13,13 +13,15 @@ export const formatDate = (isoDate) => {
 export const pluralizeFiles = (count) => (count === 1 ? "pliku" : "plików");
 
 // "1 plik", "3 pliki", "5 plików", "22 pliki".
-export const formatFilesCount = (count) => {
-  if (count === 1) return "1 plik";
+export const formatCount = (count, [one, few, many]) => {
+  if (count === 1) return `1 ${one}`;
   const lastDigit = count % 10;
   const lastTwoDigits = count % 100;
   const isFew = lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14);
-  return `${count} ${isFew ? "pliki" : "plików"}`;
+  return `${count} ${isFew ? few : many}`;
 };
+
+export const formatFilesCount = (count) => formatCount(count, ["plik", "pliki", "plików"]);
 
 export const formatDateRange = (file) => {
   if (!file?.data_start || !file?.data_end) return "Brak zakresu dat";

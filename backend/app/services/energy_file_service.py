@@ -8,6 +8,7 @@ from app.models.EnergyDataFile import EnergyDataFile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.calculation_service import (
+    IMPORT_REPORT_KEY,
     CalculationService,
     has_usage_series,
     public_results,
@@ -87,6 +88,7 @@ class EnergyFileService:
             created_at=simulation.created_at,
             date_from=date_from,
             date_to=date_to,
+            import_report=simulation.results.get(IMPORT_REPORT_KEY),
             results=public_results(results),
         )
 

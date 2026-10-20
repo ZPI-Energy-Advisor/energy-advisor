@@ -19,4 +19,5 @@ class UploadSimulationResponse(BaseModel):
     file_id: str
     file_name: str
     summary: dict[str, Any]
+    import_report: dict[str, Any] | None = None
     message: str
