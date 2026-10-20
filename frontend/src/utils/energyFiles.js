@@ -128,3 +128,13 @@ export const fillMissingDays = (rows) => {
   }
   return filled;
 };
+
+// Rozdzielczość danych źródłowych (statistics.resolution_minutes): 15, 60 albo null
+// dla „Wszystkich plików” złożonych z plików o różnej rozdzielczości.
+export const formatDataResolution = (statistics) => {
+  if (!statistics || !("resolution_minutes" in statistics)) return null;
+  const minutes = statistics.resolution_minutes;
+  if (minutes === 15) return "odczyty co 15 min";
+  if (minutes === 60) return "odczyty godzinowe";
+  return "odczyty co 15 min i godzinowe";
+};
