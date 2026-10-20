@@ -8,7 +8,11 @@ from app.schemas.user_profile import UserProfile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository
-from app.services.calculation_service import CalculationService, public_results
+from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationService, public_results
+
+
+MAX_UPLOAD_SIZE_MB = 10
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
 
@@ -31,6 +35,14 @@ class UploadService:
             raise HTTPException(
                 status_code=400,
                 detail="Wymagany plik .csv"
+            )
+
+        size = self._file_size(file)
+        if size > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Plik jest za duży ({size / 1024 / 1024:.1f} MB). "
+                f"Maksymalny rozmiar pliku to {MAX_UPLOAD_SIZE_MB} MB.",
             )
 
         energy_file = self.energy_file_repository.create(user_id=user_id, file_name=file.filename[:255])
@@ -63,6 +75,7 @@ class UploadService:
             "file_id": str(energy_file.id),
             "file_name": file.filename,
             "summary": public_results(simulation_results),
+            "import_report": simulation_results.get(IMPORT_REPORT_KEY),
             "message": "Symulacja zakończona i zapisana na Twoim koncie!",
         }
 
@@ -70,6 +83,13 @@ class UploadService:
         energy_file.status = EnergyDataFile.STATUS_FAILED
         energy_file.error_message = message
         self.energy_file_repository.save(energy_file)
+
+    @staticmethod
+    def _file_size(file: UploadFile) -> int:
+        file.file.seek(0, 2)
+        size = file.file.tell()
+        file.file.seek(0)
+        return size
 
     @staticmethod
     def _parse_date(value):

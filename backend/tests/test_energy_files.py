@@ -710,3 +710,56 @@ def test_quarter_hour_file_overrides_hourly_data_per_slot(db):
 
     assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 4 + 92 * 0.25
     assert body["file"]["records_count"] == 4 + 23
+
+
+REPORT = {
+    "detected_format": "tauron_v2",
+    "format_label": "Tauron eLicznik",
+    "rows_total": 4,
+    "rows_imported": 3,
+    "rows_ignored": 0,
+    "resolution_minutes": 60,
+    "skipped_rows": {"count": 1, "examples": [{"row": 3, "reason": "nieprawidłowa wartość zużycia: „x”"}]},
+}
+
+
+def test_upload_returns_import_report_and_file_data_keeps_it(db):
+    user = _create_user(db)
+
+    body = _upload(user, _StubCalculationService(result={**SAMPLE_RESULTS, "import_report": REPORT})).json()
+
+    assert body["import_report"] == REPORT
+    assert "import_report" not in body["summary"]
+    data = client.get(f"/api/v1/energy-files/{body['file_id']}/data", headers=_headers(user)).json()
+    assert data["import_report"] == REPORT
+    assert "import_report" not in data["results"]
+
+
+def test_upload_rejects_too_large_file_before_saving_it(db):
+    user = _create_user(db)
+    too_large = BytesIO(b"x" * (10 * 1024 * 1024 + 1))
+
+    response = client.post(
+        "/api/v1/upload",
+        files={"file": ("duzy.csv", too_large, "text/csv")},
+        headers=_headers(user),
+    )
+
+    assert response.status_code == 413
+    assert "Maksymalny rozmiar pliku to 10 MB" in response.json()["detail"]
+    assert client.get("/api/v1/energy-files", headers=_headers(user)).json()["total"] == 0
+
+
+def test_upload_accepts_file_at_size_limit(db):
+    user = _create_user(db)
+    app.dependency_overrides[get_calculation_service] = lambda: _StubCalculationService(result=SAMPLE_RESULTS)
+    try:
+        response = client.post(
+            "/api/v1/upload",
+            files={"file": ("graniczny.csv", BytesIO(b"x" * (10 * 1024 * 1024)), "text/csv")},
+            headers=_headers(user),
+        )
+    finally:
+        app.dependency_overrides.pop(get_calculation_service, None)
+
+    assert response.status_code == 200

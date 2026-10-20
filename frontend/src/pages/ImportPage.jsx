@@ -3,7 +3,10 @@ import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import EnergyFilesTable from "../components/EnergyFilesTable";
+import ImportReportSummary from "../components/ImportReportSummary";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+
+const MAX_FILE_SIZE_MB = 10;
 
 function ImportPage() {
   const [file, setFile] = useState(null);
@@ -11,6 +14,7 @@ function ImportPage() {
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [importReport, setImportReport] = useState(null);
 
   const navigate = useNavigate();
   const { refreshFiles, selectFile } = useEnergyFiles();
@@ -20,13 +24,19 @@ function ImportPage() {
       setFile(acceptedFiles[0]);
       setError(null);
       setSuccessMsg(null);
+      setImportReport(null);
       setProgress(0);
     }
   }, []);
 
-  const onDropRejected = useCallback(() => {
+  const onDropRejected = useCallback((rejections) => {
+    const tooLarge = rejections.some((rejection) =>
+      rejection.errors.some((rejectionError) => rejectionError.code === "file-too-large"),
+    );
     setError(
-      "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv.",
+      tooLarge
+        ? `Plik jest za duży. Maksymalny rozmiar pliku to ${MAX_FILE_SIZE_MB} MB.`
+        : "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv.",
     );
   }, []);
 
@@ -37,6 +47,7 @@ function ImportPage() {
       "text/csv": [".csv"],
     },
     maxFiles: 1,
+    maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
   });
 
   const handleRemoveFile = () => {
@@ -44,6 +55,7 @@ function ImportPage() {
     setProgress(0);
     setError(null);
     setSuccessMsg(null);
+    setImportReport(null);
   };
 
   const handleUpload = async () => {
@@ -72,6 +84,7 @@ function ImportPage() {
         },
       );
 
+      setImportReport(response.data.import_report ?? null);
       setSuccessMsg(
         response.data.message || "Plik został pomyślnie przetworzony!",
       );
@@ -126,6 +139,7 @@ function ImportPage() {
           >
             Zobacz wyniki na Dashboardzie
           </button>
+          <ImportReportSummary report={importReport} />
         </div>
       ) : (
         <>
@@ -145,7 +159,7 @@ function ImportPage() {
                     ? "Upuść plik tutaj..."
                     : "Przeciągnij i upuść plik tutaj"}
                 </h3>
-                <p className="text-sm text-gray-500 mb-6">Format: CSV</p>
+                <p className="text-sm text-gray-500 mb-6">Format: CSV · maks. {MAX_FILE_SIZE_MB} MB</p>
                 <button
                   type="button"
                   className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 transition-colors"

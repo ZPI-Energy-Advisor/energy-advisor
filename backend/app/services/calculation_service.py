@@ -5,6 +5,14 @@ import numpy as np
 import pandas as pd
 from fastapi import HTTPException
 
+from app.parsers import (
+    HOURLY_RESOLUTION,
+    KWH,
+    TIMESTAMP_START,
+    FileImportError,
+    ParsedEnergyFile,
+    parse_energy_file,
+)
 from app.repositories.tariff_repository import TariffRepository
 from app.services.pricing_strategies import (
     SLOT_MINUTES,
@@ -14,22 +22,16 @@ from app.services.pricing_strategies import (
 )
 
 
-YEAR_FIRST_DATE = r'^\d{4}-\d{1,2}-\d{1,2}(?:[ T]|$)'
-DAY_OR_MONTH_FIRST_DATE = r'^(\d{1,2})[./-](\d{1,2})[./-]\d{4}(?:\s|$)'
-EXCEL_SERIAL_DATE = r'^\d+(?:\.\d+)?$'
-QUARTER_HOUR_RESOLUTION = 15
-HOURLY_RESOLUTION = 60
-
-MIDNIGHT_24 = r'(?<=\s)24:00(?=(?::00)?$)'
-
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
 INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
+IMPORT_REPORT_KEY = "import_report"
 
 
 def public_results(results: dict | None) -> dict | None:
     if results is None:
         return None
-    return {key: value for key, value in results.items() if key not in INTERNAL_RESULT_KEYS}
+    hidden = (*INTERNAL_RESULT_KEYS, IMPORT_REPORT_KEY)
+    return {key: value for key, value in results.items() if key not in hidden}
 
 
 def has_usage_series(results: dict) -> bool:
@@ -63,63 +65,24 @@ class CalculationService:
 
     def calculate_all_tariffs(self, file_obj) -> dict:
         try:
-            file_obj.seek(0)
-            df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
-        except UnicodeDecodeError:
-            file_obj.seek(0)
-            df = pd.read_csv(file_obj, sep=';', encoding='windows-1250')
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Błąd odczytu pliku: {e}")
-            
-        df.columns = df.columns.str.strip()
+            parsed = parse_energy_file(file_obj)
+        except FileImportError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-        if "Data i godzina" in df.columns and "Wartosc[kWh/kvar]" in df.columns:
-            df = df.rename(columns={
-                "Data i godzina": "Data",
-                "Wartosc[kWh/kvar]": "Wartość kWh",
-                "Rodzaj energii": "Rodzaj"
-            })
-        elif "Data" not in df.columns or "Wartość kWh" not in df.columns:
-            raise HTTPException(status_code=422, detail="Nierozpoznany format pliku. Brak wymaganych kolumn.")
+        results_dict = self.calculate(parsed)
+        results_dict[IMPORT_REPORT_KEY] = parsed.report.to_dict()
+        return results_dict
 
-        df = df.dropna(subset=['Wartość kWh', 'Data', 'Rodzaj'])
-        df['Rodzaj'] = df['Rodzaj'].astype(str).str.strip().str.lower()
-        
-        df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.', regex=False)
-        df['Wartość kWh'] = pd.to_numeric(df['Wartość kWh'], errors='coerce')
-        df = df.dropna(subset=['Wartość kWh'])
-
-        df = df[df['Rodzaj'].str.contains('pobór|pobor|pobrana', na=False)].copy()
-
-        if df.empty:
-            raise HTTPException(status_code=400, detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.")
-
-        # Odczyt "24:00" to koniec doby - parsujemy go jako 00:00 i przesuwamy na następny dzień.
-        df['Data'] = df['Data'].astype(str).str.strip()
-        mask_24 = df['Data'].str.contains(MIDNIGHT_24, regex=True)
-        df['Data'] = df['Data'].str.replace(MIDNIGHT_24, '00:00', regex=True)
-
-        df['Data'] = self._parse_dates(df['Data'])
-        if df['Data'].isna().all():
-            raise HTTPException(
-                status_code=422,
-                detail="Nie rozpoznano formatu dat w pliku. Obsługiwane formaty: RRRR-MM-DD GG:MM, "
-                "DD.MM.RRRR GG:MM (także z / lub -) oraz daty liczbowe z Excela.",
-            )
-        df = df.dropna(subset=['Data'])
-
-        df.loc[mask_24, 'Data'] = df.loc[mask_24, 'Data'] + pd.Timedelta(days=1)
-
-        resolution = self._detect_resolution_minutes(df['Data'])
+    def calculate(self, parsed: ParsedEnergyFile) -> dict:
+        data = parsed.data
+        resolution = parsed.resolution_minutes
         slots_per_record = resolution // SLOT_MINUTES
 
-        df_15min = df.loc[df.index.repeat(slots_per_record)].reset_index(drop=True)
-        df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / slots_per_record
+        df_15min = data.loc[data.index.repeat(slots_per_record)].reset_index(drop=True)
+        df_15min['Wartość kWh'] = df_15min[KWH] / slots_per_record
 
-        base_timestamps = df_15min['Data']
-
-        minute_offsets = np.tile(np.arange(-resolution, 0, SLOT_MINUTES), len(df))
-        df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
+        minute_offsets = np.tile(np.arange(0, resolution, SLOT_MINUTES), len(data))
+        df_15min['Dokładny Czas'] = df_15min[TIMESTAMP_START] + pd.to_timedelta(minute_offsets, unit='m')
 
         tariffs = self.tariff_repository.get_all()
         if not tariffs:
@@ -136,64 +99,10 @@ class CalculationService:
         }
 
         results_dict = self.summarize_usage(usage, slot_prices, resolution)
-        results_dict["statistics"]["records_count"] = int(len(df))
+        results_dict["statistics"]["records_count"] = int(len(data))
         results_dict["usage_15min"] = usage
         results_dict["slot_prices"] = slot_prices
         return results_dict
-
-    @staticmethod
-    def _detect_resolution_minutes(timestamps: pd.Series) -> int:
-        steps = timestamps.drop_duplicates().sort_values().diff().dropna().dt.total_seconds() / 60
-        if steps.empty:
-            return HOURLY_RESOLUTION
-
-        smallest_step = steps.min()
-        if smallest_step == QUARTER_HOUR_RESOLUTION:
-            return QUARTER_HOUR_RESOLUTION
-        if smallest_step >= HOURLY_RESOLUTION and (steps % HOURLY_RESOLUTION == 0).all():
-            return HOURLY_RESOLUTION
-        raise HTTPException(
-            status_code=422,
-            detail=f"Nieobsługiwana rozdzielczość danych (odstęp {smallest_step:g} min między odczytami). "
-            "Obsługiwane są pliki z odczytami co 15 minut albo co godzinę.",
-        )
-
-    @staticmethod
-    def _parse_dates(values: pd.Series) -> pd.Series:
-        """Rozpoznaje format każdej daty po jej zapisie, a nie po nazwach kolumn pliku.
-
-        - RRRR-MM-DD (np. plik zapisany ponownie w Excelu) - zawsze rok, miesiąc, dzień,
-        - DD.MM.RRRR, DD/MM/RRRR, DD-MM-RRRR - kolejność dnia i miesiąca ustalana dla całego
-          pliku: jeśli gdzieś pierwsza liczba > 12, to dzień jest pierwszy; jeśli tylko druga
-          liczba bywa > 12, to plik jest w układzie MM/DD; gdy nie da się tego rozstrzygnąć,
-          przyjmujemy polski układ z dniem na początku,
-        - liczby - numer seryjny daty z Excela.
-
-        Wartości w nierozpoznanym formacie dostają NaT.
-        """
-        parsed = pd.Series(pd.NaT, index=values.index, dtype='datetime64[ns]')
-
-        year_first = values.str.match(YEAR_FIRST_DATE)
-        if year_first.any():
-            parsed[year_first] = pd.to_datetime(
-                values[year_first], format='mixed', yearfirst=True, dayfirst=False, errors='coerce'
-            )
-
-        day_or_month_first = values.str.match(DAY_OR_MONTH_FIRST_DATE)
-        if day_or_month_first.any():
-            parts = values[day_or_month_first].str.extract(DAY_OR_MONTH_FIRST_DATE).astype(int)
-            month_first = not (parts[0] > 12).any() and (parts[1] > 12).any()
-            parsed[day_or_month_first] = pd.to_datetime(
-                values[day_or_month_first], format='mixed', dayfirst=not month_first, errors='coerce'
-            )
-
-        excel_serial = values.str.match(EXCEL_SERIAL_DATE)
-        if excel_serial.any():
-            parsed[excel_serial] = pd.to_datetime(
-                pd.to_numeric(values[excel_serial]), unit='D', origin='1899-12-30'
-            ).dt.round('min')
-
-        return parsed
 
     @classmethod
     def calculate_for_range(cls, results: dict, date_from: date, date_to: date) -> dict:

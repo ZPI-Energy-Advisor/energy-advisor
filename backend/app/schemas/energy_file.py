@@ -88,4 +88,5 @@ class EnergyDataFileDataResponse(BaseModel):
     # Zakres dat, którego dotyczą wyniki (oba końce włącznie).
     date_from: date | None = None
     date_to: date | None = None
+    import_report: dict[str, Any] | None = None
     results: dict[str, Any]
