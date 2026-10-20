@@ -448,14 +448,12 @@ def test_import_without_any_recognized_date_raises_422():
 
 
 def _import_rows(rows, header=SIMPLE_HEADER):
-    """Importuje plik z podanych par (znacznik czasu, kWh)."""
     lines = "\n".join(f"{timestamp};{str(kwh).replace('.', ',')};pobór" for timestamp, kwh in rows)
     content = f"{header}\n{lines}".encode("utf-8")
     return CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(content))
 
 
 def _quarter_rows(day, values):
-    """Odczyty 15-minutowe jednej doby: znacznik to koniec kwadransu (00:15 ... 24:00)."""
     rows = []
     for index, kwh in enumerate(values):
         minutes = (index + 1) * 15
@@ -500,12 +498,9 @@ def test_quarter_hour_file_in_meter_format_with_midnight_24():
 @pytest.mark.parametrize(
     "rows, expected",
     [
-        # Brakujące godziny i całe dni nie zmieniają rozdzielczości.
         ([("2025-01-01 01:00", 1), ("2025-01-01 05:00", 1), ("2025-01-03 01:00", 1)], 60),
         ([("2025-01-01 00:15", 1), ("2025-01-01 03:00", 1), ("2025-01-01 03:15", 1)], 15),
-        # Powtórzona godzina przy zmianie czasu z letniego na zimowy.
         ([("2025-10-26 02:00", 1), ("2025-10-26 02:00", 1), ("2025-10-26 03:00", 1)], 60),
-        # Jeden odczyt - jak dotąd traktowany jako godzinowy.
         ([("2025-01-01 01:00", 1)], 60),
     ],
     ids=["godzinowy-z-lukami", "kwadransowy-z-lukami", "zmiana-czasu", "jeden-odczyt"],
@@ -515,7 +510,6 @@ def test_resolution_detection(rows, expected):
 
 
 def test_resolution_detection_handles_imprecise_excel_times():
-    # Godziny 01:00-03:00 dnia 2025-01-01 jako liczby z Excela (ułamek doby nie jest dokładny).
     rows = [(f"{45658 + hour / 24}", 1.0) for hour in range(1, 4)]
 
     results = _import_rows(rows, header=METER_HEADER)

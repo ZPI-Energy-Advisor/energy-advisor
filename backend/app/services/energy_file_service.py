@@ -126,7 +126,6 @@ class EnergyFileService:
         # dynamiczne łączymy po dniach, bo każdy plik ma ceny tylko dla swojego okresu.
         slot_prices = CalculationService.merge_slot_prices([source["slot_prices"] for source in sources])
         resolutions = [source_resolution(source) for source in sources]
-        # Przy plikach o różnej rozdzielczości (15 min i 1 h) wspólnej rozdzielczości nie ma.
         common_resolution = resolutions[0] if len(set(resolutions)) == 1 else None
         merged_results = {
             "usage_15min": usage,
@@ -140,7 +139,6 @@ class EnergyFileService:
         else:
             date_from, date_to = self._resolve_range(data_start, data_end, date_from, date_to)
 
-        # Odczyt godzinowy zajmuje 4 kwadranse, a 15-minutowy jeden - liczymy rekordy osobno dla każdego pliku.
         records_count = round(sum(
             contribution["slots_used"] * SLOT_MINUTES / resolution
             for contribution, resolution in zip(contributions, resolutions)

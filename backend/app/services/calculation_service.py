@@ -17,7 +17,6 @@ from app.services.pricing_strategies import (
 YEAR_FIRST_DATE = r'^\d{4}-\d{1,2}-\d{1,2}(?:[ T]|$)'
 DAY_OR_MONTH_FIRST_DATE = r'^(\d{1,2})[./-](\d{1,2})[./-]\d{4}(?:\s|$)'
 EXCEL_SERIAL_DATE = r'^\d+(?:\.\d+)?$'
-# Obsługiwane rozdzielczości plików z licznika (w minutach).
 QUARTER_HOUR_RESOLUTION = 15
 HOURLY_RESOLUTION = 60
 
@@ -38,7 +37,6 @@ def has_usage_series(results: dict) -> bool:
 
 
 def source_resolution(results: dict) -> int | None:
-    """Rozdzielczość danych źródłowych w minutach; wyniki sprzed jej wykrywania były zawsze godzinowe."""
     return results.get("statistics", {}).get("resolution_minutes", HOURLY_RESOLUTION)
 
 
@@ -112,8 +110,6 @@ class CalculationService:
 
         df.loc[mask_24, 'Data'] = df.loc[mask_24, 'Data'] + pd.Timedelta(days=1)
 
-        # Znacznik czasu oznacza koniec okresu pomiaru: odczyt godzinowy "01:00" to 00:00-01:00
-        # (rozbijany po równo na 4 kwadranse), a odczyt 15-minutowy "00:15" to kwadrans 00:00-00:15.
         resolution = self._detect_resolution_minutes(df['Data'])
         slots_per_record = resolution // SLOT_MINUTES
 
@@ -147,12 +143,6 @@ class CalculationService:
 
     @staticmethod
     def _detect_resolution_minutes(timestamps: pd.Series) -> int:
-        """Rozpoznaje, czy plik zawiera odczyty co 15 minut, czy co godzinę.
-
-        Decyduje najmniejszy odstęp między kolejnymi różnymi znacznikami czasu, więc luki
-        w danych (brakujące godziny lub dni) nie zmieniają wyniku. Powtórzone znaczniki
-        (np. przy zmianie czasu) są pomijane. Plik z jednym odczytem traktujemy jako godzinowy.
-        """
         steps = timestamps.drop_duplicates().sort_values().diff().dropna().dt.total_seconds() / 60
         if steps.empty:
             return HOURLY_RESOLUTION
@@ -199,7 +189,6 @@ class CalculationService:
 
         excel_serial = values.str.match(EXCEL_SERIAL_DATE)
         if excel_serial.any():
-            # Ułamek doby z Excela bywa niedokładny (01:00 = 00:59:59.999), więc zaokrąglamy do minuty.
             parsed[excel_serial] = pd.to_datetime(
                 pd.to_numeric(values[excel_serial]), unit='D', origin='1899-12-30'
             ).dt.round('min')
@@ -327,8 +316,6 @@ class CalculationService:
         slot_prices: dict,
         resolution_minutes: int | None = HOURLY_RESOLUTION,
     ) -> dict:
-        """resolution_minutes: rozdzielczość danych źródłowych (15 albo 60); None, gdy źródła
-        mają różne rozdzielczości - wtedy liczba rekordów nie jest jednoznaczna."""
         rows = [
             (day, slot, kwh)
             for day, day_slots in usage.items()

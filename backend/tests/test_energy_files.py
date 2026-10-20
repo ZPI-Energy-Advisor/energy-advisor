@@ -684,7 +684,6 @@ def test_all_files_counts_records_per_file_resolution(db):
 
     body = _all_data(user).json()
 
-    # 2 doby po 24 odczyty godzinowe + 1 doba z 96 odczytami 15-minutowymi.
     assert body["file"]["records_count"] == 2 * 24 + 96
     assert body["results"]["statistics"]["resolution_minutes"] is None
     assert body["results"]["statistics"]["records_count"] is None
@@ -709,6 +708,5 @@ def test_quarter_hour_file_overrides_hourly_data_per_slot(db):
 
     body = _all_data(user).json()
 
-    # Pierwsza godzina z nowszego pliku 15-minutowego (4 x 1 kWh), reszta doby z godzinowego (92 x 0,25).
     assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 4 + 92 * 0.25
     assert body["file"]["records_count"] == 4 + 23
