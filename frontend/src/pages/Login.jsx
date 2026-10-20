@@ -4,6 +4,7 @@ import { GoogleLogin } from "@react-oauth/google";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+const SESSION_EXPIRED_MESSAGE = "Sesja wygasła, zaloguj się ponownie.";
 
 function getRedirectPath(from) {
   if (!from?.pathname || from.pathname === "/") {
@@ -17,7 +18,7 @@ function Login() {
   const [password, setPassword] = useState("");
   const location = useLocation();
   const [message, setMessage] = useState(
-    location.state?.sessionExpired ? "Sesja wygasła, zaloguj się ponownie." : "",
+    location.state?.sessionExpired ? SESSION_EXPIRED_MESSAGE : "",
   );
   const [isRegister, setIsRegister] = useState(false);
   const navigate = useNavigate();
@@ -160,7 +161,14 @@ function Login() {
           </form>
 
           {message && (
-            <div className="mt-4 text-center text-sm font-medium text-emerald-600 bg-emerald-50 p-3 rounded">
+            <div
+              role={message === SESSION_EXPIRED_MESSAGE ? "status" : "alert"}
+              className={`mt-4 text-center text-sm font-medium p-3 rounded ${
+                message === SESSION_EXPIRED_MESSAGE
+                  ? "text-amber-700 bg-amber-50"
+                  : "text-red-600 bg-red-50"
+              }`}
+            >
               {message}
             </div>
           )}

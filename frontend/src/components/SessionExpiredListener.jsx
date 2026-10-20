@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { SESSION_EXPIRED_EVENT } from "../api/client";
+import { SESSION_EXPIRED_EVENT, isAuthenticated } from "../api/client";
 
 function SessionExpiredListener() {
   const navigate = useNavigate();
@@ -19,8 +19,18 @@ function SessionExpiredListener() {
       });
     };
 
+    const handleStorage = (event) => {
+      if ((event.key === "access_token" || event.key === null) && !isAuthenticated()) {
+        handleSessionExpired();
+      }
+    };
+
     window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
-    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, [navigate]);
 
   return null;

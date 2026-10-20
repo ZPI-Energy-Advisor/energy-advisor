@@ -94,6 +94,13 @@ apiClient.interceptors.response.use(
       originalRequest.headers.Authorization = `Bearer ${accessToken}`;
       return apiClient(originalRequest);
     } catch (refreshError) {
+      // Inna karta zdążyła odświeżyć tokeny tym samym refresh tokenem - ponawiamy z jej access tokenem.
+      const currentRefreshToken = localStorage.getItem("refresh_token");
+      if (refreshError.response && currentRefreshToken && currentRefreshToken !== refreshToken) {
+        originalRequest.headers.Authorization = `Bearer ${localStorage.getItem("access_token")}`;
+        return apiClient(originalRequest);
+      }
+
       // Bez odpowiedzi serwera (np. brak sieci) sesja może być nadal ważna.
       if (refreshError.response) {
         clearAuth();

@@ -113,6 +113,29 @@ describe("apiClient", () => {
     window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
   });
 
+  it("gdy inna karta zdążyła odświeżyć tokeny, ponawia zapytanie zamiast wylogowywać", async () => {
+    loginAs();
+    const listener = listenForSessionExpired();
+    handler = (config) => {
+      if (isRefresh(config)) {
+        // Druga karta wymieniła ten sam refresh token chwilę wcześniej - backend go już unieważnił.
+        localStorage.setItem("access_token", "access-z-innej-karty");
+        localStorage.setItem("refresh_token", "refresh-z-innej-karty");
+        return response(config, 401);
+      }
+      return config.headers.Authorization === "Bearer access-z-innej-karty"
+        ? response(config, 200, { ok: true })
+        : response(config, 401);
+    };
+
+    const result = await apiClient.get("/energy-files");
+
+    expect(result.data).toEqual({ ok: true });
+    expect(isAuthenticated()).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+  });
+
   it("przy braku sieci podczas refreshu nie wylogowuje", async () => {
     loginAs();
     const listener = listenForSessionExpired();

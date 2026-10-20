@@ -44,7 +44,15 @@ describe("Login", () => {
   it("pokazuje komunikat po wygaśnięciu sesji", () => {
     renderLogin({ sessionExpired: true });
 
-    expect(screen.getByText("Sesja wygasła, zaloguj się ponownie.")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Sesja wygasła, zaloguj się ponownie.");
+  });
+
+  it("błąd logowania pokazuje jako alert, nie jako informację", () => {
+    renderLogin();
+
+    fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
+
+    expect(screen.getByRole("alert").textContent).toBe("Wypełnij wszystkie pola!");
   });
 
   it("bez wygaśnięcia sesji nie pokazuje komunikatu", () => {

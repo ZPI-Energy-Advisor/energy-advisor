@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import SessionExpiredListener from "./SessionExpiredListener";
 import { SESSION_EXPIRED_EVENT } from "../api/client";
+import { loginAs } from "../test/auth";
 
 function LoginProbe() {
   const { state } = useLocation();
@@ -49,5 +50,26 @@ describe("SessionExpiredListener", () => {
     expireSession();
 
     expect(screen.getByText("logowanie, wygasła: true, from: /prices")).toBeTruthy();
+  });
+
+  it("po wylogowaniu w innej karcie przenosi na logowanie", () => {
+    renderAt("/prices");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "access_token", newValue: null }));
+    });
+
+    expect(screen.getByText("logowanie, wygasła: true, from: /prices")).toBeTruthy();
+  });
+
+  it("zmiana tokenów w innej karcie przy aktywnej sesji nie wylogowuje", () => {
+    loginAs();
+    renderAt("/prices");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "access_token", newValue: "nowy" }));
+    });
+
+    expect(screen.getByText("ceny")).toBeTruthy();
   });
 });
