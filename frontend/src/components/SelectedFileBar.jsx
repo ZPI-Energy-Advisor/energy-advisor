@@ -1,12 +1,18 @@
 import { Link } from "react-router-dom";
 import { FiFileText, FiLayers } from "react-icons/fi";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { ALL_FILES_ID, FILES_TABLE_ANCHOR, formatDateRange, formatFilesCount } from "../utils/energyFiles";
+import {
+  ALL_FILES_ID,
+  FILES_TABLE_ANCHOR,
+  formatDataResolution,
+  formatDateRange,
+  formatFilesCount,
+} from "../utils/energyFiles";
 
 // Pokazuje, z którego pliku pochodzą wyświetlane dane. Sam wybór odbywa się
 // w tabeli "Twoje pliki" na stronie importu.
 function SelectedFileBar() {
-  const { selectedFile, isLoadingData, dataError, clearDataError } = useEnergyFiles();
+  const { selectedFile, results, isLoadingData, dataError, clearDataError } = useEnergyFiles();
 
   if (!selectedFile) return null;
 
@@ -16,6 +22,7 @@ function SelectedFileBar() {
     selectedFile.days_count != null && `${selectedFile.days_count} dni`,
     selectedFile.records_count != null && `${selectedFile.records_count} rekordów`,
     isAggregate && formatFilesCount(selectedFile.files_count),
+    formatDataResolution(results?.statistics),
   ].filter(Boolean);
   const skippedFiles = isAggregate ? selectedFile.skipped_files ?? [] : [];
 

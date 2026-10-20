@@ -653,3 +653,60 @@ def test_delete_other_users_or_missing_file(db):
 def test_aggregate_endpoints_require_token():
     assert client.get("/api/v1/energy-files/all/data").status_code == 401
     assert client.delete(f"/api/v1/energy-files/{uuid.uuid4()}").status_code == 401
+
+
+def _create_file_with_resolution(db, user, usage, resolution, *, name, uploaded_at):
+    results = {
+        **CalculationService.summarize_usage(usage, SLOT_PRICES, resolution),
+        "usage_15min": usage,
+        "slot_prices": SLOT_PRICES,
+    }
+    energy_file = EnergyDataFile(
+        user_id=user.id,
+        file_name=name,
+        uploaded_at=uploaded_at,
+        data_start=datetime.date.fromisoformat(min(usage)),
+        data_end=datetime.date.fromisoformat(max(usage)),
+        records_count=results["statistics"]["records_count"],
+        status=EnergyDataFile.STATUS_COMPLETED,
+    )
+    db.add(energy_file)
+    db.commit()
+    db.add(Simulation(user_id=user.id, energy_data_file_id=energy_file.id, results=results))
+    db.commit()
+    return energy_file
+
+
+def test_all_files_counts_records_per_file_resolution(db):
+    user = _create_user(db)
+    _create_file_with_resolution(db, user, _days("2025-01-01", 2, 0.25), 60, name="godzinowy.csv", uploaded_at=T0)
+    _create_file_with_resolution(db, user, _days("2025-01-03", 1, 0.25), 15, name="kwadransowy.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["file"]["records_count"] == 2 * 24 + 96
+    assert body["results"]["statistics"]["resolution_minutes"] is None
+    assert body["results"]["statistics"]["records_count"] is None
+
+
+def test_all_files_with_one_resolution_keeps_it(db):
+    user = _create_user(db)
+    _create_file_with_resolution(db, user, _days("2025-01-01", 1, 0.25), 15, name="a.csv", uploaded_at=T0)
+    _create_file_with_resolution(db, user, _days("2025-01-02", 1, 0.25), 15, name="b.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["file"]["records_count"] == 2 * 96
+    assert body["results"]["statistics"]["resolution_minutes"] == 15
+    assert body["results"]["statistics"]["records_count"] == 2 * 96
+
+
+def test_quarter_hour_file_overrides_hourly_data_per_slot(db):
+    user = _create_user(db)
+    _create_file_with_resolution(db, user, _days("2025-01-01", 1, 0.25), 60, name="godzinowy.csv", uploaded_at=T0)
+    _create_file_with_resolution(db, user, {"2025-01-01": [1.0] * 4 + [None] * 92}, 15, name="kwadrans.csv", uploaded_at=T1)
+
+    body = _all_data(user).json()
+
+    assert body["results"]["tariffs"]["G11"]["total_usage_kwh"] == 4 + 92 * 0.25
+    assert body["file"]["records_count"] == 4 + 23

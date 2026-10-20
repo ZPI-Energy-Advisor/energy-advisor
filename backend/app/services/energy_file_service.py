@@ -7,7 +7,13 @@ from fastapi import HTTPException, status
 from app.models.EnergyDataFile import EnergyDataFile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
-from app.services.calculation_service import CalculationService, has_usage_series, public_results
+from app.services.calculation_service import (
+    CalculationService,
+    has_usage_series,
+    public_results,
+    source_resolution,
+)
+from app.services.pricing_strategies import SLOT_MINUTES
 from app.schemas.energy_file import (
     AggregateSourceFile,
     AggregateSourceOut,
@@ -119,7 +125,13 @@ class EnergyFileService:
         # Ceny stałe bierzemy z najnowszego importu (aktualny zestaw taryf), a ceny
         # dynamiczne łączymy po dniach, bo każdy plik ma ceny tylko dla swojego okresu.
         slot_prices = CalculationService.merge_slot_prices([source["slot_prices"] for source in sources])
-        merged_results = {"usage_15min": usage, "slot_prices": slot_prices}
+        resolutions = [source_resolution(source) for source in sources]
+        common_resolution = resolutions[0] if len(set(resolutions)) == 1 else None
+        merged_results = {
+            "usage_15min": usage,
+            "slot_prices": slot_prices,
+            "statistics": {"resolution_minutes": common_resolution},
+        }
 
         data_start, data_end = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
         if date_from is None and date_to is None:
@@ -127,7 +139,10 @@ class EnergyFileService:
         else:
             date_from, date_to = self._resolve_range(data_start, data_end, date_from, date_to)
 
-        records_count = sum(kwh is not None for day_slots in usage.values() for kwh in day_slots) // 4
+        records_count = round(sum(
+            contribution["slots_used"] * SLOT_MINUTES / resolution
+            for contribution, resolution in zip(contributions, resolutions)
+        ))
 
         source = AggregateSourceOut(
             data_start=data_start,

@@ -17,6 +17,9 @@ from app.services.pricing_strategies import (
 YEAR_FIRST_DATE = r'^\d{4}-\d{1,2}-\d{1,2}(?:[ T]|$)'
 DAY_OR_MONTH_FIRST_DATE = r'^(\d{1,2})[./-](\d{1,2})[./-]\d{4}(?:\s|$)'
 EXCEL_SERIAL_DATE = r'^\d+(?:\.\d+)?$'
+QUARTER_HOUR_RESOLUTION = 15
+HOURLY_RESOLUTION = 60
+
 MIDNIGHT_24 = r'(?<=\s)24:00(?=(?::00)?$)'
 
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
@@ -31,6 +34,10 @@ def public_results(results: dict | None) -> dict | None:
 
 def has_usage_series(results: dict) -> bool:
     return all(key in results for key in INTERNAL_RESULT_KEYS)
+
+
+def source_resolution(results: dict) -> int | None:
+    return results.get("statistics", {}).get("resolution_minutes", HOURLY_RESOLUTION)
 
 
 class CalculationService:
@@ -103,12 +110,15 @@ class CalculationService:
 
         df.loc[mask_24, 'Data'] = df.loc[mask_24, 'Data'] + pd.Timedelta(days=1)
 
-        df_15min = df.loc[df.index.repeat(4)].reset_index(drop=True)
-        df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / 4.0
+        resolution = self._detect_resolution_minutes(df['Data'])
+        slots_per_record = resolution // SLOT_MINUTES
+
+        df_15min = df.loc[df.index.repeat(slots_per_record)].reset_index(drop=True)
+        df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / slots_per_record
 
         base_timestamps = df_15min['Data']
 
-        minute_offsets = np.tile([-60, -45, -30, -15], len(df))
+        minute_offsets = np.tile(np.arange(-resolution, 0, SLOT_MINUTES), len(df))
         df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
 
         tariffs = self.tariff_repository.get_all()
@@ -125,11 +135,28 @@ class CalculationService:
             for tariff in tariffs
         }
 
-        results_dict = self.summarize_usage(usage, slot_prices)
+        results_dict = self.summarize_usage(usage, slot_prices, resolution)
         results_dict["statistics"]["records_count"] = int(len(df))
         results_dict["usage_15min"] = usage
         results_dict["slot_prices"] = slot_prices
         return results_dict
+
+    @staticmethod
+    def _detect_resolution_minutes(timestamps: pd.Series) -> int:
+        steps = timestamps.drop_duplicates().sort_values().diff().dropna().dt.total_seconds() / 60
+        if steps.empty:
+            return HOURLY_RESOLUTION
+
+        smallest_step = steps.min()
+        if smallest_step == QUARTER_HOUR_RESOLUTION:
+            return QUARTER_HOUR_RESOLUTION
+        if smallest_step >= HOURLY_RESOLUTION and (steps % HOURLY_RESOLUTION == 0).all():
+            return HOURLY_RESOLUTION
+        raise HTTPException(
+            status_code=422,
+            detail=f"Nieobsługiwana rozdzielczość danych (odstęp {smallest_step:g} min między odczytami). "
+            "Obsługiwane są pliki z odczytami co 15 minut albo co godzinę.",
+        )
 
     @staticmethod
     def _parse_dates(values: pd.Series) -> pd.Series:
@@ -164,7 +191,7 @@ class CalculationService:
         if excel_serial.any():
             parsed[excel_serial] = pd.to_datetime(
                 pd.to_numeric(values[excel_serial]), unit='D', origin='1899-12-30'
-            )
+            ).dt.round('min')
 
         return parsed
 
@@ -173,7 +200,7 @@ class CalculationService:
         """Przelicza wykresy, sumy i statystyki dla dni z przedziału [date_from, date_to] (oba włącznie)."""
         start, end = date_from.isoformat(), date_to.isoformat()
         usage = {day: slots for day, slots in results["usage_15min"].items() if start <= day <= end}
-        return cls.summarize_usage(usage, results["slot_prices"])
+        return cls.summarize_usage(usage, results["slot_prices"], source_resolution(results))
 
     @staticmethod
     def merge_usage(sources: list[dict]) -> tuple[dict, list[dict]]:
@@ -283,7 +310,12 @@ class CalculationService:
         return dict(sorted(usage.items()))
 
     @classmethod
-    def summarize_usage(cls, usage: dict, slot_prices: dict) -> dict:
+    def summarize_usage(
+        cls,
+        usage: dict,
+        slot_prices: dict,
+        resolution_minutes: int | None = HOURLY_RESOLUTION,
+    ) -> dict:
         rows = [
             (day, slot, kwh)
             for day, day_slots in usage.items()
@@ -291,7 +323,7 @@ class CalculationService:
             if kwh is not None
         ]
         if not rows:
-            return cls._empty_results(slot_prices)
+            return cls._empty_results(slot_prices, resolution_minutes)
 
         df_15min = pd.DataFrame(rows, columns=['date', 'slot', 'Wartość kWh'])
         df_15min['Dokładny Czas'] = pd.to_datetime(df_15min['date']) + pd.to_timedelta(
@@ -346,8 +378,10 @@ class CalculationService:
         incomplete_days = daily_counts[daily_counts < SLOTS_PER_DAY].index.tolist()
 
         results_dict["statistics"] = {
-            # Dane źródłowe są godzinowe, więc jeden rekord to 4 sloty 15-minutowe.
-            "records_count": int(len(df_15min)) // 4,
+            "records_count": (
+                int(len(df_15min)) // (resolution_minutes // SLOT_MINUTES) if resolution_minutes else None
+            ),
+            "resolution_minutes": resolution_minutes,
             "days_analyzed": int(df_15min['date'].nunique()),
             "data_start": first_date,
             "data_end": last_date,
@@ -358,7 +392,7 @@ class CalculationService:
         return results_dict
 
     @staticmethod
-    def _empty_results(slot_prices: dict) -> dict:
+    def _empty_results(slot_prices: dict, resolution_minutes: int | None) -> dict:
         return {
             "tariffs": {
                 tariff_name: {"type": tariff["type"], "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
@@ -369,6 +403,7 @@ class CalculationService:
             "chart_daily": [],
             "statistics": {
                 "records_count": 0,
+                "resolution_minutes": resolution_minutes,
                 "days_analyzed": 0,
                 "data_start": None,
                 "data_end": None,
