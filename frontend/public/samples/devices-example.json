@@ -1,0 +1,691 @@
+{
+  "period": {
+    "start": "2026-10-19T00:00:00+02:00",
+    "end": "2026-10-21T00:00:00+02:00"
+  },
+  "devices": [
+    {
+      "device_id": "dev_wm_01",
+      "device_name": "Pralka Bosch",
+      "device_type": "washing_machine",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "07:00", "to": "22:00" }
+      },
+      "programs": [
+        {
+          "program_id": "cotton_60",
+          "program_name": "Bawełna 60°C",
+          "duration_min": 120,
+          "profile_kwh": [0.45, 0.45, 0.30, 0.10, 0.10, 0.15, 0.20, 0.20]
+        },
+        {
+          "program_id": "quick_40",
+          "program_name": "Szybkie 40°C",
+          "duration_min": 60,
+          "profile_kwh": [0.35, 0.25, 0.10, 0.10]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_td_01",
+      "device_name": "Suszarka do ubrań Electrolux",
+      "device_type": "tumble_dryer",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "07:00", "to": "22:00" }
+      },
+      "programs": [
+        {
+          "program_id": "cotton_dry",
+          "program_name": "Bawełna do szafy",
+          "duration_min": 120,
+          "profile_kwh": [0.30, 0.35, 0.35, 0.35, 0.30, 0.25, 0.15, 0.05]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_dw_01",
+      "device_name": "Zmywarka Siemens",
+      "device_type": "dishwasher",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "19:00", "to": "07:00" }
+      },
+      "programs": [
+        {
+          "program_id": "eco",
+          "program_name": "Eco",
+          "duration_min": 180,
+          "profile_kwh": [0.15, 0.15, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03, 0.12, 0.12, 0.06, 0.05]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_ev_01",
+      "device_name": "Ładowarka EV",
+      "device_type": "ev_charger",
+      "device_category": "Pojazd elektryczny",
+      "max_power_kw": 3.7,
+      "flexibility": {
+        "mode": "interruptible",
+        "allowed_window": { "from": "17:00", "to": "07:00" }
+      }
+    },
+    {
+      "device_id": "dev_hp_01",
+      "device_name": "Pompa ciepła Panasonic",
+      "device_type": "heat_pump",
+      "device_category": "Ogrzewanie",
+      "max_power_kw": 4.5,
+      "flexibility": {
+        "mode": "shiftable",
+        "max_shift_min": 60
+      }
+    },
+    {
+      "device_id": "dev_pv_01",
+      "device_name": "Instalacja PV 6 kWp",
+      "device_type": "pv_inverter",
+      "device_category": "OZE",
+      "max_power_kw": 6.0,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_vent_01",
+      "device_name": "Rekuperator",
+      "device_type": "ventilation",
+      "device_category": "Ogrzewanie",
+      "max_power_kw": 0.08,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_fr_01",
+      "device_name": "Lodówka Samsung",
+      "device_type": "fridge",
+      "device_category": "AGD",
+      "max_power_kw": 0.15,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_hob_01",
+      "device_name": "Płyta indukcyjna",
+      "device_type": "induction_hob",
+      "device_category": "AGD",
+      "max_power_kw": 7.2,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_ov_01",
+      "device_name": "Piekarnik elektryczny",
+      "device_type": "oven",
+      "device_category": "AGD",
+      "max_power_kw": 3.0,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_mw_01",
+      "device_name": "Kuchenka mikrofalowa",
+      "device_type": "microwave",
+      "device_category": "AGD",
+      "max_power_kw": 1.2,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_kt_01",
+      "device_name": "Czajnik elektryczny",
+      "device_type": "kettle",
+      "device_category": "AGD",
+      "max_power_kw": 2.2,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_cm_01",
+      "device_name": "Ekspres do kawy",
+      "device_type": "coffee_machine",
+      "device_category": "AGD",
+      "max_power_kw": 1.5,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_01",
+      "device_name": "Oświetlenie salon",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.12,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_02",
+      "device_name": "Oświetlenie kuchnia",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.08,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_03",
+      "device_name": "Oświetlenie sypialnia",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.06,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_04",
+      "device_name": "Oświetlenie łazienka",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.04,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_05",
+      "device_name": "Oświetlenie przedpokój",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.03,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_06",
+      "device_name": "Oświetlenie ogród",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.05,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_tv_01",
+      "device_name": "Telewizor salon",
+      "device_type": "tv",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.15,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_pc_01",
+      "device_name": "Komputer gabinet",
+      "device_type": "computer",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.25,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_rt_01",
+      "device_name": "Router Wi-Fi",
+      "device_type": "router",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.012,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_vc_01",
+      "device_name": "Odkurzacz",
+      "device_type": "vacuum_cleaner",
+      "device_category": "Inne",
+      "max_power_kw": 1.6,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_hd_01",
+      "device_name": "Suszarka do włosów",
+      "device_type": "hair_dryer",
+      "device_category": "Inne",
+      "max_power_kw": 2.0,
+      "flexibility": { "mode": "fixed" }
+    }
+  ],
+  "energy_usage": [
+    {
+      "action_id": "act_0001",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-10-19T00:00:00+02:00",
+      "action_end": "2026-10-20T00:00:00+02:00",
+      "energy_kwh": 0.95
+    },
+    {
+      "action_id": "act_0002",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-10-19T00:00:00+02:00",
+      "action_end": "2026-10-20T00:00:00+02:00",
+      "energy_kwh": 0.28
+    },
+    {
+      "action_id": "act_0003",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-10-19T00:00:00+02:00",
+      "action_end": "2026-10-20T00:00:00+02:00",
+      "energy_kwh": 0.84
+    },
+    {
+      "action_id": "act_0004",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-10-19T04:00:00+02:00",
+      "action_end": "2026-10-19T07:30:00+02:00",
+      "energy_kwh": 5.20
+    },
+    {
+      "action_id": "act_0005",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-10-19T06:15:00+02:00",
+      "action_end": "2026-10-19T06:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0006",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-10-19T06:15:00+02:00",
+      "action_end": "2026-10-19T07:00:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0007",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-10-19T06:30:00+02:00",
+      "action_end": "2026-10-19T06:45:00+02:00",
+      "energy_kwh": 0.20
+    },
+    {
+      "action_id": "act_0008",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-10-19T06:30:00+02:00",
+      "action_end": "2026-10-19T07:30:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0009",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-10-19T06:30:00+02:00",
+      "action_end": "2026-10-19T07:45:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0010",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-10-19T06:30:00+02:00",
+      "action_end": "2026-10-19T07:30:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0011",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-10-19T06:45:00+02:00",
+      "action_end": "2026-10-19T07:00:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0012",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-10-19T07:00:00+02:00",
+      "action_end": "2026-10-19T07:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0013",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-10-19T07:15:00+02:00",
+      "action_end": "2026-10-19T07:30:00+02:00",
+      "energy_kwh": 0.25
+    },
+    {
+      "action_id": "act_0014",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-10-19T08:00:00+02:00",
+      "action_end": "2026-10-19T17:00:00+02:00",
+      "energy_kwh": -10.90,
+      "profile_kwh": [-0.02, -0.06, -0.10, -0.14, -0.18, -0.22, -0.26, -0.29, -0.32, -0.35, -0.38, -0.40,
+                      -0.42, -0.44, -0.45, -0.47, -0.47, -0.48, -0.48, -0.47, -0.47, -0.45, -0.44, -0.42,
+                      -0.40, -0.38, -0.35, -0.32, -0.29, -0.26, -0.22, -0.18, -0.14, -0.10, -0.06, -0.02]
+    },
+    {
+      "action_id": "act_0015",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-10-19T08:30:00+02:00",
+      "action_end": "2026-10-19T16:30:00+02:00",
+      "energy_kwh": 1.20
+    },
+    {
+      "action_id": "act_0016",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-10-19T09:30:00+02:00",
+      "action_end": "2026-10-19T11:30:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0017",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "action_start": "2026-10-19T11:45:00+02:00",
+      "action_end": "2026-10-19T13:45:00+02:00",
+      "energy_kwh": 2.10
+    },
+    {
+      "action_id": "act_0018",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-10-19T13:00:00+02:00",
+      "action_end": "2026-10-19T13:15:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0019",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-10-19T16:00:00+02:00",
+      "action_end": "2026-10-19T16:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0020",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-10-19T17:00:00+02:00",
+      "action_end": "2026-10-19T20:00:00+02:00",
+      "energy_kwh": 3.60
+    },
+    {
+      "action_id": "act_0021",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-10-19T17:00:00+02:00",
+      "action_end": "2026-10-19T23:15:00+02:00",
+      "energy_kwh": 0.70
+    },
+    {
+      "action_id": "act_0022",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-10-19T17:00:00+02:00",
+      "action_end": "2026-10-19T21:00:00+02:00",
+      "energy_kwh": 0.30
+    },
+    {
+      "action_id": "act_0023",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-10-19T17:00:00+02:00",
+      "action_end": "2026-10-19T22:00:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0024",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-10-19T17:15:00+02:00",
+      "action_end": "2026-10-19T23:00:00+02:00",
+      "energy_kwh": 0.28
+    },
+    {
+      "action_id": "act_0025",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-10-19T17:30:00+02:00",
+      "action_end": "2026-10-19T18:15:00+02:00",
+      "energy_kwh": 1.10
+    },
+    {
+      "action_id": "act_0026",
+      "device_id": "dev_ov_01",
+      "action_start": "2026-10-19T17:45:00+02:00",
+      "action_end": "2026-10-19T18:45:00+02:00",
+      "energy_kwh": 1.60
+    },
+    {
+      "action_id": "act_0027",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-10-19T17:45:00+02:00",
+      "action_start": "2026-10-19T18:00:00+02:00",
+      "action_end": "2026-10-19T21:15:00+02:00",
+      "energy_kwh": 12.00,
+      "deadline": "2026-10-20T07:00:00+02:00"
+    },
+    {
+      "action_id": "act_0028",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-10-19T19:30:00+02:00",
+      "action_end": "2026-10-19T23:00:00+02:00",
+      "energy_kwh": 0.45
+    },
+    {
+      "action_id": "act_0029",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-10-19T20:30:00+02:00",
+      "action_end": "2026-10-19T20:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0030",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-10-19T21:45:00+02:00",
+      "action_end": "2026-10-19T22:30:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0031",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-10-19T22:30:00+02:00",
+      "action_end": "2026-10-20T01:30:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0032",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-10-19T22:30:00+02:00",
+      "action_end": "2026-10-19T23:30:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0033",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-10-20T00:00:00+02:00",
+      "action_end": "2026-10-21T00:00:00+02:00",
+      "energy_kwh": 1.02
+    },
+    {
+      "action_id": "act_0034",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-10-20T00:00:00+02:00",
+      "action_end": "2026-10-21T00:00:00+02:00",
+      "energy_kwh": 0.28
+    },
+    {
+      "action_id": "act_0035",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-10-20T00:00:00+02:00",
+      "action_end": "2026-10-21T00:00:00+02:00",
+      "energy_kwh": 0.84
+    },
+    {
+      "action_id": "act_0036",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-10-20T04:00:00+02:00",
+      "action_end": "2026-10-20T07:00:00+02:00",
+      "energy_kwh": 4.80
+    },
+    {
+      "action_id": "act_0037",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-10-20T06:15:00+02:00",
+      "action_end": "2026-10-20T06:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0038",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-10-20T06:15:00+02:00",
+      "action_end": "2026-10-20T07:00:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0039",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-10-20T06:30:00+02:00",
+      "action_end": "2026-10-20T06:45:00+02:00",
+      "energy_kwh": 0.18
+    },
+    {
+      "action_id": "act_0040",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-10-20T06:30:00+02:00",
+      "action_end": "2026-10-20T07:30:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0041",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-10-20T06:30:00+02:00",
+      "action_end": "2026-10-20T07:30:00+02:00",
+      "energy_kwh": 0.07
+    },
+    {
+      "action_id": "act_0042",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-10-20T06:30:00+02:00",
+      "action_end": "2026-10-20T07:30:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0043",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-10-20T06:45:00+02:00",
+      "action_end": "2026-10-20T07:00:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0044",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-10-20T07:00:00+02:00",
+      "action_end": "2026-10-20T07:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0045",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-10-20T08:00:00+02:00",
+      "action_end": "2026-10-20T17:00:00+02:00",
+      "energy_kwh": -3.70,
+      "profile_kwh": [-0.01, -0.02, -0.03, -0.05, -0.06, -0.07, -0.09, -0.10, -0.11, -0.12, -0.13, -0.14,
+                      -0.14, -0.15, -0.15, -0.16, -0.16, -0.16, -0.16, -0.16, -0.16, -0.15, -0.15, -0.14,
+                      -0.14, -0.13, -0.12, -0.11, -0.10, -0.09, -0.07, -0.06, -0.05, -0.03, -0.02, -0.01]
+    },
+    {
+      "action_id": "act_0046",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-10-20T08:45:00+02:00",
+      "action_end": "2026-10-20T16:15:00+02:00",
+      "energy_kwh": 1.05
+    },
+    {
+      "action_id": "act_0047",
+      "device_id": "dev_vc_01",
+      "action_start": "2026-10-20T10:00:00+02:00",
+      "action_end": "2026-10-20T10:30:00+02:00",
+      "energy_kwh": 0.55
+    },
+    {
+      "action_id": "act_0048",
+      "device_id": "dev_wm_01",
+      "program_id": "quick_40",
+      "action_start": "2026-10-20T12:00:00+02:00",
+      "action_end": "2026-10-20T13:00:00+02:00",
+      "energy_kwh": 0.80
+    },
+    {
+      "action_id": "act_0049",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-10-20T12:30:00+02:00",
+      "action_end": "2026-10-20T12:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0050",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-10-20T13:15:00+02:00",
+      "action_end": "2026-10-20T13:30:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0051",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-10-20T14:00:00+02:00",
+      "action_end": "2026-10-20T14:15:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0052",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-10-20T16:30:00+02:00",
+      "action_end": "2026-10-20T19:30:00+02:00",
+      "energy_kwh": 3.90
+    },
+    {
+      "action_id": "act_0053",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-10-20T17:00:00+02:00",
+      "action_end": "2026-10-20T20:30:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0054",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-10-20T17:00:00+02:00",
+      "action_end": "2026-10-20T22:00:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0055",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-10-20T17:15:00+02:00",
+      "action_end": "2026-10-20T18:00:00+02:00",
+      "energy_kwh": 0.95
+    },
+    {
+      "action_id": "act_0056",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-10-20T17:15:00+02:00",
+      "action_end": "2026-10-20T23:00:00+02:00",
+      "energy_kwh": 0.62
+    },
+    {
+      "action_id": "act_0057",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-10-20T17:15:00+02:00",
+      "action_end": "2026-10-20T23:00:00+02:00",
+      "energy_kwh": 0.28
+    },
+    {
+      "action_id": "act_0058",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-10-20T20:00:00+02:00",
+      "action_end": "2026-10-20T23:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0059",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-10-20T20:00:00+02:00",
+      "action_end": "2026-10-20T22:45:00+02:00",
+      "energy_kwh": 0.36
+    },
+    {
+      "action_id": "act_0060",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-10-20T21:00:00+02:00",
+      "action_end": "2026-10-20T21:15:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0061",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-10-20T21:45:00+02:00",
+      "action_end": "2026-10-20T22:30:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0062",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-10-20T22:45:00+02:00",
+      "action_end": "2026-10-20T23:45:00+02:00",
+      "energy_kwh": 0.05
+    }
+  ]
+}

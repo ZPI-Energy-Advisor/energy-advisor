@@ -168,6 +168,17 @@ function ImportPage() {
                 </button>
               </div>
 
+              <p className="text-sm text-gray-500 text-center">
+                Masz dane z urządzeń smart home?{" "}
+                <a
+                  href="/samples/devices-example.json"
+                  download
+                  className="text-emerald-700 font-medium hover:underline"
+                >
+                  Pobierz przykładowy plik urządzeń (JSON)
+                </a>
+              </p>
+
               {error && (
                 <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center text-sm md:text-base font-medium">
                   {error}
