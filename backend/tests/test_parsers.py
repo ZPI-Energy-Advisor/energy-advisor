@@ -1,3 +1,4 @@
+import json
 import zipfile
 from datetime import datetime
 from io import BytesIO
@@ -12,19 +13,28 @@ from app import parsers
 from app.parsers import (
     KWH,
     TIMESTAMP_START,
+    UNIT_ACTION,
+    DeviceData,
+    DevicesJsonParser,
+    DocumentParser,
     EnergyFileParser,
     FileImportError,
     ImportReport,
     ParsedEnergyFile,
+    detect_document_parser,
     detect_parser,
     parse_energy_file,
+    read_document,
     read_table,
 )
+from app.parsers.base import SkippedRow
 from app.parsers.formats import MeterExportParser, SimpleCsvParser, TauronV1Parser, TauronV2Parser
 from app.services.calculation_service import CalculationService, public_results
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+SAMPLE_DEVICES_FILE = Path(__file__).resolve().parents[2] / "frontend" / "public" / "samples" / "devices-example.json"
+DEMO_DEVICES_FILE = FIXTURES / "devices_demo_30d.json"
 TAURON_HEADER = "Nr platnika;Nr punktu poboru energii;Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]"
 SIMPLE_HEADER = "Data;Wartość kWh;Rodzaj"
 
@@ -265,8 +275,21 @@ def test_report_to_dict():
         "rows_imported": 1,
         "rows_ignored": 0,
         "resolution_minutes": 60,
+        "unit": "row",
         "skipped_rows": {"count": 1, "examples": [{"row": 3, "reason": "nieprawidłowa wartość zużycia: „x”"}]},
     }
+
+
+def test_report_describes_skipped_actions_with_action_id():
+    report = ImportReport(
+        "devices", DevicesJsonParser.label, unit=UNIT_ACTION, skipped_count=1,
+        skipped_examples=[SkippedRow(row=5, reason="akcje nakładają się", action_id="act_0016")],
+    )
+
+    assert report.to_dict()["unit"] == "action"
+    assert report.to_dict()["skipped_rows"]["examples"] == [
+        {"row": 5, "reason": "akcje nakładają się", "action_id": "act_0016"}
+    ]
 
 
 def _xlsx_bytes():
@@ -354,3 +377,72 @@ def test_calculate_all_tariffs_turns_import_errors_into_http_errors():
         CalculationService(_repository()).calculate_all_tariffs(_file(["Totalna;Bzdura", "1;2"]))
 
     assert exc_info.value.status_code == 422
+
+
+@pytest.mark.parametrize("path", [SAMPLE_DEVICES_FILE, DEMO_DEVICES_FILE], ids=["plik-przykladowy", "plik-demo-30-dni"])
+def test_devices_file_goes_to_devices_parser(path):
+    with path.open("rb") as handle:
+        assert isinstance(detect_document_parser(read_document(handle)), DevicesJsonParser)
+        with pytest.raises(FileImportError) as exc_info:
+            parse_energy_file(handle)
+
+    assert exc_info.value.status_code == 422
+    assert "będzie dostępny wkrótce" in exc_info.value.detail
+
+
+def test_json_is_recognized_by_content_despite_bom_and_whitespace():
+    content = BytesIO(b'\xef\xbb\xbf \r\n {"devices": [], "energy_usage": []}')
+
+    assert read_document(content) == {"devices": [], "energy_usage": []}
+
+
+@pytest.mark.parametrize("lines, encoding", [
+    ([TAURON_HEADER, _row("2025-01-01 01:00")], "windows-1250"),
+    ([SIMPLE_HEADER, "2025-01-01 01:00;0,5;pobór"], "utf-8"),
+], ids=["tauron-windows-1250", "prosty-csv-utf-8"])
+def test_csv_files_do_not_go_to_document_parsers(lines, encoding):
+    assert read_document(_file(lines, encoding=encoding)) is None
+
+
+@pytest.mark.parametrize(
+    "content, status, message",
+    [
+        (b'{"devices": [', 400, "Niepoprawny plik JSON: Expecting value (linia 1, kolumna 14)"),
+        (b'{"readings": []}', 422, "Nierozpoznany format pliku JSON"),
+    ],
+    ids=["uciety-json", "json-bez-pol-urzadzen"],
+)
+def test_invalid_json_files(content, status, message):
+    error = _import_error(BytesIO(content))
+
+    assert error.status_code == status
+    assert message in error.detail
+
+
+class _TestDocumentParser(DocumentParser):
+    name = "dokument_testowy"
+    label = "Dokument testowy"
+
+    def detect(self, document):
+        return "readings" in document
+
+    def parse(self, document):
+        data = pd.DataFrame({
+            TIMESTAMP_START: [pd.Timestamp(reading["start"]) for reading in document["readings"]],
+            KWH: [float(reading["kwh"]) for reading in document["readings"]],
+        })
+        report = ImportReport(self.name, self.label, rows_total=len(data), rows_imported=len(data),
+                              resolution_minutes=60, unit=UNIT_ACTION)
+        return ParsedEnergyFile(data=data, resolution_minutes=60, report=report,
+                                devices=DeviceData(devices=[{"device_id": "dev_01"}]))
+
+
+def test_new_document_format_needs_only_a_registered_parser(monkeypatch):
+    monkeypatch.setattr(parsers, "DOCUMENT_PARSERS", [_TestDocumentParser(), *parsers.DOCUMENT_PARSERS])
+    content = BytesIO(json.dumps({"readings": [{"start": "2025-01-01 00:00", "kwh": 4}]}).encode())
+
+    results = CalculationService(_repository()).calculate_all_tariffs(content)
+
+    assert results["import_report"]["detected_format"] == "dokument_testowy"
+    assert results["import_report"]["unit"] == "action"
+    assert results["tariffs"]["G11"]["total_usage_kwh"] == 4.0

@@ -214,12 +214,12 @@ class _StubCalculationService:
         return self.result
 
 
-def _upload(user, calculation_service):
+def _upload(user, calculation_service, file_name="zuzycie.csv"):
     app.dependency_overrides[get_calculation_service] = lambda: calculation_service
     try:
         return client.post(
             "/api/v1/upload",
-            files={"file": ("zuzycie.csv", BytesIO(b"x"), "text/csv")},
+            files={"file": (file_name, BytesIO(b"x"), "text/csv")},
             headers=_headers(user),
         )
     finally:
@@ -733,6 +733,26 @@ def test_upload_returns_import_report_and_file_data_keeps_it(db):
     data = client.get(f"/api/v1/energy-files/{body['file_id']}/data", headers=_headers(user)).json()
     assert data["import_report"] == REPORT
     assert "import_report" not in data["results"]
+
+
+@pytest.mark.parametrize("file_name", ["urzadzenia.json", "ZUZYCIE.CSV"])
+def test_upload_accepts_csv_and_json_extensions(db, file_name):
+    user = _create_user(db)
+
+    response = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS), file_name=file_name)
+
+    assert response.status_code == 200
+    assert response.json()["file_name"] == file_name
+
+
+def test_upload_rejects_other_extensions_before_saving_file(db):
+    user = _create_user(db)
+
+    response = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS), file_name="zuzycie.xlsx")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Wymagany plik .csv lub .json"
+    assert client.get("/api/v1/energy-files", headers=_headers(user)).json()["total"] == 0
 
 
 def test_upload_rejects_too_large_file_before_saving_it(db):
