@@ -18,6 +18,34 @@ python backend/scripts/validate_devices_file.py frontend/public/samples/devices-
 python backend/scripts/validate_devices_file.py plik.json --max-grid-kw 12
 ```
 
+## Generator danych
+
+Dłuższe, realistyczne dane w tym formacie tworzy `backend/scripts/generate_devices_file.py`.
+Symuluje domowników (dni robocze, praca zdalna, weekendy), pracę urządzeń według pór dnia,
+zmierzchu i pory roku oraz produkcję PV w dni słoneczne i pochmurne. Ten sam seed i te same
+parametry dają identyczny plik, a wynik zawsze przechodzi walidację.
+
+```bash
+python backend/scripts/generate_devices_file.py --out devices.json
+python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --seed 42 \
+    --devices full --with-pv --out backend/tests/fixtures/devices_demo_30d.json
+```
+
+| Parametr | Domyślnie | Znaczenie |
+|---|---|---|
+| `--start` | `2026-10-01` | pierwsza doba |
+| `--days` | `30` | liczba dób |
+| `--seed` | `42` | ziarno losowania |
+| `--devices` | `full` | `standard`: bez EV, pompy ciepła i rekuperatora; `full`: wszystkie urządzenia |
+| `--with-pv` | wyłączone | dodaje instalację PV |
+| `--max-grid-kw` | `9` | limit przyłącza; generator przesuwa akcje, żeby go nie przekroczyć |
+| `--out` | wymagany | plik wynikowy |
+
+Plik demo `backend/tests/fixtures/devices_demo_30d.json` (30 dób od 1.10.2026, z PV) służy
+jako fixtures do testów i dane do prezentacji. Obejmuje zmianę czasu 25.10.2026 (doba ze 100
+kwadransami). Test pilnuje, że plik odpowiada generatorowi, więc po zmianie generatora trzeba go
+wygenerować ponownie powyższym poleceniem.
+
 ## Model danych: zdarzenia, nie szereg czasowy
 
 Plik zapisuje **akcje** (np. „pranie Bawełna 60°C od 9:30 do 11:30, 1,95 kWh”), a nie odczyty

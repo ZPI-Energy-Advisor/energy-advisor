@@ -1,6 +1,7 @@
 """Sprawdza plik urządzeń (JSON) z regułami formatu i wypisuje podsumowanie.
 
-Reguły opisuje docs/devices-file-format.md.
+Reguły opisuje docs/devices-file-format.md. Logika jest w `validate_document`, bez wczytywania pliku
+i wypisywania, żeby parser (ZP-70) mógł ją przejąć bez zmian.
 
 Użycie (z katalogu projektu):
     python backend/scripts/validate_devices_file.py frontend/public/samples/devices-example.json
@@ -13,10 +14,12 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 
 SLOT = timedelta(minutes=15)
 SLOT_HOURS = 0.25
+DEFAULT_MAX_GRID_KW = 9.0
 # Pola dozwolone w obiekcie flexibility dla każdego trybu.
 FLEXIBILITY_FIELDS = {
     "fixed": {"mode"},
@@ -32,6 +35,67 @@ DEVICE_TYPES = {
 PRODUCER_CATEGORY = "OZE"
 ENERGY_TOLERANCE_KWH = 0.005
 POWER_TOLERANCE_KWH = 1e-9
+
+# Wymagane i opcjonalne pola obiektów: nazwa -> typ. "number" to int albo float (bez bool).
+DEVICE_FIELDS = {"device_id": str, "device_name": str, "device_type": str, "device_category": str, "flexibility": dict}
+DEVICE_OPTIONAL = {"max_power_kw": "number", "programs": list}
+PROGRAM_FIELDS = {"program_id": str, "program_name": str, "duration_min": int, "profile_kwh": "numbers"}
+ACTION_FIELDS = {"action_id": str, "device_id": str, "action_start": str, "action_end": str, "energy_kwh": "number"}
+ACTION_OPTIONAL = {"program_id": str, "profile_kwh": "numbers", "plugged_in": str, "deadline": str}
+
+
+@dataclass
+class ValidationResult:
+    errors: list[str] = field(default_factory=list)
+    devices_count: int = 0
+    actions_count: int = 0
+    categories: set[str] = field(default_factory=set)
+    idle_devices: list[str] = field(default_factory=list)
+    peak_kw: float | None = None
+    peak_at: datetime | None = None
+    daily_energy: dict[date, dict[str, float]] = field(default_factory=dict)
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
+
+def is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def has_type(value, expected) -> bool:
+    if expected == "number":
+        return is_number(value)
+    if expected == "numbers":
+        return isinstance(value, list) and bool(value) and all(is_number(item) for item in value)
+    if expected is int:
+        return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, expected)
+
+
+TYPE_NAMES = {str: "tekst", dict: "obiekt", list: "lista", int: "liczba całkowita", "number": "liczba",
+              "numbers": "niepusta lista liczb"}
+
+
+def check_fields(item, label: str, required: dict, optional: dict, errors: list[str]) -> bool:
+    """Sprawdza obecność i typy pól. Zwraca False, gdy obiektu nie da się dalej walidować."""
+    if not isinstance(item, dict):
+        errors.append(f"{label}: oczekiwano obiektu")
+        return False
+    valid = True
+    for name, expected in required.items():
+        if name not in item:
+            errors.append(f"{label}: brak pola {name}")
+            valid = False
+        elif not has_type(item[name], expected):
+            errors.append(f"{label}: pole {name} musi być typu {TYPE_NAMES[expected]}")
+            valid = False
+    for name, expected in optional.items():
+        if name in item and not has_type(item[name], expected):
+            errors.append(f"{label}: pole {name} musi być typu {TYPE_NAMES[expected]}")
+            valid = False
+    return valid
 
 
 def parse_time(value: str, label: str, errors: list[str]) -> datetime | None:
@@ -58,75 +122,129 @@ def is_clock_time(value) -> bool:
     return parsed.minute % 15 == 0
 
 
-def validate_devices(document: dict, errors: list[str]) -> dict:
-    devices = {}
-    for device in document.get("devices", []):
-        device_id = device.get("device_id")
+def validate_period(document: dict, errors: list[str]) -> tuple[datetime, datetime] | None:
+    period = document.get("period")
+    if not check_fields(period, "period", {"start": str, "end": str}, {}, errors):
+        return None
+    start = parse_time(period["start"], "period.start", errors)
+    end = parse_time(period["end"], "period.end", errors)
+    if start is None or end is None:
+        return None
+    if start >= end:
+        errors.append("period: start musi być wcześniej niż end")
+        return None
+    return start, end
+
+
+def validate_devices(devices_list: list, errors: list[str]) -> tuple[dict, set[str]]:
+    """Zwraca poprawne strukturalnie urządzenia i ID odrzuconych (ich akcje pomijamy bez kolejnych błędów)."""
+    devices, rejected = {}, set()
+    for index, device in enumerate(devices_list):
+        label = device.get("device_id", f"devices[{index}]") if isinstance(device, dict) else f"devices[{index}]"
+        if not check_fields(device, label, DEVICE_FIELDS, DEVICE_OPTIONAL, errors):
+            if isinstance(device, dict) and isinstance(device.get("device_id"), str):
+                rejected.add(device["device_id"])
+            continue
+        device_id = device["device_id"]
         if device_id in devices:
             errors.append(f"{device_id}: zduplikowane device_id")
             continue
-        devices[device_id] = device
+        if device["device_type"] not in DEVICE_TYPES:
+            errors.append(f"{device_id}: nieznany device_type {device['device_type']!r}")
+        if device["device_category"] not in DEVICE_CATEGORIES:
+            errors.append(f"{device_id}: nieznana device_category {device['device_category']!r}")
+        if "max_power_kw" in device and device["max_power_kw"] <= 0:
+            errors.append(f"{device_id}: max_power_kw musi być dodatnie")
 
-        if device.get("device_type") not in DEVICE_TYPES:
-            errors.append(f"{device_id}: nieznany device_type {device.get('device_type')!r}")
-        if device.get("device_category") not in DEVICE_CATEGORIES:
-            errors.append(f"{device_id}: nieznana device_category {device.get('device_category')!r}")
-
-        flexibility = device.get("flexibility", {})
+        flexibility = device["flexibility"]
         mode = flexibility.get("mode")
         if mode not in FLEXIBILITY_FIELDS:
             errors.append(f"{device_id}: nieznany tryb flexibility {mode!r}")
         elif set(flexibility) - FLEXIBILITY_FIELDS[mode]:
             extra = ", ".join(sorted(set(flexibility) - FLEXIBILITY_FIELDS[mode]))
             errors.append(f"{device_id}: tryb {mode} nie obsługuje pól: {extra}")
-        for bound in ("from", "to"):
-            value = flexibility.get("allowed_window", {}).get(bound)
-            if "allowed_window" in flexibility and not is_clock_time(value):
-                errors.append(f"{device_id}: allowed_window.{bound} musi mieć format HH:MM w pełnym kwadransie")
+        if "allowed_window" in flexibility:
+            window = flexibility["allowed_window"]
+            for bound in ("from", "to"):
+                if not isinstance(window, dict) or not is_clock_time(window.get(bound)):
+                    errors.append(f"{device_id}: allowed_window.{bound} musi mieć format HH:MM w pełnym kwadransie")
+        if "max_shift_min" in flexibility and not (
+            has_type(flexibility["max_shift_min"], int) and flexibility["max_shift_min"] > 0
+        ):
+            errors.append(f"{device_id}: max_shift_min musi być dodatnią liczbą całkowitą")
 
         programs = device.get("programs", [])
         if not programs and "max_power_kw" not in device:
             errors.append(f"{device_id}: urządzenie bez programów musi mieć max_power_kw")
         if mode == "fixed" and programs:
             errors.append(f"{device_id}: urządzenie fixed nie może mieć programów")
-        for program in programs:
+        valid_programs, rejected_programs = {}, set()
+        for program_index, program in enumerate(programs):
+            program_label = f"{device_id}.programs[{program_index}]"
+            if not check_fields(program, program_label, PROGRAM_FIELDS, {}, errors):
+                if isinstance(program, dict) and isinstance(program.get("program_id"), str):
+                    rejected_programs.add(program["program_id"])
+                continue
+            program_id = program["program_id"]
+            if program_id in valid_programs:
+                errors.append(f"{device_id}: zduplikowany program_id {program_id!r}")
+                continue
             if len(program["profile_kwh"]) * 15 != program["duration_min"]:
                 errors.append(
-                    f"{device_id}/{program['program_id']}: profil ma {len(program['profile_kwh'])} kwadransów, "
+                    f"{device_id}/{program_id}: profil ma {len(program['profile_kwh'])} kwadransów, "
                     f"a program trwa {program['duration_min']} min"
                 )
-    return devices
+            valid_programs[program_id] = program
+        devices[device_id] = {**device, "programs": valid_programs, "rejected_programs": rejected_programs}
+    return devices, rejected
 
 
 def action_profile(action: dict, device: dict, slots: int) -> list[float]:
     if "profile_kwh" in action:
         return action["profile_kwh"]
-    programs = {program["program_id"]: program for program in device.get("programs", [])}
-    if action.get("program_id") in programs:
-        return programs[action["program_id"]]["profile_kwh"]
+    if action.get("program_id") in device["programs"]:
+        return device["programs"][action["program_id"]]["profile_kwh"]
     return [action["energy_kwh"] / slots] * slots
 
 
-def validate_actions(document: dict, devices: dict, period: tuple, errors: list[str]) -> tuple:
+def validate_ev_session(action: dict, start: datetime, end: datetime, errors: list[str]) -> None:
+    action_id = action["action_id"]
+    if "deadline" not in action:
+        errors.append(f"{action_id}: sesja EV wymaga deadline")
+        return
+    plugged_in = parse_time(action.get("plugged_in", action["action_start"]), f"{action_id}.plugged_in", errors)
+    deadline = parse_time(action["deadline"], f"{action_id}.deadline", errors)
+    if plugged_in and deadline and not (plugged_in <= start < end <= deadline):
+        errors.append(f"{action_id}: wymagane plugged_in <= action_start < action_end <= deadline")
+
+
+def validate_actions(actions: list, devices: dict, rejected: set[str], period: tuple,
+                     result: ValidationResult) -> dict:
+    errors = result.errors
     period_start, period_end = period
     seen_ids = set()
     ranges = defaultdict(list)
     grid_load = defaultdict(float)
-    category_energy = defaultdict(lambda: defaultdict(float))
+    daily_energy = defaultdict(lambda: defaultdict(float))
 
-    for action in document.get("energy_usage", []):
-        action_id = action.get("action_id")
+    for index, action in enumerate(actions):
+        label = action.get("action_id", f"energy_usage[{index}]") if isinstance(action, dict) else f"energy_usage[{index}]"
+        if not check_fields(action, label, ACTION_FIELDS, ACTION_OPTIONAL, errors):
+            continue
+        action_id = action["action_id"]
         if action_id in seen_ids:
             errors.append(f"{action_id}: zduplikowane action_id")
         seen_ids.add(action_id)
 
-        device = devices.get(action.get("device_id"))
+        device = devices.get(action["device_id"])
+        if action["device_id"] in rejected:
+            continue
         if device is None:
-            errors.append(f"{action_id}: nieznane urządzenie {action.get('device_id')!r}")
+            errors.append(f"{action_id}: nieznane urządzenie {action['device_id']!r}")
             continue
 
-        start = parse_time(action.get("action_start"), f"{action_id}.action_start", errors)
-        end = parse_time(action.get("action_end"), f"{action_id}.action_end", errors)
+        start = parse_time(action["action_start"], f"{action_id}.action_start", errors)
+        end = parse_time(action["action_end"], f"{action_id}.action_end", errors)
         if start is None or end is None:
             continue
         if not (period_start <= start < end <= period_end):
@@ -141,11 +259,12 @@ def validate_actions(document: dict, devices: dict, period: tuple, errors: list[
         if (energy < 0) != (device["device_category"] == PRODUCER_CATEGORY):
             errors.append(f"{action_id}: ujemna energia jest dozwolona tylko dla kategorii {PRODUCER_CATEGORY}")
 
-        has_programs = bool(device.get("programs"))
-        if ("program_id" in action) != has_programs:
+        if action.get("program_id") in device["rejected_programs"]:
+            continue
+        if ("program_id" in action) != bool(device["programs"] or device["rejected_programs"]):
             errors.append(f"{action_id}: program_id jest wymagany dokładnie dla urządzeń z programami")
             continue
-        if has_programs and action["program_id"] not in {p["program_id"] for p in device["programs"]}:
+        if device["programs"] and action["program_id"] not in device["programs"]:
             errors.append(f"{action_id}: nieznany program {action['program_id']!r}")
             continue
 
@@ -166,10 +285,10 @@ def validate_actions(document: dict, devices: dict, period: tuple, errors: list[
             errors.append(f"{action_id}: plugged_in i deadline są dozwolone tylko dla ładowarki EV")
 
         ranges[action["device_id"]].append((start, end, action_id))
-        for index, value in enumerate(profile):
-            slot = start + index * SLOT
+        for slot_index, value in enumerate(profile):
+            slot = start + slot_index * SLOT
             grid_load[slot] += max(value, 0)
-            category_energy[slot.date()][device["device_category"]] += value
+            daily_energy[slot.date()][device["device_category"]] += value
 
     for device_id, device_ranges in ranges.items():
         device_ranges.sort()
@@ -177,59 +296,65 @@ def validate_actions(document: dict, devices: dict, period: tuple, errors: list[
             if next_start < previous_end:
                 errors.append(f"{device_id}: akcje {previous_id} i {next_id} nakładają się")
 
-    return ranges, grid_load, category_energy
+    result.idle_devices = sorted(set(devices) - set(ranges))
+    result.daily_energy = {day: dict(categories) for day, categories in sorted(daily_energy.items())}
+    return grid_load
 
 
-def validate_ev_session(action: dict, start: datetime, end: datetime, errors: list[str]) -> None:
-    action_id = action["action_id"]
-    if "deadline" not in action:
-        errors.append(f"{action_id}: sesja EV wymaga deadline")
-        return
-    plugged_in = parse_time(action.get("plugged_in", action["action_start"]), f"{action_id}.plugged_in", errors)
-    deadline = parse_time(action["deadline"], f"{action_id}.deadline", errors)
-    if plugged_in and deadline and not (plugged_in <= start < end <= deadline):
-        errors.append(f"{action_id}: wymagane plugged_in <= action_start < action_end <= deadline")
+def validate_document(document, max_grid_kw: float = DEFAULT_MAX_GRID_KW) -> ValidationResult:
+    """Sprawdza wczytany plik urządzeń. Nie rzuca wyjątków: każdy problem trafia do `errors`."""
+    result = ValidationResult()
+    errors = result.errors
+    if not isinstance(document, dict):
+        errors.append("plik: oczekiwano obiektu JSON z polami period, devices i energy_usage")
+        return result
+    for name in ("devices", "energy_usage"):
+        if not isinstance(document.get(name), list):
+            errors.append(f"{name}: oczekiwano listy")
+    period = validate_period(document, errors)
+    if period is None or errors:
+        return result
+
+    devices, rejected = validate_devices(document["devices"], errors)
+    grid_load = validate_actions(document["energy_usage"], devices, rejected, period, result)
+    result.devices_count = len(devices)
+    result.actions_count = len(document["energy_usage"])
+    result.categories = {device["device_category"] for device in devices.values()}
+
+    if grid_load:
+        result.peak_at, peak_kwh = max(grid_load.items(), key=lambda item: item[1])
+        result.peak_kw = peak_kwh / SLOT_HOURS
+        if peak_kwh > max_grid_kw * SLOT_HOURS + POWER_TOLERANCE_KWH:
+            errors.append(f"przekroczony limit przyłącza {max_grid_kw} kW o {result.peak_at:%d.%m %H:%M}")
+    return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Walidacja pliku urządzeń (JSON).")
     parser.add_argument("path", help="ścieżka do pliku urządzeń")
-    parser.add_argument("--max-grid-kw", type=float, default=9.0, help="limit mocy przyłącza (domyślnie 9 kW)")
+    parser.add_argument("--max-grid-kw", type=float, default=DEFAULT_MAX_GRID_KW,
+                        help="limit mocy przyłącza (domyślnie 9 kW)")
     args = parser.parse_args()
 
     try:
         with open(args.path, encoding="utf-8") as handle:
             document = json.load(handle)
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         print(f"Nie udało się wczytać pliku: {error}")
         return 1
 
-    errors: list[str] = []
-    period_start = parse_time(document.get("period", {}).get("start"), "period.start", errors)
-    period_end = parse_time(document.get("period", {}).get("end"), "period.end", errors)
-    if period_start is None or period_end is None:
-        print("\n".join(errors))
+    result = validate_document(document, args.max_grid_kw)
+    if not result.is_valid:
+        print(f"Znaleziono błędy ({len(result.errors)}):")
+        print("\n".join(f"  - {error}" for error in result.errors))
         return 1
 
-    devices = validate_devices(document, errors)
-    ranges, grid_load, category_energy = validate_actions(document, devices, (period_start, period_end), errors)
-
-    if grid_load:
-        peak_slot, peak_kwh = max(grid_load.items(), key=lambda item: item[1])
-        if peak_kwh > args.max_grid_kw * SLOT_HOURS + POWER_TOLERANCE_KWH:
-            errors.append(f"przekroczony limit przyłącza {args.max_grid_kw} kW o {peak_slot:%d.%m %H:%M}")
-
-    if errors:
-        print(f"Znaleziono błędy ({len(errors)}):")
-        print("\n".join(f"  - {error}" for error in errors))
-        return 1
-
-    actions_count = len(document.get("energy_usage", []))
-    idle = sorted(set(devices) - set(ranges))
-    print(f"OK: {len(devices)} urządzeń, {actions_count} akcji" + (f", bez akcji: {', '.join(idle)}" if idle else ""))
-    if grid_load:
-        print(f"Szczyt poboru: {peak_kwh / SLOT_HOURS:.2f} kW o {peak_slot:%d.%m %H:%M} (limit {args.max_grid_kw} kW)")
-    for day, categories in sorted(category_energy.items()):
+    idle = f", bez akcji: {', '.join(result.idle_devices)}" if result.idle_devices else ""
+    print(f"OK: {result.devices_count} urządzeń, {len(result.categories)} kategorii, "
+          f"{result.actions_count} akcji{idle}")
+    if result.peak_kw is not None:
+        print(f"Szczyt poboru: {result.peak_kw:.2f} kW o {result.peak_at:%d.%m %H:%M} (limit {args.max_grid_kw} kW)")
+    for day, categories in result.daily_energy.items():
         consumption = sum(value for category, value in categories.items() if category != PRODUCER_CATEGORY)
         details = ", ".join(f"{category} {value:.2f}" for category, value in sorted(categories.items()))
         print(f"{day}: pobór {consumption:.2f} kWh | {details}")
