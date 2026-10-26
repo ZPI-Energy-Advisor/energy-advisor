@@ -47,6 +47,33 @@ describe("ImportReportSummary", () => {
     expect(screen.getByText(/1 wiersz z 15 · odczyty godzinowe/)).toBeTruthy();
   });
 
+  it("dla pliku urządzeń opisuje akcje zamiast wierszy", () => {
+    const report = {
+      detected_format: "devices",
+      format_label: "Plik urządzeń smart home (JSON)",
+      unit: "action",
+      rows_total: 62,
+      rows_imported: 60,
+      rows_ignored: 0,
+      resolution_minutes: 15,
+      skipped_rows: {
+        count: 3,
+        examples: [
+          { row: 16, action_id: "act_0016", reason: "suma profilu różni się od energy_kwh" },
+          { row: 40, reason: "nieznane urządzenie" },
+        ],
+      },
+    };
+
+    render(<ImportReportSummary report={report} />);
+
+    expect(screen.getByText("60 akcji z 62")).toBeTruthy();
+    expect(screen.getByText("Odrzucono 3 błędne akcje")).toBeTruthy();
+    expect(screen.getByText("Akcja 16 (act_0016):")).toBeTruthy();
+    expect(screen.getByText("Akcja 40:")).toBeTruthy();
+    expect(screen.getByText("…i 1 akcja więcej.")).toBeTruthy();
+  });
+
   it("nic nie renderuje bez raportu", () => {
     const { container } = render(<ImportReportSummary report={null} />);
 

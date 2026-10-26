@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 
 import pandas as pd
 
@@ -37,6 +38,29 @@ def _separator(header_line: str) -> str:
     counts = {separator: header_line.count(separator) for separator in SEPARATORS}
     best = max(counts, key=counts.get)
     return best if counts[best] else ";"
+
+
+def read_document(file_obj) -> dict | None:
+    """Zwraca dokument JSON albo None, gdy plik nie jest JSON-em (wtedy obowiązuje ścieżka CSV).
+
+    O formacie decyduje treść, nie rozszerzenie: JSON to plik w UTF-8, którego pierwszy znak
+    (po BOM i białych znakach) to „{”.
+    """
+    file_obj.seek(0)
+    raw = file_obj.read()
+    file_obj.seek(0)
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None
+    if not text.lstrip().startswith("{"):
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as error:
+        raise FileImportError(
+            400, f"Niepoprawny plik JSON: {error.msg} (linia {error.lineno}, kolumna {error.colno})."
+        ) from error
 
 
 def read_table(file_obj) -> pd.DataFrame:

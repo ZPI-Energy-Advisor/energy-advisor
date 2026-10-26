@@ -36,7 +36,7 @@ function ImportPage() {
     setError(
       tooLarge
         ? `Plik jest za duży. Maksymalny rozmiar pliku to ${MAX_FILE_SIZE_MB} MB.`
-        : "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv.",
+        : "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv lub .json.",
     );
   }, []);
 
@@ -45,6 +45,7 @@ function ImportPage() {
     onDropRejected,
     accept: {
       "text/csv": [".csv"],
+      "application/json": [".json"],
     },
     maxFiles: 1,
     maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
@@ -110,7 +111,7 @@ function ImportPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
-        Prześlij plik CSV
+        Prześlij plik
       </h2>
 
       {successMsg ? (
@@ -159,7 +160,7 @@ function ImportPage() {
                     ? "Upuść plik tutaj..."
                     : "Przeciągnij i upuść plik tutaj"}
                 </h3>
-                <p className="text-sm text-gray-500 mb-6">Format: CSV · maks. {MAX_FILE_SIZE_MB} MB</p>
+                <p className="text-sm text-gray-500 mb-6">Format: CSV lub JSON · maks. {MAX_FILE_SIZE_MB} MB</p>
                 <button
                   type="button"
                   className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 transition-colors"

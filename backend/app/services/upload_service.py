@@ -13,6 +13,8 @@ from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationServi
 
 MAX_UPLOAD_SIZE_MB = 10
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+# Rozszerzenie tylko wstępnie filtruje pliki; format rozpoznaje parser po treści.
+ALLOWED_EXTENSIONS = (".csv", ".json")
 
 
 
@@ -31,10 +33,10 @@ class UploadService:
 
     def process_upload(self, file: UploadFile, user_id: UUID):
 
-        if not file.filename or not file.filename.endswith(".csv"):
+        if not file.filename or not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
             raise HTTPException(
                 status_code=400,
-                detail="Wymagany plik .csv"
+                detail="Wymagany plik .csv lub .json"
             )
 
         size = self._file_size(file)

@@ -62,7 +62,8 @@ def test_same_seed_gives_identical_file(tmp_path):
 
 
 def test_demo_file_matches_generator(tmp_path):
-    assert generate(tmp_path / "demo.json", *DEMO_ARGS) == DEMO_FILE.read_bytes()
+    # read_text zamienia CRLF na LF, więc test nie zależy od core.autocrlf w gicie.
+    assert generate(tmp_path / "demo.json", *DEMO_ARGS).decode("utf-8") == DEMO_FILE.read_text(encoding="utf-8")
 
 
 def test_demo_file_covers_dst_change():
