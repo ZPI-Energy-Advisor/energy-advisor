@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.calculation_service import (
@@ -27,9 +28,15 @@ from app.schemas.energy_file import (
 
 
 class EnergyFileService:
-    def __init__(self, file_repository: EnergyDataFileRepository, simulation_repository: SimulationRepository):
+    def __init__(
+        self,
+        file_repository: EnergyDataFileRepository,
+        simulation_repository: SimulationRepository,
+        device_repository: DeviceRepository,
+    ):
         self.file_repository = file_repository
         self.simulation_repository = simulation_repository
+        self.device_repository = device_repository
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:
         items, total = self.file_repository.list_by_user_id(
@@ -167,7 +174,10 @@ class EnergyFileService:
         )
 
     def delete_file(self, file_id: UUID, user_id: UUID) -> None:
-        self.file_repository.delete(self._get_own_file(file_id, user_id))
+        energy_file = self._get_own_file(file_id, user_id)
+        # Urządzenia obecne tylko w tym pliku znikają z domu; commit robi usunięcie pliku.
+        self.device_repository.delete_devices_only_in_file(user_id, energy_file.id)
+        self.file_repository.delete(energy_file)
 
     def _get_own_file(self, file_id: UUID, user_id: UUID) -> EnergyDataFile:
         # Cudzy plik zwraca 404 tak samo jak nieistniejący - nie zdradzamy, że istnieje.

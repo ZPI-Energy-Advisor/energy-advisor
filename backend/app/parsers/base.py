@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from app.parsers.device_records import DeviceRecord
+
 
 TIMESTAMP_START = "timestamp_start"
 KWH = "kwh"
@@ -70,19 +72,12 @@ class ImportReport:
 
 
 @dataclass
-class DeviceData:
-    """Urządzenia i akcje z pliku urządzeń, przekazywane obok zagregowanej serii zużycia."""
-
-    devices: list[dict] = field(default_factory=list)
-    actions: list[dict] = field(default_factory=list)
-
-
-@dataclass
 class ParsedEnergyFile:
     data: pd.DataFrame
     resolution_minutes: int
     report: ImportReport
-    devices: DeviceData | None = None
+    # Tylko plik urządzeń: urządzenia z programami i akcjami, obok zagregowanej serii w data.
+    devices: list[DeviceRecord] | None = None
 
 
 class EnergyFileParser(ABC):

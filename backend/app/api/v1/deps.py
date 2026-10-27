@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from app.models.User import User
 from app.database import get_db
+from app.repositories.device_repository import DeviceRepository
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
@@ -112,11 +113,16 @@ def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileR
     return EnergyDataFileRepository(db)
 
 
+def get_device_repository(db: Session = Depends(get_db)) -> DeviceRepository:
+    return DeviceRepository(db)
+
+
 def get_energy_file_service(
     file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
+    device_repository: DeviceRepository = Depends(get_device_repository),
 ) -> EnergyFileService:
-    return EnergyFileService(file_repository, simulation_repository)
+    return EnergyFileService(file_repository, simulation_repository, device_repository)
 
 
 def get_upload_service(
