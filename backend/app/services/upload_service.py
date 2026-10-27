@@ -5,6 +5,7 @@ from fastapi import HTTPException, UploadFile
 
 from app.models.EnergyDataFile import EnergyDataFile
 from app.schemas.user_profile import UserProfile
+from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository
@@ -25,11 +26,13 @@ class UploadService:
         simulation_repository: SimulationRepository,
         energy_file_repository: EnergyDataFileRepository,
         user_repository: UserRepository,
+        device_repository: DeviceRepository,
     ):
         self.calculation_service = calculation_service
         self.simulation_repository = simulation_repository
         self.energy_file_repository = energy_file_repository
         self.user_repository = user_repository
+        self.device_repository = device_repository
 
     def process_upload(self, file: UploadFile, user_id: UUID):
 
@@ -50,7 +53,12 @@ class UploadService:
         energy_file = self.energy_file_repository.create(user_id=user_id, file_name=file.filename[:255])
 
         try:
-            simulation_results = self.calculation_service.calculate_all_tariffs(file.file)
+            parsed = self.calculation_service.parse_file(file.file)
+            simulation_results = self.calculation_service.calculate_with_report(parsed)
+            if parsed.devices:
+                self.device_repository.save_for_file(
+                    user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
+                )
         except HTTPException as exc:
             self._mark_failed(energy_file, str(exc.detail))
             raise
@@ -82,6 +90,7 @@ class UploadService:
         }
 
     def _mark_failed(self, energy_file: EnergyDataFile, message: str):
+        self.energy_file_repository.rollback()
         energy_file.status = EnergyDataFile.STATUS_FAILED
         energy_file.error_message = message
         self.energy_file_repository.save(energy_file)

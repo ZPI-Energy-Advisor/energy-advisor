@@ -64,11 +64,16 @@ class CalculationService:
 
 
     def calculate_all_tariffs(self, file_obj) -> dict:
+        return self.calculate_with_report(self.parse_file(file_obj))
+
+    @staticmethod
+    def parse_file(file_obj) -> ParsedEnergyFile:
         try:
-            parsed = parse_energy_file(file_obj)
+            return parse_energy_file(file_obj)
         except FileImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
+    def calculate_with_report(self, parsed: ParsedEnergyFile) -> dict:
         results_dict = self.calculate(parsed)
         results_dict[IMPORT_REPORT_KEY] = parsed.report.to_dict()
         return results_dict

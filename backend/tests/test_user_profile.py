@@ -162,6 +162,7 @@ def _service(user_repository):
         simulation_repository=MagicMock(),
         energy_file_repository=MagicMock(),
         user_repository=user_repository,
+        device_repository=MagicMock(),
     )
 
 
