@@ -21,6 +21,12 @@ from app.models.TariffRate import TariffRate  # noqa: F401
 from app.models.DynamicPriceObservation import DynamicPriceObservation  # noqa: F401
 from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
 from app.models.UserProfile import UserProfile  # noqa: F401
+from app.models.DeviceCategory import DeviceCategory  # noqa: F401
+from app.models.DeviceType import DeviceType  # noqa: F401
+from app.models.DeviceInstance import DeviceInstance  # noqa: F401
+from app.models.DeviceProgram import DeviceProgram  # noqa: F401
+from app.models.DeviceAction import DeviceAction  # noqa: F401
+from app.models.DeviceSlotUsage import DeviceSlotUsage  # noqa: F401
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"

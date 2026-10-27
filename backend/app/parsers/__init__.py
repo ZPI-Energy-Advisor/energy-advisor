@@ -5,13 +5,13 @@ from app.parsers.base import (
     TIMESTAMP_START,
     UNIT_ACTION,
     UNIT_ROW,
-    DeviceData,
     DocumentParser,
     EnergyFileParser,
     FileImportError,
     ImportReport,
     ParsedEnergyFile,
 )
+from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.parsers.devices import DevicesJsonParser
 from app.parsers.formats import MeterExportParser, SimpleCsvParser, TauronV1Parser, TauronV2Parser
 from app.parsers.reading import HOURLY_RESOLUTION, QUARTER_HOUR_RESOLUTION, read_document, read_table
@@ -54,13 +54,15 @@ __all__ = [
     "TIMESTAMP_START",
     "UNIT_ACTION",
     "UNIT_ROW",
-    "DeviceData",
+    "ActionRecord",
+    "DeviceRecord",
     "DevicesJsonParser",
     "DocumentParser",
     "EnergyFileParser",
     "FileImportError",
     "ImportReport",
     "ParsedEnergyFile",
+    "ProgramRecord",
     "detect_document_parser",
     "detect_parser",
     "parse_energy_file",

@@ -14,7 +14,7 @@ from app.parsers import (
     KWH,
     TIMESTAMP_START,
     UNIT_ACTION,
-    DeviceData,
+    DeviceRecord,
     DevicesJsonParser,
     DocumentParser,
     EnergyFileParser,
@@ -433,8 +433,9 @@ class _TestDocumentParser(DocumentParser):
         })
         report = ImportReport(self.name, self.label, rows_total=len(data), rows_imported=len(data),
                               resolution_minutes=60, unit=UNIT_ACTION)
-        return ParsedEnergyFile(data=data, resolution_minutes=60, report=report,
-                                devices=DeviceData(devices=[{"device_id": "dev_01"}]))
+        device = DeviceRecord(device_id="dev_01", name="Urządzenie", device_type="other",
+                              device_category="Inne", flexibility_mode="fixed")
+        return ParsedEnergyFile(data=data, resolution_minutes=60, report=report, devices=[device])
 
 
 def test_new_document_format_needs_only_a_registered_parser(monkeypatch):
