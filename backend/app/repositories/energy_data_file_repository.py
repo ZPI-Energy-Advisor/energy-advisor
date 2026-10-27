@@ -28,6 +28,9 @@ class EnergyDataFileRepository:
         self.db.refresh(energy_file)
         return energy_file
 
+    def rollback(self) -> None:
+        self.db.rollback()
+
     def list_by_user_id(self, user_id: UUID, *, offset: int, limit: int) -> tuple[list[EnergyDataFile], int]:
         query = self.db.query(EnergyDataFile).filter(EnergyDataFile.user_id == user_id)
         total = query.count()

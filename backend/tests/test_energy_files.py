@@ -1,17 +1,23 @@
 import datetime
 import uuid
 from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.deps import get_calculation_service
 from app.database import SessionLocal, engine
+from app.models.DeviceInstance import DeviceInstance
+from app.models.DeviceInstanceFile import DeviceInstanceFile
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.Simulation import Simulation
 from app.models.User import User
+from app.parsers import parse_energy_file
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
 from main import app
@@ -26,6 +32,7 @@ except Exception as exc:  # brak bazy lub niewykonane migracje
 
 client = TestClient(app)
 auth = AuthService(repository=None)
+SAMPLE_DEVICES_FILE = Path(__file__).resolve().parents[2] / "frontend" / "public" / "samples" / "devices-example.json"
 
 SAMPLE_RESULTS = {
     "tariffs": {"G11": {"type": "stala", "total_usage_kwh": 1.0, "estimated_cost_pln": 1.0}},
@@ -204,13 +211,17 @@ def test_get_data_of_failed_file(db):
 
 
 class _StubCalculationService:
-    def __init__(self, result=None, error=None):
+    def __init__(self, result=None, error=None, devices=None):
         self.result = result
         self.error = error
+        self.devices = devices
 
-    def calculate_all_tariffs(self, file_obj):
+    def parse_file(self, file_obj):
         if self.error:
             raise self.error
+        return SimpleNamespace(devices=self.devices)
+
+    def calculate_with_report(self, parsed):
         return self.result
 
 
@@ -260,6 +271,42 @@ def test_upload_failure_marks_file_as_failed(db):
     assert len(files) == 1
     assert files[0]["status"] == "failed"
     assert files[0]["error_message"] == "Nierozpoznany format"
+
+
+def _sample_devices():
+    with SAMPLE_DEVICES_FILE.open("rb") as handle:
+        return parse_energy_file(handle).devices
+
+
+def _device_count(db, file_id) -> int:
+    return (
+        db.query(DeviceInstance)
+        .join(DeviceInstanceFile, DeviceInstanceFile.device_instance_id == DeviceInstance.id)
+        .filter(DeviceInstanceFile.energy_data_file_id == file_id)
+        .count()
+    )
+
+
+def test_upload_of_devices_file_saves_devices_with_file(db):
+    user = _create_user(db)
+
+    response = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS, devices=_sample_devices()), "dom.json")
+
+    assert response.status_code == 200
+    assert _device_count(db, uuid.UUID(response.json()["file_id"])) == 24
+
+
+def test_failed_devices_save_marks_file_as_failed_and_keeps_no_devices(db):
+    user = _create_user(db)
+    devices = _sample_devices()
+    devices[-1].device_type = "toaster"
+
+    with pytest.raises(IntegrityError):
+        _upload(user, _StubCalculationService(result=SAMPLE_RESULTS, devices=devices), "dom.json")
+
+    files = client.get("/api/v1/energy-files", headers=_headers(user)).json()["items"]
+    assert files[0]["status"] == "failed"
+    assert _device_count(db, uuid.UUID(files[0]["id"])) == 0
 
 
 def _results_with_series():

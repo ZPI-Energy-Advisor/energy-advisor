@@ -26,10 +26,16 @@ const UNITS = {
   },
 };
 
+const DEVICES = ["urządzenie", "urządzenia", "urządzeń"];
+
+const formatKwh = (value) => `${value.toLocaleString("pl-PL", { maximumFractionDigits: 2 })} kWh`;
+
 function ImportReportSummary({ report }) {
   if (!report) return null;
 
   const unit = UNITS[report.unit] ?? UNITS.row;
+  // Tylko plik urządzeń; produkcja PV jest pokazana osobno, bo nie pomniejsza poboru w wycenie.
+  const devices = report.devices;
   const skipped = report.skipped_rows ?? { count: 0, examples: [] };
   const notListed = skipped.count - skipped.examples.length;
   const resolution = unit.showResolution && RESOLUTION_LABELS[report.resolution_minutes];
@@ -49,6 +55,19 @@ function ImportReportSummary({ report }) {
           <>
             <dt className="text-gray-500">Pominięto</dt>
             <dd>{formatCount(report.rows_ignored, UNITS.row.imported)} z energią oddaną do sieci lub innym rodzajem energii</dd>
+          </>
+        )}
+        {devices && (
+          <>
+            <dt className="text-gray-500">Urządzenia</dt>
+            <dd>
+              {formatCount(devices.devices_count, DEVICES)} · {devices.categories.join(", ")}
+            </dd>
+            <dt className="text-gray-500">Energia</dt>
+            <dd>
+              pobór {formatKwh(devices.consumption_kwh)}
+              {devices.pv_production_kwh > 0 && ` · produkcja PV ${formatKwh(devices.pv_production_kwh)}`}
+            </dd>
           </>
         )}
       </dl>

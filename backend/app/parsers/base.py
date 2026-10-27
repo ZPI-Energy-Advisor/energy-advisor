@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 import pandas as pd
 
@@ -30,6 +30,18 @@ class SkippedRow:
 
 
 @dataclass
+class DevicesSummary:
+    """Podsumowanie pliku urządzeń w raporcie importu."""
+
+    devices_count: int
+    actions_count: int
+    categories: list[str]
+    consumption_kwh: float
+    # Energia wyprodukowana przez PV jako liczba dodatnia; nie pomniejsza zużycia w wycenie.
+    pv_production_kwh: float
+
+
+@dataclass
 class ImportReport:
     detected_format: str
     format_label: str
@@ -40,6 +52,7 @@ class ImportReport:
     skipped_count: int = 0
     skipped_examples: list[SkippedRow] = field(default_factory=list)
     unit: str = UNIT_ROW
+    devices: DevicesSummary | None = None
 
     def add_skipped(self, rows: pd.Series) -> None:
         self.skipped_count = int(rows.size)
@@ -49,7 +62,7 @@ class ImportReport:
         ]
 
     def to_dict(self) -> dict:
-        return {
+        report = {
             "detected_format": self.detected_format,
             "format_label": self.format_label,
             "rows_total": self.rows_total,
@@ -62,6 +75,9 @@ class ImportReport:
                 "examples": [self._example(item) for item in self.skipped_examples],
             },
         }
+        if self.devices is not None:
+            report["devices"] = asdict(self.devices)
+        return report
 
     @staticmethod
     def _example(item: SkippedRow) -> dict:
