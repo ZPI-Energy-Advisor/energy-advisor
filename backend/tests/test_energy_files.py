@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.v1.deps import get_calculation_service
 from app.database import SessionLocal, engine
 from app.models.DeviceInstance import DeviceInstance
+from app.models.DeviceInstanceFile import DeviceInstanceFile
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.Simulation import Simulation
 from app.models.User import User
@@ -278,7 +279,12 @@ def _sample_devices():
 
 
 def _device_count(db, file_id) -> int:
-    return db.query(DeviceInstance).filter(DeviceInstance.energy_data_file_id == file_id).count()
+    return (
+        db.query(DeviceInstance)
+        .join(DeviceInstanceFile, DeviceInstanceFile.device_instance_id == DeviceInstance.id)
+        .filter(DeviceInstanceFile.energy_data_file_id == file_id)
+        .count()
+    )
 
 
 def test_upload_of_devices_file_saves_devices_with_file(db):
