@@ -52,20 +52,21 @@ class EnergyDataFileRepository:
             .first()
         )
 
-    def list_completed_by_user_id(self, user_id: UUID) -> list[EnergyDataFile]:
-        """Poprawnie zaimportowane pliki użytkownika, od najstarszego uploadu."""
+    def list_completed_by_user_id(self, user_id: UUID, source_type: str) -> list[EnergyDataFile]:
+        """Poprawnie zaimportowane pliki użytkownika danego typu, od najstarszego uploadu."""
         return (
             self.db.query(EnergyDataFile)
             .filter(
                 EnergyDataFile.user_id == user_id,
                 EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
+                EnergyDataFile.source_type == source_type,
             )
             .order_by(EnergyDataFile.uploaded_at.asc(), EnergyDataFile.id.asc())
             .all()
         )
 
-    def get_completed_summary(self, user_id: UUID) -> tuple[int, date | None, date | None]:
-        """Liczba poprawnych plików użytkownika oraz najwcześniejsza i najpóźniejsza data ich danych."""
+    def get_completed_summary(self, user_id: UUID, source_type: str) -> tuple[int, date | None, date | None]:
+        """Liczba poprawnych plików użytkownika danego typu oraz najwcześniejsza i najpóźniejsza data ich danych."""
         files_count, data_start, data_end = (
             self.db.query(
                 func.count(EnergyDataFile.id),
@@ -75,6 +76,7 @@ class EnergyDataFileRepository:
             .filter(
                 EnergyDataFile.user_id == user_id,
                 EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
+                EnergyDataFile.source_type == source_type,
             )
             .one()
         )

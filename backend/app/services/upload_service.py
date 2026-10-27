@@ -70,6 +70,9 @@ class UploadService:
         energy_file.data_start = self._parse_date(statistics.get("data_start"))
         energy_file.data_end = self._parse_date(statistics.get("data_end"))
         energy_file.records_count = statistics.get("records_count")
+        energy_file.source_type = (
+            EnergyDataFile.SOURCE_DEVICES if parsed.devices is not None else EnergyDataFile.SOURCE_METER
+        )
         energy_file.status = EnergyDataFile.STATUS_COMPLETED
         self.energy_file_repository.save(energy_file)
 

@@ -9,6 +9,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.calculation_service import (
+    ACTIONS_PER_DAY_KEY,
     IMPORT_REPORT_KEY,
     CalculationService,
     has_usage_series,
@@ -17,6 +18,10 @@ from app.services.calculation_service import (
 )
 from app.services.pricing_strategies import SLOT_MINUTES
 from app.schemas.energy_file import (
+    ALL_DEVICE_FILES_SOURCE_ID,
+    ALL_DEVICE_FILES_SOURCE_NAME,
+    ALL_FILES_SOURCE_ID,
+    ALL_FILES_SOURCE_NAME,
     AggregateSourceFile,
     AggregateSourceOut,
     AggregateSourceSummary,
@@ -25,6 +30,13 @@ from app.schemas.energy_file import (
     EnergyDataFileOut,
 )
 
+
+
+# Plik urządzeń nie może nadpisać odczytu licznika za te same dni, więc oba typy scalamy osobno.
+AGGREGATE_SOURCES = {
+    EnergyDataFile.SOURCE_METER: (ALL_FILES_SOURCE_ID, ALL_FILES_SOURCE_NAME, "plików z licznika"),
+    EnergyDataFile.SOURCE_DEVICES: (ALL_DEVICE_FILES_SOURCE_ID, ALL_DEVICE_FILES_SOURCE_NAME, "plików urządzeń"),
+}
 
 
 class EnergyFileService:
@@ -50,14 +62,23 @@ class EnergyFileService:
             page_size=page_size,
             total=total,
             total_pages=math.ceil(total / page_size),
-            aggregate=self._aggregate_summary(user_id),
+            aggregate=self._aggregate_summary(user_id, EnergyDataFile.SOURCE_METER),
+            devices_aggregate=self._aggregate_summary(user_id, EnergyDataFile.SOURCE_DEVICES),
         )
 
-    def _aggregate_summary(self, user_id: UUID) -> AggregateSourceSummary | None:
-        files_count, data_start, data_end = self.file_repository.get_completed_summary(user_id)
+    def _aggregate_summary(self, user_id: UUID, source_type: str) -> AggregateSourceSummary | None:
+        files_count, data_start, data_end = self.file_repository.get_completed_summary(user_id, source_type)
         if files_count == 0:
             return None
-        return AggregateSourceSummary(files_count=files_count, data_start=data_start, data_end=data_end)
+        source_id, source_name, _ = AGGREGATE_SOURCES[source_type]
+        return AggregateSourceSummary(
+            id=source_id,
+            file_name=source_name,
+            source_type=source_type,
+            files_count=files_count,
+            data_start=data_start,
+            data_end=data_end,
+        )
 
     def get_file_data(
         self,
@@ -102,15 +123,17 @@ class EnergyFileService:
     def get_all_files_data(
         self,
         user_id: UUID,
+        source_type: str = EnergyDataFile.SOURCE_METER,
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> EnergyDataFileDataResponse:
-        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
+        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika jednego typu.
 
         Nie są nigdzie zapisywane - liczymy je przy każdym zapytaniu z serii zapisanych przy
         imporcie, więc dodanie lub usunięcie pliku od razu zmienia wynik.
         """
-        files = self.file_repository.list_completed_by_user_id(user_id)
+        source_id, source_name, files_label = AGGREGATE_SOURCES[source_type]
+        files = self.file_repository.list_completed_by_user_id(user_id, source_type)
         simulations = self.simulation_repository.get_latest_by_file_ids([file.id for file in files])
 
         merged_files, sources, skipped_files = [], [], []
@@ -126,7 +149,7 @@ class EnergyFileService:
             detail = (
                 "Twoje pliki zostały wgrane przed wprowadzeniem łączenia danych. Wgraj je ponownie."
                 if skipped_files
-                else "Nie masz jeszcze poprawnie zaimportowanych plików."
+                else f"Nie masz jeszcze poprawnie zaimportowanych {files_label}."
             )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
@@ -141,6 +164,8 @@ class EnergyFileService:
             "slot_prices": slot_prices,
             "statistics": {"resolution_minutes": common_resolution},
         }
+        if source_type == EnergyDataFile.SOURCE_DEVICES:
+            merged_results[ACTIONS_PER_DAY_KEY] = CalculationService.merge_actions_per_day(sources)
 
         data_start, data_end = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
         if date_from is None and date_to is None:
@@ -148,12 +173,18 @@ class EnergyFileService:
         else:
             date_from, date_to = self._resolve_range(data_start, data_end, date_from, date_to)
 
-        records_count = round(sum(
-            contribution["slots_used"] * SLOT_MINUTES / resolution
-            for contribution, resolution in zip(contributions, resolutions)
-        ))
+        if ACTIONS_PER_DAY_KEY in merged_results:
+            records_count = sum(merged_results[ACTIONS_PER_DAY_KEY].values())
+        else:
+            records_count = round(sum(
+                contribution["slots_used"] * SLOT_MINUTES / resolution
+                for contribution, resolution in zip(contributions, resolutions)
+            ))
 
         source = AggregateSourceOut(
+            id=source_id,
+            file_name=source_name,
+            source_type=source_type,
             data_start=data_start,
             data_end=data_end,
             records_count=records_count,

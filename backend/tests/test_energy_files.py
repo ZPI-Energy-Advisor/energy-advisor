@@ -95,7 +95,10 @@ def test_list_empty(db):
     response = client.get("/api/v1/energy-files", headers=_headers(user))
 
     assert response.status_code == 200
-    assert response.json() == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 0, "aggregate": None}
+    assert response.json() == {
+        "items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 0,
+        "aggregate": None, "devices_aggregate": None,
+    }
 
 
 def test_list_pagination(db):
@@ -422,13 +425,23 @@ def _days(start, count, kwh_per_slot):
     return {(first + datetime.timedelta(days=i)).isoformat(): [kwh_per_slot] * 96 for i in range(count)}
 
 
-def _series_results(usage):
-    return {**CalculationService.summarize_usage(usage, SLOT_PRICES), "usage_15min": usage, "slot_prices": SLOT_PRICES}
+def _series_results(usage, actions_per_day=None):
+    results = {
+        **CalculationService.summarize_usage(usage, SLOT_PRICES, 15 if actions_per_day else 60, actions_per_day),
+        "usage_15min": usage,
+        "slot_prices": SLOT_PRICES,
+    }
+    if actions_per_day is not None:
+        results["actions_per_day"] = actions_per_day
+    return results
 
 
-def _create_series_file(db, user, usage, *, name, uploaded_at):
-    """Plik z prawdziwą serią 15-minutową; zakres dat wynika z danych."""
-    results = _series_results(usage)
+def _create_series_file(db, user, usage, *, name, uploaded_at, actions_per_day=None):
+    """Plik z prawdziwą serią 15-minutową; zakres dat wynika z danych.
+
+    Z actions_per_day powstaje plik urządzeń, bez - plik z licznika.
+    """
+    results = _series_results(usage, actions_per_day)
     energy_file = EnergyDataFile(
         user_id=user.id,
         file_name=name,
@@ -436,6 +449,7 @@ def _create_series_file(db, user, usage, *, name, uploaded_at):
         data_start=datetime.date.fromisoformat(min(usage)),
         data_end=datetime.date.fromisoformat(max(usage)),
         records_count=results["statistics"]["records_count"],
+        source_type=EnergyDataFile.SOURCE_DEVICES if actions_per_day is not None else EnergyDataFile.SOURCE_METER,
         status=EnergyDataFile.STATUS_COMPLETED,
     )
     db.add(energy_file)
@@ -448,6 +462,10 @@ def _create_series_file(db, user, usage, *, name, uploaded_at):
 
 def _all_data(user, query=""):
     return client.get(f"/api/v1/energy-files/all/data{query}", headers=_headers(user))
+
+
+def _all_devices_data(user, query=""):
+    return client.get(f"/api/v1/energy-files/all-devices/data{query}", headers=_headers(user))
 
 
 def _list(user):
@@ -477,6 +495,7 @@ def test_first_upload_makes_file_and_aggregate_available(db):
     assert listing["aggregate"] == {
         "id": "all",
         "file_name": "Wszystkie pliki",
+        "source_type": "meter",
         "data_start": "2024-06-01",
         "data_end": "2024-06-30",
         "files_count": 1,
@@ -614,7 +633,7 @@ def test_all_files_data_without_files(db):
     response = _all_data(user)
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "Nie masz jeszcze poprawnie zaimportowanych plików."
+    assert response.json()["detail"] == "Nie masz jeszcze poprawnie zaimportowanych plików z licznika."
 
 
 def test_all_files_data_skips_files_without_usage_series(db):
@@ -699,6 +718,7 @@ def test_delete_other_users_or_missing_file(db):
 
 def test_aggregate_endpoints_require_token():
     assert client.get("/api/v1/energy-files/all/data").status_code == 401
+    assert client.get("/api/v1/energy-files/all-devices/data").status_code == 401
     assert client.delete(f"/api/v1/energy-files/{uuid.uuid4()}").status_code == 401
 
 
@@ -830,3 +850,106 @@ def test_upload_accepts_file_at_size_limit(db):
         app.dependency_overrides.pop(get_calculation_service, None)
 
     assert response.status_code == 200
+
+
+def _actions(usage, per_day):
+    return {day: per_day for day in usage}
+
+
+def test_upload_stores_source_type_of_file(db):
+    user = _create_user(db)
+
+    meter = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS)).json()
+    devices = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS, devices=[]), "dom.json").json()
+
+    assert db.get(EnergyDataFile, uuid.UUID(meter["file_id"])).source_type == "meter"
+    assert db.get(EnergyDataFile, uuid.UUID(devices["file_id"])).source_type == "devices"
+    items = {item["file_name"]: item["source_type"] for item in _list(user)["items"]}
+    assert items == {"zuzycie.csv": "meter", "dom.json": "devices"}
+
+
+def test_meter_and_devices_files_have_separate_aggregates(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 30, 0.25), name="licznik.csv", uploaded_at=T0)
+    usage = _days("2024-07-01", 3, 0.1)
+    _create_series_file(db, user, usage, name="dom.json", uploaded_at=T1, actions_per_day=_actions(usage, 20))
+
+    listing = _list(user)
+
+    assert listing["aggregate"]["files_count"] == 1
+    assert listing["aggregate"]["data_end"] == "2024-06-30"
+    assert listing["devices_aggregate"] == {
+        "id": "all-devices",
+        "file_name": "Wszystkie pliki urządzeń",
+        "source_type": "devices",
+        "data_start": "2024-07-01",
+        "data_end": "2024-07-03",
+        "files_count": 1,
+        "days_count": 3,
+        "label": "Wszystkie pliki urządzeń (01.07.2024 – 03.07.2024)",
+    }
+
+
+def test_newer_devices_file_does_not_override_meter_data_of_same_days(db):
+    user = _create_user(db)
+    meter = _create_series_file(db, user, _days("2024-06-01", 3, 0.25), name="tauron.csv", uploaded_at=T0)
+    usage = _days("2024-06-01", 3, 0.1)
+    devices = _create_series_file(db, user, usage, name="dom.json", uploaded_at=T1, actions_per_day=_actions(usage, 20))
+
+    all_meter = _all_data(user).json()
+    all_devices = _all_devices_data(user).json()
+
+    assert all_meter["file"]["files_count"] == 1
+    assert all_meter["file"]["files"][0]["id"] == str(meter.id)
+    assert all_meter["results"]["tariffs"]["G11"]["total_usage_kwh"] == 72.0
+    assert all_meter["results"]["statistics"]["data_source"] == "meter"
+
+    assert all_devices["file"]["id"] == "all-devices"
+    assert all_devices["file"]["files"][0]["id"] == str(devices.id)
+    assert all_devices["results"]["tariffs"]["G11"]["total_usage_kwh"] == 28.8
+    assert all_devices["results"]["statistics"]["data_source"] == "devices"
+
+
+def test_devices_aggregate_counts_actions_and_newer_file_wins_overlap(db):
+    user = _create_user(db)
+    older = _days("2024-06-01", 3, 0.1)
+    newer = _days("2024-06-03", 2, 0.2)
+    _create_series_file(db, user, older, name="stary.json", uploaded_at=T0, actions_per_day=_actions(older, 10))
+    _create_series_file(db, user, newer, name="nowy.json", uploaded_at=T1, actions_per_day=_actions(newer, 30))
+
+    body = _all_devices_data(user).json()
+    in_range = _all_devices_data(user, "?from=2024-06-04&to=2024-06-04").json()
+
+    # 01-02.06 ze starszego pliku (2 x 10 akcji), 03-04.06 z nowszego (2 x 30 akcji).
+    assert body["file"]["records_count"] == 80
+    assert body["results"]["statistics"]["records_count"] == 80
+    assert body["results"]["statistics"]["resolution_minutes"] == 15
+    assert in_range["results"]["statistics"]["records_count"] == 30
+    assert "actions_per_day" not in body["results"]
+
+
+def test_devices_file_data_counts_actions(db):
+    user = _create_user(db)
+    usage = _days("2024-06-01", 2, 0.1)
+    energy_file = _create_series_file(
+        db, user, usage, name="dom.json", uploaded_at=T0, actions_per_day=_actions(usage, 25)
+    )
+
+    body = _get_data(user, energy_file).json()
+    one_day = _get_data(user, energy_file, "?from=2024-06-02&to=2024-06-02").json()
+
+    assert body["file"]["records_count"] == 50
+    assert body["file"]["source_type"] == "devices"
+    assert body["results"]["statistics"]["records_count"] == 50
+    assert one_day["results"]["statistics"]["records_count"] == 25
+
+
+def test_all_device_files_data_without_device_files(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 2, 0.25), name="licznik.csv", uploaded_at=T0)
+
+    response = _all_devices_data(user)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Nie masz jeszcze poprawnie zaimportowanych plików urządzeń."
+    assert _list(user)["devices_aggregate"] is None

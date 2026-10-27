@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { EnergyFileContext } from "./energyFileContext";
-import { ALL_FILES_ID, getApiErrorMessage } from "../utils/energyFiles";
+import { aggregateIdForSourceType, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
 
 const PAGE_SIZE = 20;
 
@@ -42,8 +42,10 @@ export function EnergyFileProvider({ children }) {
   const [totalPages, setTotalPages] = useState(0);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState(null);
-  // Podsumowanie źródła "Wszystkie pliki" (zakres i liczba plików) albo null, gdy brak gotowych plików.
+  // Podsumowania źródeł "Wszystkie pliki" (licznik) i "Wszystkie pliki urządzeń" (zakres i liczba
+  // plików) albo null, gdy brak gotowych plików danego typu.
   const [aggregate, setAggregate] = useState(null);
+  const [devicesAggregate, setDevicesAggregate] = useState(null);
   const [deletingFileId, setDeletingFileId] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
 
@@ -72,6 +74,7 @@ export function EnergyFileProvider({ children }) {
       setPage(data.page);
       setTotalPages(data.total_pages);
       setAggregate(data.aggregate ?? null);
+      setDevicesAggregate(data.devices_aggregate ?? null);
       return data.items;
     } catch (error) {
       if (requestId !== latestPageRequestRef.current) return null;
@@ -174,6 +177,7 @@ export function EnergyFileProvider({ children }) {
 
   const deleteFile = useCallback(
     async (fileId) => {
+      const deletedFile = files.find((file) => file.id === fileId);
       setDeletingFileId(fileId);
       setDeleteError(null);
       try {
@@ -190,12 +194,16 @@ export function EnergyFileProvider({ children }) {
       const items = (await loadFilesPage(pageToLoad)) ?? [];
 
       // Dane zbiorcze zmieniły się, a usunięty plik nie może być dalej wyświetlany.
-      if (selectedFileId === fileId || selectedFileId === ALL_FILES_ID) {
-        if (!(await selectFile(ALL_FILES_ID))) await selectFirstCompleted(items);
-      }
+      const nextSourceId =
+        selectedFileId === fileId
+          ? aggregateIdForSourceType(deletedFile?.source_type)
+          : isAggregateSource(selectedFileId)
+            ? selectedFileId
+            : null;
+      if (nextSourceId && !(await selectFile(nextSourceId))) await selectFirstCompleted(items);
       return true;
     },
-    [files.length, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted],
+    [files, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted],
   );
 
   // Start odroczony do mikrozadania: przy podwójnym montowaniu (StrictMode)
@@ -234,6 +242,7 @@ export function EnergyFileProvider({ children }) {
       refreshFiles,
       reload,
       aggregate,
+      devicesAggregate,
       deleteFile,
       deletingFileId,
       deleteError,
@@ -260,6 +269,7 @@ export function EnergyFileProvider({ children }) {
     }),
     [
       aggregate,
+      devicesAggregate,
       deleteFile,
       deletingFileId,
       deleteError,

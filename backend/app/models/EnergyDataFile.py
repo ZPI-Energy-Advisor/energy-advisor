@@ -14,6 +14,9 @@ class EnergyDataFile(Base):
     STATUS_COMPLETED = "completed"
     STATUS_FAILED = "failed"
 
+    SOURCE_METER = "meter"
+    SOURCE_DEVICES = "devices"
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
@@ -23,6 +26,7 @@ class EnergyDataFile(Base):
     data_start = Column(Date, nullable=True)
     data_end = Column(Date, nullable=True)
     records_count = Column(Integer, nullable=True)
+    source_type = Column(String(20), nullable=False, default=SOURCE_METER, server_default=SOURCE_METER)
 
     status = Column(String(20), nullable=False, default=STATUS_PROCESSING)
     error_message = Column(Text, nullable=True)

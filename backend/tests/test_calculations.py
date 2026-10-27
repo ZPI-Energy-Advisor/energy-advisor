@@ -4,6 +4,7 @@ import pytest
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from fastapi import HTTPException
@@ -562,3 +563,50 @@ def test_summary_of_mixed_resolutions_has_no_records_count():
 
     assert summary["statistics"]["records_count"] is None
     assert summary["statistics"]["resolution_minutes"] is None
+
+
+DEVICES_DEMO_FILE = Path(__file__).parent / "fixtures" / "devices_demo_30d.json"
+
+
+def _devices_demo_results():
+    with DEVICES_DEMO_FILE.open("rb") as handle:
+        return CalculationService(_get_mock_repository()).calculate_all_tariffs(handle)
+
+
+def test_devices_file_counts_actions_as_records():
+    results = _devices_demo_results()
+
+    actions_count = results["import_report"]["rows_imported"]
+    assert results["statistics"]["records_count"] == actions_count
+    assert results["statistics"]["data_source"] == "devices"
+    assert sum(results["actions_per_day"].values()) == actions_count
+    assert "actions_per_day" not in public_results(results)
+
+
+def test_devices_file_range_counts_actions_of_selected_days():
+    results = _devices_demo_results()
+    day = date(2026, 10, 25)
+
+    in_range = CalculationService.calculate_for_range(results, day, day)
+
+    assert in_range["statistics"]["records_count"] == results["actions_per_day"]["2026-10-25"]
+    assert in_range["statistics"]["data_source"] == "devices"
+
+
+def test_meter_file_counts_readings_as_records():
+    results = _results_for_days()
+
+    assert results["statistics"]["data_source"] == "meter"
+    assert "actions_per_day" not in results
+
+
+def test_merge_actions_per_day_newer_file_takes_whole_days():
+    older = {"usage_15min": {"2026-10-01": _day(0.1), "2026-10-02": _day(0.1)},
+             "actions_per_day": {"2026-10-01": 10, "2026-10-02": 12}}
+    # Nowszy plik obejmuje 02.10 bez żadnej akcji - doba należy do niego, więc ma 0 akcji.
+    newer = {"usage_15min": {"2026-10-02": _day(0.0), "2026-10-03": _day(0.2)},
+             "actions_per_day": {"2026-10-03": 7}}
+
+    merged = CalculationService.merge_actions_per_day([older, newer])
+
+    assert merged == {"2026-10-01": 10, "2026-10-02": 0, "2026-10-03": 7}
