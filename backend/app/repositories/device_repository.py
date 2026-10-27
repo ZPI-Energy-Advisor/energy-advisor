@@ -6,11 +6,11 @@ from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.models.DeviceAction import DeviceAction
-from app.models.DeviceCategory import DeviceCategory
+from app.models.DeviceCategory import DeviceCategory  # noqa: F401 - rejestruje tabelę dla FK
 from app.models.DeviceInstance import DeviceInstance
 from app.models.DeviceProgram import DeviceProgram
 from app.models.DeviceSlotUsage import DeviceSlotUsage
-from app.models.DeviceType import DeviceType
+from app.models.DeviceType import DeviceType  # noqa: F401 - rejestruje tabelę dla FK
 from app.parsers.device_records import ActionRecord, DeviceRecord
 
 
