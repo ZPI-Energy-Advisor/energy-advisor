@@ -14,10 +14,11 @@ from app.models.DeviceProgram import DeviceProgram
 from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.DeviceType import DeviceType
 from app.models.EnergyDataFile import EnergyDataFile
-from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
+from app.parsers import parse_energy_file
+from app.parsers.device_records import ActionRecord, DeviceRecord
+from app.parsers.device_validation import DEVICE_CATEGORIES, DEVICE_TYPES, SLOT
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
-from scripts.validate_devices_file import DEVICE_CATEGORIES, DEVICE_TYPES, SLOT, action_profile, validate_devices
 
 
 DEMO_FILE = Path(__file__).parent / "fixtures" / "devices_demo_30d.json"
@@ -25,50 +26,8 @@ DEMO = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
 SAVE_LIMIT_SECONDS = 3
 
 
-def clock(value: str | None):
-    return datetime.strptime(value, "%H:%M").time() if value else None
-
-
-def records_from_document(document: dict) -> list[DeviceRecord]:
-    """Zamiana poprawnego pliku urządzeń na rekordy repozytorium (to samo zrobi parser z ZP-70)."""
-    devices, _ = validate_devices(document["devices"], [])
-    records = {}
-    for device_id, device in devices.items():
-        flexibility = device["flexibility"]
-        window = flexibility.get("allowed_window", {})
-        records[device_id] = DeviceRecord(
-            device_id=device_id,
-            name=device["device_name"],
-            device_type=device["device_type"],
-            device_category=device["device_category"],
-            flexibility_mode=flexibility["mode"],
-            max_power_kw=device.get("max_power_kw"),
-            allowed_window_from=clock(window.get("from")),
-            allowed_window_to=clock(window.get("to")),
-            max_shift_min=flexibility.get("max_shift_min"),
-            programs=[
-                ProgramRecord(program_id, program["program_name"], program["duration_min"], program["profile_kwh"])
-                for program_id, program in device["programs"].items()
-            ],
-        )
-    for action in document["energy_usage"]:
-        start = datetime.fromisoformat(action["action_start"])
-        end = datetime.fromisoformat(action["action_end"])
-        slots = int((end - start) / SLOT)
-        records[action["device_id"]].actions.append(ActionRecord(
-            action_id=action["action_id"],
-            start=start,
-            end=end,
-            energy_kwh=action["energy_kwh"],
-            slots_kwh=action_profile(action, devices[action["device_id"]], slots),
-            program_id=action.get("program_id"),
-            plugged_in=datetime.fromisoformat(action["plugged_in"]) if "plugged_in" in action else None,
-            deadline=datetime.fromisoformat(action["deadline"]) if "deadline" in action else None,
-        ))
-    return list(records.values())
-
-
-DEMO_RECORDS = records_from_document(DEMO)
+with DEMO_FILE.open("rb") as demo_handle:
+    DEMO_RECORDS = parse_energy_file(demo_handle).devices
 
 
 @pytest.fixture

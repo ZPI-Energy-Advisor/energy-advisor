@@ -383,11 +383,9 @@ def test_calculate_all_tariffs_turns_import_errors_into_http_errors():
 def test_devices_file_goes_to_devices_parser(path):
     with path.open("rb") as handle:
         assert isinstance(detect_document_parser(read_document(handle)), DevicesJsonParser)
-        with pytest.raises(FileImportError) as exc_info:
-            parse_energy_file(handle)
+        parsed = parse_energy_file(handle)
 
-    assert exc_info.value.status_code == 422
-    assert "będzie dostępny wkrótce" in exc_info.value.detail
+    assert parsed.report.detected_format == "devices"
 
 
 def test_json_is_recognized_by_content_despite_bom_and_whitespace():
