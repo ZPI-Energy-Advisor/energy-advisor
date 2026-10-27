@@ -125,17 +125,23 @@ def get_energy_file_service(
     return EnergyFileService(file_repository, simulation_repository, device_repository)
 
 
+def get_device_repository(db: Session = Depends(get_db)) -> DeviceRepository:
+    return DeviceRepository(db)
+
+
 def get_upload_service(
     calculation_service: CalculationService = Depends(get_calculation_service),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
     energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     user_repository: UserRepository = Depends(get_user_repository),
+    device_repository: DeviceRepository = Depends(get_device_repository),
 ) -> UploadService:
     return UploadService(
         calculation_service=calculation_service,
         simulation_repository=simulation_repository,
         energy_file_repository=energy_file_repository,
         user_repository=user_repository,
+        device_repository=device_repository,
     )
 
 

@@ -74,6 +74,31 @@ describe("ImportReportSummary", () => {
     expect(screen.getByText("…i 1 akcja więcej.")).toBeTruthy();
   });
 
+  it("dla pliku urządzeń pokazuje urządzenia, kategorie, pobór i produkcję PV", () => {
+    const report = {
+      detected_format: "devices",
+      format_label: "Plik urządzeń smart home (JSON)",
+      unit: "action",
+      rows_total: 62,
+      rows_imported: 62,
+      rows_ignored: 0,
+      resolution_minutes: 15,
+      skipped_rows: { count: 0, examples: [] },
+      devices: {
+        devices_count: 24,
+        actions_count: 62,
+        categories: ["AGD", "OZE"],
+        consumption_kwh: 52.49,
+        pv_production_kwh: 14.6,
+      },
+    };
+
+    render(<ImportReportSummary report={report} />);
+
+    expect(screen.getByText("24 urządzenia · AGD, OZE")).toBeTruthy();
+    expect(screen.getByText("pobór 52,49 kWh · produkcja PV 14,6 kWh")).toBeTruthy();
+  });
+
   it("nic nie renderuje bez raportu", () => {
     const { container } = render(<ImportReportSummary report={null} />);
 

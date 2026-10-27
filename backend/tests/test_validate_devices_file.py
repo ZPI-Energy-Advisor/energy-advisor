@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.validate_devices_file import validate_document
+from app.parsers.device_validation import validate_document
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]

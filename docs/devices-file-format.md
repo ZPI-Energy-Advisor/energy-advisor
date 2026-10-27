@@ -11,7 +11,8 @@ historia ich pracy. Na jego podstawie aplikacja:
 Przykładowy plik: [`frontend/public/samples/devices-example.json`](../frontend/public/samples/devices-example.json)
 (24 urządzenia, 2 doby, link do pobrania na ekranie importu).
 
-Walidacja pliku według reguł z tego dokumentu:
+Reguły z tego dokumentu sprawdza `backend/app/parsers/device_validation.py`: przy imporcie pliku
+w aplikacji i w skrypcie wiersza poleceń:
 
 ```bash
 python backend/scripts/validate_devices_file.py frontend/public/samples/devices-example.json
@@ -217,5 +218,6 @@ Plik jest poprawny, gdy spełnia wszystkie reguły:
 13. Sesja EV ma `deadline` i spełnia `plugged_in ≤ action_start < action_end ≤ deadline`;
     `plugged_in` i `deadline` nie występują przy innych urządzeniach.
 14. Łączny pobór domu w żadnym kwadransie nie przekracza limitu przyłącza (w walidatorze
-    parametr `--max-grid-kw`, w aplikacji wartość z profilu użytkownika).
+    parametr `--max-grid-kw`). Import w aplikacji na razie tej reguły nie sprawdza, bo profil
+    użytkownika nie ma jeszcze mocy przyłączeniowej.
 
