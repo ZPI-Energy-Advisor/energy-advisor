@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.DeviceAction import DeviceAction
 from app.models.DeviceCategory import DeviceCategory
 from app.models.DeviceInstance import DeviceInstance
+from app.models.DeviceInstanceFile import DeviceInstanceFile
 from app.models.DeviceProgram import DeviceProgram
 from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.DeviceType import DeviceType
@@ -17,6 +18,8 @@ from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
+from app.repositories.simulation_repository import SimulationRepository
+from app.services.energy_file_service import EnergyFileService
 from scripts.validate_devices_file import DEVICE_CATEGORIES, DEVICE_TYPES, SLOT, action_profile, validate_devices
 
 
@@ -85,18 +88,20 @@ def saved_demo(db, user_a, energy_file) -> EnergyDataFile:
 
 def count(db, model, file_id) -> int:
     query = db.query(func.count()).select_from(model)
-    if model is DeviceSlotUsage:
-        return query.filter(DeviceSlotUsage.energy_data_file_id == file_id).scalar()
-    if model is not DeviceInstance:
-        query = query.join(DeviceInstance, model.device_instance_id == DeviceInstance.id)
-    return query.filter(DeviceInstance.energy_data_file_id == file_id).scalar()
+    if model in (DeviceAction, DeviceSlotUsage):
+        return query.filter(model.energy_data_file_id == file_id).scalar()
+    link = DeviceInstanceFile.device_instance_id == (DeviceInstance.id if model is DeviceInstance else model.device_instance_id)
+    return query.join(DeviceInstanceFile, link).filter(DeviceInstanceFile.energy_data_file_id == file_id).scalar()
+
+
+def devices_of(db, user) -> dict[str, DeviceInstance]:
+    return {device.source_device_id: device for device in DeviceRepository(db).list_for_user(user.id)}
 
 
 def action_by_id(db, energy_file, action_id: str) -> DeviceAction:
     return (
         db.query(DeviceAction)
-        .join(DeviceInstance, DeviceAction.device_instance_id == DeviceInstance.id)
-        .filter(DeviceInstance.energy_data_file_id == energy_file.id, DeviceAction.source_action_id == action_id)
+        .filter(DeviceAction.energy_data_file_id == energy_file.id, DeviceAction.source_action_id == action_id)
         .one()
     )
 
@@ -174,20 +179,31 @@ def test_ev_session_window_is_stored(db, saved_demo):
     assert action.deadline == datetime(2026, 10, 6, 5, 30, tzinfo=timezone.utc)
 
 
-def test_deleting_file_removes_devices_actions_and_slots(db, saved_demo):
-    file_id = saved_demo.id
-    EnergyDataFileRepository(db).delete(saved_demo)
+def delete_file(db, user, energy_file) -> None:
+    EnergyFileService(EnergyDataFileRepository(db), SimulationRepository(db), DeviceRepository(db)).delete_file(
+        energy_file.id, user.id
+    )
 
-    for model in (DeviceInstance, DeviceProgram, DeviceAction, DeviceSlotUsage):
+
+def test_deleting_only_file_removes_devices_actions_and_slots(db, user_a, saved_demo):
+    file_id = saved_demo.id
+    device_ids = [device.id for device in devices_of(db, user_a).values()]
+    delete_file(db, user_a, saved_demo)
+
+    assert devices_of(db, user_a) == {}
+    assert db.query(DeviceProgram).filter(DeviceProgram.device_instance_id.in_(device_ids)).count() == 0
+    for model in (DeviceAction, DeviceSlotUsage):
         assert count(db, model, file_id) == 0
 
 
 def test_deleting_user_removes_devices_actions_and_slots(db, user_a, saved_demo):
     file_id = saved_demo.id
+    user_id = user_a.id
     db.delete(user_a)
     db.commit()
 
-    for model in (DeviceInstance, DeviceProgram, DeviceAction, DeviceSlotUsage):
+    assert db.query(DeviceInstance).filter(DeviceInstance.user_id == user_id).count() == 0
+    for model in (DeviceAction, DeviceSlotUsage):
         assert count(db, model, file_id) == 0
 
 
@@ -195,9 +211,9 @@ def test_list_for_file_is_scoped_to_user(db, user_b, saved_demo):
     assert DeviceRepository(db).list_for_file(saved_demo.id, user_b.id) == []
 
 
-def kettle(**overrides) -> DeviceRecord:
+def kettle(action_id="act_1", **overrides) -> DeviceRecord:
     start = datetime(2026, 10, 19, 6, 45, tzinfo=timezone(timedelta(hours=2)))
-    action = ActionRecord("act_1", start, start + SLOT, 0.12, [0.12])
+    action = ActionRecord(action_id, start, start + SLOT, 0.12, [0.12])
     return DeviceRecord(**{
         "device_id": "dev_kt_01",
         "name": "Czajnik",
@@ -238,3 +254,128 @@ def test_slots_not_matching_action_duration_are_rejected_before_any_insert(db, u
 
     assert count(db, DeviceInstance, energy_file.id) == 0
     assert count(db, DeviceAction, energy_file.id) == 0
+
+
+def test_action_with_unknown_program_is_rejected_before_any_insert(db, user_a, energy_file):
+    broken = kettle()
+    broken.actions[0].program_id = "eco"
+
+    with pytest.raises(ValueError, match="eco"):
+        DeviceRepository(db).save_for_file(user_id=user_a.id, energy_data_file_id=energy_file.id, devices=[broken])
+
+    assert count(db, DeviceInstance, energy_file.id) == 0
+
+
+def test_time_without_timezone_is_rejected(db, user_a, energy_file):
+    broken = kettle()
+    broken.actions[0].deadline = datetime(2026, 10, 19, 8, 0)
+
+    with pytest.raises(ValueError, match="bez strefy"):
+        DeviceRepository(db).save_for_file(user_id=user_a.id, energy_data_file_id=energy_file.id, devices=[broken])
+
+    assert count(db, DeviceInstance, energy_file.id) == 0
+
+
+def new_file(db, user, name="kolejny.json") -> EnergyDataFile:
+    return EnergyDataFileRepository(db).create(user_id=user.id, file_name=name)
+
+
+def save(db, user, energy_file, devices) -> None:
+    DeviceRepository(db).save_for_file(user_id=user.id, energy_data_file_id=energy_file.id, devices=devices)
+    db.commit()
+
+
+def washer(name: str, programs: list[ProgramRecord]) -> DeviceRecord:
+    start = datetime(2026, 11, 2, 9, 0, tzinfo=timezone(timedelta(hours=1)))
+    profile = programs[0].profile_kwh
+    action = ActionRecord("act_1", start, start + len(profile) * SLOT, round(sum(profile), 2), list(profile),
+                          program_id=programs[0].program_id)
+    return DeviceRecord(device_id="dev_wm_01", name=name, device_type="washing_machine", device_category="AGD",
+                        flexibility_mode="shiftable", programs=programs, actions=[action])
+
+
+def slots_of(db, action: DeviceAction) -> list[float]:
+    rows = db.query(DeviceSlotUsage.kwh).filter(DeviceSlotUsage.device_action_id == action.id)
+    return [kwh for (kwh,) in rows.order_by(DeviceSlotUsage.slot_start)]
+
+
+def test_second_file_of_the_same_home_does_not_duplicate_devices(db, user_a, saved_demo):
+    second = new_file(db, user_a)
+    save(db, user_a, second, records_from_document(DEMO))
+
+    assert len(devices_of(db, user_a)) == len(DEMO["devices"])
+    # Numeracja akcji powtarza się w obu plikach, a akcje każdego pliku są zapisane osobno.
+    assert count(db, DeviceAction, saved_demo.id) == count(db, DeviceAction, second.id) == len(DEMO["energy_usage"])
+
+
+def test_latest_file_updates_device_and_merges_programs(db, user_a, saved_demo):
+    old_action = (
+        db.query(DeviceAction)
+        .join(DeviceProgram, DeviceAction.device_program_id == DeviceProgram.id)
+        .filter(DeviceAction.energy_data_file_id == saved_demo.id, DeviceProgram.source_program_id == "cotton_60")
+        .first()
+    )
+    old_slots = slots_of(db, old_action)
+
+    save(db, user_a, new_file(db, user_a), [washer("Pralka Bosch Serie 6", [
+        ProgramRecord("cotton_60", "Bawełna 60°C", 120, [0.5] * 8),
+        ProgramRecord("wool_30", "Wełna 30°C", 45, [0.2, 0.1, 0.1]),
+    ])])
+
+    device = devices_of(db, user_a)["dev_wm_01"]
+    programs = {
+        program.source_program_id: program
+        for program in db.query(DeviceProgram).filter(DeviceProgram.device_instance_id == device.id)
+    }
+    assert device.name == "Pralka Bosch Serie 6"
+    assert programs["cotton_60"].profile_kwh == [0.5] * 8
+    # quick_40 nie ma w nowym pliku, ale zostaje: mogą go używać akcje z poprzednich plików.
+    assert set(programs) == {"cotton_60", "quick_40", "wool_30"}
+    # Historia poprzedniego pliku się nie zmienia.
+    assert slots_of(db, old_action) == old_slots
+
+
+def test_device_absent_from_new_file_stays_in_home(db, user_a, saved_demo):
+    save(db, user_a, new_file(db, user_a), [kettle()])
+
+    assert len(devices_of(db, user_a)) == len(DEMO["devices"])
+
+
+def test_deleting_file_keeps_devices_present_in_other_files(db, user_a, saved_demo):
+    second = new_file(db, user_a)
+    save(db, user_a, second, [kettle(), kettle(action_id="act_2", device_id="dev_kt_02", name="Czajnik w garażu")])
+
+    delete_file(db, user_a, second)
+
+    devices = devices_of(db, user_a)
+    assert "dev_kt_01" in devices and "dev_kt_02" not in devices
+    assert len(devices) == len(DEMO["devices"])
+    assert count(db, DeviceAction, second.id) == 0
+    assert count(db, DeviceAction, saved_demo.id) == len(DEMO["energy_usage"])
+
+
+def test_device_without_actions_stays_while_its_file_exists(db, user_a, energy_file):
+    lamp = kettle(device_id="dev_lamp_01", name="Lampa", device_type="light", device_category="Oświetlenie", actions=[])
+    save(db, user_a, energy_file, [lamp])
+    second = new_file(db, user_a)
+    save(db, user_a, second, [kettle()])
+
+    delete_file(db, user_a, second)
+
+    assert set(devices_of(db, user_a)) == {"dev_lamp_01"}
+
+
+def test_each_user_has_own_home(db, user_a, user_b, saved_demo):
+    save(db, user_b, new_file(db, user_b), [kettle()])
+
+    assert set(devices_of(db, user_b)) == {"dev_kt_01"}
+    assert len(devices_of(db, user_a)) == len(DEMO["devices"])
+
+
+def test_list_for_file_returns_only_devices_present_in_that_file(db, user_a, saved_demo):
+    second = new_file(db, user_a)
+    save(db, user_a, second, [kettle()])
+
+    assert [device.source_device_id for device in DeviceRepository(db).list_for_file(second.id, user_a.id)] == [
+        "dev_kt_01"
+    ]

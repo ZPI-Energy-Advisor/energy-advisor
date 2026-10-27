@@ -65,7 +65,6 @@ def upgrade() -> None:
     op.create_table('device_instances',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('energy_data_file_id', sa.UUID(), nullable=False),
     sa.Column('source_device_id', sa.String(length=100), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
     sa.Column('device_type', sa.String(length=40), nullable=False),
@@ -81,13 +80,19 @@ def upgrade() -> None:
     ),
     sa.ForeignKeyConstraint(['device_category'], ['device_categories.code']),
     sa.ForeignKeyConstraint(['device_type'], ['device_types.code']),
-    sa.ForeignKeyConstraint(['energy_data_file_id'], ['energy_data_files.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('energy_data_file_id', 'source_device_id', name='uq_device_instance_file_device')
+    sa.UniqueConstraint('user_id', 'source_device_id', name='uq_device_instance_user_device')
     )
-    op.create_index(op.f('ix_device_instances_energy_data_file_id'), 'device_instances', ['energy_data_file_id'], unique=False)
-    op.create_index(op.f('ix_device_instances_user_id'), 'device_instances', ['user_id'], unique=False)
+
+    op.create_table('device_instance_files',
+    sa.Column('device_instance_id', sa.UUID(), nullable=False),
+    sa.Column('energy_data_file_id', sa.UUID(), nullable=False),
+    sa.ForeignKeyConstraint(['device_instance_id'], ['device_instances.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['energy_data_file_id'], ['energy_data_files.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('device_instance_id', 'energy_data_file_id')
+    )
+    op.create_index(op.f('ix_device_instance_files_energy_data_file_id'), 'device_instance_files', ['energy_data_file_id'], unique=False)
 
     op.create_table('device_programs',
     sa.Column('id', sa.BigInteger(), nullable=False),
@@ -104,6 +109,7 @@ def upgrade() -> None:
     op.create_table('device_actions',
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('device_instance_id', sa.UUID(), nullable=False),
+    sa.Column('energy_data_file_id', sa.UUID(), nullable=False),
     sa.Column('device_program_id', sa.BigInteger(), nullable=True),
     sa.Column('source_action_id', sa.String(length=100), nullable=False),
     sa.Column('action_start', sa.DateTime(timezone=True), nullable=False),
@@ -113,9 +119,10 @@ def upgrade() -> None:
     sa.Column('deadline', sa.DateTime(timezone=True), nullable=True),
     sa.CheckConstraint('action_start < action_end', name='ck_device_action_start_before_end'),
     sa.ForeignKeyConstraint(['device_instance_id'], ['device_instances.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['device_program_id'], ['device_programs.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['device_program_id'], ['device_programs.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['energy_data_file_id'], ['energy_data_files.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('device_instance_id', 'source_action_id', name='uq_device_action_instance_action')
+    sa.UniqueConstraint('energy_data_file_id', 'source_action_id', name='uq_device_action_file_action')
     )
     op.create_index(op.f('ix_device_actions_device_instance_id'), 'device_actions', ['device_instance_id'], unique=False)
     op.create_index(op.f('ix_device_actions_device_program_id'), 'device_actions', ['device_program_id'], unique=False)
@@ -143,8 +150,8 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_device_actions_device_instance_id'), table_name='device_actions')
     op.drop_table('device_actions')
     op.drop_table('device_programs')
-    op.drop_index(op.f('ix_device_instances_user_id'), table_name='device_instances')
-    op.drop_index(op.f('ix_device_instances_energy_data_file_id'), table_name='device_instances')
+    op.drop_index(op.f('ix_device_instance_files_energy_data_file_id'), table_name='device_instance_files')
+    op.drop_table('device_instance_files')
     op.drop_table('device_instances')
     op.drop_table('device_types')
     op.drop_table('device_categories')

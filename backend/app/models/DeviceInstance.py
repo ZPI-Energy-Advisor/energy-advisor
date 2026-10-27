@@ -8,11 +8,15 @@ from app.database import Base
 
 
 class DeviceInstance(Base):
-    """Urządzenie z pliku urządzeń. Każdy import zapisuje własny komplet urządzeń."""
+    """Urządzenie w domu użytkownika: jedno na device_id, niezależnie od liczby wgranych plików.
+
+    Import aktualizuje urządzenie po device_id (najnowszy plik wygrywa). Pliki, w których urządzenie
+    występuje, wskazuje DeviceInstanceFile; usunięcie ostatniego takiego pliku usuwa urządzenie.
+    """
 
     __tablename__ = "device_instances"
     __table_args__ = (
-        UniqueConstraint("energy_data_file_id", "source_device_id", name="uq_device_instance_file_device"),
+        UniqueConstraint("user_id", "source_device_id", name="uq_device_instance_user_device"),
         CheckConstraint(
             "flexibility_mode IN ('fixed', 'shiftable', 'interruptible')",
             name="ck_device_instance_flexibility_mode",
@@ -24,13 +28,8 @@ class DeviceInstance(Base):
     INTERRUPTIBLE = "interruptible"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    energy_data_file_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("energy_data_files.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    # Indeks na user_id zapewnia ograniczenie unikalności (user_id, source_device_id).
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # device_id z pliku (np. "dev_wm_01"); id to klucz w bazie.
     source_device_id = Column(String(100), nullable=False)
