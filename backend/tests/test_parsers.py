@@ -445,3 +445,16 @@ def test_new_document_format_needs_only_a_registered_parser(monkeypatch):
     assert results["import_report"]["detected_format"] == "dokument_testowy"
     assert results["import_report"]["unit"] == "action"
     assert results["tariffs"]["G11"]["total_usage_kwh"] == 4.0
+
+
+def test_devices_file_without_devices_is_rejected():
+    document = {
+        "period": {"start": "2026-01-05T00:00:00+01:00", "end": "2026-01-06T00:00:00+01:00"},
+        "devices": [],
+        "energy_usage": [],
+    }
+
+    error = _import_error(BytesIO(json.dumps(document).encode()))
+
+    assert error.status_code == 422
+    assert error.detail == "Plik urządzeń nie zawiera żadnych urządzeń."

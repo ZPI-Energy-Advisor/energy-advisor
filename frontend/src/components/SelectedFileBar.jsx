@@ -1,12 +1,14 @@
 import { Link } from "react-router-dom";
 import { FiFileText, FiLayers } from "react-icons/fi";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import SourceTypeBadge from "./SourceTypeBadge";
 import {
-  ALL_FILES_ID,
   FILES_TABLE_ANCHOR,
   formatDataResolution,
   formatDateRange,
   formatFilesCount,
+  formatRecordsCount,
+  isAggregateSource,
 } from "../utils/energyFiles";
 
 // Pokazuje, z którego pliku pochodzą wyświetlane dane. Sam wybór odbywa się
@@ -16,11 +18,11 @@ function SelectedFileBar() {
 
   if (!selectedFile) return null;
 
-  const isAggregate = selectedFile.id === ALL_FILES_ID;
+  const isAggregate = isAggregateSource(selectedFile.id);
   const details = [
     formatDateRange(selectedFile),
     selectedFile.days_count != null && `${selectedFile.days_count} dni`,
-    selectedFile.records_count != null && `${selectedFile.records_count} rekordów`,
+    selectedFile.records_count != null && formatRecordsCount(selectedFile.records_count, selectedFile.source_type),
     isAggregate && formatFilesCount(selectedFile.files_count),
     formatDataResolution(results?.statistics),
   ].filter(Boolean);
@@ -38,6 +40,7 @@ function SelectedFileBar() {
         <span className="font-bold text-gray-900 truncate max-w-full" title={selectedFile.file_name}>
           {selectedFile.file_name}
         </span>
+        <SourceTypeBadge sourceType={selectedFile.source_type} />
         <span className="text-gray-500">{details.join(" · ")}</span>
         {isLoadingData && <span className="text-emerald-600 text-xs">Ładowanie...</span>}
         <Link
