@@ -3,8 +3,10 @@ import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import EnergyFilesTable from "../components/EnergyFilesTable";
+import ImportErrorDetails from "../components/ImportErrorDetails";
 import ImportReportSummary from "../components/ImportReportSummary";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import { dropRejectionMessage } from "../utils/energyFiles";
 
 const MAX_FILE_SIZE_MB = 10;
 
@@ -30,14 +32,7 @@ function ImportPage() {
   }, []);
 
   const onDropRejected = useCallback((rejections) => {
-    const tooLarge = rejections.some((rejection) =>
-      rejection.errors.some((rejectionError) => rejectionError.code === "file-too-large"),
-    );
-    setError(
-      tooLarge
-        ? `Plik jest za duży. Maksymalny rozmiar pliku to ${MAX_FILE_SIZE_MB} MB.`
-        : "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv lub .json.",
-    );
+    setError(dropRejectionMessage(rejections, MAX_FILE_SIZE_MB));
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -182,7 +177,7 @@ function ImportPage() {
 
               {error && (
                 <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center text-sm md:text-base font-medium">
-                  {error}
+                  <ImportErrorDetails error={error} />
                 </div>
               )}
             </div>
@@ -240,7 +235,7 @@ function ImportPage() {
 
               {error && (
                 <div className="mb-6 p-4 bg-red-50 text-red-600 rounded border border-red-200 text-sm font-medium">
-                  {error}
+                  <ImportErrorDetails error={error} />
                 </div>
               )}
 

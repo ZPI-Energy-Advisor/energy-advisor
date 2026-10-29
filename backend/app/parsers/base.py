@@ -15,10 +15,20 @@ UNIT_ACTION = "action"
 
 
 class FileImportError(Exception):
-    def __init__(self, status_code: int, detail: str):
+    """Błąd importu. Opcjonalna lista `errors` trafia do UI jako lista; `errors_count` liczy też pominięte."""
+
+    def __init__(self, status_code: int, detail: str, errors: list[dict] | None = None,
+                 errors_count: int | None = None):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.errors = errors
+        self.errors_count = errors_count if errors_count is not None else len(errors or [])
+
+    def http_detail(self) -> str | dict:
+        if self.errors is None:
+            return self.detail
+        return {"message": self.detail, "errors": self.errors, "errors_count": self.errors_count}
 
 
 @dataclass

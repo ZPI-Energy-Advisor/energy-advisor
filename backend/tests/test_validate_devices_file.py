@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from app.parsers.device_validation import validate_document
+from jsonschema import Draft202012Validator
+
+from app.parsers.device_validation import SCHEMA, SCHEMA_VALIDATOR, validate_document
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -77,6 +79,31 @@ INVALID_CASES = {
                                   "plugged_in <= action_start"),
     "deadline_outside_ev": (lambda d: actions(d, "dev_kt_01")[0].update(deadline="2026-10-20T07:00:00+02:00"),
                             "dozwolone tylko dla ładowarki EV"),
+    "missing_period": (lambda d: d.pop("period"), "plik: brak pola period"),
+    "device_not_object": (lambda d: d["devices"].__setitem__(2, "pralka"), "devices[2]: oczekiwano obiektu"),
+    "text_in_program_profile": (
+        lambda d: device(d, "dev_wm_01")["programs"][0]["profile_kwh"].__setitem__(1, "x"),
+        "dev_wm_01.programs[0]: pole profile_kwh musi być niepustą listą liczb",
+    ),
+    "empty_action_profile": (lambda d: actions(d, "dev_pv_01")[0].update(profile_kwh=[]),
+                             "pole profile_kwh musi być niepustą listą liczb"),
+    "zero_max_power": (lambda d: device(d, "dev_kt_01").update(max_power_kw=0),
+                       "dev_kt_01: pole max_power_kw musi być liczbą dodatnią"),
+    "zero_max_shift": (lambda d: device(d, "dev_hp_01")["flexibility"].update(max_shift_min=0),
+                       "max_shift_min musi być dodatnią liczbą całkowitą"),
+    "fixed_device_with_program": (
+        lambda d: device(d, "dev_kt_01").update(
+            programs=[{"program_id": "a", "program_name": "A", "duration_min": 15, "profile_kwh": [0.1]}]
+        ),
+        "dev_kt_01: urządzenie fixed nie może mieć programów",
+    ),
+    "interruptible_with_shift": (lambda d: device(d, "dev_ev_01")["flexibility"].update(max_shift_min=30),
+                                 "tryb interruptible nie obsługuje pól: max_shift_min"),
+    "action_without_id": (lambda d: d["energy_usage"][3].pop("action_id"), "energy_usage[3]: brak pola action_id"),
+    "date_not_in_calendar": (
+        lambda d: actions(d, "dev_kt_01")[0].update(action_start="2026-02-30T06:45:00+01:00"),
+        "niepoprawna data",
+    ),
 }
 
 
@@ -95,6 +122,32 @@ def test_invalid_file_is_reported(mutate, expected):
     result = validate_document(document)
 
     assert any(expected in error for error in result.errors), result.errors
+
+
+def test_schema_is_valid_json_schema():
+    Draft202012Validator.check_schema(SCHEMA)
+
+
+def test_validator_gets_schema_without_refs():
+    # Rozwiązywanie "$ref" przy każdej akcji kosztowało prawie połowę czasu walidacji.
+    assert "$ref" in json.dumps(SCHEMA)
+    assert "$ref" not in json.dumps(SCHEMA_VALIDATOR.schema)
+
+
+def test_unknown_fields_are_allowed():
+    document = copy.deepcopy(SAMPLE)
+    device(document, "dev_kt_01")["color"] = "red"
+    document["format_version"] = "2.0"
+
+    assert validate_document(document).is_valid
+
+
+def test_schema_errors_skip_semantic_rules():
+    document = copy.deepcopy(SAMPLE)
+    device(document, "dev_kt_01")["max_power_kw"] = "dużo"
+    actions(document, "dev_wm_01")[0]["energy_kwh"] = 1.50
+
+    assert validate_document(document).errors == ["dev_kt_01: pole max_power_kw musi być liczbą dodatnią"]
 
 
 def test_document_must_be_object():

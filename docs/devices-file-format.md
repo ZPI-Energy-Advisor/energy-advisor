@@ -11,8 +11,11 @@ historia ich pracy. Na jego podstawie aplikacja:
 Przykładowy plik: [`frontend/public/samples/devices-example.json`](../frontend/public/samples/devices-example.json)
 (24 urządzenia, 2 doby, link do pobrania na ekranie importu).
 
-Reguły z tego dokumentu sprawdza `backend/app/parsers/device_validation.py`: przy imporcie pliku
-w aplikacji i w skrypcie wiersza poleceń:
+Strukturę pliku (pola, typy, słowniki, formaty) opisuje formalnie JSON Schema
+[`backend/app/parsers/devices_file.schema.json`](../backend/app/parsers/devices_file.schema.json).
+Reguły z tego dokumentu sprawdza `backend/app/parsers/device_validation.py` w dwóch krokach: najpierw
+schemat, potem reguły łączące pola i obiekty, których schemat nie wyrazi. Korzysta z tego import
+pliku w aplikacji i skrypt wiersza poleceń:
 
 ```bash
 python backend/scripts/validate_devices_file.py frontend/public/samples/devices-example.json
@@ -198,7 +201,9 @@ net-metering) pochodzą z profilu użytkownika, nie z pliku.
 
 ## Reguły walidacji
 
-Plik jest poprawny, gdy spełnia wszystkie reguły:
+Plik jest poprawny, gdy spełnia wszystkie reguły. Reguły 3–5, typy i wymagane pola, format czasu
+ze strefą oraz godzin `allowed_window` sprawdza schemat; pozostałe sprawdza kod. Przy błędach
+schematu reguły z kodu nie są sprawdzane, bo wynikałyby z tych samych błędów.
 
 1. `period.start` i `period.end` mają strefę czasową, `start` < `end`.
 2. `device_id` i `action_id` są unikalne.

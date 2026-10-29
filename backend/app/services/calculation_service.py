@@ -71,7 +71,7 @@ class CalculationService:
         try:
             return parse_energy_file(file_obj)
         except FileImportError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+            raise HTTPException(status_code=exc.status_code, detail=exc.http_detail()) from exc
 
     def calculate_with_report(self, parsed: ParsedEnergyFile) -> dict:
         results_dict = self.calculate(parsed)

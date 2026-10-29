@@ -1,42 +1,77 @@
 """Reguły pliku urządzeń (JSON) z docs/devices-file-format.md.
 
-Używa ich parser importu (app/parsers/devices.py) i skrypt CLI backend/scripts/validate_devices_file.py.
+Walidacja ma dwa kroki: najpierw schemat devices_file.schema.json sprawdza strukturę (pola, typy,
+słowniki, formaty), potem kod poniżej sprawdza reguły łączące pola i obiekty, których schemat nie
+wyrazi (suma profilu, nakładanie się akcji, istnienie urządzenia i programu, okno sesji EV, limit
+przyłącza). Używają tego parser importu (app/parsers/devices.py) i skrypt CLI
+backend/scripts/validate_devices_file.py.
 """
 
+import json
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
+from pathlib import Path
+
+from jsonschema import Draft202012Validator, ValidationError
 
 SLOT = timedelta(minutes=15)
 SLOT_HOURS = 0.25
 DEFAULT_MAX_GRID_KW = 9.0
-
-FLEXIBILITY_FIELDS = {
-    "fixed": {"mode"},
-    "shiftable": {"mode", "allowed_window", "max_shift_min"},
-    "interruptible": {"mode", "allowed_window"},
-}
-DEVICE_CATEGORIES = {"AGD", "Ogrzewanie", "OZE", "Oświetlenie", "RTV/IT", "Pojazd elektryczny", "Inne"}
-DEVICE_TYPES = {
-    "washing_machine", "tumble_dryer", "dishwasher", "fridge", "freezer", "induction_hob", "oven",
-    "microwave", "kettle", "coffee_machine", "heat_pump", "electric_heater", "water_heater", "ventilation",
-    "pv_inverter", "light", "tv", "computer", "router", "ev_charger", "vacuum_cleaner", "hair_dryer", "other",
-}
 PRODUCER_CATEGORY = "OZE"
 ENERGY_TOLERANCE_KWH = 0.005
 POWER_TOLERANCE_KWH = 1e-9
 
-# Wymagane i opcjonalne pola obiektów: nazwa -> typ. "number" to int albo float (bez bool).
-DEVICE_FIELDS = {"device_id": str, "device_name": str, "device_type": str, "device_category": str, "flexibility": dict}
-DEVICE_OPTIONAL = {"max_power_kw": "number", "programs": list}
-PROGRAM_FIELDS = {"program_id": str, "program_name": str, "duration_min": int, "profile_kwh": "numbers"}
-ACTION_FIELDS = {"action_id": str, "device_id": str, "action_start": str, "action_end": str, "energy_kwh": "number"}
-ACTION_OPTIONAL = {"program_id": str, "profile_kwh": "numbers", "plugged_in": str, "deadline": str}
+SCHEMA = json.loads(Path(__file__).with_name("devices_file.schema.json").read_text(encoding="utf-8"))
+
+
+def _inline_refs(node, definitions: dict):
+    """Wkleja definicje z $defs w miejsca "$ref" (schemat nie ma odwołań cyklicznych ani pól obok "$ref").
+
+    Walidator rozwiązuje "$ref" przy każdym obiekcie osobno; przy tysiącach akcji to prawie połowa czasu
+    walidacji. Plik schematu zostaje czytelny, a walidator dostaje wersję bez odwołań.
+    """
+    if isinstance(node, dict):
+        reference = node.get("$ref")
+        if isinstance(reference, str) and reference.startswith("#/$defs/"):
+            return _inline_refs(definitions[reference.removeprefix("#/$defs/")], definitions)
+        return {key: _inline_refs(value, definitions) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_inline_refs(item, definitions) for item in node]
+    return node
+
+
+SCHEMA_VALIDATOR = Draft202012Validator(_inline_refs(SCHEMA, SCHEMA["$defs"]))
+# Słowniki są w schemacie; zgodność z tabelami w bazie pilnuje test w tests/test_device_repository.py.
+DEVICE_TYPES = set(SCHEMA["$defs"]["device_type"]["enum"])
+DEVICE_CATEGORIES = set(SCHEMA["$defs"]["device_category"]["enum"])
+
+NOT_AN_OBJECT = "oczekiwano obiektu JSON z polami period, devices i energy_usage"
+TYPE_NAMES = {"string": "tekst", "object": "obiekt", "array": "lista", "integer": "liczba całkowita", "number": "liczba"}
+EXPECTED_TYPES = {
+    "string": "tekstu", "object": "obiektu", "array": "listy", "integer": "liczby całkowitej", "number": "liczby",
+}
+
+
+@dataclass(frozen=True)
+class Issue:
+    """Błąd pliku: miejsce (urządzenie, program, akcja), treść i ID, po których UI pokaże nazwę urządzenia."""
+
+    location: str
+    message: str
+    device_id: str | None = None
+    action_id: str | None = None
+
+    def __str__(self) -> str:
+        return f"{self.location}: {self.message}" if self.location else self.message
+
+    def with_message(self, message: str) -> "Issue":
+        return replace(self, message=message)
 
 
 @dataclass
 class ValidationResult:
-    errors: list[str] = field(default_factory=list)
+    issues: list[Issue] = field(default_factory=list)
     devices_count: int = 0
     actions_count: int = 0
     categories: set[str] = field(default_factory=set)
@@ -46,56 +81,76 @@ class ValidationResult:
     daily_energy: dict[date, dict[str, float]] = field(default_factory=dict)
 
     @property
+    def errors(self) -> list[str]:
+        return [str(issue) for issue in self.issues]
+
+    @property
     def is_valid(self) -> bool:
-        return not self.errors
+        return not self.issues
 
 
-def is_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+def schema_issues(document: dict) -> list[Issue]:
+    """Błędy struktury pliku według schematu, jako polskie komunikaty wskazujące urządzenie albo akcję."""
+    issues = []
+    for error in SCHEMA_VALIDATOR.iter_errors(document):
+        for issue in _describe(error, document):
+            if issue not in issues:
+                issues.append(issue)
+    return issues
 
 
-def has_type(value, expected) -> bool:
-    if expected == "number":
-        return is_number(value)
-    if expected == "numbers":
-        return isinstance(value, list) and bool(value) and all(is_number(item) for item in value)
-    if expected is int:
-        return isinstance(value, int) and not isinstance(value, bool)
-    return isinstance(value, expected)
+def _id_or(item, key: str, fallback):
+    value = item.get(key) if isinstance(item, dict) else None
+    return value if isinstance(value, str) else fallback
 
 
-TYPE_NAMES = {str: "tekst", dict: "obiekt", list: "lista", int: "liczba całkowita", "number": "liczba",
-              "numbers": "niepusta lista liczb"}
+def _owner(path: list, document: dict) -> tuple[Issue, int]:
+    """Obiekt, którego dotyczy błąd (urządzenie, program, akcja), jako Issue bez treści, i długość jego ścieżki."""
+    if len(path) >= 2 and path[0] == "devices" and isinstance(path[1], int):
+        device_id = _id_or(document["devices"][path[1]], "device_id", None)
+        label = device_id or f"devices[{path[1]}]"
+        if len(path) >= 4 and path[2] == "programs" and isinstance(path[3], int):
+            return Issue(f"{label}.programs[{path[3]}]", "", device_id), 4
+        return Issue(label, "", device_id), 2
+    if len(path) >= 2 and path[0] == "energy_usage" and isinstance(path[1], int):
+        action = document["energy_usage"][path[1]]
+        action_id = _id_or(action, "action_id", None)
+        return Issue(action_id or f"energy_usage[{path[1]}]", "", _id_or(action, "device_id", None), action_id), 2
+    if path:
+        return Issue(str(path[0]), ""), 1
+    return Issue("plik", ""), 0
 
 
-def check_fields(item, label: str, required: dict, optional: dict, errors: list[str]) -> bool:
-    """Sprawdza obecność i typy pól. Zwraca False, gdy obiektu nie da się dalej walidować."""
-    if not isinstance(item, dict):
-        errors.append(f"{label}: oczekiwano obiektu")
-        return False
-    valid = True
-    for name, expected in required.items():
-        if name not in item:
-            errors.append(f"{label}: brak pola {name}")
-            valid = False
-        elif not has_type(item[name], expected):
-            errors.append(f"{label}: pole {name} musi być typu {TYPE_NAMES[expected]}")
-            valid = False
-    for name, expected in optional.items():
-        if name in item and not has_type(item[name], expected):
-            errors.append(f"{label}: pole {name} musi być typu {TYPE_NAMES[expected]}")
-            valid = False
-    return valid
+def _describe(error: ValidationError, document: dict) -> list[Issue]:
+    path = list(error.absolute_path)
+    owner, owner_length = _owner(path, document)
+    field_name = next((part for part in reversed(path[owner_length:]) if isinstance(part, str)), None)
+
+    template = error.schema.get("x-message") if isinstance(error.schema, dict) else None
+    if template:
+        messages = [template.format(field=field_name, value=error.instance)]
+    elif error.validator == "required":
+        messages = [f"brak pola {name}" for name in error.validator_value if name not in error.instance]
+    elif error.validator == "type" and error.validator_value in TYPE_NAMES:
+        if field_name is None:
+            messages = [f"oczekiwano {EXPECTED_TYPES[error.validator_value]}"]
+        else:
+            messages = [f"pole {field_name} musi być typu {TYPE_NAMES[error.validator_value]}"]
+    else:
+        messages = [error.message]
+    return [owner.with_message(message) for message in messages]
 
 
-def parse_time(value: str, label: str, errors: list[str]) -> datetime | None:
+def parse_time(value: str, owner: Issue, field_name: str, issues: list[Issue]) -> datetime | None:
+    """Schemat sprawdza zapis daty ze strefą; tu wychodzą daty nieistniejące w kalendarzu (np. 2026-02-30)."""
+    location = f"{owner.location}.{field_name}"
     try:
         parsed = datetime.fromisoformat(value)
     except (TypeError, ValueError):
-        errors.append(f"{label}: niepoprawna data {value!r}")
+        issues.append(replace(owner, location=location, message=f"niepoprawna data {value!r}"))
         return None
     if parsed.utcoffset() is None:
-        errors.append(f"{label}: brak strefy czasowej w {value!r}")
+        issues.append(replace(owner, location=location, message=f"brak strefy czasowej w {value!r}"))
         return None
     return parsed
 
@@ -104,89 +159,41 @@ def on_slot_boundary(moment: datetime) -> bool:
     return moment.minute % 15 == 0 and moment.second == 0 and moment.microsecond == 0
 
 
-def is_clock_time(value) -> bool:
-    try:
-        parsed = datetime.strptime(value, "%H:%M")
-    except (TypeError, ValueError):
-        return False
-    return parsed.minute % 15 == 0
-
-
-def validate_period(document: dict, errors: list[str]) -> tuple[datetime, datetime] | None:
-    period = document.get("period")
-    if not check_fields(period, "period", {"start": str, "end": str}, {}, errors):
-        return None
-    start = parse_time(period["start"], "period.start", errors)
-    end = parse_time(period["end"], "period.end", errors)
+def validate_period(period: dict, issues: list[Issue]) -> tuple[datetime, datetime] | None:
+    owner = Issue("period", "")
+    start = parse_time(period["start"], owner, "start", issues)
+    end = parse_time(period["end"], owner, "end", issues)
     if start is None or end is None:
         return None
     if start >= end:
-        errors.append("period: start musi być wcześniej niż end")
+        issues.append(Issue("period", "start musi być wcześniej niż end"))
         return None
     return start, end
 
 
-def validate_devices(devices_list: list, errors: list[str]) -> tuple[dict, set[str]]:
-    """Zwraca poprawne strukturalnie urządzenia i ID odrzuconych (ich akcje pomijamy bez kolejnych błędów)."""
-    devices, rejected = {}, set()
-    for index, device in enumerate(devices_list):
-        label = device.get("device_id", f"devices[{index}]") if isinstance(device, dict) else f"devices[{index}]"
-        if not check_fields(device, label, DEVICE_FIELDS, DEVICE_OPTIONAL, errors):
-            if isinstance(device, dict) and isinstance(device.get("device_id"), str):
-                rejected.add(device["device_id"])
-            continue
+def validate_devices(devices_list: list, issues: list[Issue]) -> dict:
+    """Zwraca urządzenia według device_id, z programami według program_id."""
+    devices = {}
+    for device in devices_list:
         device_id = device["device_id"]
         if device_id in devices:
-            errors.append(f"{device_id}: zduplikowane device_id")
+            issues.append(Issue(device_id, "zduplikowane device_id", device_id))
             continue
-        if device["device_type"] not in DEVICE_TYPES:
-            errors.append(f"{device_id}: nieznany device_type {device['device_type']!r}")
-        if device["device_category"] not in DEVICE_CATEGORIES:
-            errors.append(f"{device_id}: nieznana device_category {device['device_category']!r}")
-        if "max_power_kw" in device and device["max_power_kw"] <= 0:
-            errors.append(f"{device_id}: max_power_kw musi być dodatnie")
-
-        flexibility = device["flexibility"]
-        mode = flexibility.get("mode")
-        if mode not in FLEXIBILITY_FIELDS:
-            errors.append(f"{device_id}: nieznany tryb flexibility {mode!r}")
-        elif set(flexibility) - FLEXIBILITY_FIELDS[mode]:
-            extra = ", ".join(sorted(set(flexibility) - FLEXIBILITY_FIELDS[mode]))
-            errors.append(f"{device_id}: tryb {mode} nie obsługuje pól: {extra}")
-        if "allowed_window" in flexibility:
-            window = flexibility["allowed_window"]
-            for bound in ("from", "to"):
-                if not isinstance(window, dict) or not is_clock_time(window.get(bound)):
-                    errors.append(f"{device_id}: allowed_window.{bound} musi mieć format HH:MM w pełnym kwadransie")
-        if "max_shift_min" in flexibility and not (
-            has_type(flexibility["max_shift_min"], int) and flexibility["max_shift_min"] > 0
-        ):
-            errors.append(f"{device_id}: max_shift_min musi być dodatnią liczbą całkowitą")
-
-        programs = device.get("programs", [])
-        if not programs and "max_power_kw" not in device:
-            errors.append(f"{device_id}: urządzenie bez programów musi mieć max_power_kw")
-        if mode == "fixed" and programs:
-            errors.append(f"{device_id}: urządzenie fixed nie może mieć programów")
-        valid_programs, rejected_programs = {}, set()
-        for program_index, program in enumerate(programs):
-            program_label = f"{device_id}.programs[{program_index}]"
-            if not check_fields(program, program_label, PROGRAM_FIELDS, {}, errors):
-                if isinstance(program, dict) and isinstance(program.get("program_id"), str):
-                    rejected_programs.add(program["program_id"])
-                continue
+        programs = {}
+        for program in device.get("programs", []):
             program_id = program["program_id"]
-            if program_id in valid_programs:
-                errors.append(f"{device_id}: zduplikowany program_id {program_id!r}")
+            if program_id in programs:
+                issues.append(Issue(device_id, f"zduplikowany program_id {program_id!r}", device_id))
                 continue
             if len(program["profile_kwh"]) * 15 != program["duration_min"]:
-                errors.append(
-                    f"{device_id}/{program_id}: profil ma {len(program['profile_kwh'])} kwadransów, "
-                    f"a program trwa {program['duration_min']} min"
-                )
-            valid_programs[program_id] = program
-        devices[device_id] = {**device, "programs": valid_programs, "rejected_programs": rejected_programs}
-    return devices, rejected
+                issues.append(Issue(
+                    f"{device_id}/{program_id}",
+                    f"profil ma {len(program['profile_kwh'])} kwadransów, a program trwa {program['duration_min']} min",
+                    device_id,
+                ))
+            programs[program_id] = program
+        devices[device_id] = {**device, "programs": programs}
+    return devices
 
 
 def action_profile(action: dict, device: dict, slots: int) -> list[float]:
@@ -197,82 +204,75 @@ def action_profile(action: dict, device: dict, slots: int) -> list[float]:
     return [action["energy_kwh"] / slots] * slots
 
 
-def validate_ev_session(action: dict, start: datetime, end: datetime, errors: list[str]) -> None:
-    action_id = action["action_id"]
+def validate_ev_session(action: dict, owner: Issue, start: datetime, end: datetime, issues: list[Issue]) -> None:
     if "deadline" not in action:
-        errors.append(f"{action_id}: sesja EV wymaga deadline")
+        issues.append(owner.with_message("sesja EV wymaga deadline"))
         return
-    plugged_in = parse_time(action.get("plugged_in", action["action_start"]), f"{action_id}.plugged_in", errors)
-    deadline = parse_time(action["deadline"], f"{action_id}.deadline", errors)
+    plugged_in = parse_time(action.get("plugged_in", action["action_start"]), owner, "plugged_in", issues)
+    deadline = parse_time(action["deadline"], owner, "deadline", issues)
     if plugged_in and deadline and not (plugged_in <= start < end <= deadline):
-        errors.append(f"{action_id}: wymagane plugged_in <= action_start < action_end <= deadline")
+        issues.append(owner.with_message("wymagane plugged_in <= action_start < action_end <= deadline"))
 
 
-def validate_actions(actions: list, devices: dict, rejected: set[str], period: tuple,
-                     result: ValidationResult) -> dict:
-    errors = result.errors
+def validate_actions(actions: list, devices: dict, period: tuple, result: ValidationResult) -> dict:
+    issues = result.issues
     period_start, period_end = period
     seen_ids = set()
     ranges = defaultdict(list)
     grid_load = defaultdict(float)
     daily_energy = defaultdict(lambda: defaultdict(float))
 
-    for index, action in enumerate(actions):
-        label = action.get("action_id", f"energy_usage[{index}]") if isinstance(action, dict) else f"energy_usage[{index}]"
-        if not check_fields(action, label, ACTION_FIELDS, ACTION_OPTIONAL, errors):
-            continue
+    for action in actions:
         action_id = action["action_id"]
+        owner = Issue(action_id, "", action["device_id"], action_id)
+
         if action_id in seen_ids:
-            errors.append(f"{action_id}: zduplikowane action_id")
+            issues.append(owner.with_message("zduplikowane action_id"))
         seen_ids.add(action_id)
 
         device = devices.get(action["device_id"])
-        if action["device_id"] in rejected:
-            continue
         if device is None:
-            errors.append(f"{action_id}: nieznane urządzenie {action['device_id']!r}")
+            issues.append(owner.with_message(f"nieznane urządzenie {action['device_id']!r}"))
             continue
 
-        start = parse_time(action["action_start"], f"{action_id}.action_start", errors)
-        end = parse_time(action["action_end"], f"{action_id}.action_end", errors)
+        start = parse_time(action["action_start"], owner, "action_start", issues)
+        end = parse_time(action["action_end"], owner, "action_end", issues)
         if start is None or end is None:
             continue
         if not (period_start <= start < end <= period_end):
-            errors.append(f"{action_id}: akcja wykracza poza period albo kończy się przed startem")
+            issues.append(owner.with_message("akcja wykracza poza period albo kończy się przed startem"))
             continue
         if not (on_slot_boundary(start) and on_slot_boundary(end)):
-            errors.append(f"{action_id}: start i koniec muszą wypadać na pełnym kwadransie")
+            issues.append(owner.with_message("start i koniec muszą wypadać na pełnym kwadransie"))
             continue
 
         slots = int((end - start) / SLOT)
         energy = action["energy_kwh"]
         if (energy < 0) != (device["device_category"] == PRODUCER_CATEGORY):
-            errors.append(f"{action_id}: ujemna energia jest dozwolona tylko dla kategorii {PRODUCER_CATEGORY}")
+            issues.append(owner.with_message(f"ujemna energia jest dozwolona tylko dla kategorii {PRODUCER_CATEGORY}"))
 
-        if action.get("program_id") in device["rejected_programs"]:
-            continue
-        if ("program_id" in action) != bool(device["programs"] or device["rejected_programs"]):
-            errors.append(f"{action_id}: program_id jest wymagany dokładnie dla urządzeń z programami")
+        if ("program_id" in action) != bool(device["programs"]):
+            issues.append(owner.with_message("program_id jest wymagany dokładnie dla urządzeń z programami"))
             continue
         if device["programs"] and action["program_id"] not in device["programs"]:
-            errors.append(f"{action_id}: nieznany program {action['program_id']!r}")
+            issues.append(owner.with_message(f"nieznany program {action['program_id']!r}"))
             continue
 
         profile = action_profile(action, device, slots)
         if len(profile) != slots:
-            errors.append(f"{action_id}: profil ma {len(profile)} kwadransów, a akcja trwa {slots}")
+            issues.append(owner.with_message(f"profil ma {len(profile)} kwadransów, a akcja trwa {slots}"))
             continue
         if abs(sum(profile) - energy) > ENERGY_TOLERANCE_KWH:
-            errors.append(f"{action_id}: suma profilu {sum(profile):.2f} kWh różni się od energy_kwh {energy:.2f}")
+            issues.append(owner.with_message(f"suma profilu {sum(profile):.2f} kWh różni się od energy_kwh {energy:.2f}"))
         if "max_power_kw" in device:
             slot_limit = device["max_power_kw"] * SLOT_HOURS
             if max(abs(value) for value in profile) > slot_limit + POWER_TOLERANCE_KWH:
-                errors.append(f"{action_id}: przekroczona moc maksymalna {device['max_power_kw']} kW")
+                issues.append(owner.with_message(f"przekroczona moc maksymalna {device['max_power_kw']} kW"))
 
         if device["device_type"] == "ev_charger":
-            validate_ev_session(action, start, end, errors)
+            validate_ev_session(action, owner, start, end, issues)
         elif "plugged_in" in action or "deadline" in action:
-            errors.append(f"{action_id}: plugged_in i deadline są dozwolone tylko dla ładowarki EV")
+            issues.append(owner.with_message("plugged_in i deadline są dozwolone tylko dla ładowarki EV"))
 
         ranges[action["device_id"]].append((start, end, action_id))
         for slot_index, value in enumerate(profile):
@@ -284,7 +284,7 @@ def validate_actions(actions: list, devices: dict, rejected: set[str], period: t
         device_ranges.sort()
         for (_, previous_end, previous_id), (next_start, _, next_id) in zip(device_ranges, device_ranges[1:]):
             if next_start < previous_end:
-                errors.append(f"{device_id}: akcje {previous_id} i {next_id} nakładają się")
+                issues.append(Issue(device_id, f"akcje {previous_id} i {next_id} nakładają się", device_id))
 
     result.idle_devices = sorted(set(devices) - set(ranges))
     result.daily_energy = {day: dict(categories) for day, categories in sorted(daily_energy.items())}
@@ -294,22 +294,24 @@ def validate_actions(actions: list, devices: dict, rejected: set[str], period: t
 def validate_document(document, max_grid_kw: float | None = DEFAULT_MAX_GRID_KW) -> ValidationResult:
     """Sprawdza wczytany plik urządzeń. Nie rzuca wyjątków: każdy problem trafia do `errors`.
 
-    `max_grid_kw=None` pomija regułę limitu przyłącza (szczyt poboru jest nadal liczony).
+    Przy błędach struktury (schemat) reguły semantyczne nie są sprawdzane: zwracamy tylko błędy
+    schematu, bo dalsze komunikaty wynikałyby z nich. `max_grid_kw=None` pomija regułę limitu
+    przyłącza (szczyt poboru jest nadal liczony).
     """
     result = ValidationResult()
-    errors = result.errors
+    issues = result.issues
     if not isinstance(document, dict):
-        errors.append("plik: oczekiwano obiektu JSON z polami period, devices i energy_usage")
+        issues.append(Issue("plik", NOT_AN_OBJECT))
         return result
-    for name in ("devices", "energy_usage"):
-        if not isinstance(document.get(name), list):
-            errors.append(f"{name}: oczekiwano listy")
-    period = validate_period(document, errors)
-    if period is None or errors:
+    issues.extend(schema_issues(document))
+    if issues:
+        return result
+    period = validate_period(document["period"], issues)
+    if period is None:
         return result
 
-    devices, rejected = validate_devices(document["devices"], errors)
-    grid_load = validate_actions(document["energy_usage"], devices, rejected, period, result)
+    devices = validate_devices(document["devices"], issues)
+    grid_load = validate_actions(document["energy_usage"], devices, period, result)
     result.devices_count = len(devices)
     result.actions_count = len(document["energy_usage"])
     result.categories = {device["device_category"] for device in devices.values()}
@@ -318,5 +320,5 @@ def validate_document(document, max_grid_kw: float | None = DEFAULT_MAX_GRID_KW)
         result.peak_at, peak_kwh = max(grid_load.items(), key=lambda item: item[1])
         result.peak_kw = peak_kwh / SLOT_HOURS
         if max_grid_kw is not None and peak_kwh > max_grid_kw * SLOT_HOURS + POWER_TOLERANCE_KWH:
-            errors.append(f"przekroczony limit przyłącza {max_grid_kw} kW o {result.peak_at:%d.%m %H:%M}")
+            issues.append(Issue("", f"przekroczony limit przyłącza {max_grid_kw} kW o {result.peak_at:%d.%m %H:%M}"))
     return result
