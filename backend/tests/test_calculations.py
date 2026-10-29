@@ -600,13 +600,53 @@ def test_meter_file_counts_readings_as_records():
     assert "actions_per_day" not in results
 
 
-def test_merge_actions_per_day_newer_file_takes_whole_days():
-    older = {"usage_15min": {"2026-10-01": _day(0.1), "2026-10-02": _day(0.1)},
-             "actions_per_day": {"2026-10-01": 10, "2026-10-02": 12}}
-    # Nowszy plik obejmuje 02.10 bez żadnej akcji - doba należy do niego, więc ma 0 akcji.
-    newer = {"usage_15min": {"2026-10-02": _day(0.0), "2026-10-03": _day(0.2)},
-             "actions_per_day": {"2026-10-03": 7}}
+def _device_file(usage, devices, slots=(), actions=(), actions_per_day=None):
+    return {"usage_15min": usage, "devices": set(devices), "slots": list(slots), "actions": list(actions),
+            "actions_per_day": actions_per_day or {}}
 
-    merged = CalculationService.merge_actions_per_day([older, newer])
 
-    assert merged == {"2026-10-01": 10, "2026-10-02": 0, "2026-10-03": 7}
+def _merge_devices(*files):
+    covering = CalculationService.device_coverage([file["usage_15min"] for file in files])
+    return CalculationService.merge_device_usage(list(files), covering)
+
+
+def test_merge_device_usage_sums_different_devices():
+    day = {"2026-01-05": _day(0.0)}
+    kitchen = _device_file(day, {"kitchen"}, [("kitchen", "2026-01-05", 40, 1.0)], [("kitchen", "2026-01-05", 40)])
+    garage = _device_file(day, {"garage"}, [("garage", "2026-01-05", 40, 2.0)], [("garage", "2026-01-05", 40)])
+
+    usage, actions, contributions = _merge_devices(kitchen, garage)
+
+    assert usage["2026-01-05"][40] == 3.0
+    assert actions == {"2026-01-05": 2}
+    assert contributions == [{"days_used": 1, "slots_used": 96}, {"days_used": 1, "slots_used": 96}]
+
+
+def test_merge_device_usage_newer_file_wins_only_where_it_has_the_device_and_the_slot():
+    whole_day = _device_file(
+        {"2026-01-05": _day(0.0)}, {"dev"},
+        [("dev", "2026-01-05", 36, 1.0), ("dev", "2026-01-05", 60, 1.0)],
+        [("dev", "2026-01-05", 36), ("dev", "2026-01-05", 60)],
+    )
+    afternoon = _device_file(
+        {"2026-01-05": _day(0.0, slots=range(48, 96))}, {"dev"},
+        [("dev", "2026-01-05", 60, 0.5)], [("dev", "2026-01-05", 60)],
+    )
+
+    usage, actions, contributions = _merge_devices(whole_day, afternoon)
+
+    assert sum(usage["2026-01-05"]) == 1.5
+    assert actions == {"2026-01-05": 2}
+    assert [item["slots_used"] for item in contributions] == [48, 48]
+
+
+def test_merge_device_usage_takes_days_without_overlap_straight_from_files():
+    january = _device_file({"2026-01-05": _day(0.25)}, {"dev"}, actions_per_day={"2026-01-05": 3})
+    february = _device_file({"2026-02-05": _day(0.5)}, {"dev"}, actions_per_day={"2026-02-05": 4})
+
+    covering = CalculationService.device_coverage([january["usage_15min"], february["usage_15min"]])
+    assert CalculationService.overlap_days(covering) == set()
+    usage, actions, _ = _merge_devices(january, february)
+
+    assert usage == {"2026-01-05": _day(0.25), "2026-02-05": _day(0.5)}
+    assert actions == {"2026-01-05": 3, "2026-02-05": 4}

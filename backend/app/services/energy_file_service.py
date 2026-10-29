@@ -1,10 +1,12 @@
 import math
-from datetime import date
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
@@ -32,11 +34,23 @@ from app.schemas.energy_file import (
 
 
 
-# Plik urządzeń nie może nadpisać odczytu licznika za te same dni, więc oba typy scalamy osobno.
 AGGREGATE_SOURCES = {
     EnergyDataFile.SOURCE_METER: (ALL_FILES_SOURCE_ID, ALL_FILES_SOURCE_NAME, "plików z licznika"),
     EnergyDataFile.SOURCE_DEVICES: (ALL_DEVICE_FILES_SOURCE_ID, ALL_DEVICE_FILES_SOURCE_NAME, "plików urządzeń"),
 }
+
+
+def _utc_ranges(days: set[str]) -> list[tuple[datetime, datetime]]:
+    ranges = []
+    for day in sorted(date.fromisoformat(day) for day in days):
+        if ranges and ranges[-1][1] == day:
+            ranges[-1][1] = day + timedelta(days=1)
+        else:
+            ranges.append([day, day + timedelta(days=1)])
+    return [
+        (datetime.combine(start, time.min, tzinfo=LOCAL_TIMEZONE), datetime.combine(end, time.min, tzinfo=LOCAL_TIMEZONE))
+        for start, end in ranges
+    ]
 
 
 class EnergyFileService:
@@ -62,14 +76,21 @@ class EnergyFileService:
             page_size=page_size,
             total=total,
             total_pages=math.ceil(total / page_size),
-            aggregate=self._aggregate_summary(user_id, EnergyDataFile.SOURCE_METER),
-            devices_aggregate=self._aggregate_summary(user_id, EnergyDataFile.SOURCE_DEVICES),
+            **self._aggregate_summaries(user_id),
         )
 
-    def _aggregate_summary(self, user_id: UUID, source_type: str) -> AggregateSourceSummary | None:
-        files_count, data_start, data_end = self.file_repository.get_completed_summary(user_id, source_type)
-        if files_count == 0:
+    def _aggregate_summaries(self, user_id: UUID) -> dict[str, AggregateSourceSummary | None]:
+        summaries = self.file_repository.get_completed_summaries(user_id)
+        return {
+            "aggregate": self._aggregate_summary(EnergyDataFile.SOURCE_METER, summaries),
+            "devices_aggregate": self._aggregate_summary(EnergyDataFile.SOURCE_DEVICES, summaries),
+        }
+
+    @staticmethod
+    def _aggregate_summary(source_type: str, summaries: dict) -> AggregateSourceSummary | None:
+        if source_type not in summaries:
             return None
+        files_count, data_start, data_end = summaries[source_type]
         source_id, source_name, _ = AGGREGATE_SOURCES[source_type]
         return AggregateSourceSummary(
             id=source_id,
@@ -127,7 +148,7 @@ class EnergyFileService:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> EnergyDataFileDataResponse:
-        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika jednego typu.
+        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
 
         Nie są nigdzie zapisywane - liczymy je przy każdym zapytaniu z serii zapisanych przy
         imporcie, więc dodanie lub usunięcie pliku od razu zmienia wynik.
@@ -153,33 +174,32 @@ class EnergyFileService:
             )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
-        usage, contributions = CalculationService.merge_usage(sources)
         # Ceny stałe bierzemy z najnowszego importu (aktualny zestaw taryf), a ceny
         # dynamiczne łączymy po dniach, bo każdy plik ma ceny tylko dla swojego okresu.
         slot_prices = CalculationService.merge_slot_prices([source["slot_prices"] for source in sources])
         resolutions = [source_resolution(source) for source in sources]
         common_resolution = resolutions[0] if len(set(resolutions)) == 1 else None
         merged_results = {
-            "usage_15min": usage,
             "slot_prices": slot_prices,
             "statistics": {"resolution_minutes": common_resolution},
         }
         if source_type == EnergyDataFile.SOURCE_DEVICES:
-            merged_results[ACTIONS_PER_DAY_KEY] = CalculationService.merge_actions_per_day(sources)
+            usage, actions_per_day, contributions = self._merge_device_files(merged_files, sources)
+            merged_results[ACTIONS_PER_DAY_KEY] = actions_per_day
+            records_count = sum(actions_per_day.values())
+        else:
+            usage, contributions = CalculationService.merge_usage(sources)
+            records_count = round(sum(
+                contribution["slots_used"] * SLOT_MINUTES / resolution
+                for contribution, resolution in zip(contributions, resolutions)
+            ))
+        merged_results["usage_15min"] = usage
 
         data_start, data_end = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
         if date_from is None and date_to is None:
             date_from, date_to = data_start, data_end
         else:
             date_from, date_to = self._resolve_range(data_start, data_end, date_from, date_to)
-
-        if ACTIONS_PER_DAY_KEY in merged_results:
-            records_count = sum(merged_results[ACTIONS_PER_DAY_KEY].values())
-        else:
-            records_count = round(sum(
-                contribution["slots_used"] * SLOT_MINUTES / resolution
-                for contribution, resolution in zip(contributions, resolutions)
-            ))
 
         source = AggregateSourceOut(
             id=source_id,
@@ -203,6 +223,29 @@ class EnergyFileService:
             date_to=date_to,
             results=public_results(CalculationService.calculate_for_range(merged_results, date_from, date_to)),
         )
+
+    def _merge_device_files(self, files: list[EnergyDataFile], sources: list[dict]):
+        file_ids = [energy_file.id for energy_file in files]
+        covering = CalculationService.device_coverage([source["usage_15min"] for source in sources])
+        overlap_days = CalculationService.overlap_days(covering)
+        slots, actions = defaultdict(list), defaultdict(list)
+        if overlap_days:
+            ranges = _utc_ranges(overlap_days)
+            for file_id, *slot in self.device_repository.consumption_slots(file_ids, ranges):
+                slots[file_id].append(tuple(slot))
+            for file_id, *action in self.device_repository.action_starts(file_ids, ranges):
+                actions[file_id].append(tuple(action))
+        devices = self.device_repository.device_ids_by_file(file_ids)
+        return CalculationService.merge_device_usage([
+            {
+                "usage_15min": source["usage_15min"],
+                "actions_per_day": source.get(ACTIONS_PER_DAY_KEY, {}),
+                "devices": devices.get(energy_file.id, set()),
+                "slots": slots[energy_file.id],
+                "actions": actions[energy_file.id],
+            }
+            for energy_file, source in zip(files, sources)
+        ], covering)
 
     def delete_file(self, file_id: UUID, user_id: UUID) -> None:
         energy_file = self._get_own_file(file_id, user_id)

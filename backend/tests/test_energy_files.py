@@ -1,4 +1,5 @@
 import datetime
+import json
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.models.EnergyDataFile import EnergyDataFile
 from app.models.Simulation import Simulation
 from app.models.User import User
 from app.parsers import parse_energy_file
+from app.repositories.device_repository import DeviceRepository
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
 from main import app
@@ -437,10 +439,7 @@ def _series_results(usage, actions_per_day=None):
 
 
 def _create_series_file(db, user, usage, *, name, uploaded_at, actions_per_day=None):
-    """Plik z prawdziwą serią 15-minutową; zakres dat wynika z danych.
-
-    Z actions_per_day powstaje plik urządzeń, bez - plik z licznika.
-    """
+    """Plik z prawdziwą serią 15-minutową; zakres dat wynika z danych."""
     results = _series_results(usage, actions_per_day)
     energy_file = EnergyDataFile(
         user_id=user.id,
@@ -890,14 +889,73 @@ def test_meter_and_devices_files_have_separate_aggregates(db):
     }
 
 
+def _flat_tariff_repository():
+    rate = SimpleNamespace(time_start=datetime.time(0, 0), time_end=datetime.time(23, 59, 59), price_per_kwh=1.0)
+    tariff = SimpleNamespace(id=1, name="G11", type="stala")
+    return SimpleNamespace(get_all=lambda: [tariff], get_rates_for_tariff=lambda tariff_id: [rate])
+
+
+def _devices_document(period_start, period_end, devices):
+    return {
+        "period": {"start": f"{period_start}+01:00", "end": f"{period_end}+01:00"},
+        "devices": [
+            {"device_id": device_id, "device_name": device_id, "device_type": "other", "device_category": "Inne",
+             "max_power_kw": 10.0, "flexibility": {"mode": "fixed"}}
+            for device_id in devices
+        ],
+        "energy_usage": [
+            {"action_id": f"{device_id}_{index}", "device_id": device_id,
+             "action_start": f"{action_start}+01:00", "action_end": f"{action_end}+01:00", "energy_kwh": kwh}
+            for device_id, actions in devices.items()
+            for index, (action_start, action_end, kwh) in enumerate(actions)
+        ],
+    }
+
+
+def _create_devices_file(db, user, document, *, name, uploaded_at):
+    parsed = parse_energy_file(BytesIO(json.dumps(document).encode()))
+    results = CalculationService(_flat_tariff_repository()).calculate_with_report(parsed)
+    statistics = results["statistics"]
+    energy_file = EnergyDataFile(
+        user_id=user.id,
+        file_name=name,
+        uploaded_at=uploaded_at,
+        data_start=datetime.date.fromisoformat(statistics["data_start"]),
+        data_end=datetime.date.fromisoformat(statistics["data_end"]),
+        records_count=statistics["records_count"],
+        source_type=EnergyDataFile.SOURCE_DEVICES,
+        status=EnergyDataFile.STATUS_COMPLETED,
+    )
+    db.add(energy_file)
+    db.flush()
+    DeviceRepository(db).save_for_file(user_id=user.id, energy_data_file_id=energy_file.id, devices=parsed.devices)
+    db.add(Simulation(user_id=user.id, energy_data_file_id=energy_file.id, results=results))
+    db.commit()
+    db.refresh(energy_file)
+    return energy_file
+
+
+def _daily_actions(device_id, days, hour, kwh):
+    first = datetime.date(2026, 1, 5)
+    return {device_id: [
+        (f"{first + datetime.timedelta(days=i)}T{hour:02d}:00:00", f"{first + datetime.timedelta(days=i)}T{hour + 1:02d}:00:00", kwh)
+        for i in range(days)
+    ]}
+
+
+def _devices_totals(user, query=""):
+    body = _all_devices_data(user, query).json()
+    return body["results"]["tariffs"]["G11"]["total_usage_kwh"], body["results"]["statistics"]["records_count"], body
+
+
 def test_newer_devices_file_does_not_override_meter_data_of_same_days(db):
     user = _create_user(db)
-    meter = _create_series_file(db, user, _days("2024-06-01", 3, 0.25), name="tauron.csv", uploaded_at=T0)
-    usage = _days("2024-06-01", 3, 0.1)
-    devices = _create_series_file(db, user, usage, name="dom.json", uploaded_at=T1, actions_per_day=_actions(usage, 20))
+    meter = _create_series_file(db, user, _days("2026-01-05", 3, 0.25), name="tauron.csv", uploaded_at=T0)
+    document = _devices_document("2026-01-05T00:00:00", "2026-01-08T00:00:00", _daily_actions("dev_a", 3, 10, 1.0))
+    devices = _create_devices_file(db, user, document, name="dom.json", uploaded_at=T1)
 
     all_meter = _all_data(user).json()
-    all_devices = _all_devices_data(user).json()
+    total, actions, all_devices = _devices_totals(user)
 
     assert all_meter["file"]["files_count"] == 1
     assert all_meter["file"]["files"][0]["id"] == str(meter.id)
@@ -906,25 +964,88 @@ def test_newer_devices_file_does_not_override_meter_data_of_same_days(db):
 
     assert all_devices["file"]["id"] == "all-devices"
     assert all_devices["file"]["files"][0]["id"] == str(devices.id)
-    assert all_devices["results"]["tariffs"]["G11"]["total_usage_kwh"] == 28.8
+    assert (total, actions) == (3.0, 3)
     assert all_devices["results"]["statistics"]["data_source"] == "devices"
 
 
-def test_devices_aggregate_counts_actions_and_newer_file_wins_overlap(db):
+def test_device_files_with_different_devices_are_summed(db):
     user = _create_user(db)
-    older = _days("2024-06-01", 3, 0.1)
-    newer = _days("2024-06-03", 2, 0.2)
-    _create_series_file(db, user, older, name="stary.json", uploaded_at=T0, actions_per_day=_actions(older, 10))
-    _create_series_file(db, user, newer, name="nowy.json", uploaded_at=T1, actions_per_day=_actions(newer, 30))
+    week = ("2026-01-05T00:00:00", "2026-01-12T00:00:00")
+    kitchen = _devices_document(*week, _daily_actions("dev_kitchen", 7, 10, 1.0))
+    garage = _devices_document(*week, _daily_actions("dev_garage", 7, 18, 2.0))
+    _create_devices_file(db, user, kitchen, name="devices_kitchen.json", uploaded_at=T0)
+    _create_devices_file(db, user, garage, name="devices_garage.json", uploaded_at=T1)
 
-    body = _all_devices_data(user).json()
-    in_range = _all_devices_data(user, "?from=2024-06-04&to=2024-06-04").json()
+    total, actions, body = _devices_totals(user)
 
-    # 01-02.06 ze starszego pliku (2 x 10 akcji), 03-04.06 z nowszego (2 x 30 akcji).
-    assert body["file"]["records_count"] == 80
-    assert body["results"]["statistics"]["records_count"] == 80
+    assert (total, actions) == (21.0, 14)
+    assert body["file"]["records_count"] == 14
+    assert {f["file_name"]: f["days_used"] for f in body["file"]["files"]} == {
+        "devices_kitchen.json": 7, "devices_garage.json": 7,
+    }
+
+
+def test_same_device_in_two_files_is_counted_once(db):
+    user = _create_user(db)
+    document = _devices_document("2026-01-05T00:00:00", "2026-01-08T00:00:00", _daily_actions("dev_a", 3, 10, 1.0))
+    _create_devices_file(db, user, document, name="dom.json", uploaded_at=T0)
+    _create_devices_file(db, user, document, name="dom_kopia.json", uploaded_at=T1)
+
+    total, actions, body = _devices_totals(user)
+
+    assert (total, actions) == (3.0, 3)
+    assert {f["file_name"]: f["days_used"] for f in body["file"]["files"]} == {"dom.json": 0, "dom_kopia.json": 3}
+
+
+def test_newer_device_file_takes_over_only_its_own_period(db):
+    user = _create_user(db)
+    older = _devices_document("2026-01-05T00:00:00", "2026-01-06T00:00:00", {
+        "dev_a": [("2026-01-05T09:00:00", "2026-01-05T10:00:00", 1.0), ("2026-01-05T15:00:00", "2026-01-05T16:00:00", 1.0)],
+    })
+    newer = _devices_document("2026-01-05T12:00:00", "2026-01-06T00:00:00", {
+        "dev_a": [("2026-01-05T15:00:00", "2026-01-05T16:00:00", 0.5)],
+    })
+    _create_devices_file(db, user, older, name="caly_dzien.json", uploaded_at=T0)
+    _create_devices_file(db, user, newer, name="od_poludnia.json", uploaded_at=T1)
+
+    total, actions, body = _devices_totals(user)
+
+    assert (total, actions) == (1.5, 2)
+    assert {f["file_name"]: f["slots_used"] for f in body["file"]["files"]} == {
+        "caly_dzien.json": 48, "od_poludnia.json": 48,
+    }
+
+
+def test_device_files_overlapping_on_separate_days(db):
+    user = _create_user(db)
+    whole = _devices_document("2026-01-05T00:00:00", "2026-01-08T00:00:00", _daily_actions("dev_a", 3, 10, 1.0))
+    first_day = _devices_document("2026-01-05T00:00:00", "2026-01-06T00:00:00", _daily_actions("dev_a", 1, 12, 0.5))
+    last_day = _devices_document("2026-01-07T00:00:00", "2026-01-08T00:00:00", {
+        "dev_a": [("2026-01-07T15:00:00", "2026-01-07T16:00:00", 2.0)],
+    })
+    _create_devices_file(db, user, whole, name="trzy_dni.json", uploaded_at=T0)
+    _create_devices_file(db, user, first_day, name="pierwszy.json", uploaded_at=T1)
+    _create_devices_file(db, user, last_day, name="ostatni.json", uploaded_at=T2)
+
+    total, actions, body = _devices_totals(user)
+
+    assert (total, actions) == (3.5, 3)
+    assert {f["file_name"]: f["days_used"] for f in body["file"]["files"]} == {
+        "trzy_dni.json": 1, "pierwszy.json": 1, "ostatni.json": 1,
+    }
+
+
+def test_devices_aggregate_range_counts_actions_of_selected_days(db):
+    user = _create_user(db)
+    document = _devices_document("2026-01-05T00:00:00", "2026-01-08T00:00:00", {
+        **_daily_actions("dev_a", 3, 10, 1.0), **_daily_actions("dev_b", 3, 18, 0.5),
+    })
+    _create_devices_file(db, user, document, name="dom.json", uploaded_at=T0)
+
+    total, actions, body = _devices_totals(user, "?from=2026-01-06&to=2026-01-06")
+
+    assert (total, actions) == (1.5, 2)
     assert body["results"]["statistics"]["resolution_minutes"] == 15
-    assert in_range["results"]["statistics"]["records_count"] == 30
     assert "actions_per_day" not in body["results"]
 
 

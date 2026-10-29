@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { EnergyFileContext } from "./energyFileContext";
-import { aggregateIdForSourceType, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
+import { aggregateIdForSourceType, getApiErrorMessage } from "../utils/energyFiles";
 
 const PAGE_SIZE = 20;
 
@@ -42,8 +42,7 @@ export function EnergyFileProvider({ children }) {
   const [totalPages, setTotalPages] = useState(0);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState(null);
-  // Podsumowania źródeł "Wszystkie pliki" (licznik) i "Wszystkie pliki urządzeń" (zakres i liczba
-  // plików) albo null, gdy brak gotowych plików danego typu.
+  // Podsumowanie źródła "Wszystkie pliki" (zakres i liczba plików) albo null, gdy brak gotowych plików.
   const [aggregate, setAggregate] = useState(null);
   const [devicesAggregate, setDevicesAggregate] = useState(null);
   const [deletingFileId, setDeletingFileId] = useState(null);
@@ -194,13 +193,11 @@ export function EnergyFileProvider({ children }) {
       const items = (await loadFilesPage(pageToLoad)) ?? [];
 
       // Dane zbiorcze zmieniły się, a usunięty plik nie może być dalej wyświetlany.
-      const nextSourceId =
-        selectedFileId === fileId
-          ? aggregateIdForSourceType(deletedFile?.source_type)
-          : isAggregateSource(selectedFileId)
-            ? selectedFileId
-            : null;
-      if (nextSourceId && !(await selectFile(nextSourceId))) await selectFirstCompleted(items);
+      const affectedAggregateId = aggregateIdForSourceType(deletedFile?.source_type);
+      const aggregateChanged = deletedFile?.status === "completed" && selectedFileId === affectedAggregateId;
+      if (selectedFileId === fileId || aggregateChanged) {
+        if (!(await selectFile(affectedAggregateId))) await selectFirstCompleted(items);
+      }
       return true;
     },
     [files, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted],

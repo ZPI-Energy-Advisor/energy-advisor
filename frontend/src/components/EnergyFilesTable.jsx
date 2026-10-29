@@ -62,9 +62,14 @@ function EnergyFilesTable() {
     clearDeleteError,
   } = useEnergyFiles();
 
+  const aggregateSources = [aggregate, devicesAggregate].filter(Boolean);
+
   const handleDelete = (file) => {
-    const aggregateName = file.source_type === SOURCE_TYPE_DEVICES ? "Wszystkie pliki urządzeń" : "Wszystkie pliki";
-    const message = `Usunąć plik „${file.file_name}”? Jego dane znikną także z widoku „${aggregateName}”. Tej operacji nie można cofnąć.`;
+    const aggregateName =
+      file.status === "completed" &&
+      aggregateSources.find((source) => source.source_type === file.source_type)?.file_name;
+    const aggregateNote = aggregateName ? ` Jego dane znikną także z widoku „${aggregateName}”.` : "";
+    const message = `Usunąć plik „${file.file_name}”?${aggregateNote} Tej operacji nie można cofnąć.`;
     if (window.confirm(message)) deleteFile(file.id);
   };
 
@@ -130,8 +135,6 @@ function EnergyFilesTable() {
       sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [location.hash]);
-
-  const aggregateSources = [aggregate, devicesAggregate].filter(Boolean);
 
   const renderBody = () => {
     if (!isReady) {
@@ -215,10 +218,9 @@ function EnergyFilesTable() {
                     {dateRange}
                   </td>
                   <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-right">
-                    {file.records_count ?? "–"}
-                    {file.records_count != null && file.source_type === SOURCE_TYPE_DEVICES && (
-                      <span className="block text-xs text-gray-500">akcji</span>
-                    )}
+                    {file.records_count != null && file.source_type === SOURCE_TYPE_DEVICES
+                      ? formatRecordsCount(file.records_count, file.source_type)
+                      : file.records_count ?? "–"}
                   </td>
                   <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">
                     {formatUploadDate(file.uploaded_at)}
@@ -273,7 +275,7 @@ function EnergyFilesTable() {
         <div>
           <h3 className="font-bold text-gray-900">Twoje pliki</h3>
           <p className="text-xs md:text-sm text-gray-500">
-            Wybierz pojedynczy plik albo dane zbiorcze, aby zobaczyć je na Dashboardzie i w analizie taryf. „Wszystkie pliki” łączą pliki z licznika, a „Wszystkie pliki urządzeń” – pliki urządzeń (JSON). Przy nakładających się okresach liczy się nowszy import.
+            Wybierz pojedynczy plik albo dane zbiorcze, aby zobaczyć je na Dashboardzie i w analizie taryf. Dane zbiorcze łączą osobno pliki z licznika i pliki urządzeń (JSON). Przy nakładających się okresach liczy się nowszy import.
           </p>
         </div>
       </div>

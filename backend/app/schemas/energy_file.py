@@ -44,7 +44,7 @@ class EnergyDataFileOut(_DateRangeMixin):
 
 
 class AggregateSourceSummary(_DateRangeMixin):
-    """Wirtualne źródło zbiorcze na liście plików - zakres to suma zakresów plików jednego typu."""
+    """Wirtualne źródło "Wszystkie pliki" na liście plików - zakres to suma zakresów plików."""
 
     id: AggregateSourceId
     source_type: str
@@ -80,7 +80,7 @@ class EnergyDataFileListResponse(BaseModel):
     page_size: int
     total: int
     total_pages: int
-    # "Wszystkie pliki" (pliki licznika) i "Wszystkie pliki urządzeń"; None, gdy brak gotowych plików tego typu.
+    # None, gdy użytkownik nie ma żadnego poprawnie zaimportowanego pliku.
     aggregate: AggregateSourceSummary | None = None
     devices_aggregate: AggregateSourceSummary | None = None
 

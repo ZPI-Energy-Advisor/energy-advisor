@@ -20,13 +20,9 @@ def upgrade() -> None:
         "energy_data_files",
         sa.Column("source_type", sa.String(length=20), nullable=False, server_default="meter"),
     )
-
-    # Pliki urządzeń wgrane przed tą migracją: typ z raportu importu, liczba rekordów i akcje
-    # na dobę (czas lokalny) z zapisanych akcji urządzeń.
     op.execute("""
         UPDATE energy_data_files f
-        SET source_type = 'devices',
-            records_count = (SELECT count(*) FROM device_actions a WHERE a.energy_data_file_id = f.id)
+        SET source_type = 'devices'
         WHERE EXISTS (
             SELECT 1 FROM simulations s
             WHERE s.energy_data_file_id = f.id
@@ -37,12 +33,13 @@ def upgrade() -> None:
         UPDATE simulations s
         SET results = jsonb_set(
             jsonb_set(
-                s.results || jsonb_build_object('actions_per_day', counts.per_day),
+                s.results || jsonb_build_object('actions_per_day', COALESCE(counts.per_day, '{}'::jsonb)),
                 '{statistics,data_source}', '"devices"'
             ),
-            '{statistics,records_count}', to_jsonb(counts.total)
+            '{statistics,records_count}', to_jsonb(COALESCE(counts.total, 0))
         )
-        FROM (
+        FROM energy_data_files f
+        LEFT JOIN (
             SELECT energy_data_file_id, jsonb_object_agg(day, actions) AS per_day, sum(actions) AS total
             FROM (
                 SELECT energy_data_file_id,
@@ -52,16 +49,39 @@ def upgrade() -> None:
                 GROUP BY 1, 2
             ) per_file_day
             GROUP BY 1
-        ) counts
-        WHERE counts.energy_data_file_id = s.energy_data_file_id
-          AND s.results -> 'import_report' ->> 'detected_format' = 'devices'
+        ) counts ON counts.energy_data_file_id = f.id
+        WHERE f.id = s.energy_data_file_id AND f.source_type = 'devices'
     """)
+    _copy_records_count_from_simulations()
 
 
 def downgrade() -> None:
     op.execute("""
+        UPDATE simulations s
+        SET results = jsonb_set(s.results - 'actions_per_day', '{statistics,records_count}', to_jsonb(slots.total))
+        FROM (
+            SELECT s2.id, count(*) AS total
+            FROM simulations s2,
+                 jsonb_each(s2.results -> 'usage_15min') AS day(key, value),
+                 jsonb_array_elements(day.value) AS slot(value)
+            WHERE slot.value <> 'null'::jsonb
+            GROUP BY s2.id
+        ) slots
+        WHERE slots.id = s.id AND s.results ? 'actions_per_day'
+    """)
+    _copy_records_count_from_simulations()
+    op.execute("""
         UPDATE simulations
-        SET results = (results - 'actions_per_day') #- '{statistics,data_source}'
-        WHERE results ? 'actions_per_day'
+        SET results = results #- '{statistics,data_source}'
+        WHERE results -> 'statistics' ? 'data_source'
     """)
     op.drop_column("energy_data_files", "source_type")
+
+
+def _copy_records_count_from_simulations() -> None:
+    op.execute("""
+        UPDATE energy_data_files f
+        SET records_count = (s.results -> 'statistics' ->> 'records_count')::int
+        FROM simulations s
+        WHERE s.energy_data_file_id = f.id AND f.source_type = 'devices'
+    """)

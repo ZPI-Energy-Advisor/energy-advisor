@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
 from typing import Mapping
 
@@ -137,14 +137,61 @@ class CalculationService:
         return dict(sorted(counts.items()))
 
     @staticmethod
-    def merge_actions_per_day(sources: list[dict]) -> dict[str, int]:
-        """Doba należy do najnowszego pliku, który ją obejmuje - jak jego kwadranse w merge_usage."""
-        merged = {}
-        for source in sources:
-            actions = source.get(ACTIONS_PER_DAY_KEY, {})
-            for day in source["usage_15min"]:
-                merged[day] = actions.get(day, 0)
-        return dict(sorted(merged.items()))
+    def device_coverage(usages: list[dict]) -> dict[tuple[str, int], list[int]]:
+        covering = defaultdict(list)
+        for index, usage in enumerate(usages):
+            for day, day_slots in usage.items():
+                for slot, kwh in enumerate(day_slots):
+                    if kwh is not None:
+                        covering[(day, slot)].append(index)
+        return covering
+
+    @staticmethod
+    def overlap_days(covering: dict[tuple[str, int], list[int]]) -> set[str]:
+        return {day for (day, _), indices in covering.items() if len(indices) > 1}
+
+    @classmethod
+    def merge_device_usage(cls, files: list[dict], covering: dict) -> tuple[dict, dict[str, int], list[dict]]:
+        overlap_days = cls.overlap_days(covering)
+
+        def owner(device, day, slot):
+            for index in reversed(covering.get((day, slot), ())):
+                if device in files[index]["devices"]:
+                    return index
+            return None
+
+        usage = {}
+        for (day, slot), indices in covering.items():
+            kwh = 0.0 if day in overlap_days else files[indices[0]]["usage_15min"][day][slot]
+            usage.setdefault(day, [None] * SLOTS_PER_DAY)[slot] = kwh
+        actions_per_day = Counter()
+        for index, source in enumerate(files):
+            for day, count in source["actions_per_day"].items():
+                if day not in overlap_days:
+                    actions_per_day[day] += count
+            for device, day, slot, kwh in source["slots"]:
+                if day in overlap_days and owner(device, day, slot) == index:
+                    usage[day][slot] += kwh
+            for device, day, slot in source["actions"]:
+                if day in overlap_days and owner(device, day, slot) == index:
+                    actions_per_day[day] += 1
+
+        contributions = [{"days_used": set(), "slots_used": 0} for _ in files]
+        for (day, _), indices in covering.items():
+            claimed = set()
+            for index in reversed(indices):
+                if files[index]["devices"] - claimed:
+                    contributions[index]["days_used"].add(day)
+                    contributions[index]["slots_used"] += 1
+                if len(indices) > 1:
+                    claimed |= files[index]["devices"]
+
+        usage = {
+            day: [None if kwh is None else round(kwh, 6) for kwh in day_slots]
+            for day, day_slots in sorted(usage.items())
+        }
+        contributions = [{**item, "days_used": len(item["days_used"])} for item in contributions]
+        return usage, dict(sorted(actions_per_day.items())), contributions
 
     @staticmethod
     def merge_usage(sources: list[dict]) -> tuple[dict, list[dict]]:

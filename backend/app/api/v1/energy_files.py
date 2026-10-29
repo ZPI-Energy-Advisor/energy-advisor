@@ -36,7 +36,7 @@ DATE_FROM_QUERY = Query(None, alias="from", description="Początek zakresu (RRRR
 DATE_TO_QUERY = Query(None, alias="to", description="Koniec zakresu (RRRR-MM-DD), włącznie.")
 
 
-# Źródła zbiorcze muszą być zarejestrowane przed /{file_id}/data, inaczej "all" trafiłoby do walidacji UUID.
+# Musi być zarejestrowany przed /{file_id}/data, inaczej "all" trafiłoby do walidacji UUID.
 @router.get(f"/{ALL_FILES_SOURCE_ID}/data", response_model=EnergyDataFileDataResponse)
 def get_all_files_data(
     date_from: date | None = DATE_FROM_QUERY,

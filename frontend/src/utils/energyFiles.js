@@ -1,6 +1,6 @@
 export const FILES_TABLE_ANCHOR = "pliki";
 
-// Wirtualne źródła łączące dane plików użytkownika jednego typu (liczone przez backend).
+// Wirtualne źródło łączące dane ze wszystkich plików użytkownika (liczone przez backend).
 export const ALL_FILES_ID = "all";
 export const ALL_DEVICE_FILES_ID = "all-devices";
 

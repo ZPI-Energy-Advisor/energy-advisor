@@ -55,7 +55,7 @@ class UploadService:
         try:
             parsed = self.calculation_service.parse_file(file.file)
             simulation_results = self.calculation_service.calculate_with_report(parsed)
-            if parsed.devices:
+            if parsed.devices is not None:
                 self.device_repository.save_for_file(
                     user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
                 )

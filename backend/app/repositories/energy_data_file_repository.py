@@ -53,7 +53,7 @@ class EnergyDataFileRepository:
         )
 
     def list_completed_by_user_id(self, user_id: UUID, source_type: str) -> list[EnergyDataFile]:
-        """Poprawnie zaimportowane pliki użytkownika danego typu, od najstarszego uploadu."""
+        """Poprawnie zaimportowane pliki użytkownika, od najstarszego uploadu."""
         return (
             self.db.query(EnergyDataFile)
             .filter(
@@ -65,10 +65,11 @@ class EnergyDataFileRepository:
             .all()
         )
 
-    def get_completed_summary(self, user_id: UUID, source_type: str) -> tuple[int, date | None, date | None]:
-        """Liczba poprawnych plików użytkownika danego typu oraz najwcześniejsza i najpóźniejsza data ich danych."""
-        files_count, data_start, data_end = (
+    def get_completed_summaries(self, user_id: UUID) -> dict[str, tuple[int, date | None, date | None]]:
+        """Liczba poprawnych plików użytkownika oraz najwcześniejsza i najpóźniejsza data ich danych."""
+        rows = (
             self.db.query(
+                EnergyDataFile.source_type,
                 func.count(EnergyDataFile.id),
                 func.min(EnergyDataFile.data_start),
                 func.max(EnergyDataFile.data_end),
@@ -76,11 +77,11 @@ class EnergyDataFileRepository:
             .filter(
                 EnergyDataFile.user_id == user_id,
                 EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
-                EnergyDataFile.source_type == source_type,
             )
-            .one()
+            .group_by(EnergyDataFile.source_type)
+            .all()
         )
-        return files_count, data_start, data_end
+        return {source_type: (files_count, data_start, data_end) for source_type, files_count, data_start, data_end in rows}
 
     def delete(self, energy_file: EnergyDataFile) -> None:
         # Symulacje pliku usuwa baza (ON DELETE CASCADE na simulations.energy_data_file_id).
