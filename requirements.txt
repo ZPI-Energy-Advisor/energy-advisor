@@ -20,3 +20,4 @@ google-auth
 requests
 APScheduler>=3.10,<4
 tzdata
+jsonschema>=4.23,<5

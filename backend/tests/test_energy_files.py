@@ -273,6 +273,29 @@ def test_upload_failure_marks_file_as_failed(db):
     assert files[0]["error_message"] == "Nierozpoznany format"
 
 
+def test_upload_error_list_is_returned_and_file_keeps_short_text(db):
+    user = _create_user(db)
+    detail = {
+        "message": "Plik urządzeń zawiera błędy (7).",
+        "errors": [
+            {"location": f"act_{index}", "message": "nieznane urządzenie 'dev_x'", "device_id": "dev_x",
+             "device_name": None, "action_id": f"act_{index}"}
+            for index in range(7)
+        ],
+        "errors_count": 7,
+    }
+
+    response = _upload(user, _StubCalculationService(error=HTTPException(status_code=422, detail=detail)), "dom.json")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == detail
+    files = client.get("/api/v1/energy-files", headers=_headers(user)).json()["items"]
+    assert files[0]["error_message"] == (
+        "Plik urządzeń zawiera błędy (7). " + "; ".join(f"act_{index}: nieznane urządzenie 'dev_x'" for index in range(5))
+        + " …i 2 więcej."
+    )
+
+
 def _sample_devices():
     with SAMPLE_DEVICES_FILE.open("rb") as handle:
         return parse_energy_file(handle).devices

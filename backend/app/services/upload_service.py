@@ -14,6 +14,8 @@ from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationServi
 
 MAX_UPLOAD_SIZE_MB = 10
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+# Tyle pierwszych błędów importu trafia do treści błędu zapisanej przy pliku.
+MAX_STORED_ERRORS = 5
 # Rozszerzenie tylko wstępnie filtruje pliki; format rozpoznaje parser po treści.
 ALLOWED_EXTENSIONS = (".csv", ".json")
 
@@ -60,7 +62,7 @@ class UploadService:
                     user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
                 )
         except HTTPException as exc:
-            self._mark_failed(energy_file, str(exc.detail))
+            self._mark_failed(energy_file, self._error_text(exc.detail))
             raise
         except Exception:
             self._mark_failed(energy_file, "Nieoczekiwany błąd przetwarzania pliku.")
@@ -88,6 +90,18 @@ class UploadService:
             "import_report": simulation_results.get(IMPORT_REPORT_KEY),
             "message": "Symulacja zakończona i zapisana na Twoim koncie!",
         }
+
+    @staticmethod
+    def _error_text(detail) -> str:
+        """Treść błędu zapisywana przy pliku; lista błędów z importu skrócona do kilku pierwszych."""
+        if not isinstance(detail, dict):
+            return str(detail)
+        listed = [
+            f"{item['location']}: {item['message']}" if item["location"] else item["message"]
+            for item in detail["errors"][:MAX_STORED_ERRORS]
+        ]
+        more = detail["errors_count"] - len(listed)
+        return f"{detail['message']} {'; '.join(listed)}" + (f" …i {more} więcej." if more > 0 else "")
 
     def _mark_failed(self, energy_file: EnergyDataFile, message: str):
         self.energy_file_repository.rollback()

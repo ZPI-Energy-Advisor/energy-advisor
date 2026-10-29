@@ -138,3 +138,11 @@ export const formatDataResolution = (statistics) => {
   if (minutes === 60) return "odczyty godzinowe";
   return "odczyty co 15 min i godzinowe";
 };
+
+// Komunikat dla pliku odrzuconego przy upuszczaniu (react-dropzone), według faktycznego powodu.
+export const dropRejectionMessage = (rejections, maxFileSizeMb) => {
+  const codes = new Set(rejections.flatMap((rejection) => rejection.errors.map((rejectionError) => rejectionError.code)));
+  if (codes.has("too-many-files")) return "Można wgrać tylko jeden plik naraz. Wybierz jeden plik.";
+  if (codes.has("file-too-large")) return `Plik jest za duży. Maksymalny rozmiar pliku to ${maxFileSizeMb} MB.`;
+  return "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv lub .json.";
+};
