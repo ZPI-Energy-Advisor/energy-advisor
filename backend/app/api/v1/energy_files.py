@@ -1,11 +1,13 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.v1.deps import get_authenticated_user, get_energy_file_service
 from app.models.User import User
 from app.schemas.energy_file import ALL_FILES_SOURCE_ID, EnergyDataFileDataResponse, EnergyDataFileListResponse
+from app.schemas.schedule import ScheduleResponse
+from app.services.dynamic_price_service import DynamicTariffNotFoundError
 from app.services.energy_file_service import EnergyFileService
 
 
@@ -50,6 +52,20 @@ def get_energy_file_data(
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
     return service.get_file_data(file_id, user.id, date_from, date_to)
+
+
+@router.get("/{file_id}/schedule", response_model=ScheduleResponse)
+def get_energy_file_schedule(
+    file_id: UUID,
+    date_from: date | None = DATE_FROM_QUERY,
+    date_to: date | None = DATE_TO_QUERY,
+    user: User = Depends(get_authenticated_user),
+    service: EnergyFileService = Depends(get_energy_file_service),
+):
+    try:
+        return service.get_file_schedule(file_id, user.id, date_from, date_to)
+    except DynamicTariffNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)

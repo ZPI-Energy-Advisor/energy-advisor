@@ -121,8 +121,9 @@ def get_energy_file_service(
     file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
     device_repository: DeviceRepository = Depends(get_device_repository),
+    price_service: DynamicPriceService = Depends(get_dynamic_price_service),
 ) -> EnergyFileService:
-    return EnergyFileService(file_repository, simulation_repository, device_repository)
+    return EnergyFileService(file_repository, simulation_repository, device_repository, price_service)
 
 
 def get_upload_service(

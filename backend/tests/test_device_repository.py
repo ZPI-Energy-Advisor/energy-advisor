@@ -139,7 +139,7 @@ def test_ev_session_window_is_stored(db, saved_demo):
 
 
 def delete_file(db, user, energy_file) -> None:
-    EnergyFileService(EnergyDataFileRepository(db), SimulationRepository(db), DeviceRepository(db)).delete_file(
+    EnergyFileService(EnergyDataFileRepository(db), SimulationRepository(db), DeviceRepository(db), None).delete_file(
         energy_file.id, user.id
     )
 
