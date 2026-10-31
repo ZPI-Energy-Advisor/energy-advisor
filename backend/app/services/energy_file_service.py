@@ -1,10 +1,11 @@
 import math
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.providers.prices.base import MARKET_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
@@ -15,7 +16,10 @@ from app.services.calculation_service import (
     public_results,
     source_resolution,
 )
+from app.schemas.schedule import ScheduledActionOut, SchedulePriceOut, ScheduleResponse
+from app.services.dynamic_price_service import DynamicPriceService
 from app.services.pricing_strategies import SLOT_MINUTES
+from app.services.scheduling import SLOT, actions_from_devices, schedule
 from app.schemas.energy_file import (
     AggregateSourceFile,
     AggregateSourceOut,
@@ -33,10 +37,12 @@ class EnergyFileService:
         file_repository: EnergyDataFileRepository,
         simulation_repository: SimulationRepository,
         device_repository: DeviceRepository,
+        price_service: DynamicPriceService,
     ):
         self.file_repository = file_repository
         self.simulation_repository = simulation_repository
         self.device_repository = device_repository
+        self.price_service = price_service
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:
         items, total = self.file_repository.list_by_user_id(
@@ -171,6 +177,67 @@ class EnergyFileService:
             date_from=date_from,
             date_to=date_to,
             results=public_results(CalculationService.calculate_for_range(merged_results, date_from, date_to)),
+        )
+
+    def get_file_schedule(
+        self, file_id: UUID, user_id: UUID, date_from: date | None, date_to: date | None
+    ) -> ScheduleResponse:
+        """Najtańsze rozmieszczenie akcji pliku urządzeń przy cenach taryfy dynamicznej."""
+        energy_file = self._get_own_file(file_id, user_id)
+        date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
+        start = datetime.combine(date_from, time(), MARKET_TIMEZONE).astimezone(timezone.utc)
+        end = datetime.combine(date_to + timedelta(days=1), time(), MARKET_TIMEZONE).astimezone(timezone.utc)
+
+        devices = self.device_repository.records_for_file(energy_file.id, user_id, start, end)
+        if not any(device.actions for device in devices):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Optymalizacja działa tylko dla plików urządzeń z akcjami w wybranym okresie.",
+            )
+        # Akcja może skończyć się po północy ostatniej doby, stąd ceny z zapasem jednej doby.
+        prices = self.price_service.consumer_prices(start, end + timedelta(days=1))
+        result = schedule(actions_from_devices(devices), prices)
+
+        # Akcja, która kończy się po ostatniej dobie, ma na wykresie także dobę z dokończeniem.
+        latest_end = max(max(item.end, item.original_start + len(item.profile_kwh) * SLOT) for item in result.actions)
+        prices_end = end + timedelta(days=1) if latest_end > end else end
+
+        names = {device.device_id: device.name for device in devices}
+        programs = {
+            (device.device_id, program.program_id): program.name for device in devices for program in device.programs
+        }
+
+        def local(moment: datetime) -> datetime:
+            return moment.astimezone(MARKET_TIMEZONE)
+
+        return ScheduleResponse(
+            date_from=date_from,
+            date_to=date_to,
+            cost_before=round(result.cost_before, 2),
+            cost_after=round(result.cost_after, 2),
+            actions=[
+                ScheduledActionOut(
+                    action_id=item.action_id,
+                    device_id=item.device_id,
+                    device_name=names[item.device_id],
+                    program_name=programs.get((item.device_id, item.program_id)),
+                    original_start=local(item.original_start),
+                    original_end=local(item.original_start + len(item.profile_kwh) * SLOT),
+                    start=local(item.start),
+                    end=local(item.end),
+                    energy_kwh=round(sum(item.profile_kwh), 2),
+                    cost_before=None if item.cost_before is None else round(item.cost_before, 2),
+                    cost_after=None if item.cost_after is None else round(item.cost_after, 2),
+                    status=item.status,
+                    reason=item.reason,
+                )
+                for item in result.actions
+            ],
+            prices=[
+                SchedulePriceOut(start=local(slot), price_pln_kwh=price)
+                for slot, price in sorted(prices.items())
+                if slot < prices_end
+            ],
         )
 
     def delete_file(self, file_id: UUID, user_id: UUID) -> None:

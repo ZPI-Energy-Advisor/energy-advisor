@@ -1,4 +1,5 @@
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -13,7 +14,7 @@ from app.models.DeviceInstanceFile import DeviceInstanceFile
 from app.models.DeviceProgram import DeviceProgram
 from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.DeviceType import DeviceType  # noqa: F401 - rejestruje tabelę dla FK
-from app.parsers.device_records import ActionRecord, DeviceRecord
+from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 
 
 SLOT = timedelta(minutes=15)
@@ -95,6 +96,67 @@ class DeviceRepository:
             .order_by(DeviceInstance.source_device_id)
             .all()
         )
+
+    def records_for_file(
+        self, energy_data_file_id: UUID, user_id: UUID, start_utc: datetime, end_utc: datetime
+    ) -> list[DeviceRecord]:
+        """Urządzenia pliku z programami i akcjami zaczynającymi się w [start_utc, end_utc)."""
+        instances = self.list_for_file(energy_data_file_id, user_id)
+        programs = (
+            self.db.query(DeviceProgram)
+            .filter(DeviceProgram.device_instance_id.in_([instance.id for instance in instances]))
+            .all()
+        )
+        actions = (
+            self.db.query(DeviceAction)
+            .filter(
+                DeviceAction.energy_data_file_id == energy_data_file_id,
+                DeviceAction.action_start >= start_utc,
+                DeviceAction.action_start < end_utc,
+            )
+            .order_by(DeviceAction.action_start)
+            .all()
+        )
+        slots = defaultdict(list)
+        slot_rows = (
+            self.db.query(DeviceSlotUsage.device_action_id, DeviceSlotUsage.kwh)
+            .filter(DeviceSlotUsage.device_action_id.in_([action.id for action in actions]))
+            .order_by(DeviceSlotUsage.device_action_id, DeviceSlotUsage.slot_start)
+        )
+        for action_id, kwh in slot_rows:
+            slots[action_id].append(kwh)
+
+        program_ids = {program.id: program.source_program_id for program in programs}
+        records = {
+            instance.id: DeviceRecord(
+                device_id=instance.source_device_id,
+                name=instance.name,
+                device_type=instance.device_type,
+                device_category=instance.device_category,
+                flexibility_mode=instance.flexibility_mode,
+                max_power_kw=instance.max_power_kw,
+                allowed_window_from=instance.allowed_window_from,
+                allowed_window_to=instance.allowed_window_to,
+                max_shift_min=instance.max_shift_min,
+            )
+            for instance in instances
+        }
+        for program in programs:
+            records[program.device_instance_id].programs.append(ProgramRecord(
+                program.source_program_id, program.name, program.duration_min, program.profile_kwh,
+            ))
+        for action in actions:
+            records[action.device_instance_id].actions.append(ActionRecord(
+                action_id=action.source_action_id,
+                start=action.action_start,
+                end=action.action_end,
+                energy_kwh=action.energy_kwh,
+                slots_kwh=slots[action.id],
+                program_id=program_ids.get(action.device_program_id),
+                plugged_in=action.plugged_in,
+                deadline=action.deadline,
+            ))
+        return list(records.values())
 
     @staticmethod
     def _check_records(devices: list[DeviceRecord]) -> None:
