@@ -4,8 +4,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.v1.deps import get_authenticated_user, get_energy_file_service
+from app.models.EnergyDataFile import EnergyDataFile
 from app.models.User import User
-from app.schemas.energy_file import ALL_FILES_SOURCE_ID, EnergyDataFileDataResponse, EnergyDataFileListResponse
+from app.schemas.energy_file import (
+    ALL_DEVICE_FILES_SOURCE_ID,
+    ALL_FILES_SOURCE_ID,
+    EnergyDataFileDataResponse,
+    EnergyDataFileListResponse,
+)
 from app.services.energy_file_service import EnergyFileService
 
 
@@ -38,7 +44,17 @@ def get_all_files_data(
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
-    return service.get_all_files_data(user.id, date_from, date_to)
+    return service.get_all_files_data(user.id, EnergyDataFile.SOURCE_METER, date_from, date_to)
+
+
+@router.get(f"/{ALL_DEVICE_FILES_SOURCE_ID}/data", response_model=EnergyDataFileDataResponse)
+def get_all_device_files_data(
+    date_from: date | None = DATE_FROM_QUERY,
+    date_to: date | None = DATE_TO_QUERY,
+    user: User = Depends(get_authenticated_user),
+    service: EnergyFileService = Depends(get_energy_file_service),
+):
+    return service.get_all_files_data(user.id, EnergyDataFile.SOURCE_DEVICES, date_from, date_to)
 
 
 @router.get("/{file_id}/data", response_model=EnergyDataFileDataResponse)

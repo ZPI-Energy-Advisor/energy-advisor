@@ -5,11 +5,18 @@ from fastapi import HTTPException, UploadFile
 
 from app.models.EnergyDataFile import EnergyDataFile
 from app.schemas.user_profile import UserProfile
+from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository
-from app.services.calculation_service import CalculationService, public_results
+from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationService, public_results
+
+
+MAX_UPLOAD_SIZE_MB = 10
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+# Rozszerzenie tylko wstępnie filtruje pliki; format rozpoznaje parser po treści.
+ALLOWED_EXTENSIONS = (".csv", ".json")
 
 
 
@@ -20,30 +27,42 @@ class UploadService:
         simulation_repository: SimulationRepository,
         energy_file_repository: EnergyDataFileRepository,
         user_repository: UserRepository,
-        energy_reading_repository: EnergyReadingRepository | None = None,
+        energy_reading_repository: EnergyReadingRepository,
+        device_repository: DeviceRepository,
     ):
         self.calculation_service = calculation_service
         self.simulation_repository = simulation_repository
         self.energy_file_repository = energy_file_repository
         self.energy_reading_repository = energy_reading_repository
         self.user_repository = user_repository
+        self.device_repository = device_repository
 
     def process_upload(self, file: UploadFile, user_id: UUID):
 
-        if not file.filename or not file.filename.endswith(".csv"):
+        if not file.filename or not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
             raise HTTPException(
                 status_code=400,
-                detail="Wymagany plik .csv"
+                detail="Wymagany plik .csv lub .json"
+            )
+
+        size = self._file_size(file)
+        if size > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Plik jest za duży ({size / 1024 / 1024:.1f} MB). "
+                f"Maksymalny rozmiar pliku to {MAX_UPLOAD_SIZE_MB} MB.",
             )
 
         energy_file = self.energy_file_repository.create(user_id=user_id, file_name=file.filename[:255])
 
         try:
             simulation_results = self.calculation_service.calculate_all_tariffs(file.file)
-            if self.energy_reading_repository is not None:
-                self.energy_reading_repository.replace_for_file(
-                    energy_file.id,
-                    self._readings_from_usage(simulation_results.get("energy_readings_15min")),
+            self.energy_reading_repository.replace_for_file(energy_file.id, self._readings_from_usage(simulation_results.get("energy_readings_15min")))
+            parsed = self.calculation_service.parse_file(file.file)
+            simulation_results = self.calculation_service.calculate_with_report(parsed)
+            if parsed.devices is not None:
+                self.device_repository.save_for_file(
+                    user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
                 )
         except HTTPException as exc:
             self._mark_failed(energy_file, str(exc.detail))
@@ -56,6 +75,9 @@ class UploadService:
         energy_file.data_start = self._parse_date(statistics.get("data_start"))
         energy_file.data_end = self._parse_date(statistics.get("data_end"))
         energy_file.records_count = statistics.get("records_count")
+        energy_file.source_type = (
+            EnergyDataFile.SOURCE_DEVICES if parsed.devices is not None else EnergyDataFile.SOURCE_METER
+        )
         energy_file.status = EnergyDataFile.STATUS_COMPLETED
         self.energy_file_repository.save(energy_file)
 
@@ -71,11 +93,13 @@ class UploadService:
             "file_id": str(energy_file.id),
             "file_name": file.filename,
             "summary": public_results(simulation_results),
+            "import_report": simulation_results.get(IMPORT_REPORT_KEY),
             "message": "Symulacja zakończona i zapisana na Twoim koncie!",
         }
 
     def _mark_failed(self, energy_file: EnergyDataFile, message: str):
         self.energy_file_repository.db.rollback()
+        self.energy_file_repository.rollback()
         energy_file.status = EnergyDataFile.STATUS_FAILED
         energy_file.error_message = message
         self.energy_file_repository.save(energy_file)
@@ -95,6 +119,12 @@ class UploadService:
                         float(energy_kwh),
                     ))
         return readings
+    
+    def _file_size(file: UploadFile) -> int:
+        file.file.seek(0, 2)
+        size = file.file.tell()
+        file.file.seek(0)
+        return size
 
     @staticmethod
     def _parse_date(value):

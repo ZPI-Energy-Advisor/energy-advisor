@@ -21,9 +21,7 @@ function Layout() {
     } catch (error) {
       console.error("Nie udało się unieważnić sesji na backendzie.", error);
     } finally {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("user");
+      clearAuth();
       navigate("/");
     }
   };

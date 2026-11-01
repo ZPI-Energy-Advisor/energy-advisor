@@ -3,7 +3,10 @@ import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import EnergyFilesTable from "../components/EnergyFilesTable";
+import ImportReportSummary from "../components/ImportReportSummary";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+
+const MAX_FILE_SIZE_MB = 10;
 
 function ImportPage() {
   const [file, setFile] = useState(null);
@@ -11,6 +14,7 @@ function ImportPage() {
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [importReport, setImportReport] = useState(null);
 
   const navigate = useNavigate();
   const { refreshFiles, selectFile } = useEnergyFiles();
@@ -20,13 +24,19 @@ function ImportPage() {
       setFile(acceptedFiles[0]);
       setError(null);
       setSuccessMsg(null);
+      setImportReport(null);
       setProgress(0);
     }
   }, []);
 
-  const onDropRejected = useCallback(() => {
+  const onDropRejected = useCallback((rejections) => {
+    const tooLarge = rejections.some((rejection) =>
+      rejection.errors.some((rejectionError) => rejectionError.code === "file-too-large"),
+    );
     setError(
-      "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv.",
+      tooLarge
+        ? `Plik jest za duży. Maksymalny rozmiar pliku to ${MAX_FILE_SIZE_MB} MB.`
+        : "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv lub .json.",
     );
   }, []);
 
@@ -35,8 +45,10 @@ function ImportPage() {
     onDropRejected,
     accept: {
       "text/csv": [".csv"],
+      "application/json": [".json"],
     },
     maxFiles: 1,
+    maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
   });
 
   const handleRemoveFile = () => {
@@ -44,6 +56,7 @@ function ImportPage() {
     setProgress(0);
     setError(null);
     setSuccessMsg(null);
+    setImportReport(null);
   };
 
   const handleUpload = async () => {
@@ -72,6 +85,7 @@ function ImportPage() {
         },
       );
 
+      setImportReport(response.data.import_report ?? null);
       setSuccessMsg(
         response.data.message || "Plik został pomyślnie przetworzony!",
       );
@@ -97,7 +111,7 @@ function ImportPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
-        Prześlij plik CSV
+        Prześlij plik
       </h2>
 
       {successMsg ? (
@@ -126,6 +140,7 @@ function ImportPage() {
           >
             Zobacz wyniki na Dashboardzie
           </button>
+          <ImportReportSummary report={importReport} />
         </div>
       ) : (
         <>
@@ -145,7 +160,7 @@ function ImportPage() {
                     ? "Upuść plik tutaj..."
                     : "Przeciągnij i upuść plik tutaj"}
                 </h3>
-                <p className="text-sm text-gray-500 mb-6">Format: CSV</p>
+                <p className="text-sm text-gray-500 mb-6">Format: CSV lub JSON · maks. {MAX_FILE_SIZE_MB} MB</p>
                 <button
                   type="button"
                   className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 transition-colors"
@@ -153,6 +168,17 @@ function ImportPage() {
                   Wybierz plik
                 </button>
               </div>
+
+              <p className="text-sm text-gray-500 text-center">
+                Masz dane z urządzeń smart home?{" "}
+                <a
+                  href="/samples/devices-example.json"
+                  download
+                  className="text-emerald-700 font-medium hover:underline"
+                >
+                  Pobierz przykładowy plik urządzeń (JSON)
+                </a>
+              </p>
 
               {error && (
                 <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center text-sm md:text-base font-medium">

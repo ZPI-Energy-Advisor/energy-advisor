@@ -2,6 +2,19 @@ export const FILES_TABLE_ANCHOR = "pliki";
 
 // Wirtualne źródło łączące dane ze wszystkich plików użytkownika (liczone przez backend).
 export const ALL_FILES_ID = "all";
+export const ALL_DEVICE_FILES_ID = "all-devices";
+
+export const isAggregateSource = (sourceId) => sourceId === ALL_FILES_ID || sourceId === ALL_DEVICE_FILES_ID;
+
+export const SOURCE_TYPE_DEVICES = "devices";
+
+export const SOURCE_TYPE_LABELS = {
+  meter: "Licznik",
+  devices: "Urządzenia",
+};
+
+export const aggregateIdForSourceType = (sourceType) =>
+  sourceType === SOURCE_TYPE_DEVICES ? ALL_DEVICE_FILES_ID : ALL_FILES_ID;
 
 export const formatDate = (isoDate) => {
   if (!isoDate) return "";
@@ -13,13 +26,21 @@ export const formatDate = (isoDate) => {
 export const pluralizeFiles = (count) => (count === 1 ? "pliku" : "plików");
 
 // "1 plik", "3 pliki", "5 plików", "22 pliki".
-export const formatFilesCount = (count) => {
-  if (count === 1) return "1 plik";
+export const formatCount = (count, [one, few, many]) => {
+  if (count === 1) return `1 ${one}`;
   const lastDigit = count % 10;
   const lastTwoDigits = count % 100;
   const isFew = lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14);
-  return `${count} ${isFew ? "pliki" : "plików"}`;
+  return `${count} ${isFew ? few : many}`;
 };
+
+export const formatFilesCount = (count) => formatCount(count, ["plik", "pliki", "plików"]);
+
+export const formatRecordsCount = (count, sourceType) =>
+  formatCount(
+    count,
+    sourceType === SOURCE_TYPE_DEVICES ? ["akcja", "akcje", "akcji"] : ["rekord", "rekordy", "rekordów"],
+  );
 
 export const formatDateRange = (file) => {
   if (!file?.data_start || !file?.data_end) return "Brak zakresu dat";
@@ -127,4 +148,13 @@ export const fillMissingDays = (rows) => {
     filled.push(byDate.get(date) ?? { date, missing: true });
   }
   return filled;
+};
+
+export const formatDataResolution = (statistics) => {
+  if (!statistics || !("resolution_minutes" in statistics)) return null;
+  if (statistics.data_source === SOURCE_TYPE_DEVICES) return "akcje urządzeń";
+  const minutes = statistics.resolution_minutes;
+  if (minutes === 15) return "odczyty co 15 min";
+  if (minutes === 60) return "odczyty godzinowe";
+  return "odczyty co 15 min i godzinowe";
 };

@@ -299,6 +299,17 @@ function Dashboard() {
               </div>
             </div>
 
+            {chartResolution === "15m" && results?.statistics?.resolution_minutes === 60 && (
+              <p className="-mt-2 mb-4 text-xs md:text-sm text-gray-500">
+                Plik zawiera odczyty godzinowe, więc wartości 15-minutowe to równy podział każdej godziny.
+              </p>
+            )}
+            {chartResolution === "15m" && results?.statistics?.resolution_minutes === null && (
+              <p className="-mt-2 mb-4 text-xs md:text-sm text-gray-500">
+                Część plików zawiera odczyty godzinowe – dla ich danych wartości 15-minutowe to równy podział godziny.
+              </p>
+            )}
+
             <div className="h-[300px] md:h-[400px] w-full">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">

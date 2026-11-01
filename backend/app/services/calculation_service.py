@@ -1,3 +1,4 @@
+from collections import Counter, defaultdict
 from datetime import date
 from typing import Mapping
 
@@ -5,6 +6,17 @@ import numpy as np
 import pandas as pd
 from fastapi import HTTPException
 
+from app.parsers import (
+    HOURLY_RESOLUTION,
+    KWH,
+    TIMESTAMP_START,
+    FileImportError,
+    DeviceRecord,
+    ParsedEnergyFile,
+    parse_energy_file,
+)
+from app.models.EnergyDataFile import EnergyDataFile
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.tariff_repository import TariffRepository
 from app.services.pricing_strategies import (
     SLOT_MINUTES,
@@ -14,23 +26,25 @@ from app.services.pricing_strategies import (
 )
 
 
-YEAR_FIRST_DATE = r'^\d{4}-\d{1,2}-\d{1,2}(?:[ T]|$)'
-DAY_OR_MONTH_FIRST_DATE = r'^(\d{1,2})[./-](\d{1,2})[./-]\d{4}(?:\s|$)'
-EXCEL_SERIAL_DATE = r'^\d+(?:\.\d+)?$'
-MIDNIGHT_24 = r'(?<=\s)24:00(?=(?::00)?$)'
-
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
 INTERNAL_RESULT_KEYS = ("usage_15min", "energy_readings_15min", "slot_prices")
+IMPORT_REPORT_KEY = "import_report"
+ACTIONS_PER_DAY_KEY = "actions_per_day"
 
 
 def public_results(results: dict | None) -> dict | None:
     if results is None:
         return None
-    return {key: value for key, value in results.items() if key not in INTERNAL_RESULT_KEYS}
+    hidden = (*INTERNAL_RESULT_KEYS, IMPORT_REPORT_KEY, ACTIONS_PER_DAY_KEY)
+    return {key: value for key, value in results.items() if key not in hidden}
 
 
 def has_usage_series(results: dict) -> bool:
     return all(key in results for key in ("usage_15min", "slot_prices"))
+
+
+def source_resolution(results: dict) -> int | None:
+    return results.get("statistics", {}).get("resolution_minutes", HOURLY_RESOLUTION)
 
 
 class CalculationService:
@@ -55,87 +69,30 @@ class CalculationService:
 
 
     def calculate_all_tariffs(self, file_obj) -> dict:
+        return self.calculate_with_report(self.parse_file(file_obj))
+
+    @staticmethod
+    def parse_file(file_obj) -> ParsedEnergyFile:
         try:
-            file_obj.seek(0)
-            df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
-        except UnicodeDecodeError:
-            file_obj.seek(0)
-            df = pd.read_csv(file_obj, sep=';', encoding='windows-1250')
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Błąd odczytu pliku: {e}")
-            
-        df.columns = df.columns.str.strip()
+            return parse_energy_file(file_obj)
+        except FileImportError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-        if "Data i godzina" in df.columns and "Wartosc[kWh/kvar]" in df.columns:
-            df = df.rename(columns={
-                "Data i godzina": "Data",
-                "Wartosc[kWh/kvar]": "Wartość kWh",
-                "Rodzaj energii": "Rodzaj"
-            })
-        elif "Data" not in df.columns or "Wartość kWh" not in df.columns:
-            raise HTTPException(status_code=422, detail="Nierozpoznany format pliku. Brak wymaganych kolumn.")
+    def calculate_with_report(self, parsed: ParsedEnergyFile) -> dict:
+        results_dict = self.calculate(parsed)
+        results_dict[IMPORT_REPORT_KEY] = parsed.report.to_dict()
+        return results_dict
 
-        df = df.dropna(subset=['Wartość kWh', 'Data', 'Rodzaj'])
-        df['Rodzaj'] = df['Rodzaj'].astype(str).str.strip().str.lower()
-        
-        df['Wartość kWh'] = df['Wartość kWh'].astype(str).str.replace(',', '.', regex=False)
-        df['Wartość kWh'] = pd.to_numeric(df['Wartość kWh'], errors='coerce')
-        df = df.dropna(subset=['Wartość kWh'])
+    def calculate(self, parsed: ParsedEnergyFile) -> dict:
+        data = parsed.data
+        resolution = parsed.resolution_minutes
+        slots_per_record = resolution // SLOT_MINUTES
 
-        energy_type = df['Rodzaj']
-        consumption_mask = energy_type.str.contains(
-            'pobór|pobor|pobrana|odebrana|odebrany',
-            na=False,
-        )
-        export_mask = energy_type.str.contains('oddanie|oddana', na=False)
-        df = df[consumption_mask | export_mask].copy()
+        df_15min = data.loc[data.index.repeat(slots_per_record)].reset_index(drop=True)
+        df_15min['Wartość kWh'] = df_15min[KWH] / slots_per_record
 
-        if not consumption_mask.any():
-            raise HTTPException(status_code=400, detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.")
-
-        # Odczyt "24:00" to koniec doby - parsujemy go jako 00:00 i przesuwamy na następny dzień.
-        df['Data'] = df['Data'].astype(str).str.strip()
-        mask_24 = df['Data'].str.contains(MIDNIGHT_24, regex=True)
-        df['Data'] = df['Data'].str.replace(MIDNIGHT_24, '00:00', regex=True)
-
-        df['Data'] = self._parse_dates(df['Data'])
-        if df['Data'].isna().all():
-            raise HTTPException(
-                status_code=422,
-                detail="Nie rozpoznano formatu dat w pliku. Obsługiwane formaty: RRRR-MM-DD GG:MM, "
-                "DD.MM.RRRR GG:MM (także z / lub -) oraz daty liczbowe z Excela.",
-            )
-        df = df.dropna(subset=['Data'])
-
-        df.loc[mask_24, 'Data'] = df.loc[mask_24, 'Data'] + pd.Timedelta(days=1)
-
-        df_15min = df.loc[df.index.repeat(4)].reset_index(drop=True)
-        df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / 4.0
-        df_15min.loc[
-            df_15min['Rodzaj'].str.contains(
-                'pobór|pobor|pobrana|odebrana|odebrany',
-                na=False,
-            ),
-            'Wartość kWh',
-        ] = df_15min.loc[
-            df_15min['Rodzaj'].str.contains(
-                'pobór|pobor|pobrana|odebrana|odebrany',
-                na=False,
-            ),
-            'Wartość kWh',
-        ].abs()
-        df_15min.loc[
-            df_15min['Rodzaj'].str.contains('oddanie|oddana', na=False),
-            'Wartość kWh',
-        ] = -df_15min.loc[
-            df_15min['Rodzaj'].str.contains('oddanie|oddana', na=False),
-            'Wartość kWh',
-        ].abs()
-
-        base_timestamps = df_15min['Data']
-
-        minute_offsets = np.tile([-60, -45, -30, -15], len(df))
-        df_15min['Dokładny Czas'] = base_timestamps + pd.to_timedelta(minute_offsets, unit='m')
+        minute_offsets = np.tile(np.arange(0, resolution, SLOT_MINUTES), len(data))
+        df_15min['Dokładny Czas'] = df_15min[TIMESTAMP_START] + pd.to_timedelta(minute_offsets, unit='m')
 
         tariffs = self.tariff_repository.get_all()
         if not tariffs:
@@ -158,56 +115,91 @@ class CalculationService:
             for tariff in tariffs
         }
 
-        results_dict = self.summarize_usage(usage, slot_prices)
-        results_dict["statistics"]["records_count"] = int(len(df))
+        actions_per_day = self._actions_per_day(parsed.devices) if parsed.devices is not None else None
+        results_dict = self.summarize_usage(usage, slot_prices, resolution, actions_per_day)
+        if actions_per_day is None:
+            results_dict["statistics"]["records_count"] = int(len(data))
+        else:
+            results_dict[ACTIONS_PER_DAY_KEY] = actions_per_day
         results_dict["usage_15min"] = usage
         results_dict["energy_readings_15min"] = energy_readings
         results_dict["slot_prices"] = slot_prices
         return results_dict
-
-    @staticmethod
-    def _parse_dates(values: pd.Series) -> pd.Series:
-        """Rozpoznaje format każdej daty po jej zapisie, a nie po nazwach kolumn pliku.
-
-        - RRRR-MM-DD (np. plik zapisany ponownie w Excelu) - zawsze rok, miesiąc, dzień,
-        - DD.MM.RRRR, DD/MM/RRRR, DD-MM-RRRR - kolejność dnia i miesiąca ustalana dla całego
-          pliku: jeśli gdzieś pierwsza liczba > 12, to dzień jest pierwszy; jeśli tylko druga
-          liczba bywa > 12, to plik jest w układzie MM/DD; gdy nie da się tego rozstrzygnąć,
-          przyjmujemy polski układ z dniem na początku,
-        - liczby - numer seryjny daty z Excela.
-
-        Wartości w nierozpoznanym formacie dostają NaT.
-        """
-        parsed = pd.Series(pd.NaT, index=values.index, dtype='datetime64[ns]')
-
-        year_first = values.str.match(YEAR_FIRST_DATE)
-        if year_first.any():
-            parsed[year_first] = pd.to_datetime(
-                values[year_first], format='mixed', yearfirst=True, dayfirst=False, errors='coerce'
-            )
-
-        day_or_month_first = values.str.match(DAY_OR_MONTH_FIRST_DATE)
-        if day_or_month_first.any():
-            parts = values[day_or_month_first].str.extract(DAY_OR_MONTH_FIRST_DATE).astype(int)
-            month_first = not (parts[0] > 12).any() and (parts[1] > 12).any()
-            parsed[day_or_month_first] = pd.to_datetime(
-                values[day_or_month_first], format='mixed', dayfirst=not month_first, errors='coerce'
-            )
-
-        excel_serial = values.str.match(EXCEL_SERIAL_DATE)
-        if excel_serial.any():
-            parsed[excel_serial] = pd.to_datetime(
-                pd.to_numeric(values[excel_serial]), unit='D', origin='1899-12-30'
-            )
-
-        return parsed
 
     @classmethod
     def calculate_for_range(cls, results: dict, date_from: date, date_to: date) -> dict:
         """Przelicza wykresy, sumy i statystyki dla dni z przedziału [date_from, date_to] (oba włącznie)."""
         start, end = date_from.isoformat(), date_to.isoformat()
         usage = {day: slots for day, slots in results["usage_15min"].items() if start <= day <= end}
-        return cls.summarize_usage(usage, results["slot_prices"])
+        return cls.summarize_usage(
+            usage, results["slot_prices"], source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
+        )
+
+    @staticmethod
+    def _actions_per_day(devices: list[DeviceRecord]) -> dict[str, int]:
+        counts = Counter(
+            action.start.astimezone(LOCAL_TIMEZONE).date().isoformat()
+            for device in devices
+            for action in device.actions
+        )
+        return dict(sorted(counts.items()))
+
+    @staticmethod
+    def device_coverage(usages: list[dict]) -> dict[tuple[str, int], list[int]]:
+        covering = defaultdict(list)
+        for index, usage in enumerate(usages):
+            for day, day_slots in usage.items():
+                for slot, kwh in enumerate(day_slots):
+                    if kwh is not None:
+                        covering[(day, slot)].append(index)
+        return covering
+
+    @staticmethod
+    def overlap_days(covering: dict[tuple[str, int], list[int]]) -> set[str]:
+        return {day for (day, _), indices in covering.items() if len(indices) > 1}
+
+    @classmethod
+    def merge_device_usage(cls, files: list[dict], covering: dict) -> tuple[dict, dict[str, int], list[dict]]:
+        overlap_days = cls.overlap_days(covering)
+
+        def owner(device, day, slot):
+            for index in reversed(covering.get((day, slot), ())):
+                if device in files[index]["devices"]:
+                    return index
+            return None
+
+        usage = {}
+        for (day, slot), indices in covering.items():
+            kwh = 0.0 if day in overlap_days else files[indices[0]]["usage_15min"][day][slot]
+            usage.setdefault(day, [None] * SLOTS_PER_DAY)[slot] = kwh
+        actions_per_day = Counter()
+        for index, source in enumerate(files):
+            for day, count in source["actions_per_day"].items():
+                if day not in overlap_days:
+                    actions_per_day[day] += count
+            for device, day, slot, kwh in source["slots"]:
+                if day in overlap_days and owner(device, day, slot) == index:
+                    usage[day][slot] += kwh
+            for device, day, slot in source["actions"]:
+                if day in overlap_days and owner(device, day, slot) == index:
+                    actions_per_day[day] += 1
+
+        contributions = [{"days_used": set(), "slots_used": 0} for _ in files]
+        for (day, _), indices in covering.items():
+            claimed = set()
+            for index in reversed(indices):
+                if files[index]["devices"] - claimed:
+                    contributions[index]["days_used"].add(day)
+                    contributions[index]["slots_used"] += 1
+                if len(indices) > 1:
+                    claimed |= files[index]["devices"]
+
+        usage = {
+            day: [None if kwh is None else round(kwh, 6) for kwh in day_slots]
+            for day, day_slots in sorted(usage.items())
+        }
+        contributions = [{**item, "days_used": len(item["days_used"])} for item in contributions]
+        return usage, dict(sorted(actions_per_day.items())), contributions
 
     @staticmethod
     def merge_usage(sources: list[dict]) -> tuple[dict, list[dict]]:
@@ -317,7 +309,14 @@ class CalculationService:
         return dict(sorted(usage.items()))
 
     @classmethod
-    def summarize_usage(cls, usage: dict, slot_prices: dict) -> dict:
+    def summarize_usage(
+        cls,
+        usage: dict,
+        slot_prices: dict,
+        resolution_minutes: int | None = HOURLY_RESOLUTION,
+        actions_per_day: dict[str, int] | None = None,
+    ) -> dict:
+        data_source = EnergyDataFile.SOURCE_METER if actions_per_day is None else EnergyDataFile.SOURCE_DEVICES
         rows = [
             (day, slot, kwh)
             for day, day_slots in usage.items()
@@ -325,7 +324,7 @@ class CalculationService:
             if kwh is not None
         ]
         if not rows:
-            return cls._empty_results(slot_prices)
+            return cls._empty_results(slot_prices, resolution_minutes, data_source)
 
         df_15min = pd.DataFrame(rows, columns=['date', 'slot', 'Wartość kWh'])
         df_15min['Dokładny Czas'] = pd.to_datetime(df_15min['date']) + pd.to_timedelta(
@@ -379,9 +378,17 @@ class CalculationService:
         daily_counts = df_15min.groupby('date').size()
         incomplete_days = daily_counts[daily_counts < SLOTS_PER_DAY].index.tolist()
 
+        if actions_per_day is not None:
+            records_count = sum(actions_per_day.get(day, 0) for day in usage)
+        elif resolution_minutes:
+            records_count = int(len(df_15min)) // (resolution_minutes // SLOT_MINUTES)
+        else:
+            records_count = None
+
         results_dict["statistics"] = {
-            # Dane źródłowe są godzinowe, więc jeden rekord to 4 sloty 15-minutowe.
-            "records_count": int(len(df_15min)) // 4,
+            "records_count": records_count,
+            "resolution_minutes": resolution_minutes,
+            "data_source": data_source,
             "days_analyzed": int(df_15min['date'].nunique()),
             "data_start": first_date,
             "data_end": last_date,
@@ -392,7 +399,7 @@ class CalculationService:
         return results_dict
 
     @staticmethod
-    def _empty_results(slot_prices: dict) -> dict:
+    def _empty_results(slot_prices: dict, resolution_minutes: int | None, data_source: str) -> dict:
         return {
             "tariffs": {
                 tariff_name: {"type": tariff["type"], "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
@@ -403,6 +410,8 @@ class CalculationService:
             "chart_daily": [],
             "statistics": {
                 "records_count": 0,
+                "resolution_minutes": resolution_minutes,
+                "data_source": data_source,
                 "days_analyzed": 0,
                 "data_start": None,
                 "data_end": None,

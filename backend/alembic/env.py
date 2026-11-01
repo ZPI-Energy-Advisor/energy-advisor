@@ -25,6 +25,13 @@ from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
 from app.models.UserProfile import UserProfile  # noqa: F401
 from app.models.EnergyReading import EnergyReading  # noqa: F401
 from app.models.NewModels import RegulatoryPeriod, CapacityFeeThreshold, TransitionFeeThreshold, TariffDefinition, OsdVariableNetworkRate, OsdSubscriptionFee, SupplierUreRate
+from app.models.DeviceCategory import DeviceCategory  # noqa: F401
+from app.models.DeviceType import DeviceType  # noqa: F401
+from app.models.DeviceInstance import DeviceInstance  # noqa: F401
+from app.models.DeviceInstanceFile import DeviceInstanceFile  # noqa: F401
+from app.models.DeviceProgram import DeviceProgram  # noqa: F401
+from app.models.DeviceAction import DeviceAction  # noqa: F401
+from app.models.DeviceSlotUsage import DeviceSlotUsage  # noqa: F401
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"

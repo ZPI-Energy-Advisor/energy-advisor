@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from app.models.User import User
 from app.database import get_db
+from app.repositories.device_repository import DeviceRepository
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
@@ -139,11 +140,20 @@ def require_price_sync_admin_key(
         )
 
 
+def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:
+    return EnergyDataFileRepository(db)
+
+
+def get_device_repository(db: Session = Depends(get_db)) -> DeviceRepository:
+    return DeviceRepository(db)
+
+
 def get_energy_file_service(
     file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
+    device_repository: DeviceRepository = Depends(get_device_repository),
 ) -> EnergyFileService:
-    return EnergyFileService(file_repository, simulation_repository)
+    return EnergyFileService(file_repository, simulation_repository, device_repository)
 
 
 def get_upload_service(
@@ -152,6 +162,7 @@ def get_upload_service(
     energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     user_repository: UserRepository = Depends(get_user_repository),
     energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
+    device_repository: DeviceRepository = Depends(get_device_repository),
 ) -> UploadService:
     return UploadService(
         calculation_service=calculation_service,
@@ -159,6 +170,7 @@ def get_upload_service(
         energy_file_repository=energy_file_repository,
         user_repository=user_repository,
         energy_reading_repository=energy_reading_repository,
+        device_repository=device_repository,
     )
 
 

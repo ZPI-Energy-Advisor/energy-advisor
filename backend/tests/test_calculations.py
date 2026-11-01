@@ -4,6 +4,7 @@ import pytest
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from fastapi import HTTPException
@@ -445,3 +446,207 @@ def test_import_without_any_recognized_date_raises_422():
 
     assert exc_info.value.status_code == 422
     assert "Nie rozpoznano formatu dat" in exc_info.value.detail
+
+
+def _import_rows(rows, header=SIMPLE_HEADER):
+    lines = "\n".join(f"{timestamp};{str(kwh).replace('.', ',')};pobór" for timestamp, kwh in rows)
+    content = f"{header}\n{lines}".encode("utf-8")
+    return CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(content))
+
+
+def _quarter_rows(day, values):
+    rows = []
+    for index, kwh in enumerate(values):
+        minutes = (index + 1) * 15
+        rows.append((f"{day} {minutes // 60:02d}:{minutes % 60:02d}", kwh))
+    return rows
+
+
+def test_quarter_hour_file_keeps_each_reading_in_its_own_slot():
+    values = [round(0.01 * (slot + 1), 2) for slot in range(96)]
+
+    results = _import_rows(_quarter_rows("2025-01-01", values))
+
+    assert list(results["usage_15min"]) == ["2025-01-01"]
+    assert results["usage_15min"]["2025-01-01"] == values
+    assert results["statistics"]["resolution_minutes"] == 15
+    assert results["statistics"]["records_count"] == 96
+    assert results["statistics"]["has_missing_data"] is False
+    assert results["tariffs"]["G11"]["total_usage_kwh"] == round(sum(values), 2)
+
+
+def test_hourly_file_is_still_split_into_four_quarters():
+    rows = [(f"2025-01-01 {hour}:00", 2.0) for hour in range(1, 25)]
+
+    results = _import_rows(rows)
+
+    assert results["usage_15min"]["2025-01-01"] == [0.5] * 96
+    assert results["statistics"]["resolution_minutes"] == 60
+    assert results["statistics"]["records_count"] == 24
+    assert results["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+
+
+def test_quarter_hour_file_in_meter_format_with_midnight_24():
+    rows = [("01.01.2025 23:45", 1.0), ("01.01.2025 24:00", 2.0)]
+
+    results = _import_rows(rows, header=METER_HEADER)
+
+    day = results["usage_15min"]["2025-01-01"]
+    assert day[94] == 1.0 and day[95] == 2.0
+    assert results["statistics"]["resolution_minutes"] == 15
+
+
+@pytest.mark.parametrize(
+    "rows, expected",
+    [
+        ([("2025-01-01 01:00", 1), ("2025-01-01 05:00", 1), ("2025-01-03 01:00", 1)], 60),
+        ([("2025-01-01 00:15", 1), ("2025-01-01 03:00", 1), ("2025-01-01 03:15", 1)], 15),
+        ([("2025-10-26 02:00", 1), ("2025-10-26 02:00", 1), ("2025-10-26 03:00", 1)], 60),
+        ([("2025-01-01 01:00", 1)], 60),
+    ],
+    ids=["godzinowy-z-lukami", "kwadransowy-z-lukami", "zmiana-czasu", "jeden-odczyt"],
+)
+def test_resolution_detection(rows, expected):
+    assert _import_rows(rows)["statistics"]["resolution_minutes"] == expected
+
+
+def test_resolution_detection_handles_imprecise_excel_times():
+    rows = [(f"{45658 + hour / 24}", 1.0) for hour in range(1, 4)]
+
+    results = _import_rows(rows, header=METER_HEADER)
+
+    assert results["statistics"]["resolution_minutes"] == 60
+    assert results["usage_15min"]["2025-01-01"][:12] == [0.25] * 12
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [("2025-01-01 00:30", 1), ("2025-01-01 01:00", 1), ("2025-01-01 01:30", 1)],
+        [("2025-01-01 01:00", 1), ("2025-01-01 02:30", 1)],
+    ],
+    ids=["co-30-min", "nieregularne"],
+)
+def test_unsupported_resolution_raises_422(rows):
+    with pytest.raises(HTTPException) as exc_info:
+        _import_rows(rows)
+
+    assert exc_info.value.status_code == 422
+    assert "Nieobsługiwana rozdzielczość" in exc_info.value.detail
+
+
+def test_range_on_quarter_hour_file_counts_quarter_records():
+    rows = _quarter_rows("2025-01-01", [0.25] * 96) + _quarter_rows("2025-01-02", [0.5] * 96)
+    results = _import_rows(rows)
+
+    ranged = CalculationService.calculate_for_range(results, date(2025, 1, 2), date(2025, 1, 2))
+
+    assert ranged["statistics"]["resolution_minutes"] == 15
+    assert ranged["statistics"]["records_count"] == 96
+    assert ranged["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+
+
+def test_range_on_results_without_resolution_assumes_hourly():
+    results = _results_for_days()
+    del results["statistics"]["resolution_minutes"]
+
+    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 1), date(2024, 5, 1))
+
+    assert ranged["statistics"]["records_count"] == 24
+    assert ranged["statistics"]["resolution_minutes"] == 60
+
+
+def test_summary_of_mixed_resolutions_has_no_records_count():
+    usage = {"2025-01-01": [0.25] * 96}
+
+    summary = CalculationService.summarize_usage(usage, {"G11": {"type": "stala", "prices": [1.0] * 96}}, None)
+
+    assert summary["statistics"]["records_count"] is None
+    assert summary["statistics"]["resolution_minutes"] is None
+
+
+DEVICES_DEMO_FILE = Path(__file__).parent / "fixtures" / "devices_demo_30d.json"
+
+
+def _devices_demo_results():
+    with DEVICES_DEMO_FILE.open("rb") as handle:
+        return CalculationService(_get_mock_repository()).calculate_all_tariffs(handle)
+
+
+def test_devices_file_counts_actions_as_records():
+    results = _devices_demo_results()
+
+    actions_count = results["import_report"]["rows_imported"]
+    assert results["statistics"]["records_count"] == actions_count
+    assert results["statistics"]["data_source"] == "devices"
+    assert sum(results["actions_per_day"].values()) == actions_count
+    assert "actions_per_day" not in public_results(results)
+
+
+def test_devices_file_range_counts_actions_of_selected_days():
+    results = _devices_demo_results()
+    day = date(2026, 10, 25)
+
+    in_range = CalculationService.calculate_for_range(results, day, day)
+
+    assert in_range["statistics"]["records_count"] == results["actions_per_day"]["2026-10-25"]
+    assert in_range["statistics"]["data_source"] == "devices"
+
+
+def test_meter_file_counts_readings_as_records():
+    results = _results_for_days()
+
+    assert results["statistics"]["data_source"] == "meter"
+    assert "actions_per_day" not in results
+
+
+def _device_file(usage, devices, slots=(), actions=(), actions_per_day=None):
+    return {"usage_15min": usage, "devices": set(devices), "slots": list(slots), "actions": list(actions),
+            "actions_per_day": actions_per_day or {}}
+
+
+def _merge_devices(*files):
+    covering = CalculationService.device_coverage([file["usage_15min"] for file in files])
+    return CalculationService.merge_device_usage(list(files), covering)
+
+
+def test_merge_device_usage_sums_different_devices():
+    day = {"2026-01-05": _day(0.0)}
+    kitchen = _device_file(day, {"kitchen"}, [("kitchen", "2026-01-05", 40, 1.0)], [("kitchen", "2026-01-05", 40)])
+    garage = _device_file(day, {"garage"}, [("garage", "2026-01-05", 40, 2.0)], [("garage", "2026-01-05", 40)])
+
+    usage, actions, contributions = _merge_devices(kitchen, garage)
+
+    assert usage["2026-01-05"][40] == 3.0
+    assert actions == {"2026-01-05": 2}
+    assert contributions == [{"days_used": 1, "slots_used": 96}, {"days_used": 1, "slots_used": 96}]
+
+
+def test_merge_device_usage_newer_file_wins_only_where_it_has_the_device_and_the_slot():
+    whole_day = _device_file(
+        {"2026-01-05": _day(0.0)}, {"dev"},
+        [("dev", "2026-01-05", 36, 1.0), ("dev", "2026-01-05", 60, 1.0)],
+        [("dev", "2026-01-05", 36), ("dev", "2026-01-05", 60)],
+    )
+    afternoon = _device_file(
+        {"2026-01-05": _day(0.0, slots=range(48, 96))}, {"dev"},
+        [("dev", "2026-01-05", 60, 0.5)], [("dev", "2026-01-05", 60)],
+    )
+
+    usage, actions, contributions = _merge_devices(whole_day, afternoon)
+
+    assert sum(usage["2026-01-05"]) == 1.5
+    assert actions == {"2026-01-05": 2}
+    assert [item["slots_used"] for item in contributions] == [48, 48]
+
+
+def test_merge_device_usage_takes_days_without_overlap_straight_from_files():
+    january = _device_file({"2026-01-05": _day(0.25)}, {"dev"}, actions_per_day={"2026-01-05": 3})
+    february = _device_file({"2026-02-05": _day(0.5)}, {"dev"}, actions_per_day={"2026-02-05": 4})
+
+    covering = CalculationService.device_coverage([january["usage_15min"], february["usage_15min"]])
+    assert CalculationService.overlap_days(covering) == set()
+    usage, actions, _ = _merge_devices(january, february)
+
+    assert usage == {"2026-01-05": _day(0.25), "2026-02-05": _day(0.5)}
+    assert actions == {"2026-01-05": 3, "2026-02-05": 4}
