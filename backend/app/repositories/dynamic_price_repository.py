@@ -1,11 +1,12 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Sequence
-
 from sqlalchemy import func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.models.RcePriceObservation import RcePriceObservation
+from app.models.RcEmPriceObservation import RcEmPriceObservation
 from app.models.DynamicPriceObservation import DynamicPriceObservation
 from app.providers.prices.base import PricePoint
 
@@ -31,42 +32,53 @@ class DynamicPriceRepository:
             }
             for p in points
         ]
-        stmt = insert(DynamicPriceObservation).values(rows)
-        stmt = stmt.on_conflict_do_update(
+        rce_stmt = insert(RcePriceObservation).values(rows)
+        rce_stmt = rce_stmt.on_conflict_do_update(
+            constraint="uq_rce_price_source_interval",
+            set_={
+                "interval_minutes": rce_stmt.excluded.interval_minutes,
+                "business_date": rce_stmt.excluded.business_date,
+                "price_pln_mwh": rce_stmt.excluded.price_pln_mwh,
+                "updated_at": func.now(),
+            },
+        )
+        legacy_stmt = insert(DynamicPriceObservation).values(rows)
+        legacy_stmt = legacy_stmt.on_conflict_do_update(
             constraint="uq_dynamic_price_source_interval",
             set_={
-                "interval_minutes": stmt.excluded.interval_minutes,
-                "business_date": stmt.excluded.business_date,
-                "price_pln_mwh": stmt.excluded.price_pln_mwh,
+                "interval_minutes": legacy_stmt.excluded.interval_minutes,
+                "business_date": legacy_stmt.excluded.business_date,
+                "price_pln_mwh": legacy_stmt.excluded.price_pln_mwh,
                 "updated_at": func.now(),
             },
         )
         try:
-            self.db.execute(stmt)
+            self.db.execute(rce_stmt)
+            self.db.execute(legacy_stmt)
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise
         return len(rows)
 
-    def get_for_business_date(self, source: str, business_date: date) -> list[DynamicPriceObservation]:
+    def get_for_business_date(self, source: str, business_date: date) -> list[RcePriceObservation]:
         return (
-            self.db.query(DynamicPriceObservation)
+            self.db.query(RcePriceObservation)
             .filter(
-                DynamicPriceObservation.source == source,
-                DynamicPriceObservation.business_date == business_date,
+                RcePriceObservation.source == source,
+                RcePriceObservation.business_date == business_date,
             )
-            .order_by(DynamicPriceObservation.interval_start)
+            .order_by(RcePriceObservation.interval_start)
             .all()
         )
 
     def get_prices_between(self, source: str, start_utc: datetime, end_utc: datetime) -> dict[datetime, Decimal]:
         rows = (
-            self.db.query(DynamicPriceObservation.interval_start, DynamicPriceObservation.price_pln_mwh)
+            self.db.query(RcePriceObservation.interval_start, RcePriceObservation.price_pln_mwh)
             .filter(
-                DynamicPriceObservation.source == source,
-                DynamicPriceObservation.interval_start >= start_utc,
-                DynamicPriceObservation.interval_start < end_utc,
+                RcePriceObservation.source == source,
+                RcePriceObservation.interval_start >= start_utc,
+                RcePriceObservation.interval_start < end_utc,
             )
             .all()
         )
@@ -74,13 +86,13 @@ class DynamicPriceRepository:
 
     def count_by_business_date(self, source: str, date_from: date, date_to: date) -> dict[date, int]:
         rows = (
-            self.db.query(DynamicPriceObservation.business_date, func.count(DynamicPriceObservation.id))
+            self.db.query(RcePriceObservation.business_date, func.count(RcePriceObservation.id))
             .filter(
-                DynamicPriceObservation.source == source,
-                DynamicPriceObservation.business_date >= date_from,
-                DynamicPriceObservation.business_date <= date_to,
+                RcePriceObservation.source == source,
+                RcePriceObservation.business_date >= date_from,
+                RcePriceObservation.business_date <= date_to,
             )
-            .group_by(DynamicPriceObservation.business_date)
+            .group_by(RcePriceObservation.business_date)
             .all()
         )
         return {business_date: count for business_date, count in rows}
@@ -88,11 +100,11 @@ class DynamicPriceRepository:
     def get_available_range(self, source: str) -> tuple[date | None, date | None, datetime | None]:
         return (
             self.db.query(
-                func.min(DynamicPriceObservation.business_date),
-                func.max(DynamicPriceObservation.business_date),
-                func.max(DynamicPriceObservation.updated_at),
+                func.min(RcePriceObservation.business_date),
+                func.max(RcePriceObservation.business_date),
+                func.max(RcePriceObservation.updated_at),
             )
-            .filter(DynamicPriceObservation.source == source)
+            .filter(RcePriceObservation.source == source)
             .one()
         )
 
@@ -100,9 +112,9 @@ class DynamicPriceRepository:
         return (
             self._in_range(
                 self.db.query(
-                    func.avg(DynamicPriceObservation.price_pln_mwh),
-                    func.min(DynamicPriceObservation.price_pln_mwh),
-                    func.max(DynamicPriceObservation.price_pln_mwh),
+                            func.avg(RcePriceObservation.price_pln_mwh),
+                            func.min(RcePriceObservation.price_pln_mwh),
+                            func.max(RcePriceObservation.price_pln_mwh),
                 ),
                 source, date_from, date_to,
             )
@@ -113,21 +125,21 @@ class DynamicPriceRepository:
         return (
             self._in_range(
                 self.db.query(
-                    DynamicPriceObservation.interval_start,
-                    DynamicPriceObservation.price_pln_mwh,
+                    RcePriceObservation.interval_start,
+                    RcePriceObservation.price_pln_mwh,
                     literal(1),
                 ),
                 source, date_from, date_to,
             )
-            .order_by(DynamicPriceObservation.interval_start)
+            .order_by(RcePriceObservation.interval_start)
             .all()
         )
 
     def get_hourly_averages(self, source: str, date_from: date, date_to: date) -> list[tuple[datetime, Decimal, int]]:
-        hour = func.date_trunc("hour", DynamicPriceObservation.interval_start, "UTC")
+        hour = func.date_trunc("hour", RcePriceObservation.interval_start, "UTC")
         return (
             self._in_range(
-                self.db.query(hour, func.avg(DynamicPriceObservation.price_pln_mwh), func.count(DynamicPriceObservation.id)),
+                self.db.query(hour, func.avg(RcePriceObservation.price_pln_mwh), func.count(RcePriceObservation.id)),
                 source, date_from, date_to,
             )
             .group_by(hour)
@@ -139,21 +151,47 @@ class DynamicPriceRepository:
         return (
             self._in_range(
                 self.db.query(
-                    DynamicPriceObservation.business_date,
-                    func.avg(DynamicPriceObservation.price_pln_mwh),
-                    func.count(DynamicPriceObservation.id),
+                    RcePriceObservation.business_date,
+                    func.avg(RcePriceObservation.price_pln_mwh),
+                    func.count(RcePriceObservation.id),
                 ),
                 source, date_from, date_to,
             )
-            .group_by(DynamicPriceObservation.business_date)
-            .order_by(DynamicPriceObservation.business_date)
+            .group_by(RcePriceObservation.business_date)
+            .order_by(RcePriceObservation.business_date)
             .all()
         )
 
     @staticmethod
     def _in_range(query, source: str, date_from: date, date_to: date):
         return query.filter(
-            DynamicPriceObservation.source == source,
-            DynamicPriceObservation.business_date >= date_from,
-            DynamicPriceObservation.business_date <= date_to,
+            RcePriceObservation.source == source,
+            RcePriceObservation.business_date >= date_from,
+            RcePriceObservation.business_date <= date_to,
+        )
+
+    def upsert_rcem_many(self, rows: Sequence[dict]) -> int:
+        if not rows:
+            return 0
+        stmt = insert(RcEmPriceObservation).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_rcem_price_source_month",
+            set_={
+                "price_pln_mwh": stmt.excluded.price_pln_mwh,
+                "published_at": stmt.excluded.published_at,
+                "updated_at": func.now(),
+            },
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+        return len(rows)
+
+    def get_rcem_price(self, source: str, price_month: date) -> Decimal | None:
+        return (
+            self.db.query(RcEmPriceObservation.price_pln_mwh)
+            .filter(
+                RcEmPriceObservation.source == source,
+                RcEmPriceObservation.price_month == price_month.replace(day=1),
+            )
+            .scalar()
         )

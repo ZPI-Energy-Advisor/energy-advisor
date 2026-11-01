@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
@@ -6,6 +6,7 @@ from fastapi import HTTPException, UploadFile
 from app.models.EnergyDataFile import EnergyDataFile
 from app.schemas.user_profile import UserProfile
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
+from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository
 from app.services.calculation_service import CalculationService, public_results
@@ -19,10 +20,12 @@ class UploadService:
         simulation_repository: SimulationRepository,
         energy_file_repository: EnergyDataFileRepository,
         user_repository: UserRepository,
+        energy_reading_repository: EnergyReadingRepository | None = None,
     ):
         self.calculation_service = calculation_service
         self.simulation_repository = simulation_repository
         self.energy_file_repository = energy_file_repository
+        self.energy_reading_repository = energy_reading_repository
         self.user_repository = user_repository
 
     def process_upload(self, file: UploadFile, user_id: UUID):
@@ -37,6 +40,11 @@ class UploadService:
 
         try:
             simulation_results = self.calculation_service.calculate_all_tariffs(file.file)
+            if self.energy_reading_repository is not None:
+                self.energy_reading_repository.replace_for_file(
+                    energy_file.id,
+                    self._readings_from_usage(simulation_results.get("energy_readings_15min")),
+                )
         except HTTPException as exc:
             self._mark_failed(energy_file, str(exc.detail))
             raise
@@ -67,9 +75,26 @@ class UploadService:
         }
 
     def _mark_failed(self, energy_file: EnergyDataFile, message: str):
+        self.energy_file_repository.db.rollback()
         energy_file.status = EnergyDataFile.STATUS_FAILED
         energy_file.error_message = message
         self.energy_file_repository.save(energy_file)
+
+    @staticmethod
+    def _readings_from_usage(usage: dict | None) -> list[tuple[datetime, float]]:
+        if not isinstance(usage, dict):
+            raise ValueError("Wynik kalkulacji nie zawiera serii zużycia energii.")
+
+        readings = []
+        for day, slots in usage.items():
+            day_start = datetime.combine(date.fromisoformat(day), datetime.min.time())
+            for slot, energy_kwh in enumerate(slots):
+                if energy_kwh is not None:
+                    readings.append((
+                        day_start + timedelta(minutes=slot * 15),
+                        float(energy_kwh),
+                    ))
+        return readings
 
     @staticmethod
     def _parse_date(value):

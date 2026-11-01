@@ -20,7 +20,7 @@ EXCEL_SERIAL_DATE = r'^\d+(?:\.\d+)?$'
 MIDNIGHT_24 = r'(?<=\s)24:00(?=(?::00)?$)'
 
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
-INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
+INTERNAL_RESULT_KEYS = ("usage_15min", "energy_readings_15min", "slot_prices")
 
 
 def public_results(results: dict | None) -> dict | None:
@@ -30,7 +30,7 @@ def public_results(results: dict | None) -> dict | None:
 
 
 def has_usage_series(results: dict) -> bool:
-    return all(key in results for key in INTERNAL_RESULT_KEYS)
+    return all(key in results for key in ("usage_15min", "slot_prices"))
 
 
 class CalculationService:
@@ -82,9 +82,15 @@ class CalculationService:
         df['Wartość kWh'] = pd.to_numeric(df['Wartość kWh'], errors='coerce')
         df = df.dropna(subset=['Wartość kWh'])
 
-        df = df[df['Rodzaj'].str.contains('pobór|pobor|pobrana', na=False)].copy()
+        energy_type = df['Rodzaj']
+        consumption_mask = energy_type.str.contains(
+            'pobór|pobor|pobrana|odebrana|odebrany',
+            na=False,
+        )
+        export_mask = energy_type.str.contains('oddanie|oddana', na=False)
+        df = df[consumption_mask | export_mask].copy()
 
-        if df.empty:
+        if not consumption_mask.any():
             raise HTTPException(status_code=400, detail="Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste.")
 
         # Odczyt "24:00" to koniec doby - parsujemy go jako 00:00 i przesuwamy na następny dzień.
@@ -105,6 +111,26 @@ class CalculationService:
 
         df_15min = df.loc[df.index.repeat(4)].reset_index(drop=True)
         df_15min['Wartość kWh'] = df_15min['Wartość kWh'] / 4.0
+        df_15min.loc[
+            df_15min['Rodzaj'].str.contains(
+                'pobór|pobor|pobrana|odebrana|odebrany',
+                na=False,
+            ),
+            'Wartość kWh',
+        ] = df_15min.loc[
+            df_15min['Rodzaj'].str.contains(
+                'pobór|pobor|pobrana|odebrana|odebrany',
+                na=False,
+            ),
+            'Wartość kWh',
+        ].abs()
+        df_15min.loc[
+            df_15min['Rodzaj'].str.contains('oddanie|oddana', na=False),
+            'Wartość kWh',
+        ] = -df_15min.loc[
+            df_15min['Rodzaj'].str.contains('oddanie|oddana', na=False),
+            'Wartość kWh',
+        ].abs()
 
         base_timestamps = df_15min['Data']
 
@@ -115,7 +141,14 @@ class CalculationService:
         if not tariffs:
             raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
 
-        usage = self._build_usage_series(df_15min)
+        consumption_15min = df_15min[
+            df_15min['Rodzaj'].str.contains(
+                'pobór|pobor|pobrana|odebrana|odebrany',
+                na=False,
+            )
+        ]
+        usage = self._build_usage_series(consumption_15min)
+        energy_readings = self._build_usage_series(df_15min)
         days = [date.fromisoformat(day) for day in usage]
 
         # Ceny zapisujemy razem z wynikami, żeby przeliczenie zakresu dawało te same
@@ -128,6 +161,7 @@ class CalculationService:
         results_dict = self.summarize_usage(usage, slot_prices)
         results_dict["statistics"]["records_count"] = int(len(df))
         results_dict["usage_15min"] = usage
+        results_dict["energy_readings_15min"] = energy_readings
         results_dict["slot_prices"] = slot_prices
         return results_dict
 

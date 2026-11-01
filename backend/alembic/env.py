@@ -19,8 +19,11 @@ from app.models.Simulation import Simulation  # noqa: F401
 from app.models.Tariff import Tariff  # noqa: F401
 from app.models.TariffRate import TariffRate  # noqa: F401
 from app.models.DynamicPriceObservation import DynamicPriceObservation  # noqa: F401
+from app.models.RcePriceObservation import RcePriceObservation  # noqa: F401
+from app.models.RcEmPriceObservation import RcEmPriceObservation  # noqa: F401
 from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
 from app.models.UserProfile import UserProfile  # noqa: F401
+from app.models.EnergyReading import EnergyReading  # noqa: F401
 from app.models.NewModels import RegulatoryPeriod, CapacityFeeThreshold, TransitionFeeThreshold, TariffDefinition, OsdVariableNetworkRate, OsdSubscriptionFee, SupplierUreRate
 
 

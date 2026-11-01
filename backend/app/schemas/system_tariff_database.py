@@ -1,21 +1,13 @@
 from datetime import date
-from enum import Enum
 from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.other import DistributionOperatorEnum
 from app.schemas.user_profile import BillingCycleEnum, PricePerKwh
 
 
 
 FeePerMonth = Annotated[float, Field(ge=0, le=1000.0, description="Stawka stała w zł/miesiąc")]
-
-
-class OsdOperatorEnum(str, Enum):
-    TAURON = "Tauron Dystrybucja"
-    PGE = "PGE Dystrybucja"
-    ENEA = "Enea Operator"
-    ENERGA = "Energa-Operator"
-    STOEN = "Stoen Operator"
 
 
 # ==========================================
@@ -134,7 +126,7 @@ class SystemTariffDatabase(BaseModel):
     """
     model_config = ConfigDict(from_attributes=True)
 
-    osd_operator: OsdOperatorEnum
+    osd_operator: DistributionOperatorEnum
     tariff_code: str = Field(description="np. G11, G12, G12w, G14d")
     number_of_zones: int = Field(ge=1, le=4)
 

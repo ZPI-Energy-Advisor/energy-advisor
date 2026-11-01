@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from pydantic import ValidationError
 
 from app.repositories.user_repository import UserRepository
 from app.schemas.user_profile import UserProfile
@@ -12,25 +11,25 @@ from app.services.upload_service import UploadService
 
 def valid_profile(**overrides):
     profile = {
-        "connection": {
+        "base_info": {
+            "type_of_property": "single_family_house",
+            "year_of_construction": 2000,
+            "heating_area_m2": 120,
+            "number_of_residents": 3,
+            "town": "Krakow",
             "postal_code": "30-001",
+            "distribution_operator": "PGE Dystrybucja",
             "phase_type": "3_phase",
+            "contracted_power_kw": 12,
             "billing_cycle": 2,
+            "billing_period_start_date": "2026-01-01",
         },
-        "consumption": {
+        "consumption_and_tariff": {
             "tariff_type": "G12",
-            "annual_imported_kwh_per_zone": [1200, 800],
         },
         "pv_config": {
             "mode": "net_metering",
             "power_of_pv_kwp": 6,
-            "annual_exported_energy_per_zone_kwh": [500, 300],
-        },
-        "commercial_offer": {
-            "price_per_zone_kwh": [0.7, 0.35],
-            "monthly_commercial_fee_pln": 10,
-            "contract_duration_months": 24,
-            "early_exit_penalty_pln": 100,
         },
     }
     profile.update(overrides)
@@ -41,46 +40,24 @@ def test_profile_accepts_all_sections_and_serializes_computed_values():
     profile = valid_profile()
     data = profile.model_dump(mode="json")
 
-    assert data["connection"]["postal_code"] == "30-001"
-    assert data["consumption"]["total_annual_kwh"] == 2000
+    assert data["base_info"]["postal_code"] == "30-001"
+    assert data["consumption_and_tariff"]["tariff_type"] == "G12"
     assert data["pv_config"]["effective_k_factor"] == 0.8
+    assert "custom_k_factor" not in data["pv_config"]
 
 
 @pytest.mark.parametrize(
-    ("tariff", "zone_count"),
-    [("G11", 1), ("G12", 2), ("G12w", 2), ("G13", 3), ("G13s", 3), ("G14d", 4)],
+    "tariff",
+    ["G11", "G12", "G12w", "G13", "G13s", "G14d"],
 )
-def test_profile_requires_tariff_zone_count(tariff, zone_count):
+def test_profile_accepts_tariff_without_zone_consumption(tariff):
     profile = valid_profile(
-        consumption={
+        consumption_and_tariff={
             "tariff_type": tariff,
-            "annual_imported_kwh_per_zone": [100] * zone_count,
         },
         pv_config={"mode": "none"},
-        commercial_offer=None,
     )
-    assert profile.consumption.tariff_type.value == tariff
-
-
-def test_profile_rejects_wrong_zone_counts():
-    with pytest.raises(ValidationError, match="wymaga"):
-        valid_profile(
-            consumption={
-                "tariff_type": "G12",
-                "annual_imported_kwh_per_zone": [100],
-            }
-        )
-
-
-def test_profile_rejects_dependent_zone_count():
-    with pytest.raises(ValidationError, match="stref eksportu"):
-        valid_profile(
-            pv_config={
-                "mode": "net_metering",
-                "power_of_pv_kwp": 6,
-                "annual_exported_energy_per_zone_kwh": [100],
-            }
-        )
+    assert profile.consumption_and_tariff.tariff_type.value == tariff
 
 
 def test_repository_create_profile_serializes_jsonb_values():
@@ -95,8 +72,8 @@ def test_repository_create_profile_serializes_jsonb_values():
     db.commit.assert_called_once()
     db.refresh.assert_called_once_with(created)
     assert created.user_id == user_id
-    assert created.connection["postal_code"] == "30-001"
-    assert created.consumption["tariff_type"] == "G12"
+    assert created.base_info["postal_code"] == "30-001"
+    assert created.consumption_and_tariff["tariff_type"] == "G12"
 
 
 def test_repository_update_profile_updates_every_jsonb_section():
@@ -108,9 +85,9 @@ def test_repository_update_profile_updates_every_jsonb_section():
     updated = repository.update_profile(uuid4(), valid_profile())
 
     assert updated is existing
-    assert existing.connection["postal_code"] == "30-001"
+    assert existing.base_info["postal_code"] == "30-001"
     assert existing.pv_config["mode"] == "net_metering"
-    assert existing.commercial_offer["contract_duration_months"] == 24
+    assert existing.consumption_and_tariff["tariff_type"] == "G12"
     db.commit.assert_called_once()
 
 

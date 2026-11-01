@@ -11,12 +11,15 @@ from app.models.User import User
 from app.database import get_db
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
+from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.tariff_service import TariffService
 from app.services.calculation_service import CalculationService
+from app.services.new_calculations_service import CalculationsService
+from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
 from app.services.price_sync_service import PriceSyncService
@@ -73,6 +76,34 @@ def get_calculation_service(
     return CalculationService(tariff_repository, pricing_strategies=strategies)
 
 
+def get_tariff_definition_repository(db: Session = Depends(get_db)) -> TariffDefinitionRepository:
+    return TariffDefinitionRepository(db)
+
+
+def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:
+    return EnergyDataFileRepository(db)
+
+
+def get_energy_reading_repository(db: Session = Depends(get_db)) -> EnergyReadingRepository:
+    return EnergyReadingRepository(db)
+
+
+def get_new_calculations_service(
+    user_repository: UserRepository = Depends(get_user_repository),
+    energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
+    energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
+    tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> CalculationsService:
+    return CalculationsService(
+        user_repository=user_repository,
+        energy_file_repository=energy_file_repository,
+        energy_reading_repository=energy_reading_repository,
+        tariff_repository=tariff_repository,
+        market_price_repository=dynamic_price_repository,
+    )
+
+
 def get_dynamic_price_service(
     repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
     tariff_repository: TariffRepository = Depends(get_tariff_repository),
@@ -108,10 +139,6 @@ def require_price_sync_admin_key(
         )
 
 
-def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:
-    return EnergyDataFileRepository(db)
-
-
 def get_energy_file_service(
     file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
@@ -124,12 +151,14 @@ def get_upload_service(
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
     energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     user_repository: UserRepository = Depends(get_user_repository),
+    energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
 ) -> UploadService:
     return UploadService(
         calculation_service=calculation_service,
         simulation_repository=simulation_repository,
         energy_file_repository=energy_file_repository,
         user_repository=user_repository,
+        energy_reading_repository=energy_reading_repository,
     )
 
 

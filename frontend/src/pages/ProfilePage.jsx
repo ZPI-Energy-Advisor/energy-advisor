@@ -1,16 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import apiClient from "../api/client";
 
-const tariffZones = { G11: 1, G12: 2, G12w: 2, G13: 3, G13s: 3, G14d: 4 };
-const tariffTypes = Object.keys(tariffZones);
-const makeZones = (count, value = "") => Array.from({ length: count }, () => value);
-const numberOrNull = (value) => (value === "" ? null : Number(value));
+const tariffTypes = ["G11", "G12", "G12w", "G13", "G13s", "G14d", "dynamic"];
 
 const createEmptyProfile = () => ({
-  connection: { postal_code: "", phase_type: "3_phase", billing_cycle: 2 },
-  consumption: { tariff_type: "G11", annual_imported_kwh_per_zone: makeZones(1) },
+  base_info: {
+    type_of_property: "single_family_house",
+    year_of_construction: "",
+    heating_area_m2: "",
+    number_of_residents: "",
+    town: "",
+    postal_code: "",
+    distribution_operator: "PGE",
+    phase_type: "3_phase",
+    contracted_power_kw: "",
+    billing_cycle: 2,
+    billing_period_start_date: "",
+  },
+  consumption_and_tariff: {
+    tariff_type: "G11",
+  },
   pv_config: { mode: "none" },
-  commercial_offer: null,
 });
 
 function Field({ label, children }) {
@@ -27,21 +37,15 @@ const inputClass =
 
 function ProfilePage() {
   const [profile, setProfile] = useState(createEmptyProfile);
-  const [hasCommercialOffer, setHasCommercialOffer] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
-  const zoneCount = useMemo(
-    () => tariffZones[profile.consumption.tariff_type],
-    [profile.consumption.tariff_type],
-  );
 
   useEffect(() => {
     apiClient.get("/upload/profile")
       .then(({ data }) => {
         setProfile(data);
-        setHasCommercialOffer(Boolean(data.commercial_offer));
       })
       .catch((err) => {
         if (err.response?.status !== 404) {
@@ -60,34 +64,14 @@ function ProfilePage() {
     setSuccessMessage(null);
   };
 
-  const updateZone = (index, value) => {
-    setProfile((current) => {
-      const values = [...current.consumption.annual_imported_kwh_per_zone];
-      values[index] = value;
-      return { ...current, consumption: { ...current.consumption, annual_imported_kwh_per_zone: values } };
-    });
-  };
-
   const handleTariffChange = (event) => {
     const tariffType = event.target.value;
-    const nextZoneCount = tariffZones[tariffType];
     setProfile((current) => ({
       ...current,
-      consumption: {
-        ...current.consumption,
+      consumption_and_tariff: {
+        ...current.consumption_and_tariff,
         tariff_type: tariffType,
-        annual_imported_kwh_per_zone: current.consumption.annual_imported_kwh_per_zone
-          .slice(0, nextZoneCount)
-          .concat(makeZones(Math.max(0, nextZoneCount - current.consumption.annual_imported_kwh_per_zone.length))),
       },
-      pv_config: current.pv_config.mode === "net_metering"
-        ? {
-            ...current.pv_config,
-            annual_exported_energy_per_zone_kwh: current.pv_config.annual_exported_energy_per_zone_kwh
-              .slice(0, nextZoneCount)
-              .concat(makeZones(Math.max(0, nextZoneCount - current.pv_config.annual_exported_energy_per_zone_kwh.length))),
-          }
-        : current.pv_config,
     }));
   };
 
@@ -98,8 +82,8 @@ function ProfilePage() {
       pv_config: mode === "none"
         ? { mode }
         : mode === "net_billing"
-          ? { mode, annual_exported_energy_kwh: "", self_consumed_energy_kwh: "0", custom_buyback_price_per_kwh: null }
-          : { mode, power_of_pv_kwp: "", annual_exported_energy_per_zone_kwh: makeZones(zoneCount), custom_k_factor: null },
+          ? { mode, type_of_price: "RCEm" }
+          : { mode, power_of_pv_kwp: "" },
     }));
   };
 
@@ -108,37 +92,26 @@ function ProfilePage() {
     setIsSaving(true);
     setError(null);
     setSuccessMessage(null);
-    const { connection, consumption, pv_config, commercial_offer } = profile;
+    const { base_info, consumption_and_tariff, pv_config } = profile;
     const profileData = {
-      connection,
-      consumption: {
-        ...consumption,
-        annual_imported_kwh_per_zone: consumption.annual_imported_kwh_per_zone.map((value) => Number(value)),
+      base_info: {
+        ...base_info,
+        year_of_construction: Number(base_info.year_of_construction),
+        heating_area_m2: Number(base_info.heating_area_m2),
+        number_of_residents: Number(base_info.number_of_residents),
+        contracted_power_kw: Number(base_info.contracted_power_kw),
+      },
+      consumption_and_tariff: {
+        ...consumption_and_tariff,
       },
       pv_config: pv_config.mode === "none"
         ? { mode: "none" }
         : pv_config.mode === "net_billing"
-          ? {
-              mode: "net_billing",
-              annual_exported_energy_kwh: Number(pv_config.annual_exported_energy_kwh),
-              self_consumed_energy_kwh: Number(pv_config.self_consumed_energy_kwh),
-              custom_buyback_price_per_kwh: numberOrNull(pv_config.custom_buyback_price_per_kwh),
-            }
+          ? { mode: "net_billing", type_of_price: pv_config.type_of_price }
           : {
               mode: "net_metering",
               power_of_pv_kwp: Number(pv_config.power_of_pv_kwp),
-              annual_exported_energy_per_zone_kwh: pv_config.annual_exported_energy_per_zone_kwh.map((value) => Number(value)),
-              custom_k_factor: numberOrNull(pv_config.custom_k_factor),
             },
-      commercial_offer: hasCommercialOffer
-        ? {
-            ...commercial_offer,
-            price_per_zone_kwh: commercial_offer.price_per_zone_kwh.map(Number),
-            monthly_commercial_fee_pln: Number(commercial_offer.monthly_commercial_fee_pln),
-            contract_duration_months: Number(commercial_offer.contract_duration_months),
-            early_exit_penalty_pln: Number(commercial_offer.early_exit_penalty_pln),
-          }
-        : null,
     };
     try {
       const response = await apiClient.post("/upload/profile", profileData);
@@ -151,18 +124,8 @@ function ProfilePage() {
     }
   };
 
-  const enableCommercialOffer = (enabled) => {
-    setHasCommercialOffer(enabled);
-    setProfile((current) => ({
-      ...current,
-      commercial_offer: enabled
-        ? { price_per_zone_kwh: makeZones(zoneCount), monthly_commercial_fee_pln: "0", contract_duration_months: "24", early_exit_penalty_pln: "0" }
-        : null,
-    }));
-  };
-
   if (isLoading) return <div className="mx-auto max-w-5xl text-gray-500">Ładowanie profilu...</div>;
-  const { connection, consumption, pv_config, commercial_offer } = profile;
+  const { base_info, consumption_and_tariff, pv_config } = profile;
 
   return (
     <div className="mx-auto max-w-5xl pb-12">
@@ -171,22 +134,34 @@ function ProfilePage() {
       {successMessage && <p className="mb-4 rounded bg-emerald-50 p-3 text-emerald-700">{successMessage}</p>}
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="grid gap-5 rounded-lg border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-3">
-          <Field label="Kod pocztowy"><input className={inputClass} value={connection.postal_code} onChange={(e) => updateSection("connection", "postal_code", e.target.value)} placeholder="00-000" required /></Field>
-          <Field label="Faza"><select className={inputClass} value={connection.phase_type} onChange={(e) => updateSection("connection", "phase_type", e.target.value)}><option value="1_phase">1 faza</option><option value="3_phase">3 fazy</option></select></Field>
-          <Field label="Cykl rozliczeniowy"><select className={inputClass} value={connection.billing_cycle} onChange={(e) => updateSection("connection", "billing_cycle", Number(e.target.value))}>{[1, 2, 6, 12].map((value) => <option key={value} value={value}>{value} {value === 1 ? "miesiąc" : "miesięcy"}</option>)}</select></Field>
+          <Field label="Typ nieruchomości">
+            <select className={inputClass} value={base_info.type_of_property} onChange={(e) => updateSection("base_info", "type_of_property", e.target.value)}>
+              <option value="apartment">Mieszkanie</option><option value="single_family_house">Dom jednorodzinny</option>
+              <option value="terrace_house">Dom szeregowy</option><option value="recreational_cottage">Domek letniskowy</option><option value="other">Inny</option>
+            </select>
+          </Field>
+          <Field label="Rok budowy"><input className={inputClass} type="number" min="1801" max="2027" value={base_info.year_of_construction} onChange={(e) => updateSection("base_info", "year_of_construction", e.target.value)} required /></Field>
+          <Field label="Powierzchnia ogrzewana (m²)"><input className={inputClass} type="number" min="0.01" max="10000" step="0.01" value={base_info.heating_area_m2} onChange={(e) => updateSection("base_info", "heating_area_m2", e.target.value)} required /></Field>
+          <Field label="Liczba mieszkańców"><input className={inputClass} type="number" min="1" value={base_info.number_of_residents} onChange={(e) => updateSection("base_info", "number_of_residents", e.target.value)} required /></Field>
+          <Field label="Miejscowość"><input className={inputClass} value={base_info.town} onChange={(e) => updateSection("base_info", "town", e.target.value)} required /></Field>
+          <Field label="Kod pocztowy"><input className={inputClass} value={base_info.postal_code} onChange={(e) => updateSection("base_info", "postal_code", e.target.value)} placeholder="00-000" required /></Field>
+          <Field label="Operator dystrybucyjny">
+            <select className={inputClass} value={base_info.distribution_operator} onChange={(e) => updateSection("base_info", "distribution_operator", e.target.value)}>
+              <option value="PGE">PGE Dystrybucja</option><option value="TAURON">TAURON Dystrybucja</option><option value="ENEA">Enea Operator</option><option value="ENERGA">Energa-Operator</option><option value="STOEN">Stoen Operator</option>
+            </select>
+          </Field>
+          <Field label="Faza"><select className={inputClass} value={base_info.phase_type} onChange={(e) => updateSection("base_info", "phase_type", e.target.value)}><option value="1_phase">1 faza</option><option value="3_phase">3 fazy</option></select></Field>
+          <Field label="Moc umowna (kW)"><input className={inputClass} type="number" min="0.01" max="10000" step="0.01" value={base_info.contracted_power_kw} onChange={(e) => updateSection("base_info", "contracted_power_kw", e.target.value)} required /></Field>
+          <Field label="Cykl rozliczeniowy"><select className={inputClass} value={base_info.billing_cycle} onChange={(e) => updateSection("base_info", "billing_cycle", Number(e.target.value))}>{[1, 2, 6, 12].map((value) => <option key={value} value={value}>{value} {value === 1 ? "miesiąc" : "miesięcy"}</option>)}</select></Field>
+          <Field label="Początek okresu rozliczeniowego"><input className={inputClass} type="date" value={base_info.billing_period_start_date} onChange={(e) => updateSection("base_info", "billing_period_start_date", e.target.value)} required /></Field>
         </section>
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <Field label="Taryfa"><select className={inputClass} value={consumption.tariff_type} onChange={handleTariffChange}>{tariffTypes.map((value) => <option key={value} value={value}>{value}</option>)}</select></Field>
-          <div className="mt-5 grid gap-5 md:grid-cols-2">{consumption.annual_imported_kwh_per_zone.map((value, index) => <Field key={index} label={`Roczne zużycie — strefa ${index + 1} (kWh)`}><input className={inputClass} type="number" min="0" step="0.01" value={value} onChange={(e) => updateZone(index, e.target.value)} required /></Field>)}</div>
+          <Field label="Taryfa"><select className={inputClass} value={consumption_and_tariff.tariff_type} onChange={handleTariffChange}>{tariffTypes.map((value) => <option key={value} value={value}>{value === "dynamic" ? "Dynamiczna" : value}</option>)}</select></Field>
         </section>
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <Field label="Fotowoltaika"><select className={inputClass} value={pv_config.mode} onChange={handlePvModeChange}><option value="none">Brak</option><option value="net_billing">Net-billing</option><option value="net_metering">Net-metering</option></select></Field>
-          {pv_config.mode === "net_billing" && <div className="mt-5 grid gap-5 md:grid-cols-3"><Field label="Eksport roczny (kWh)"><input className={inputClass} type="number" min="0" value={pv_config.annual_exported_energy_kwh} onChange={(e) => updateSection("pv_config", "annual_exported_energy_kwh", e.target.value)} required /></Field><Field label="Autokonsumpcja (kWh)"><input className={inputClass} type="number" min="0" value={pv_config.self_consumed_energy_kwh} onChange={(e) => updateSection("pv_config", "self_consumed_energy_kwh", e.target.value)} /></Field><Field label="Cena odkupu (zł/kWh)"><input className={inputClass} type="number" min="0" max="10" step="0.0001" value={pv_config.custom_buyback_price_per_kwh ?? ""} onChange={(e) => updateSection("pv_config", "custom_buyback_price_per_kwh", e.target.value)} /></Field></div>}
-          {pv_config.mode === "net_metering" && <div className="mt-5 grid gap-5 md:grid-cols-2"><Field label="Moc instalacji (kWp)"><input className={inputClass} type="number" min="0.01" max="50" step="0.01" value={pv_config.power_of_pv_kwp} onChange={(e) => updateSection("pv_config", "power_of_pv_kwp", e.target.value)} required /></Field>{pv_config.annual_exported_energy_per_zone_kwh.map((value, index) => <Field key={index} label={`Eksport — strefa ${index + 1} (kWh)`}><input className={inputClass} type="number" min="0" value={value} onChange={(e) => { const values = [...pv_config.annual_exported_energy_per_zone_kwh]; values[index] = e.target.value; updateSection("pv_config", "annual_exported_energy_per_zone_kwh", values); }} required /></Field>)}</div>}
-        </section>
-        <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><input type="checkbox" checked={hasCommercialOffer} onChange={(e) => enableCommercialOffer(e.target.checked)} /> Porównaj ofertę komercyjną</label>
-          {commercial_offer && <div className="mt-5 grid gap-5 md:grid-cols-2">{commercial_offer.price_per_zone_kwh.map((value, index) => <Field key={index} label={`Cena — strefa ${index + 1} (zł/kWh)`}><input className={inputClass} type="number" min="0" max="10" step="0.0001" value={value} onChange={(e) => { const values = [...commercial_offer.price_per_zone_kwh]; values[index] = e.target.value; updateSection("commercial_offer", "price_per_zone_kwh", values); }} required /></Field>)}<Field label="Opłata miesięczna (zł)"><input className={inputClass} type="number" min="0" value={commercial_offer.monthly_commercial_fee_pln} onChange={(e) => updateSection("commercial_offer", "monthly_commercial_fee_pln", e.target.value)} /></Field><Field label="Okres umowy (miesiące)"><input className={inputClass} type="number" min="1" max="36" value={commercial_offer.contract_duration_months} onChange={(e) => updateSection("commercial_offer", "contract_duration_months", e.target.value)} /></Field><Field label="Kara za wcześniejsze wyjście (zł)"><input className={inputClass} type="number" min="0" value={commercial_offer.early_exit_penalty_pln} onChange={(e) => updateSection("commercial_offer", "early_exit_penalty_pln", e.target.value)} /></Field></div>}
+          {pv_config.mode === "net_billing" && <Field label="Typ ceny energii"><select className={inputClass} value={pv_config.type_of_price} onChange={(e) => updateSection("pv_config", "type_of_price", e.target.value)}><option value="RCE">RCE</option><option value="RCEm">RCEm</option></select></Field>}
+          {pv_config.mode === "net_metering" && <div className="mt-5"><Field label="Moc instalacji (kWp)"><input className={inputClass} type="number" min="0.01" max="50" step="0.01" value={pv_config.power_of_pv_kwp} onChange={(e) => updateSection("pv_config", "power_of_pv_kwp", e.target.value)} required /></Field></div>}
         </section>
         <button className="rounded-md bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50" disabled={isSaving}>{isSaving ? "Zapisywanie..." : "Zapisz profil"}</button>
       </form>

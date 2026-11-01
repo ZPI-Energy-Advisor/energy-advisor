@@ -1,7 +1,5 @@
 from datetime import date
 from decimal import Decimal
-import enum
-
 from sqlalchemy import (
     CheckConstraint,
     Date,
@@ -15,49 +13,26 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
-
-# ==========================================
-# SŁOWNIKI
-# ==========================================
-
-class OsdOperatorEnum(str, enum.Enum):
-    TAURON = "TAURON"
-    PGE = "PGE"
-    ENEA = "ENEA"
-    ENERGA = "ENERGA"
-    STOEN = "STOEN"
+from app.schemas.other import DistributionOperatorEnum, TariffTypeEnum
 
 
-class TariffTypeEnum(str, enum.Enum):
-    G11 = "G11"
-    G12 = "G12"
-    G12W = "G12w"
-    G13 = "G13"
-    G13S = "G13s"
-    G14D = "G14d"
-
-
-# ==========================================
-# 1. OPŁATY OGÓLNOKRAJOWE (REGULACYJNE)
-# ==========================================
 
 class RegulatoryPeriod(Base):
-    """
-    Okres obowiązywania ogólnokrajowych stawek i progów (zazwyczaj rok kalendarzowy).
-    """
+    """Validity period for nationwide rates and thresholds, usually a calendar year."""
+
     __tablename__ = "regulatory_periods"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     valid_from: Mapped[date] = mapped_column(Date, nullable=False)
     valid_to: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # Stawki zmienne ogólnokrajowe (zł/kWh)
+    # Fixed fees per kWh (zł/kWh) for the period
     quality_fee_per_kwh: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
     renewable_energy_fee_per_kwh: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False, default=Decimal("0.0"))
     cogeneration_fee_per_kwh: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(4, 2), nullable=False, default=Decimal("0.23"))
 
-    # Relacje do progów ryczałtowych
+    # Relationships to capacity and transition fee thresholds for this regulatory period
     capacity_thresholds: Mapped[list["CapacityFeeThreshold"]] = relationship(
         back_populates="period", cascade="all, delete-orphan"
     )
@@ -67,7 +42,8 @@ class RegulatoryPeriod(Base):
 
 
 class CapacityFeeThreshold(Base):
-    """Progi opłaty mocowej (zł/miesiąc) przypisane do danego okresu regulacyjnego."""
+    """Thresholds for capacity fees (zł/month) assigned to a given regulatory period."""
+
     __tablename__ = "capacity_fee_thresholds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -81,7 +57,7 @@ class CapacityFeeThreshold(Base):
 
 
 class TransitionFeeThreshold(Base):
-    """Progi opłaty przejściowej (zł/miesiąc) przypisane do danego okresu regulacyjnego."""
+    """Thresholds for transition fees (zł/month) assigned to a given regulatory period."""
     __tablename__ = "transition_fee_thresholds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -94,13 +70,9 @@ class TransitionFeeThreshold(Base):
     period: Mapped["RegulatoryPeriod"] = relationship(back_populates="transition_thresholds")
 
 
-# ==========================================
-# 2. DEFINICJE TARYF I DYSTRYBUCJA (OSD)
-# ==========================================
-
 class TariffDefinition(Base):
     """
-    Nagłówek taryfy dla danego OSD i okresu obowiązywania.
+    Tariff definition for a distribution system operator and validity period.
     """
     __tablename__ = "tariff_definitions"
     __table_args__ = (
@@ -108,7 +80,7 @@ class TariffDefinition(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    osd_operator: Mapped[OsdOperatorEnum] = mapped_column(Enum(OsdOperatorEnum), nullable=False, index=True)
+    osd_operator: Mapped[DistributionOperatorEnum] = mapped_column(Enum(DistributionOperatorEnum), nullable=False, index=True)
     tariff_code: Mapped[TariffTypeEnum] = mapped_column(Enum(TariffTypeEnum), nullable=False, index=True)
     number_of_zones: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -133,8 +105,8 @@ class TariffDefinition(Base):
 
 class OsdVariableNetworkRate(Base):
     """
-    Stawka zmienna sieciowa OSD za 1 kWh dla poszczególnych stref (zł/kWh).
-    zone_index: 1 (dzień / szczyt), 2 (noc / pozaszczyt), itd.
+    OSD variable network rate per kWh for each tariff zone.
+    zone_index: 1 (day / peak), 2 (night / off-peak), and so on.
     """
     __tablename__ = "osd_variable_network_rates"
     __table_args__ = (
@@ -152,7 +124,7 @@ class OsdVariableNetworkRate(Base):
 
 class OsdSubscriptionFee(Base):
     """
-    Opłata abonamentowa w zależności od cyklu rozliczeniowego (zł/miesiąc).
+    Subscription fee based on the billing cycle (PLN/month).
     """
     __tablename__ = "osd_subscription_fees"
     __table_args__ = (
@@ -168,13 +140,9 @@ class OsdSubscriptionFee(Base):
     tariff: Mapped["TariffDefinition"] = relationship(back_populates="subscription_fees")
 
 
-# ==========================================
-# 3. CENY ENERGII CZYNNEJ URE (SPRZEDAWCA Z URZĘDU)
-# ==========================================
-
 class SupplierUreRate(Base):
     """
-    Zatwierdzone przez URE ceny energii czynnej sprzedawcy z urzędu dla danej strefy.
+    URE-approved active energy rate from the default supplier for a tariff zone.
     """
     __tablename__ = "supplier_ure_rates"
     __table_args__ = (

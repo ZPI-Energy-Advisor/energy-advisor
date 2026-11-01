@@ -42,7 +42,8 @@ docker compose up -d --build
 
 ### 3. Migracje bazy danych
 
-Migracje nie są uruchamiane automatycznie przy starcie kontenera.
+Migracje są uruchamiane automatycznie przed startem backendu. Dla już działającego
+środowiska można uruchomić je jednorazowo ręcznie:
 
 ```bash
 docker compose exec backend alembic upgrade head
