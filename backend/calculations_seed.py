@@ -18,7 +18,7 @@ from app.database import SessionLocal
 from app.models.RcePriceObservation import RcePriceObservation
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.EnergyReading import EnergyReading
-from app.schemas.other import DistributionOperatorEnum
+from app.schemas.other import DistributionOperatorEnum, TariffTypeEnum
 from app.models.NewModels import (
     CapacityFeeThreshold,
     OsdSubscriptionFee,
@@ -26,7 +26,6 @@ from app.models.NewModels import (
     RegulatoryPeriod,
     SupplierUreRate,
     TariffDefinition,
-    TariffTypeEnum,
     TransitionFeeThreshold,
 )
 from app.models.User import User
