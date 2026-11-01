@@ -1,8 +1,9 @@
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, exists, insert
+from sqlalchemy import Integer, and_, cast, delete, exists, extract, func, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as upsert
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.models.DeviceProgram import DeviceProgram
 from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.DeviceType import DeviceType  # noqa: F401 - rejestruje tabelę dla FK
 from app.parsers.device_records import ActionRecord, DeviceRecord
+from app.parsers.devices import LOCAL_TIMEZONE
 
 
 SLOT = timedelta(minutes=15)
@@ -23,6 +25,16 @@ DEVICE_SETTINGS = (
     "flexibility_mode", "allowed_window_from", "allowed_window_to", "max_shift_min",
 )
 PROGRAM_SETTINGS = ("name", "duration_min", "profile_kwh")
+
+
+def _local_day_and_slot(column):
+    local = func.timezone(LOCAL_TIMEZONE.key, column)
+    slot = func.floor((extract("hour", local) * 60 + extract("minute", local)) / (SLOT.seconds // 60))
+    return func.to_char(local, "YYYY-MM-DD"), cast(slot, Integer)
+
+
+def _in_ranges(column, ranges: list[tuple[datetime, datetime]]):
+    return or_(*(and_(column >= start, column < end) for start, end in ranges))
 
 
 def _utc(moment: datetime | None) -> datetime | None:
@@ -95,6 +107,42 @@ class DeviceRepository:
             .order_by(DeviceInstance.source_device_id)
             .all()
         )
+
+    def device_ids_by_file(self, file_ids: list[UUID]) -> dict[UUID, set[UUID]]:
+        rows = self.db.execute(
+            select(DeviceInstanceFile.energy_data_file_id, DeviceInstanceFile.device_instance_id)
+            .where(DeviceInstanceFile.energy_data_file_id.in_(file_ids))
+        )
+        devices = defaultdict(set)
+        for file_id, device_id in rows:
+            devices[file_id].add(device_id)
+        return devices
+
+    def consumption_slots(
+        self, file_ids: list[UUID], utc_ranges: list[tuple[datetime, datetime]]
+    ) -> list[tuple[UUID, UUID, str, int, float]]:
+        return self.db.execute(
+            select(DeviceSlotUsage.energy_data_file_id, DeviceAction.device_instance_id,
+                   *_local_day_and_slot(DeviceSlotUsage.slot_start), DeviceSlotUsage.kwh)
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .where(
+                DeviceSlotUsage.energy_data_file_id.in_(file_ids),
+                _in_ranges(DeviceSlotUsage.slot_start, utc_ranges),
+                DeviceSlotUsage.kwh > 0,
+            )
+        ).all()
+
+    def action_starts(
+        self, file_ids: list[UUID], utc_ranges: list[tuple[datetime, datetime]]
+    ) -> list[tuple[UUID, UUID, str, int]]:
+        return self.db.execute(
+            select(DeviceAction.energy_data_file_id, DeviceAction.device_instance_id,
+                   *_local_day_and_slot(DeviceAction.action_start))
+            .where(
+                DeviceAction.energy_data_file_id.in_(file_ids),
+                _in_ranges(DeviceAction.action_start, utc_ranges),
+            )
+        ).all()
 
     @staticmethod
     def _check_records(devices: list[DeviceRecord]) -> None:

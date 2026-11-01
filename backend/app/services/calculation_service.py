@@ -1,3 +1,4 @@
+from collections import Counter, defaultdict
 from datetime import date
 from typing import Mapping
 
@@ -10,9 +11,12 @@ from app.parsers import (
     KWH,
     TIMESTAMP_START,
     FileImportError,
+    DeviceRecord,
     ParsedEnergyFile,
     parse_energy_file,
 )
+from app.models.EnergyDataFile import EnergyDataFile
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.tariff_repository import TariffRepository
 from app.services.pricing_strategies import (
     SLOT_MINUTES,
@@ -25,12 +29,13 @@ from app.services.pricing_strategies import (
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
 INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
 IMPORT_REPORT_KEY = "import_report"
+ACTIONS_PER_DAY_KEY = "actions_per_day"
 
 
 def public_results(results: dict | None) -> dict | None:
     if results is None:
         return None
-    hidden = (*INTERNAL_RESULT_KEYS, IMPORT_REPORT_KEY)
+    hidden = (*INTERNAL_RESULT_KEYS, IMPORT_REPORT_KEY, ACTIONS_PER_DAY_KEY)
     return {key: value for key, value in results.items() if key not in hidden}
 
 
@@ -103,8 +108,12 @@ class CalculationService:
             for tariff in tariffs
         }
 
-        results_dict = self.summarize_usage(usage, slot_prices, resolution)
-        results_dict["statistics"]["records_count"] = int(len(data))
+        actions_per_day = self._actions_per_day(parsed.devices) if parsed.devices is not None else None
+        results_dict = self.summarize_usage(usage, slot_prices, resolution, actions_per_day)
+        if actions_per_day is None:
+            results_dict["statistics"]["records_count"] = int(len(data))
+        else:
+            results_dict[ACTIONS_PER_DAY_KEY] = actions_per_day
         results_dict["usage_15min"] = usage
         results_dict["slot_prices"] = slot_prices
         return results_dict
@@ -114,7 +123,75 @@ class CalculationService:
         """Przelicza wykresy, sumy i statystyki dla dni z przedziału [date_from, date_to] (oba włącznie)."""
         start, end = date_from.isoformat(), date_to.isoformat()
         usage = {day: slots for day, slots in results["usage_15min"].items() if start <= day <= end}
-        return cls.summarize_usage(usage, results["slot_prices"], source_resolution(results))
+        return cls.summarize_usage(
+            usage, results["slot_prices"], source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
+        )
+
+    @staticmethod
+    def _actions_per_day(devices: list[DeviceRecord]) -> dict[str, int]:
+        counts = Counter(
+            action.start.astimezone(LOCAL_TIMEZONE).date().isoformat()
+            for device in devices
+            for action in device.actions
+        )
+        return dict(sorted(counts.items()))
+
+    @staticmethod
+    def device_coverage(usages: list[dict]) -> dict[tuple[str, int], list[int]]:
+        covering = defaultdict(list)
+        for index, usage in enumerate(usages):
+            for day, day_slots in usage.items():
+                for slot, kwh in enumerate(day_slots):
+                    if kwh is not None:
+                        covering[(day, slot)].append(index)
+        return covering
+
+    @staticmethod
+    def overlap_days(covering: dict[tuple[str, int], list[int]]) -> set[str]:
+        return {day for (day, _), indices in covering.items() if len(indices) > 1}
+
+    @classmethod
+    def merge_device_usage(cls, files: list[dict], covering: dict) -> tuple[dict, dict[str, int], list[dict]]:
+        overlap_days = cls.overlap_days(covering)
+
+        def owner(device, day, slot):
+            for index in reversed(covering.get((day, slot), ())):
+                if device in files[index]["devices"]:
+                    return index
+            return None
+
+        usage = {}
+        for (day, slot), indices in covering.items():
+            kwh = 0.0 if day in overlap_days else files[indices[0]]["usage_15min"][day][slot]
+            usage.setdefault(day, [None] * SLOTS_PER_DAY)[slot] = kwh
+        actions_per_day = Counter()
+        for index, source in enumerate(files):
+            for day, count in source["actions_per_day"].items():
+                if day not in overlap_days:
+                    actions_per_day[day] += count
+            for device, day, slot, kwh in source["slots"]:
+                if day in overlap_days and owner(device, day, slot) == index:
+                    usage[day][slot] += kwh
+            for device, day, slot in source["actions"]:
+                if day in overlap_days and owner(device, day, slot) == index:
+                    actions_per_day[day] += 1
+
+        contributions = [{"days_used": set(), "slots_used": 0} for _ in files]
+        for (day, _), indices in covering.items():
+            claimed = set()
+            for index in reversed(indices):
+                if files[index]["devices"] - claimed:
+                    contributions[index]["days_used"].add(day)
+                    contributions[index]["slots_used"] += 1
+                if len(indices) > 1:
+                    claimed |= files[index]["devices"]
+
+        usage = {
+            day: [None if kwh is None else round(kwh, 6) for kwh in day_slots]
+            for day, day_slots in sorted(usage.items())
+        }
+        contributions = [{**item, "days_used": len(item["days_used"])} for item in contributions]
+        return usage, dict(sorted(actions_per_day.items())), contributions
 
     @staticmethod
     def merge_usage(sources: list[dict]) -> tuple[dict, list[dict]]:
@@ -229,7 +306,9 @@ class CalculationService:
         usage: dict,
         slot_prices: dict,
         resolution_minutes: int | None = HOURLY_RESOLUTION,
+        actions_per_day: dict[str, int] | None = None,
     ) -> dict:
+        data_source = EnergyDataFile.SOURCE_METER if actions_per_day is None else EnergyDataFile.SOURCE_DEVICES
         rows = [
             (day, slot, kwh)
             for day, day_slots in usage.items()
@@ -237,7 +316,7 @@ class CalculationService:
             if kwh is not None
         ]
         if not rows:
-            return cls._empty_results(slot_prices, resolution_minutes)
+            return cls._empty_results(slot_prices, resolution_minutes, data_source)
 
         df_15min = pd.DataFrame(rows, columns=['date', 'slot', 'Wartość kWh'])
         df_15min['Dokładny Czas'] = pd.to_datetime(df_15min['date']) + pd.to_timedelta(
@@ -291,11 +370,17 @@ class CalculationService:
         daily_counts = df_15min.groupby('date').size()
         incomplete_days = daily_counts[daily_counts < SLOTS_PER_DAY].index.tolist()
 
+        if actions_per_day is not None:
+            records_count = sum(actions_per_day.get(day, 0) for day in usage)
+        elif resolution_minutes:
+            records_count = int(len(df_15min)) // (resolution_minutes // SLOT_MINUTES)
+        else:
+            records_count = None
+
         results_dict["statistics"] = {
-            "records_count": (
-                int(len(df_15min)) // (resolution_minutes // SLOT_MINUTES) if resolution_minutes else None
-            ),
+            "records_count": records_count,
             "resolution_minutes": resolution_minutes,
+            "data_source": data_source,
             "days_analyzed": int(df_15min['date'].nunique()),
             "data_start": first_date,
             "data_end": last_date,
@@ -306,7 +391,7 @@ class CalculationService:
         return results_dict
 
     @staticmethod
-    def _empty_results(slot_prices: dict, resolution_minutes: int | None) -> dict:
+    def _empty_results(slot_prices: dict, resolution_minutes: int | None, data_source: str) -> dict:
         return {
             "tariffs": {
                 tariff_name: {"type": tariff["type"], "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
@@ -318,6 +403,7 @@ class CalculationService:
             "statistics": {
                 "records_count": 0,
                 "resolution_minutes": resolution_minutes,
+                "data_source": data_source,
                 "days_analyzed": 0,
                 "data_start": None,
                 "data_end": None,

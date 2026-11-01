@@ -58,6 +58,8 @@ class DevicesJsonParser(DocumentParser):
         validation = validate_document(document, max_grid_kw=None)
         if not validation.is_valid:
             raise FileImportError(422, _invalid_file_message(validation.errors))
+        if validation.devices_count == 0:
+            raise FileImportError(422, "Plik urządzeń nie zawiera żadnych urządzeń.")
 
         devices = self._device_records(document)
         slots = self._slots_utc(devices)
