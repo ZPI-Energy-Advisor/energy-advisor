@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.other import DistributionOperatorEnum
-from app.schemas.user_profile import BillingCycleEnum, PricePerKwh
+from app.schemas.user_profile import PricePerKwh
 
 
 

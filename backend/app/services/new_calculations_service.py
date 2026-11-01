@@ -11,7 +11,7 @@ from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.calculation import CalculationDetails, PVDetails, TariffData
-from app.schemas.other import DistributionOperatorEnum, TariffTypeEnum
+from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import DynamicMarketPriceResolver, PVBalancingEngine
 from app.services.tariff_engine import FinancialSettlement, ZonedTariffCalculationStrategy
