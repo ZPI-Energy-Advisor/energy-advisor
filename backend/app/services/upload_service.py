@@ -56,10 +56,13 @@ class UploadService:
         energy_file = self.energy_file_repository.create(user_id=user_id, file_name=file.filename[:255])
 
         try:
-            simulation_results = self.calculation_service.calculate_all_tariffs(file.file)
-            self.energy_reading_repository.replace_for_file(energy_file.id, self._readings_from_usage(simulation_results.get("energy_readings_15min")))
             parsed = self.calculation_service.parse_file(file.file)
             simulation_results = self.calculation_service.calculate_with_report(parsed)
+            usage = simulation_results.get("energy_readings_15min")
+            if usage is not None:
+                self.energy_reading_repository.replace_for_file(
+                    energy_file.id, self._readings_from_usage(usage)
+                )
             if parsed.devices is not None:
                 self.device_repository.save_for_file(
                     user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
@@ -120,6 +123,7 @@ class UploadService:
                     ))
         return readings
     
+    @staticmethod
     def _file_size(file: UploadFile) -> int:
         file.file.seek(0, 2)
         size = file.file.tell()
