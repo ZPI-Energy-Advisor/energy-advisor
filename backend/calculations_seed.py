@@ -2,6 +2,11 @@
 
 Run from the backend directory:
 
+    # Docker Compose:
+    docker compose exec backend python calculations_seed.py
+
+    # Local Python with the PostgreSQL container:
+    $env:POSTGRES_HOST = "localhost"
     python calculations_seed.py
 
 The script is idempotent for the seeded period and tariff definitions.
@@ -18,7 +23,7 @@ from app.database import SessionLocal
 from app.models.RcePriceObservation import RcePriceObservation
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.EnergyReading import EnergyReading
-from app.schemas.other import DistributionOperatorEnum
+from app.schemas.other import DistributionOperatorEnum, TariffTypeEnum
 from app.models.NewModels import (
     CapacityFeeThreshold,
     OsdSubscriptionFee,
@@ -26,7 +31,6 @@ from app.models.NewModels import (
     RegulatoryPeriod,
     SupplierUreRate,
     TariffDefinition,
-    TariffTypeEnum,
     TransitionFeeThreshold,
 )
 from app.models.User import User
