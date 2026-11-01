@@ -98,12 +98,7 @@ class CalculationService:
         if not tariffs:
             raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
 
-        consumption_15min = df_15min[
-            df_15min['Rodzaj'].str.contains(
-                'pobór|pobor|pobrana|odebrana|odebrany',
-                na=False,
-            )
-        ]
+        consumption_15min = df_15min
         usage = self._build_usage_series(consumption_15min)
         energy_readings = self._build_usage_series(df_15min)
         days = [date.fromisoformat(day) for day in usage]
