@@ -58,7 +58,7 @@ class UploadService:
         try:
             parsed = self.calculation_service.parse_file(file.file)
             simulation_results = self.calculation_service.calculate_with_report(parsed)
-            usage = simulation_results.get("energy_readings_15min")
+            usage = simulation_results.get("usage_15min")
             if usage is not None:
                 self.energy_reading_repository.replace_for_file(
                     energy_file.id, self._readings_from_usage(usage)
@@ -101,7 +101,6 @@ class UploadService:
         }
 
     def _mark_failed(self, energy_file: EnergyDataFile, message: str):
-        self.energy_file_repository.db.rollback()
         self.energy_file_repository.rollback()
         energy_file.status = EnergyDataFile.STATUS_FAILED
         energy_file.error_message = message

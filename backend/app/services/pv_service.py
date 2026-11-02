@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from collections import deque
 from typing import Callable
 
 from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.providers.prices.pse_provider import PseRcePriceProvider
 
 
@@ -33,9 +34,10 @@ class DynamicMarketPriceResolver:
     ) -> float:
         day = timestamp.date()
         if type_of_market_energy == TypeOfMarketEnergyEnum.RCE:
+            # Odczyty są zapisane w czasie lokalnym bez strefy, a ceny RCE w UTC.
             utc_timestamp = timestamp
             if utc_timestamp.tzinfo is None:
-                utc_timestamp = utc_timestamp.replace(tzinfo=timezone.utc)
+                utc_timestamp = utc_timestamp.replace(tzinfo=LOCAL_TIMEZONE)
             prices = self.price_repository.get_prices_between(
                 PseRcePriceProvider.source,
                 utc_timestamp,

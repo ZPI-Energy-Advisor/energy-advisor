@@ -16,6 +16,7 @@ from app.database import SessionLocal, engine
 from app.models.DeviceInstance import DeviceInstance
 from app.models.DeviceInstanceFile import DeviceInstanceFile
 from app.models.EnergyDataFile import EnergyDataFile
+from app.models.EnergyReading import EnergyReading
 from app.models.Simulation import Simulation
 from app.models.User import User
 from app.parsers import parse_energy_file
@@ -41,6 +42,7 @@ SAMPLE_RESULTS = {
     "chart_daily": [{"date": "2024-11-03", "kwh": 1.0}],
     "statistics": {"records_count": 3, "data_start": "2024-11-03", "data_end": "2024-11-05"},
 }
+SAMPLE_RESULTS_WITH_USAGE = {**SAMPLE_RESULTS, "usage_15min": {"2024-11-03": [0.5, None, 0.25] + [None] * 93}}
 
 
 @pytest.fixture
@@ -266,6 +268,27 @@ def test_upload_links_simulation_with_file(db):
     assert latest["simulation_id"] == body["simulation_id"]
 
 
+def _readings(db, file_id) -> list[tuple[datetime.datetime, float]]:
+    return [
+        (reading.measured_at, float(reading.energy_kwh))
+        for reading in db.query(EnergyReading)
+        .filter(EnergyReading.energy_data_file_id == file_id)
+        .order_by(EnergyReading.measured_at)
+    ]
+
+
+def test_upload_saves_energy_readings(db):
+    user = _create_user(db)
+
+    response = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS_WITH_USAGE))
+
+    assert response.status_code == 200
+    assert _readings(db, uuid.UUID(response.json()["file_id"])) == [
+        (datetime.datetime(2024, 11, 3, 0, 0), 0.5),
+        (datetime.datetime(2024, 11, 3, 0, 30), 0.25),
+    ]
+
+
 def test_upload_failure_marks_file_as_failed(db):
     user = _create_user(db)
 
@@ -307,11 +330,12 @@ def test_failed_devices_save_marks_file_as_failed_and_keeps_no_devices(db):
     devices[-1].device_type = "toaster"
 
     with pytest.raises(IntegrityError):
-        _upload(user, _StubCalculationService(result=SAMPLE_RESULTS, devices=devices), "dom.json")
+        _upload(user, _StubCalculationService(result=SAMPLE_RESULTS_WITH_USAGE, devices=devices), "dom.json")
 
     files = client.get("/api/v1/energy-files", headers=_headers(user)).json()["items"]
     assert files[0]["status"] == "failed"
     assert _device_count(db, uuid.UUID(files[0]["id"])) == 0
+    assert _readings(db, uuid.UUID(files[0]["id"])) == []
 
 
 def _results_with_series():
