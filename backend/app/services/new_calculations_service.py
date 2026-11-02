@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time
 import logging
 from uuid import UUID
 
@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from dateutil.relativedelta import relativedelta
 
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
@@ -44,8 +45,9 @@ class CalculationsService:
         self.tariff_engine = tariff_engine or ZonedTariffCalculationStrategy()
         if market_price_repository is not None:
             def dynamic_price(timestamp):
+                # Odczyty są zapisane w czasie lokalnym bez strefy, a ceny RCE w UTC.
                 if timestamp.tzinfo is None:
-                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    timestamp = timestamp.replace(tzinfo=LOCAL_TIMEZONE)
                 prices = market_price_repository.get_prices_between(
                     "pse_rce", timestamp, timestamp + relativedelta(minutes=15)
                 )

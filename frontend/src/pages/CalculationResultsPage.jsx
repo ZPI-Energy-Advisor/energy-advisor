@@ -3,7 +3,7 @@ import { FiAlertCircle, FiRefreshCw } from "react-icons/fi";
 import apiClient from "../api/client";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
-import { getApiErrorMessage } from "../utils/energyFiles";
+import { getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 
 const formatMoney = (value) =>
@@ -43,7 +43,7 @@ function CalculationResultsPage() {
   const [error, setError] = useState(null);
 
   const loadCalculation = useCallback(async () => {
-    if (!selectedFileId || selectedFileId === "all") {
+    if (!selectedFileId || isAggregateSource(selectedFileId)) {
       setCalculation(null);
       return;
     }

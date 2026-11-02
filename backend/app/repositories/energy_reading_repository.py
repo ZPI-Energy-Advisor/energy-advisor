@@ -16,24 +16,20 @@ class EnergyReadingRepository:
         energy_data_file_id: UUID,
         readings: list[tuple[datetime, float]],
     ) -> None:
-        try:
-            self.db.query(EnergyReading).filter(
-                EnergyReading.energy_data_file_id == energy_data_file_id
-            ).delete(synchronize_session=False)
-            self.db.add_all(
-                [
-                    EnergyReading(
-                        energy_data_file_id=energy_data_file_id,
-                        measured_at=measured_at,
-                        energy_kwh=Decimal(str(energy_kwh)),
-                    )
-                    for measured_at, energy_kwh in readings
-                ]
-            )
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
+        """Dodaje do bieżącej transakcji; commit robi zapis pliku na końcu uploadu."""
+        self.db.query(EnergyReading).filter(
+            EnergyReading.energy_data_file_id == energy_data_file_id
+        ).delete(synchronize_session=False)
+        self.db.add_all(
+            [
+                EnergyReading(
+                    energy_data_file_id=energy_data_file_id,
+                    measured_at=measured_at,
+                    energy_kwh=Decimal(str(energy_kwh)),
+                )
+                for measured_at, energy_kwh in readings
+            ]
+        )
 
     def list_for_file(self, energy_data_file_id: UUID) -> list[EnergyReading]:
         return (

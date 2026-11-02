@@ -27,7 +27,7 @@ from app.services.pricing_strategies import (
 
 
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
-INTERNAL_RESULT_KEYS = ("usage_15min", "energy_readings_15min", "slot_prices")
+INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
 IMPORT_REPORT_KEY = "import_report"
 ACTIONS_PER_DAY_KEY = "actions_per_day"
 
@@ -40,7 +40,7 @@ def public_results(results: dict | None) -> dict | None:
 
 
 def has_usage_series(results: dict) -> bool:
-    return all(key in results for key in ("usage_15min", "slot_prices"))
+    return all(key in results for key in INTERNAL_RESULT_KEYS)
 
 
 def source_resolution(results: dict) -> int | None:
@@ -98,9 +98,7 @@ class CalculationService:
         if not tariffs:
             raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
 
-        consumption_15min = df_15min
-        usage = self._build_usage_series(consumption_15min)
-        energy_readings = self._build_usage_series(df_15min)
+        usage = self._build_usage_series(df_15min)
         days = [date.fromisoformat(day) for day in usage]
 
         # Ceny zapisujemy razem z wynikami, żeby przeliczenie zakresu dawało te same
@@ -117,7 +115,6 @@ class CalculationService:
         else:
             results_dict[ACTIONS_PER_DAY_KEY] = actions_per_day
         results_dict["usage_15min"] = usage
-        results_dict["energy_readings_15min"] = energy_readings
         results_dict["slot_prices"] = slot_prices
         return results_dict
 

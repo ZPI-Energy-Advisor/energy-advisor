@@ -140,10 +140,6 @@ def require_price_sync_admin_key(
         )
 
 
-def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:
-    return EnergyDataFileRepository(db)
-
-
 def get_device_repository(db: Session = Depends(get_db)) -> DeviceRepository:
     return DeviceRepository(db)
 
