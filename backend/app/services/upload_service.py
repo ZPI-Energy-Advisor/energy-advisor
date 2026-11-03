@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
@@ -7,6 +7,7 @@ from app.models.EnergyDataFile import EnergyDataFile
 from app.schemas.user_profile import UserProfile
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
+from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository
 from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationService, public_results
@@ -28,11 +29,13 @@ class UploadService:
         simulation_repository: SimulationRepository,
         energy_file_repository: EnergyDataFileRepository,
         user_repository: UserRepository,
+        energy_reading_repository: EnergyReadingRepository,
         device_repository: DeviceRepository,
     ):
         self.calculation_service = calculation_service
         self.simulation_repository = simulation_repository
         self.energy_file_repository = energy_file_repository
+        self.energy_reading_repository = energy_reading_repository
         self.user_repository = user_repository
         self.device_repository = device_repository
 
@@ -57,7 +60,12 @@ class UploadService:
         try:
             parsed = self.calculation_service.parse_file(file.file)
             simulation_results = self.calculation_service.calculate_with_report(parsed)
-            if parsed.devices:
+            usage = simulation_results.get("usage_15min")
+            if usage is not None:
+                self.energy_reading_repository.replace_for_file(
+                    energy_file.id, self._readings_from_usage(usage)
+                )
+            if parsed.devices is not None:
                 self.device_repository.save_for_file(
                     user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
                 )
@@ -72,6 +80,9 @@ class UploadService:
         energy_file.data_start = self._parse_date(statistics.get("data_start"))
         energy_file.data_end = self._parse_date(statistics.get("data_end"))
         energy_file.records_count = statistics.get("records_count")
+        energy_file.source_type = (
+            EnergyDataFile.SOURCE_DEVICES if parsed.devices is not None else EnergyDataFile.SOURCE_METER
+        )
         energy_file.status = EnergyDataFile.STATUS_COMPLETED
         self.energy_file_repository.save(energy_file)
 
@@ -109,6 +120,22 @@ class UploadService:
         energy_file.error_message = message
         self.energy_file_repository.save(energy_file)
 
+    @staticmethod
+    def _readings_from_usage(usage: dict | None) -> list[tuple[datetime, float]]:
+        if not isinstance(usage, dict):
+            raise ValueError("Wynik kalkulacji nie zawiera serii zużycia energii.")
+
+        readings = []
+        for day, slots in usage.items():
+            day_start = datetime.combine(date.fromisoformat(day), datetime.min.time())
+            for slot, energy_kwh in enumerate(slots):
+                if energy_kwh is not None:
+                    readings.append((
+                        day_start + timedelta(minutes=slot * 15),
+                        float(energy_kwh),
+                    ))
+        return readings
+    
     @staticmethod
     def _file_size(file: UploadFile) -> int:
         file.file.seek(0, 2)

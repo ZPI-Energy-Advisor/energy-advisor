@@ -2,11 +2,13 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { FiChevronLeft, FiChevronRight, FiLayers, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import SourceTypeBadge from "./SourceTypeBadge";
 import {
-  ALL_FILES_ID,
   FILE_STATUS_LABELS,
   FILES_TABLE_ANCHOR,
+  SOURCE_TYPE_DEVICES,
   formatDateRange,
+  formatRecordsCount,
   pluralizeFiles,
 } from "../utils/energyFiles";
 
@@ -53,14 +55,21 @@ function EnergyFilesTable() {
     selectFile,
     isReady,
     aggregate,
+    devicesAggregate,
     deleteFile,
     deletingFileId,
     deleteError,
     clearDeleteError,
   } = useEnergyFiles();
 
+  const aggregateSources = [aggregate, devicesAggregate].filter(Boolean);
+
   const handleDelete = (file) => {
-    const message = `Usunąć plik „${file.file_name}”? Jego dane znikną także z widoku „Wszystkie pliki”. Tej operacji nie można cofnąć.`;
+    const aggregateName =
+      file.status === "completed" &&
+      aggregateSources.find((source) => source.source_type === file.source_type)?.file_name;
+    const aggregateNote = aggregateName ? ` Jego dane znikną także z widoku „${aggregateName}”.` : "";
+    const message = `Usunąć plik „${file.file_name}”?${aggregateNote} Tej operacji nie można cofnąć.`;
     if (window.confirm(message)) deleteFile(file.id);
   };
 
@@ -87,20 +96,22 @@ function EnergyFilesTable() {
     );
   };
 
-  const renderAggregateRow = () => {
-    const isSelected = selectedFileId === ALL_FILES_ID;
-    const dateRange = formatDateRange(aggregate);
-    const filesLabel = `łączne dane z ${aggregate.files_count} ${pluralizeFiles(aggregate.files_count)}`;
+  const renderAggregateRow = (source, isLast) => {
+    const isSelected = selectedFileId === source.id;
+    const dateRange = formatDateRange(source);
+    const filesLabel = `łączne dane z ${source.files_count} ${pluralizeFiles(source.files_count)}`;
 
     return (
       <tr
-        onClick={() => !isSelected && selectFile(ALL_FILES_ID)}
+        key={source.id}
+        onClick={() => !isSelected && selectFile(source.id)}
         aria-selected={isSelected}
-        className={`text-sm border-b-2 border-gray-200 ${isSelected ? "bg-emerald-50" : "bg-gray-50/60 hover:bg-gray-50 cursor-pointer transition-colors"}`}
+        className={`text-sm ${isLast ? "border-b-2 border-gray-200" : ""} ${isSelected ? "bg-emerald-50" : "bg-gray-50/60 hover:bg-gray-50 cursor-pointer transition-colors"}`}
       >
         <td className="px-4 md:px-6 py-3 md:py-4">
           <span className={`flex items-center gap-2 font-bold ${isSelected ? "text-emerald-800" : "text-gray-900"}`}>
-            <FiLayers className="text-emerald-600 shrink-0" /> {aggregate.file_name}
+            <FiLayers className="text-emerald-600 shrink-0" /> {source.file_name}
+            <SourceTypeBadge sourceType={source.source_type} />
           </span>
           <span className="block text-xs text-gray-500 truncate">
             <span className="lg:hidden">{dateRange} · </span>
@@ -110,7 +121,7 @@ function EnergyFilesTable() {
         <td className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap">{dateRange}</td>
         <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-right text-gray-400">–</td>
         <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">automatycznie</td>
-        <td className="px-4 md:px-6 py-3 md:py-4 text-right">{renderSelectAction(ALL_FILES_ID, isSelected)}</td>
+        <td className="px-4 md:px-6 py-3 md:py-4 text-right">{renderSelectAction(source.id, isSelected)}</td>
       </tr>
     );
   };
@@ -165,7 +176,7 @@ function EnergyFilesTable() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {aggregate && renderAggregateRow()}
+            {aggregateSources.map((source, index) => renderAggregateRow(source, index === aggregateSources.length - 1))}
             {files.map((file) => {
               const isSelected = file.id === selectedFileId;
               const isAvailable = file.status === "completed";
@@ -186,15 +197,20 @@ function EnergyFilesTable() {
                   }`}
                 >
                   <td className="px-4 md:px-6 py-3 md:py-4">
-                    <span
-                      className={`block truncate font-medium ${isSelected ? "text-emerald-800" : isAvailable ? "text-gray-900" : ""}`}
-                      title={file.file_name}
-                    >
-                      {file.file_name}
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`truncate font-medium ${isSelected ? "text-emerald-800" : isAvailable ? "text-gray-900" : ""}`}
+                        title={file.file_name}
+                      >
+                        {file.file_name}
+                      </span>
+                      {isAvailable && <SourceTypeBadge sourceType={file.source_type} />}
                     </span>
                     <span className="block text-xs text-gray-500 xl:hidden truncate">
                       <span className="lg:hidden">{dateRange} · </span>
-                      <span className="sm:hidden">{file.records_count ?? "–"} rek. · </span>
+                      {file.records_count != null && (
+                        <span className="sm:hidden">{formatRecordsCount(file.records_count, file.source_type)} · </span>
+                      )}
                       import {formatUploadDate(file.uploaded_at)}
                     </span>
                   </td>
@@ -202,7 +218,9 @@ function EnergyFilesTable() {
                     {dateRange}
                   </td>
                   <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-right">
-                    {file.records_count ?? "–"}
+                    {file.records_count != null && file.source_type === SOURCE_TYPE_DEVICES
+                      ? formatRecordsCount(file.records_count, file.source_type)
+                      : file.records_count ?? "–"}
                   </td>
                   <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">
                     {formatUploadDate(file.uploaded_at)}
@@ -257,7 +275,7 @@ function EnergyFilesTable() {
         <div>
           <h3 className="font-bold text-gray-900">Twoje pliki</h3>
           <p className="text-xs md:text-sm text-gray-500">
-            Wybierz pojedynczy plik albo „Wszystkie pliki”, aby zobaczyć dane na Dashboardzie i w analizie taryf. Przy nakładających się okresach liczy się nowszy import.
+            Wybierz pojedynczy plik albo dane zbiorcze, aby zobaczyć je na Dashboardzie i w analizie taryf. Dane zbiorcze łączą osobno pliki z licznika i pliki urządzeń (JSON). Przy nakładających się okresach liczy się nowszy import.
           </p>
         </div>
       </div>

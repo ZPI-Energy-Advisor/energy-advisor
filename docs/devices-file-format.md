@@ -207,7 +207,8 @@ schematu reguły z kodu nie są sprawdzane, bo wynikałyby z tych samych błęd�
 
 1. `period.start` i `period.end` mają strefę czasową, `start` < `end`.
 2. `device_id` i `action_id` są unikalne.
-3. `device_type` i `device_category` pochodzą ze słowników.
+3. `devices` zawiera co najmniej jedno urządzenie; `device_type` i `device_category` pochodzą
+   ze słowników.
 4. `flexibility.mode` jest jednym z trybów i zawiera tylko pola dozwolone dla tego trybu;
    godziny `allowed_window` mają format `HH:MM` w pełnym kwadransie.
 5. Urządzenie bez `programs` ma `max_power_kw`; urządzenie `fixed` nie ma `programs`.

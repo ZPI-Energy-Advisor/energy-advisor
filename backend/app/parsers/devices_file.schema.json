@@ -14,7 +14,11 @@
         "end": { "$ref": "#/$defs/timestamp" }
       }
     },
-    "devices": { "type": "array", "items": { "$ref": "#/$defs/device" } },
+    "devices": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/device" },
+      "allOf": [{ "minItems": 1, "x-message": "plik musi zawierać co najmniej jedno urządzenie" }]
+    },
     "energy_usage": { "type": "array", "items": { "$ref": "#/$defs/action" } }
   },
   "$defs": {

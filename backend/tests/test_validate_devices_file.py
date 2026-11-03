@@ -80,6 +80,8 @@ INVALID_CASES = {
     "deadline_outside_ev": (lambda d: actions(d, "dev_kt_01")[0].update(deadline="2026-10-20T07:00:00+02:00"),
                             "dozwolone tylko dla ładowarki EV"),
     "missing_period": (lambda d: d.pop("period"), "plik: brak pola period"),
+    "no_devices": (lambda d: d.update(devices=[], energy_usage=[]),
+                   "devices: plik musi zawierać co najmniej jedno urządzenie"),
     "device_not_object": (lambda d: d["devices"].__setitem__(2, "pralka"), "devices[2]: oczekiwano obiektu"),
     "text_in_program_profile": (
         lambda d: device(d, "dev_wm_01")["programs"][0]["profile_kwh"].__setitem__(1, "x"),

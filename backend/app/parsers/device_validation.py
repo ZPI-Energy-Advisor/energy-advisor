@@ -91,12 +91,9 @@ class ValidationResult:
 
 def schema_issues(document: dict) -> list[Issue]:
     """Błędy struktury pliku według schematu, jako polskie komunikaty wskazujące urządzenie albo akcję."""
-    issues = []
-    for error in SCHEMA_VALIDATOR.iter_errors(document):
-        for issue in _describe(error, document):
-            if issue not in issues:
-                issues.append(issue)
-    return issues
+    return list(dict.fromkeys(
+        issue for error in SCHEMA_VALIDATOR.iter_errors(document) for issue in _describe(error, document)
+    ))
 
 
 def _id_or(item, key: str, fallback):
