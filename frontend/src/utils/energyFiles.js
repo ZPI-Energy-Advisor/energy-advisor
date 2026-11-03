@@ -2,6 +2,19 @@ export const FILES_TABLE_ANCHOR = "pliki";
 
 // Wirtualne źródło łączące dane ze wszystkich plików użytkownika (liczone przez backend).
 export const ALL_FILES_ID = "all";
+export const ALL_DEVICE_FILES_ID = "all-devices";
+
+export const isAggregateSource = (sourceId) => sourceId === ALL_FILES_ID || sourceId === ALL_DEVICE_FILES_ID;
+
+export const SOURCE_TYPE_DEVICES = "devices";
+
+export const SOURCE_TYPE_LABELS = {
+  meter: "Licznik",
+  devices: "Urządzenia",
+};
+
+export const aggregateIdForSourceType = (sourceType) =>
+  sourceType === SOURCE_TYPE_DEVICES ? ALL_DEVICE_FILES_ID : ALL_FILES_ID;
 
 export const formatDate = (isoDate) => {
   if (!isoDate) return "";
@@ -22,6 +35,12 @@ export const formatCount = (count, [one, few, many]) => {
 };
 
 export const formatFilesCount = (count) => formatCount(count, ["plik", "pliki", "plików"]);
+
+export const formatRecordsCount = (count, sourceType) =>
+  formatCount(
+    count,
+    sourceType === SOURCE_TYPE_DEVICES ? ["akcja", "akcje", "akcji"] : ["rekord", "rekordy", "rekordów"],
+  );
 
 export const formatDateRange = (file) => {
   if (!file?.data_start || !file?.data_end) return "Brak zakresu dat";
@@ -133,8 +152,17 @@ export const fillMissingDays = (rows) => {
 
 export const formatDataResolution = (statistics) => {
   if (!statistics || !("resolution_minutes" in statistics)) return null;
+  if (statistics.data_source === SOURCE_TYPE_DEVICES) return "akcje urządzeń";
   const minutes = statistics.resolution_minutes;
   if (minutes === 15) return "odczyty co 15 min";
   if (minutes === 60) return "odczyty godzinowe";
   return "odczyty co 15 min i godzinowe";
+};
+
+// Komunikat dla pliku odrzuconego przy upuszczaniu (react-dropzone), według faktycznego powodu.
+export const dropRejectionMessage = (rejections, maxFileSizeMb) => {
+  const codes = new Set(rejections.flatMap((rejection) => rejection.errors.map((rejectionError) => rejectionError.code)));
+  if (codes.has("too-many-files")) return "Można wgrać tylko jeden plik naraz. Wybierz jeden plik.";
+  if (codes.has("file-too-large")) return `Plik jest za duży. Maksymalny rozmiar pliku to ${maxFileSizeMb} MB.`;
+  return "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv lub .json.";
 };

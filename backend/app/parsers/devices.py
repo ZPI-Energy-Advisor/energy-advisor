@@ -14,12 +14,13 @@ from app.parsers.base import (
     ParsedEnergyFile,
 )
 from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
-from app.parsers.device_validation import SLOT, action_profile, validate_document
+from app.parsers.device_validation import SLOT, Issue, action_profile, validate_document
 
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Warsaw")
 QUARTER_HOUR = 15
-MAX_LISTED_ERRORS = 5
+# Tyle błędów pokazuje UI; liczba wszystkich jest w errors_count.
+MAX_ERRORS_IN_RESPONSE = 100
 
 
 def _time(value: str) -> datetime:
@@ -34,10 +35,25 @@ def _clock(value: str | None):
     return datetime.strptime(value, "%H:%M").time() if value else None
 
 
-def _invalid_file_message(errors: list[str]) -> str:
-    listed = "; ".join(errors[:MAX_LISTED_ERRORS])
-    more = f" …i {len(errors) - MAX_LISTED_ERRORS} więcej." if len(errors) > MAX_LISTED_ERRORS else ""
-    return f"Plik urządzeń zawiera błędy ({len(errors)}): {listed}{more}"
+def _invalid_file_error(issues: list[Issue], document: dict) -> FileImportError:
+    """Błędy pliku jako lista dla UI: z nazwą urządzenia, żeby użytkownik nie musiał szukać po ID."""
+    names = {
+        device["device_id"]: device["device_name"]
+        for device in document.get("devices", [])
+        if isinstance(device, dict) and isinstance(device.get("device_id"), str)
+        and isinstance(device.get("device_name"), str)
+    } if isinstance(document.get("devices"), list) else {}
+    errors = [
+        {
+            "location": issue.location,
+            "message": issue.message,
+            "device_id": issue.device_id,
+            "device_name": names.get(issue.device_id),
+            "action_id": issue.action_id,
+        }
+        for issue in issues[:MAX_ERRORS_IN_RESPONSE]
+    ]
+    return FileImportError(422, f"Plik urządzeń zawiera błędy ({len(issues)}).", errors, len(issues))
 
 
 class DevicesJsonParser(DocumentParser):
@@ -57,7 +73,7 @@ class DevicesJsonParser(DocumentParser):
         # Profil użytkownika nie ma jeszcze mocy przyłącza, więc limit przyłącza (reguła 14) pomijamy.
         validation = validate_document(document, max_grid_kw=None)
         if not validation.is_valid:
-            raise FileImportError(422, _invalid_file_message(validation.errors))
+            raise _invalid_file_error(validation.issues, document)
 
         devices = self._device_records(document)
         slots = self._slots_utc(devices)

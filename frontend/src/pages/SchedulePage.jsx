@@ -3,7 +3,7 @@ import apiClient from "../api/client";
 import ScheduleDayChart from "../components/ScheduleDayChart";
 import SelectedFileBar from "../components/SelectedFileBar";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { ALL_FILES_ID, getApiErrorMessage } from "../utils/energyFiles";
+import { SOURCE_TYPE_DEVICES, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
 import {
   clockOf,
   describeReason,
@@ -38,7 +38,9 @@ function SchedulePage() {
   const dateFrom = fileRange?.from ?? selectedFile?.data_start ?? "";
   const dateTo = fileRange?.to ?? selectedFile?.data_start ?? "";
   const shown = schedule?.fileId === selectedFile?.id ? schedule : null;
-  const isAggregate = selectedFile?.id === ALL_FILES_ID;
+  // Optymalizacja przesuwa akcje urządzeń, więc ma sens tylko dla pojedynczego pliku urządzeń.
+  const isDevicesFile =
+    selectedFile && !isAggregateSource(selectedFile.id) && selectedFile.source_type === SOURCE_TYPE_DEVICES;
 
   const changeRange = (changes) => setRange({ fileId: selectedFile.id, from: dateFrom, to: dateTo, ...changes });
 
@@ -68,7 +70,7 @@ function SchedulePage() {
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">Optymalizacja</h2>
       <SelectedFileBar />
 
-      {!selectedFile || isAggregate ? (
+      {!isDevicesFile ? (
         <p className="p-4 text-sm text-gray-600 bg-white rounded-lg border border-gray-100">
           Wybierz w imporcie danych pojedynczy plik urządzeń, aby zobaczyć optymalizację.
         </p>

@@ -7,6 +7,7 @@ import ResultsPage from "./pages/ResultsPage";
 import SchedulePage from "./pages/SchedulePage";
 import DynamicPricesPage from "./pages/DynamicPricesPage";
 import ProfilePage from "./pages/ProfilePage";
+import CalculationResultsPage from "./pages/CalculationResultsPage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -26,6 +27,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/upload" element={<ImportPage />} />
             <Route path="/results" element={<ResultsPage />} />
+            <Route path="/calculations" element={<CalculationResultsPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/prices" element={<DynamicPricesPage />} />
           </Route>

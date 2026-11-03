@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 ALL_FILES_SOURCE_ID = "all"
 ALL_FILES_SOURCE_NAME = "Wszystkie pliki"
+ALL_DEVICE_FILES_SOURCE_ID = "all-devices"
+ALL_DEVICE_FILES_SOURCE_NAME = "Wszystkie pliki urządzeń"
+
+AggregateSourceId = Literal["all", "all-devices"]
 
 
 class _DateRangeMixin(BaseModel):
@@ -32,6 +36,7 @@ class EnergyDataFileOut(_DateRangeMixin):
     id: UUID
     uploaded_at: datetime
     records_count: int | None = None
+    source_type: str
     status: str
     error_message: str | None = None
 
@@ -41,8 +46,8 @@ class EnergyDataFileOut(_DateRangeMixin):
 class AggregateSourceSummary(_DateRangeMixin):
     """Wirtualne źródło "Wszystkie pliki" na liście plików - zakres to suma zakresów plików."""
 
-    id: Literal["all"] = ALL_FILES_SOURCE_ID
-    file_name: str = ALL_FILES_SOURCE_NAME
+    id: AggregateSourceId
+    source_type: str
     files_count: int
 
 
@@ -58,8 +63,8 @@ class AggregateSourceFile(BaseModel):
 
 
 class AggregateSourceOut(_DateRangeMixin):
-    id: Literal["all"] = ALL_FILES_SOURCE_ID
-    file_name: str = ALL_FILES_SOURCE_NAME
+    id: AggregateSourceId
+    source_type: str
     status: str = "completed"
     records_count: int
     files_count: int
@@ -77,6 +82,7 @@ class EnergyDataFileListResponse(BaseModel):
     total_pages: int
     # None, gdy użytkownik nie ma żadnego poprawnie zaimportowanego pliku.
     aggregate: AggregateSourceSummary | None = None
+    devices_aggregate: AggregateSourceSummary | None = None
 
 
 class EnergyDataFileDataResponse(BaseModel):
