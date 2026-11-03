@@ -94,6 +94,12 @@ class DynamicPriceService:
             days=self._days_summary(days, counts),
         )
 
+    def consumer_prices(self, start_utc: datetime, end_utc: datetime) -> dict[datetime, float]:
+        """Ceny dla klienta (zł/kWh) według początku kwadransa w UTC."""
+        _, to_price = self._tariff_price_converter()
+        prices = self.repository.get_prices_between(self.source, start_utc, end_utc)
+        return {slot: to_price(price) for slot, price in prices.items()}
+
     def _tariff_price_converter(self):
         tariff = self.tariff_repository.get_first_by_type(Tariff.TYPE_DYNAMIC)
         if tariff is None:

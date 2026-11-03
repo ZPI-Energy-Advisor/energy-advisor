@@ -1,0 +1,147 @@
+{
+  "period": {
+    "start": "2026-10-19T00:00:00+02:00",
+    "end": "2026-10-21T00:00:00+02:00"
+  },
+  "devices": [
+    {
+      "device_id": "dev_wm_01",
+      "device_name": "Pralka",
+      "device_type": "washing_machine",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "07:00", "to": "22:00" }
+      },
+      "programs": [
+        {
+          "program_id": "cotton_60",
+          "program_name": "Bawełna 60°C",
+          "duration_min": 120,
+          "profile_kwh": [0.45, 0.45, 0.30, 0.10, 0.10, 0.15, 0.20, 0.20]
+        },
+        {
+          "program_id": "quick_40",
+          "program_name": "Szybkie 40°C",
+          "duration_min": 60,
+          "profile_kwh": [0.35, 0.25, 0.10, 0.10]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_td_01",
+      "device_name": "Suszarka",
+      "device_type": "tumble_dryer",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "07:00", "to": "22:00" }
+      },
+      "programs": [
+        {
+          "program_id": "cotton_dry",
+          "program_name": "Bawełna do szafy",
+          "duration_min": 120,
+          "profile_kwh": [0.30, 0.35, 0.35, 0.35, 0.30, 0.25, 0.15, 0.05]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_dw_01",
+      "device_name": "Zmywarka",
+      "device_type": "dishwasher",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "19:00", "to": "07:00" }
+      },
+      "programs": [
+        {
+          "program_id": "eco",
+          "program_name": "Eco",
+          "duration_min": 180,
+          "profile_kwh": [0.15, 0.15, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03, 0.12, 0.12, 0.06, 0.05]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_hp_01",
+      "device_name": "Pompa ciepła",
+      "device_type": "heat_pump",
+      "device_category": "Ogrzewanie",
+      "max_power_kw": 4.5,
+      "flexibility": { "mode": "shiftable", "max_shift_min": 60 }
+    },
+    {
+      "device_id": "dev_tv_01",
+      "device_name": "Telewizor",
+      "device_type": "tv",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.15,
+      "flexibility": { "mode": "fixed" }
+    }
+  ],
+  "energy_usage": [
+    {
+      "action_id": "act_0001",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-10-19T17:00:00+02:00",
+      "action_end": "2026-10-19T20:00:00+02:00",
+      "energy_kwh": 3.60
+    },
+    {
+      "action_id": "act_0002",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-10-19T17:30:00+02:00",
+      "action_end": "2026-10-19T19:30:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0003",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "action_start": "2026-10-19T19:45:00+02:00",
+      "action_end": "2026-10-19T21:45:00+02:00",
+      "energy_kwh": 2.10
+    },
+    {
+      "action_id": "act_0004",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-10-19T19:30:00+02:00",
+      "action_end": "2026-10-19T22:00:00+02:00",
+      "energy_kwh": 0.30
+    },
+    {
+      "action_id": "act_0005",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-10-19T19:30:00+02:00",
+      "action_end": "2026-10-19T22:30:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0006",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-10-20T16:30:00+02:00",
+      "action_end": "2026-10-20T18:30:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0007",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-10-20T17:00:00+02:00",
+      "action_end": "2026-10-20T20:00:00+02:00",
+      "energy_kwh": 3.90
+    },
+    {
+      "action_id": "act_0008",
+      "device_id": "dev_wm_01",
+      "program_id": "quick_40",
+      "action_start": "2026-10-20T19:00:00+02:00",
+      "action_end": "2026-10-20T20:00:00+02:00",
+      "energy_kwh": 0.80
+    }
+  ]
+}

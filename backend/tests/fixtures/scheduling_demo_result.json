@@ -1,0 +1,192 @@
+{
+  "cost_before": 19.7346,
+  "cost_after": 11.5135,
+  "actions": [
+    {
+      "action_id": "act_0001",
+      "device_id": "dev_hp_01",
+      "program_id": null,
+      "original_start": "2026-10-19T17:00:00+02:00",
+      "start": "2026-10-19T16:00:00+02:00",
+      "end": "2026-10-19T19:00:00+02:00",
+      "profile_kwh": [
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3
+      ],
+      "cost_before": 4.788,
+      "cost_after": 4.224,
+      "status": "moved",
+      "reason": null
+    },
+    {
+      "action_id": "act_0002",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "original_start": "2026-10-19T17:30:00+02:00",
+      "start": "2026-10-19T11:00:00+02:00",
+      "end": "2026-10-19T13:00:00+02:00",
+      "profile_kwh": [
+        0.45,
+        0.45,
+        0.3,
+        0.1,
+        0.1,
+        0.15,
+        0.2,
+        0.2
+      ],
+      "cost_before": 2.5965,
+      "cost_after": 0.4485,
+      "status": "moved",
+      "reason": null
+    },
+    {
+      "action_id": "act_0004",
+      "device_id": "dev_tv_01",
+      "program_id": null,
+      "original_start": "2026-10-19T19:30:00+02:00",
+      "start": "2026-10-19T19:30:00+02:00",
+      "end": "2026-10-19T22:00:00+02:00",
+      "profile_kwh": [
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03
+      ],
+      "cost_before": 0.3543,
+      "cost_after": 0.3543,
+      "status": "unchanged",
+      "reason": null
+    },
+    {
+      "action_id": "act_0005",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "original_start": "2026-10-19T19:30:00+02:00",
+      "start": "2026-10-19T23:45:00+02:00",
+      "end": "2026-10-20T02:45:00+02:00",
+      "profile_kwh": [
+        0.15,
+        0.15,
+        0.05,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.03,
+        0.12,
+        0.12,
+        0.06,
+        0.05
+      ],
+      "cost_before": 0.9483,
+      "cost_after": 0.4542,
+      "status": "moved",
+      "reason": null
+    },
+    {
+      "action_id": "act_0003",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "original_start": "2026-10-19T19:45:00+02:00",
+      "start": "2026-10-19T13:15:00+02:00",
+      "end": "2026-10-19T15:15:00+02:00",
+      "profile_kwh": [
+        0.3,
+        0.35,
+        0.35,
+        0.35,
+        0.3,
+        0.25,
+        0.15,
+        0.05
+      ],
+      "cost_before": 2.6275,
+      "cost_after": 0.5005,
+      "status": "moved",
+      "reason": null
+    },
+    {
+      "action_id": "act_0006",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "original_start": "2026-10-20T16:30:00+02:00",
+      "start": "2026-10-20T12:45:00+02:00",
+      "end": "2026-10-20T14:45:00+02:00",
+      "profile_kwh": [
+        0.45,
+        0.45,
+        0.3,
+        0.1,
+        0.1,
+        0.15,
+        0.2,
+        0.2
+      ],
+      "cost_before": 2.1675,
+      "cost_after": 0.6795,
+      "status": "moved",
+      "reason": null
+    },
+    {
+      "action_id": "act_0007",
+      "device_id": "dev_hp_01",
+      "program_id": null,
+      "original_start": "2026-10-20T17:00:00+02:00",
+      "start": "2026-10-20T16:00:00+02:00",
+      "end": "2026-10-20T19:00:00+02:00",
+      "profile_kwh": [
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325,
+        0.325
+      ],
+      "cost_before": 5.187,
+      "cost_after": 4.576,
+      "status": "moved",
+      "reason": null
+    },
+    {
+      "action_id": "act_0008",
+      "device_id": "dev_wm_01",
+      "program_id": "quick_40",
+      "original_start": "2026-10-20T19:00:00+02:00",
+      "start": "2026-10-20T11:15:00+02:00",
+      "end": "2026-10-20T12:15:00+02:00",
+      "profile_kwh": [
+        0.35,
+        0.25,
+        0.1,
+        0.1
+      ],
+      "cost_before": 1.0655,
+      "cost_after": 0.2765,
+      "status": "moved",
+      "reason": null
+    }
+  ]
+}
