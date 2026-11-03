@@ -78,7 +78,22 @@ drogo wieczorem. Przykładowy wynik w JSON, dla ekranu optymalizacji i huba:
 
 `GET /api/v1/energy-files/{id}/schedule?from=RRRR-MM-DD&to=RRRR-MM-DD` liczy optymalizację dla akcji
 pliku urządzeń z wybranych dni, przy cenach dla klienta taryfy dynamicznej (`ScheduleResponse`).
+Bez `from` i `to` bierze cały okres pliku. Ceny są czytane z bazy przy każdym zapytaniu.
+
+Odpowiedź poza akcjami i cenami ma `missing_price_actions` i `missing_price_days`: liczbę akcji bez cen
+na oryginalnym miejscu i ich doby lokalne. Takie akcje zostają (`conflict`, `missing_prices`) i nie
+wchodzą do `cost_before` ani `cost_after`, więc wynik jest wtedy niepełny.
+
+Błędy:
+
+| Kod | Kiedy |
+|---|---|
+| 404 | plik nie istnieje albo należy do innego użytkownika; brak taryfy dynamicznej w bazie |
+| 422 | zły zakres dat; w okresie nie ma akcji poboru energii (np. plik licznika albo sama produkcja PV); brak cen dla wszystkich akcji |
+
 Korzysta z niego zakładka „Optymalizacja”: dla każdej doby pokazuje ceny oraz akcje urządzeń przed i po.
+Działa tylko dla pojedynczego pliku urządzeń; dla pliku licznika i plików zbiorczych zakładka pokazuje
+komunikat zamiast formularza. Brak cen opisuje jedną notką z listą dni, a nie przy każdej akcji.
 
 ## Założenia
 

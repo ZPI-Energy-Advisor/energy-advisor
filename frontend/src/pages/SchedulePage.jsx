@@ -38,6 +38,7 @@ function SchedulePage() {
   const dateFrom = fileRange?.from ?? selectedFile?.data_start ?? "";
   const dateTo = fileRange?.to ?? selectedFile?.data_start ?? "";
   const shown = schedule?.fileId === selectedFile?.id ? schedule : null;
+  const shownError = error?.fileId === selectedFile?.id ? error.message : null;
   // Optymalizacja przesuwa akcje urządzeń, więc ma sens tylko dla pojedynczego pliku urządzeń.
   const isDevicesFile =
     selectedFile && !isAggregateSource(selectedFile.id) && selectedFile.source_type === SOURCE_TYPE_DEVICES;
@@ -54,7 +55,10 @@ function SchedulePage() {
       setSchedule({ ...data, fileId: selectedFile.id });
     } catch (loadError) {
       setSchedule(null);
-      setError(getApiErrorMessage(loadError, "Nie udało się policzyć optymalizacji."));
+      setError({
+        message: getApiErrorMessage(loadError, "Nie udało się policzyć optymalizacji."),
+        fileId: selectedFile.id,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -109,7 +113,9 @@ function SchedulePage() {
             </button>
           </div>
 
-          {error && <p className="p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-200">{error}</p>}
+          {shownError && (
+            <p className="p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-200">{shownError}</p>
+          )}
 
           {shown && (
             <>
