@@ -189,14 +189,22 @@ class EnergyFileService:
         end = datetime.combine(date_to + timedelta(days=1), time(), MARKET_TIMEZONE).astimezone(timezone.utc)
 
         devices = self.device_repository.records_for_file(energy_file.id, user_id, start, end)
-        if not any(device.actions for device in devices):
+        actions = actions_from_devices(devices)
+        if not actions:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Optymalizacja działa tylko dla plików urządzeń z akcjami w wybranym okresie.",
+                detail="Optymalizacja działa tylko dla plików urządzeń z akcjami poboru energii w wybranym okresie.",
             )
         # Akcja może skończyć się po północy ostatniej doby, stąd ceny z zapasem jednej doby.
         prices = self.price_service.consumer_prices(start, end + timedelta(days=1))
-        result = schedule(actions_from_devices(devices), prices)
+        result = schedule(actions, prices)
+
+        missing_prices = [item for item in result.actions if item.cost_before is None]
+        if len(missing_prices) == len(result.actions):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Brak cen taryfy dynamicznej dla wybranego okresu, więc nie da się policzyć optymalizacji.",
+            )
 
         # Akcja, która kończy się po ostatniej dobie, ma na wykresie także dobę z dokończeniem.
         latest_end = max(max(item.end, item.original_start + len(item.profile_kwh) * SLOT) for item in result.actions)
@@ -215,6 +223,8 @@ class EnergyFileService:
             date_to=date_to,
             cost_before=round(result.cost_before, 2),
             cost_after=round(result.cost_after, 2),
+            missing_price_actions=len(missing_prices),
+            missing_price_days=sorted({local(item.original_start).date() for item in missing_prices}),
             actions=[
                 ScheduledActionOut(
                     action_id=item.action_id,

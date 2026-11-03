@@ -29,5 +29,7 @@ class ScheduleResponse(BaseModel):
     date_to: date
     cost_before: float
     cost_after: float
+    missing_price_actions: int = 0
+    missing_price_days: list[date] = []
     actions: list[ScheduledActionOut]
     prices: list[SchedulePriceOut]

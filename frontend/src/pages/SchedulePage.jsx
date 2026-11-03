@@ -4,7 +4,15 @@ import ScheduleDayChart from "../components/ScheduleDayChart";
 import SelectedFileBar from "../components/SelectedFileBar";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { ALL_FILES_ID, getApiErrorMessage } from "../utils/energyFiles";
-import { clockOf, describeReason, formatDayMonth, formatPln, visibleDays } from "../utils/schedule";
+import {
+  clockOf,
+  describeReason,
+  formatDayMonth,
+  formatPln,
+  isConflict,
+  missingPricesNote,
+  visibleDays,
+} from "../utils/schedule";
 
 const shortTime = (isoTime) => `${formatDayMonth(isoTime.slice(0, 10))} ${clockOf(isoTime)}`;
 
@@ -52,7 +60,8 @@ function SchedulePage() {
 
   const saved = shown ? shown.cost_before - shown.cost_after : 0;
   const moved = shown ? shown.actions.filter((action) => action.status === "moved") : [];
-  const conflicts = shown ? shown.actions.filter((action) => action.status === "conflict") : [];
+  const conflicts = shown ? shown.actions.filter(isConflict) : [];
+  const missingPrices = shown ? missingPricesNote(shown.missing_price_actions, shown.missing_price_days) : null;
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -117,6 +126,10 @@ function SchedulePage() {
                 jakie akcje będą danego dnia, więc pokazuje potencjał oszczędności. Ładowanie EV nie jest jeszcze
                 optymalizowane.
               </p>
+
+              {missingPrices && (
+                <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">{missingPrices}</p>
+              )}
 
               <div className="flex flex-wrap gap-4 text-xs text-gray-600">
                 <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-300" /> przed</span>

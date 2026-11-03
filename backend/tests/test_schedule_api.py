@@ -29,8 +29,27 @@ class _Prices:
         return prices
 
 
-def override_prices():
-    app.dependency_overrides[get_dynamic_price_service] = _Prices
+class _NoPricesOn20th(_Prices):
+    def consumer_prices(self, start, end):
+        return {slot: price for slot, price in super().consumer_prices(start, end).items()
+                if slot.astimezone(WARSAW).day != 20}
+
+
+class _NoPrices:
+    def consumer_prices(self, start, end):
+        return {}
+
+
+def override_prices(prices=_Prices):
+    app.dependency_overrides[get_dynamic_price_service] = prices
+
+
+def get_schedule(client, energy_file, prices=_Prices, **params):
+    override_prices(prices)
+    try:
+        return client.get(f"/api/v1/energy-files/{energy_file.id}/schedule", params=params)
+    finally:
+        app.dependency_overrides.pop(get_dynamic_price_service, None)
 
 
 def create_devices_file(db, user) -> EnergyDataFile:
@@ -125,6 +144,44 @@ def test_file_without_device_actions_is_rejected(db, user_a, client_a):
 
     assert response.status_code == 422
     assert "plików urządzeń" in response.json()["detail"]
+
+
+def test_period_with_only_pv_production_is_rejected(db, user_a, client_a):
+    energy_file = create_devices_file(db, user_a)
+    pv = DeviceRecord(
+        device_id="dev_pv_01", name="Falownik PV", device_type="pv_inverter", device_category="OZE",
+        flexibility_mode="fixed", max_power_kw=5.0,
+        actions=[ActionRecord("act_pv", at(21, 12), at(21, 13), -2.0, [-0.5] * 4)],
+    )
+    DeviceRepository(db).save_for_file(user_id=user_a.id, energy_data_file_id=energy_file.id, devices=[pv])
+    energy_file.data_end = datetime.date(2026, 10, 21)
+    db.commit()
+
+    response = get_schedule(client_a, energy_file, **{"from": "2026-10-21", "to": "2026-10-21"})
+
+    assert response.status_code == 422
+    assert "poboru energii" in response.json()["detail"]
+
+
+def test_period_without_any_prices_is_rejected(db, user_a, client_a):
+    energy_file = create_devices_file(db, user_a)
+
+    response = get_schedule(client_a, energy_file, _NoPrices)
+
+    assert response.status_code == 422
+    assert "Brak cen" in response.json()["detail"]
+
+
+def test_actions_without_prices_are_counted_with_their_days(db, user_a, client_a):
+    energy_file = create_devices_file(db, user_a)
+
+    body = get_schedule(client_a, energy_file, _NoPricesOn20th).json()
+
+    assert body["missing_price_actions"] == 1
+    assert body["missing_price_days"] == ["2026-10-20"]
+    actions = {item["action_id"]: item for item in body["actions"]}
+    assert actions["act_2"]["reason"] == "missing_prices"
+    assert actions["act_1"]["status"] == "moved"
 
 
 def test_schedule_of_other_users_file_returns_404(db, user_a, client_b):

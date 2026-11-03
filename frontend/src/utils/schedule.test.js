@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { dayPrices, dayRows, daySegment, formatPln, listDays, minutesOf, visibleDays } from "./schedule";
+import {
+  dayPrices,
+  dayRows,
+  daySegment,
+  formatPln,
+  isConflict,
+  listDays,
+  minutesOf,
+  missingPricesNote,
+  visibleDays,
+} from "./schedule";
 
 const action = (overrides) => ({
   action_id: "act_1",
@@ -83,5 +93,16 @@ describe("schedule", () => {
   it("formatuje kwoty", () => {
     expect(formatPln(1.5)).toMatch(/^1,50\sz/);
     expect(formatPln(null)).toBe("–");
+  });
+
+  it("brak cen nie jest konfliktem akcji", () => {
+    expect(isConflict(action({ status: "conflict", reason: "missing_prices" }))).toBe(false);
+    expect(isConflict(action({ status: "conflict", reason: "outside_window" }))).toBe(true);
+    expect(isConflict(action({ status: "moved" }))).toBe(false);
+  });
+
+  it("opisuje brak cen jednym zdaniem z listą dni", () => {
+    expect(missingPricesNote(0, [])).toBeNull();
+    expect(missingPricesNote(3, ["2026-10-19", "2026-10-20"])).toMatch(/^Brak cen dynamicznych dla 3 akcji \(19\.10, 20\.10\)\./);
   });
 });

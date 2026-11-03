@@ -70,3 +70,14 @@ const CONFLICT_REASONS = {
 };
 
 export const describeReason = (reason) => CONFLICT_REASONS[reason] ?? reason;
+
+export const isConflict = (action) => action.status === "conflict" && action.reason !== "missing_prices";
+
+export const missingPricesNote = (count, days) => {
+  if (!count) return null;
+  const listedDays = days.map(formatDayMonth).join(", ");
+  return (
+    `Brak cen dynamicznych dla ${count} akcji (${listedDays}). ` +
+    "Te akcje zostają na swoim miejscu i nie wchodzą do kosztów ani oszczędności."
+  );
+};
