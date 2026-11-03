@@ -136,20 +136,48 @@ def test_invalid_file_is_rejected_with_errors_pointing_to_actions():
     with pytest.raises(FileImportError) as exc_info:
         parse(document)
 
-    assert exc_info.value.status_code == 422
-    assert "act_0016: suma profilu 1.95 kWh różni się od energy_kwh 1.50" in exc_info.value.detail
+    error = exc_info.value
+    assert error.status_code == 422
+    assert error.detail == "Plik urządzeń zawiera błędy (1)."
+    assert error.errors == [{
+        "location": "act_0016",
+        "message": "suma profilu 1.95 kWh różni się od energy_kwh 1.50",
+        "device_id": "dev_wm_01",
+        "device_name": "Pralka Bosch",
+        "action_id": "act_0016",
+    }]
 
 
-def test_long_error_list_is_shortened():
+def test_structure_error_names_the_device():
     document = copy.deepcopy(SAMPLE)
-    for item in document["energy_usage"][:7]:
+    next(item for item in document["devices"] if item["device_id"] == "dev_kt_01").pop("device_category")
+
+    with pytest.raises(FileImportError) as exc_info:
+        parse(document)
+
+    assert exc_info.value.errors == [{
+        "location": "dev_kt_01",
+        "message": "brak pola device_category",
+        "device_id": "dev_kt_01",
+        "device_name": "Czajnik elektryczny",
+        "action_id": None,
+    }]
+
+
+def test_long_error_list_is_limited_but_counted():
+    document = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
+    for item in document["energy_usage"]:
         item["device_id"] = "dev_nieznane"
 
     with pytest.raises(FileImportError) as exc_info:
         parse(document)
 
-    assert exc_info.value.detail.startswith("Plik urządzeń zawiera błędy (7):")
-    assert exc_info.value.detail.endswith("…i 2 więcej.")
+    error = exc_info.value
+    actions_count = len(document["energy_usage"])
+    assert error.detail == f"Plik urządzeń zawiera błędy ({actions_count})."
+    assert error.errors_count == actions_count
+    assert len(error.errors) == 100
+    assert error.http_detail() == {"message": error.detail, "errors": error.errors, "errors_count": actions_count}
 
 
 def test_grid_limit_is_not_checked_on_import():

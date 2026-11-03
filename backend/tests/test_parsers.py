@@ -457,4 +457,10 @@ def test_devices_file_without_devices_is_rejected():
     error = _import_error(BytesIO(json.dumps(document).encode()))
 
     assert error.status_code == 422
-    assert error.detail == "Plik urządzeń nie zawiera żadnych urządzeń."
+    assert error.errors == [{
+        "location": "devices",
+        "message": "plik musi zawierać co najmniej jedno urządzenie",
+        "device_id": None,
+        "device_name": None,
+        "action_id": None,
+    }]

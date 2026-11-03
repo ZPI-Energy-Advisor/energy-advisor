@@ -3,10 +3,13 @@ import {
   ALL_DEVICE_FILES_ID,
   ALL_FILES_ID,
   aggregateIdForSourceType,
+  dropRejectionMessage,
   formatDataResolution,
   formatRecordsCount,
   isAggregateSource,
 } from "./energyFiles";
+
+const rejection = (...codes) => ({ file: {}, errors: codes.map((code) => ({ code })) });
 
 describe("źródła danych plików", () => {
   it("rozpoznaje oba źródła zbiorcze", () => {
@@ -33,5 +36,29 @@ describe("źródła danych plików", () => {
     expect(formatDataResolution({ resolution_minutes: 15, data_source: "devices" })).toBe("akcje urządzeń");
     expect(formatDataResolution({ resolution_minutes: 15, data_source: "meter" })).toMatch(/^odczyty co 15\smin$/);
     expect(formatDataResolution({ resolution_minutes: 60 })).toBe("odczyty godzinowe");
+  });
+});
+
+describe("dropRejectionMessage", () => {
+  it("dwa poprawne pliki naraz to za dużo plików, a nie zły format", () => {
+    const message = dropRejectionMessage([rejection("too-many-files"), rejection("too-many-files")], 10);
+
+    expect(message).toBe("Można wgrać tylko jeden plik naraz. Wybierz jeden plik.");
+  });
+
+  it("za dużo plików ma pierwszeństwo przed innymi powodami", () => {
+    const message = dropRejectionMessage([rejection("too-many-files", "file-invalid-type"), rejection("too-many-files")], 10);
+
+    expect(message).toMatch(/tylko jeden plik/);
+  });
+
+  it("zbyt duży plik", () => {
+    expect(dropRejectionMessage([rejection("file-too-large")], 10)).toBe(
+      "Plik jest za duży. Maksymalny rozmiar pliku to 10 MB.",
+    );
+  });
+
+  it("zły format pliku", () => {
+    expect(dropRejectionMessage([rejection("file-invalid-type")], 10)).toMatch(/rozszerzeniem \.csv lub \.json/);
   });
 });
