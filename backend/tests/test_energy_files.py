@@ -1,5 +1,6 @@
 import datetime
 import json
+import time
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -21,6 +22,7 @@ from app.models.Simulation import Simulation
 from app.models.User import User
 from app.parsers import parse_energy_file
 from app.repositories.device_repository import DeviceRepository
+from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
 from main import app
@@ -35,7 +37,10 @@ except Exception as exc:  # brak bazy lub niewykonane migracje
 
 client = TestClient(app)
 auth = AuthService(repository=None)
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 SAMPLE_DEVICES_FILE = Path(__file__).resolve().parents[2] / "frontend" / "public" / "samples" / "devices-example.json"
+# Plik roczny to ok. 35 tys. kwadransów, zapisywanych jednym wsadowym INSERT-em.
+YEARLY_READINGS_SAVE_LIMIT_SECONDS = 10
 
 SAMPLE_RESULTS = {
     "tariffs": {"G11": {"type": "stala", "total_usage_kwh": 1.0, "estimated_cost_pln": 1.0}},
@@ -218,10 +223,11 @@ def test_get_data_of_failed_file(db):
 
 
 class _StubCalculationService:
-    def __init__(self, result=None, error=None, devices=None):
+    def __init__(self, result=None, error=None, devices=None, readings=()):
         self.result = result
         self.error = error
         self.devices = devices
+        self.readings = list(readings)
 
     def parse_file(self, file_obj):
         if self.error:
@@ -231,13 +237,16 @@ class _StubCalculationService:
     def calculate_with_report(self, parsed):
         return self.result
 
+    def quarter_hour_readings(self, parsed):
+        return self.readings
 
-def _upload(user, calculation_service, file_name="zuzycie.csv"):
+
+def _upload(user, calculation_service, file_name="zuzycie.csv", content=b"x"):
     app.dependency_overrides[get_calculation_service] = lambda: calculation_service
     try:
         return client.post(
             "/api/v1/upload",
-            files={"file": (file_name, BytesIO(b"x"), "text/csv")},
+            files={"file": (file_name, BytesIO(content), "text/csv")},
             headers=_headers(user),
         )
     finally:
@@ -268,9 +277,9 @@ def test_upload_links_simulation_with_file(db):
     assert latest["simulation_id"] == body["simulation_id"]
 
 
-def _readings(db, file_id) -> list[tuple[datetime.datetime, float]]:
+def _readings(db, file_id) -> list[tuple[datetime.datetime, float, float]]:
     return [
-        (reading.measured_at, float(reading.energy_kwh))
+        (reading.measured_at, float(reading.energy_kwh), float(reading.exported_kwh))
         for reading in db.query(EnergyReading)
         .filter(EnergyReading.energy_data_file_id == file_id)
         .order_by(EnergyReading.measured_at)
@@ -280,13 +289,63 @@ def _readings(db, file_id) -> list[tuple[datetime.datetime, float]]:
 def test_upload_saves_energy_readings(db):
     user = _create_user(db)
 
-    response = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS_WITH_USAGE))
+    readings = [
+        (datetime.datetime(2024, 11, 3, 0, 0), 0.5, 0.0),
+        (datetime.datetime(2024, 11, 3, 0, 30), 0.25, 0.1),
+    ]
+
+    response = _upload(user, _StubCalculationService(result=SAMPLE_RESULTS_WITH_USAGE, readings=readings))
 
     assert response.status_code == 200
-    assert _readings(db, uuid.UUID(response.json()["file_id"])) == [
-        (datetime.datetime(2024, 11, 3, 0, 0), 0.5),
-        (datetime.datetime(2024, 11, 3, 0, 30), 0.25),
-    ]
+    assert _readings(db, uuid.UUID(response.json()["file_id"])) == readings
+
+
+def _meter_calculation_service() -> CalculationService:
+    tariff = SimpleNamespace(id=1, name="G11", type="stala")
+    rate = SimpleNamespace(price_per_kwh=1.0, time_start=datetime.time(0, 0), time_end=datetime.time(23, 59, 59))
+    repository = SimpleNamespace(get_all=lambda: [tariff], get_rates_for_tariff=lambda tariff_id: [rate])
+    return CalculationService(repository)
+
+
+def test_upload_of_meter_file_with_pv_saves_consumption_and_export(db):
+    user = _create_user(db)
+    content = (BACKEND_DIR / "test_data" / "scenario_net_metering.csv").read_bytes()
+
+    response = _upload(user, _meter_calculation_service(), content=content)
+
+    assert response.status_code == 200
+    report = response.json()["import_report"]
+    assert (report["grid_import_kwh"], report["grid_export_kwh"]) == (5.6, 5.6)
+    readings = _readings(db, uuid.UUID(response.json()["file_id"]))
+    assert len(readings) == 6 * 4
+    assert sum(used for _, used, _ in readings) == pytest.approx(5.6)
+    assert sum(exported for _, _, exported in readings) == pytest.approx(5.6)
+    assert (datetime.datetime(2026, 1, 15, 11, 0), 0.0, 0.8) in readings
+
+
+def test_upload_of_meter_file_without_export_saves_zero_export(db):
+    user = _create_user(db)
+    content = (BACKEND_DIR / "test_data" / "scenario_without_pv.csv").read_bytes()
+
+    response = _upload(user, _meter_calculation_service(), content=content)
+
+    assert response.status_code == 200
+    readings = _readings(db, uuid.UUID(response.json()["file_id"]))
+    assert readings and all(exported == 0 for _, _, exported in readings)
+
+
+def test_saving_readings_of_a_yearly_file_is_fast(db):
+    user = _create_user(db)
+    energy_file = _create_file(db, user, with_simulation=False)
+    start = datetime.datetime(2025, 1, 1)
+    readings = [(start + datetime.timedelta(minutes=15 * index), 0.1, 0.05) for index in range(365 * 96)]
+
+    started = time.perf_counter()
+    EnergyReadingRepository(db).replace_for_file(energy_file.id, readings)
+    db.commit()
+
+    assert time.perf_counter() - started < YEARLY_READINGS_SAVE_LIMIT_SECONDS
+    assert db.query(EnergyReading).filter(EnergyReading.energy_data_file_id == energy_file.id).count() == len(readings)
 
 
 def test_upload_failure_marks_file_as_failed(db):

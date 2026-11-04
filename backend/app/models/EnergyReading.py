@@ -23,4 +23,6 @@ class EnergyReading(Base):
         index=True,
     )
     measured_at = Column(DateTime, nullable=False)
+    # Pobór z sieci; energia oddana do sieci (np. z PV) jest osobno w exported_kwh.
     energy_kwh = Column(Numeric(12, 6), nullable=False)
+    exported_kwh = Column(Numeric(12, 6), nullable=False, default=0, server_default="0")

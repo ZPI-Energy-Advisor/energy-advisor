@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from app.parsers.base import (
+    EXPORTED_KWH,
     KWH,
     TIMESTAMP_START,
     UNIT_ACTION,
@@ -59,8 +60,8 @@ def _invalid_file_error(issues: list[Issue], document: dict) -> FileImportError:
 class DevicesJsonParser(DocumentParser):
     """Plik urządzeń zgodny z docs/devices-file-format.md.
 
-    Zwraca urządzenia z akcjami rozłożonymi na kwadranse (do zapisu w bazie) oraz sumę zużycia
-    w kwadransach (do standardowej wyceny taryf, tak jak dla pliku CSV).
+    Zwraca urządzenia z akcjami rozłożonymi na kwadranse (do zapisu w bazie) oraz pobór z sieci
+    i oddanie do sieci w kwadransach (do standardowej wyceny taryf, tak jak dla pliku CSV).
     """
 
     name = "devices"
@@ -77,8 +78,7 @@ class DevicesJsonParser(DocumentParser):
 
         devices = self._device_records(document)
         slots = self._slots_utc(devices)
-        consumption = slots[slots > 0]
-        data = self._consumption_series(consumption, document["period"])
+        data = self._grid_series(slots, document["period"])
 
         report = ImportReport(
             detected_format=self.name,
@@ -91,10 +91,11 @@ class DevicesJsonParser(DocumentParser):
                 devices_count=validation.devices_count,
                 actions_count=validation.actions_count,
                 categories=sorted(validation.categories),
-                consumption_kwh=round(float(consumption.sum()), 2),
+                consumption_kwh=round(float(slots[slots > 0].sum()), 2),
                 pv_production_kwh=round(float(-slots[slots < 0].sum()), 2),
             ),
         )
+        report.add_energy_totals(data)
         return ParsedEnergyFile(data=data, resolution_minutes=QUARTER_HOUR, report=report, devices=devices)
 
     @staticmethod
@@ -152,9 +153,11 @@ class DevicesJsonParser(DocumentParser):
         return pd.Series(values, index=pd.DatetimeIndex(starts, tz="UTC"), dtype=float)
 
     @staticmethod
-    def _consumption_series(consumption: pd.Series, period: dict) -> pd.DataFrame:
-        """Suma zużycia w każdym kwadransie okresu, w czasie lokalnym jak dane z licznika.
+    def _grid_series(slots: pd.Series, period: dict) -> pd.DataFrame:
+        """Pobór z sieci i oddanie do sieci w każdym kwadransie okresu, w czasie lokalnym jak dane z licznika.
 
+        Produkcja PV najpierw pokrywa zużycie w tym samym kwadransie (autokonsumpcja), więc
+        pobór = max(0, suma akcji), a oddanie = max(0, −suma akcji).
         Kwadrans bez akcji ma 0 kWh: w pliku zdarzeniowym brak akcji znaczy „nic nie pracowało”.
         """
         quarters = pd.date_range(
@@ -163,8 +166,9 @@ class DevicesJsonParser(DocumentParser):
             freq=f"{QUARTER_HOUR}min",
             inclusive="left",
         )
-        usage = consumption.groupby(level=0).sum().reindex(quarters, fill_value=0.0)
+        balance = slots.groupby(level=0).sum().reindex(quarters, fill_value=0.0).round(6)
         return pd.DataFrame({
-            TIMESTAMP_START: usage.index.tz_convert(LOCAL_TIMEZONE).tz_localize(None),
-            KWH: usage.to_numpy(),
+            TIMESTAMP_START: balance.index.tz_convert(LOCAL_TIMEZONE).tz_localize(None),
+            KWH: balance.clip(lower=0.0).to_numpy(),
+            EXPORTED_KWH: (-balance).clip(lower=0.0).to_numpy(),
         })

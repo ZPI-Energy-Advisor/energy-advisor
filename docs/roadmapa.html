@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Energy Advisor – mapa drogowa</title>
+<style>
+  :root {
+    --ink: #10231c;
+    --muted: #5b6b64;
+    --line: #d5e2dc;
+    --bg: #f6faf8;
+    --done: #047857;
+    --done-soft: #d1fae5;
+    --prog: #b45309;
+    --prog-soft: #fef3c7;
+    --plan: #475569;
+    --plan-soft: #e2e8f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1800px; height: 700px; }
+  body {
+    font-family: "Segoe UI", "Segoe UI Variable", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    padding: 44px 56px 40px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header { display: flex; align-items: flex-end; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .mark {
+    width: 54px; height: 54px; border-radius: 14px; background: var(--done);
+    display: grid; place-items: center;
+  }
+  .mark svg { width: 30px; height: 30px; }
+  h1 { font-size: 38px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
+  h1 span { color: var(--done); }
+  .sub { font-size: 17px; color: var(--muted); margin-top: 6px; }
+  .legend { display: flex; gap: 22px; font-size: 15px; color: var(--muted); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+
+  .track { position: relative; margin-top: 40px; height: 34px; flex: none; }
+  header { flex: none; }
+  .rail { position: absolute; left: 0; right: 0; top: 16px; height: 3px; background: var(--line); border-radius: 2px; }
+  .rail-done { position: absolute; left: 0; top: 16px; height: 3px; width: 31%; background: var(--done); border-radius: 2px; }
+  .rail-prog { position: absolute; left: 31%; top: 16px; height: 3px; width: 8%; background: var(--prog); }
+  .node {
+    position: absolute; top: 6px; width: 23px; height: 23px; border-radius: 50%;
+    background: var(--bg); border: 4px solid var(--plan); transform: translateX(-50%);
+  }
+  .node.done { border-color: var(--done); background: var(--done); }
+  .node.prog { border-color: var(--prog); }
+  .node.goal { width: 30px; height: 30px; top: 2px; border-color: var(--done); background: #fff; }
+  .gap {
+    position: absolute; top: -2px; transform: translateX(-50%);
+    font-size: 13px; color: var(--muted); background: var(--bg); padding: 0 8px;
+    white-space: nowrap; line-height: 38px;
+  }
+
+  .cols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; margin-top: 22px; flex: 1; min-height: 0; }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 16px;
+    padding: 22px 22px 20px; display: flex; flex-direction: column;
+    border-top: 6px solid var(--plan);
+  }
+  .card.done { border-top-color: var(--done); }
+  .card.prog { border-top-color: var(--prog); }
+  .when { font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+  .title { font-size: 25px; font-weight: 700; margin-top: 6px; line-height: 1.2; min-height: 62px; }
+  .chip {
+    align-self: flex-start; margin-top: 10px; font-size: 13px; font-weight: 600;
+    padding: 4px 11px; border-radius: 999px; background: var(--plan-soft); color: var(--plan);
+  }
+  .done .chip { background: var(--done-soft); color: var(--done); }
+  .prog .chip { background: var(--prog-soft); color: var(--prog); }
+  ul { list-style: none; margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+  li { font-size: 17.5px; line-height: 1.36; padding-left: 20px; position: relative; color: #23352e; }
+  li::before {
+    content: ""; position: absolute; left: 2px; top: 10px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--plan);
+  }
+  .done li::before { background: var(--done); }
+  .prog li::before { background: var(--prog); }
+  .milestone {
+    margin-top: auto; padding-top: 14px; font-size: 14px; font-weight: 600; color: var(--done);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .milestone svg { width: 16px; height: 16px; flex: none; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+      </div>
+      <div>
+        <h1>Energy<span>Advisor</span> · mapa drogowa</h1>
+        <div class="sub">Analiza i optymalizacja kosztów energii elektrycznej w gospodarstwie domowym</div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--done)"></i>Zrealizowane</span>
+      <span><i style="background:var(--prog)"></i>W realizacji</span>
+      <span><i style="background:var(--plan)"></i>Zaplanowane</span>
+    </div>
+  </header>
+
+  <div class="track" aria-hidden="true">
+    <div class="rail"></div>
+    <div class="rail-done"></div>
+    <div class="rail-prog"></div>
+    <div class="node done" style="left:9.6%"></div>
+    <div class="gap" style="left:20.2%">lipiec – sierpień · przerwa wakacyjna</div>
+    <div class="node prog" style="left:30.4%"></div>
+    <div class="node" style="left:50%"></div>
+    <div class="node" style="left:69.6%"></div>
+    <div class="node goal" style="left:90.2%"></div>
+  </div>
+
+  <div class="cols">
+    <section class="card done">
+      <div class="when">Maj – czerwiec 2026</div>
+      <div class="title">Etap 1: MVP</div>
+      <span class="chip">Zrealizowane</span>
+      <ul>
+        <li>Środowisko, Docker i potoki CI/CD</li>
+        <li>Logowanie lokalne i przez Google</li>
+        <li>Import plików z licznika (Tauron)</li>
+        <li>Porównanie taryf G11, G12 i dynamicznej</li>
+      </ul>
+      <div class="milestone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 21V4m0 0h11l-2 4 2 4H5"/></svg>Kamień milowy: działający MVP</div>
+    </section>
+
+    <section class="card prog">
+      <div class="when">Wrzesień – październik 2026</div>
+      <div class="title">Etap 2: fundamenty i dane</div>
+      <span class="chip">W realizacji</span>
+      <ul>
+        <li>Refaktor architektury i sesje JWT</li>
+        <li>Lista, wybór i scalanie plików</li>
+        <li>Filtrowanie wykresów po zakresie dat</li>
+        <li>Automatyczne ceny dynamiczne z API PSE</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="when">Listopad 2026</div>
+      <div class="title">Komunikaty i urządzenia</div>
+      <span class="chip">Zaplanowane</span>
+      <ul>
+        <li>Najtańsze i najdroższe godziny jutro</li>
+        <li>Profil gospodarstwa domowego</li>
+        <li>Import pliku z podziałem na urządzenia</li>
+        <li>Wykresy per urządzenie i kategoria</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="when">Grudzień 2026</div>
+      <div class="title">Optymalizacja historyczna</div>
+      <span class="chip">Zaplanowane</span>
+      <ul>
+        <li>Wybór dnia lub tygodnia z historii</li>
+        <li>Algorytm przesuwania pracy urządzeń na tańsze godziny</li>
+        <li>Prezentacja oszczędności i listy zmian</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="when">Styczeń 2027</div>
+      <div class="title">Smart Home i ZPI-Day</div>
+      <span class="chip">Zaplanowane</span>
+      <ul>
+        <li>Plan pracy urządzeń na kolejny dzień</li>
+        <li>Symulacja planu przez mikroserwisy urządzeń</li>
+        <li>Testy końcowe i stabilizacja</li>
+      </ul>
+      <div class="milestone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 21V4m0 0h11l-2 4 2 4H5"/></svg>Prezentacja na ZPI-Day</div>
+    </section>
+  </div>
+</body>
+</html>

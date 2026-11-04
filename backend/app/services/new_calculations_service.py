@@ -104,11 +104,21 @@ class CalculationsService:
         )
 
         pv_details = self._build_pv_details(profile_data.pv_config, produced_energy_cycles)
+        warnings = []
+        exported_kwh = sum(kwh for _, records in produced_energy_cycles for _, kwh in records)
+        if pv_details is None and exported_kwh > 0:
+            exported_text = f"{exported_kwh:.2f}".replace(".", ",")
+            warnings.append(
+                f"Plik zawiera {exported_text} kWh energii oddanej do sieci, ale profil nie ma "
+                "instalacji PV. Kalkulacja pomija oddanie energii; uzupełnij instalację PV w profilu, "
+                "żeby rozliczyć ją w net-meteringu albo net-billingu."
+            )
 
         return CalculationDetails(
             pv_details=pv_details,
             used_energy_cycles=used_energy_cycles,
             tariff_data=tariff_data,
+            warnings=warnings or None,
         )
 
 
@@ -166,17 +176,18 @@ class CalculationsService:
         cycle_starts = set()
         for reading in readings:
             timestamp = reading.measured_at
-            value = float(reading.energy_kwh)
+            used = float(reading.energy_kwh)
+            produced = float(reading.exported_kwh)
             cycle_start = CalculationsService._cycle_start(
                 timestamp.date(),
                 tariff_data.billing_period_start_date,
                 tariff_data.billing_cycle.value,
             )
             cycle_starts.add(cycle_start)
-            if value > 0:
-                used_cycles.setdefault(cycle_start, []).append((timestamp, value))
-            elif value < 0:
-                produced_cycles.setdefault(cycle_start, []).append((timestamp, abs(value)))
+            if used > 0:
+                used_cycles.setdefault(cycle_start, []).append((timestamp, used))
+            if produced > 0:
+                produced_cycles.setdefault(cycle_start, []).append((timestamp, produced))
 
         return (
             [
@@ -193,11 +204,6 @@ class CalculationsService:
     def _build_pv_details(pv_config, produced_energy_cycles):
         mode = pv_config.get("mode") if isinstance(pv_config, dict) else pv_config.mode
         if mode == "none":
-            if any(records for _, records in produced_energy_cycles):
-                raise HTTPException(
-                    status_code=409,
-                    detail="Plik zawiera produkcję energii, ale profil nie ma skonfigurowanej instalacji PV.",
-                )
             return None
 
         details = {
