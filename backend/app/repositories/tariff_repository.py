@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.Tariff import Tariff
@@ -17,6 +18,9 @@ class TariffRepository:
 
     def get_by_name(self, name: str):
         return self.db.query(Tariff).filter(Tariff.name == name).first()
+
+    def get_by_code(self, code: str):
+        return self.db.query(Tariff).filter(func.lower(Tariff.name) == code.lower()).order_by(Tariff.id).first()
 
     def get_first_by_type(self, tariff_type: str):
         return self.db.query(Tariff).filter(Tariff.type == tariff_type).order_by(Tariff.id).first()

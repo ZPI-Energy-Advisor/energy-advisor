@@ -6,6 +6,7 @@ from app.api.v1.upload import router as upload_router
 from app.api.v1.results import router as results_router
 from app.api.v1.energy_files import router as energy_files_router
 from app.api.v1.dynamic_prices import router as dynamic_prices_router
+from app.api.v1.users import router as users_router
 from app.config import CORS_ORIGINS
 
 
@@ -21,6 +22,7 @@ v1_router.include_router(results_router)
 v1_router.include_router(energy_files_router)
 v1_router.include_router(dynamic_prices_router)
 # v1_router.include_router(tariffs_router)
+v1_router.include_router(users_router)
 api_router.include_router(v1_router)
 
 app.add_middleware(

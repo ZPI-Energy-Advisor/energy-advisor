@@ -14,6 +14,7 @@ import {
 } from "react-icons/fi";
 import apiClient, { clearAuth } from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
+import { CurrentUserProvider } from "../context/CurrentUserProvider";
 
 function Layout() {
   const location = useLocation();
@@ -141,10 +142,12 @@ function Layout() {
 
       <div className="flex-1 p-4 md:p-10 overflow-y-auto h-full w-full">
         {/* Provider w Layoucie przeżywa przejścia między stronami, więc wybrany
-            plik i jego dane zostają przy nawigacji Dashboard <-> wyniki. */}
-        <EnergyFileProvider>
-          <Outlet />
-        </EnergyFileProvider>
+            plik, jego dane i konto użytkownika zostają przy nawigacji Dashboard <-> wyniki. */}
+        <CurrentUserProvider>
+          <EnergyFileProvider>
+            <Outlet />
+          </EnergyFileProvider>
+        </CurrentUserProvider>
       </div>
     </div>
   );

@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { hasDataInRange, resolveTariffName } from "../utils/energyFiles";
+import { useCurrentUser } from "../hooks/useCurrentUser";
+import { hasDataInRange } from "../utils/energyFiles";
 import {
   LineChart,
   Line,
@@ -60,7 +62,7 @@ function ChartTooltip({ active, payload, label, metricType }) {
 }
 
 function ResultsPage() {
-  const [user] = useState(() => JSON.parse(localStorage.getItem("user")) || {});
+  const { currentTariff: userTariff, profileTariff, isReady: isUserReady } = useCurrentUser();
   const { isReady, results, isLoadingData } = useEnergyFiles();
 
   const [timeResolution, setTimeResolution] = useState("1h");
@@ -78,7 +80,7 @@ function ResultsPage() {
   const tariffsData = Object.entries(results?.tariffs ?? {}).map(
     ([name, tariff]) => ({ name, ...tariff }),
   );
-  const currentTariff = resolveTariffName(results?.tariffs, user.current_tariff);
+  const currentTariff = userTariff?.code ?? null;
 
   const pricedTariffs = tariffsData.filter(
     (tariff) => tariff.estimated_cost_pln != null,
@@ -107,6 +109,15 @@ function ResultsPage() {
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Analiza opłacalności taryf
       </h2>
+
+      {isUserReady && !profileTariff?.exists && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <Link to="/profile" className="font-semibold underline hover:text-blue-900">
+            Uzupełnij profil
+          </Link>
+          , żebyśmy mogli oznaczyć Twoją obecną taryfę i porównać ją z pozostałymi.
+        </div>
+      )}
 
       <SelectedFileBar />
       {tariffsData.length > 0 && <DateRangeFilter />}

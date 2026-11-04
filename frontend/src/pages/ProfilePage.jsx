@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import apiClient from "../api/client";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 
 const tariffTypes = ["G11", "G12", "G12w", "G13", "G13s", "G14d", "dynamic"];
 
@@ -36,6 +37,7 @@ const inputClass =
   "mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2.5 font-normal text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500";
 
 function ProfilePage() {
+  const { refresh: refreshCurrentUser } = useCurrentUser();
   const [profile, setProfile] = useState(createEmptyProfile);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,7 +45,7 @@ function ProfilePage() {
   const [successMessage, setSuccessMessage] = useState(null);
 
   useEffect(() => {
-    apiClient.get("/upload/profile")
+    apiClient.get("/users/me/profile")
       .then(({ data }) => {
         setProfile(data);
       })
@@ -114,9 +116,10 @@ function ProfilePage() {
             },
     };
     try {
-      const response = await apiClient.post("/upload/profile", profileData);
+      const response = await apiClient.put("/users/me/profile", profileData);
       setProfile(response.data);
       setSuccessMessage("Profil został zapisany.");
+      refreshCurrentUser();
     } catch (err) {
       setError(err.response?.data?.detail || "Nie udało się zapisać profilu.");
     } finally {
