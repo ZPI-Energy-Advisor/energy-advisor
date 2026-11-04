@@ -8,6 +8,8 @@ from app.parsers.device_records import DeviceRecord
 
 TIMESTAMP_START = "timestamp_start"
 KWH = "kwh"
+# Energia oddana do sieci w tym samym interwale co pobór z KWH (np. nadwyżka z PV).
+EXPORTED_KWH = "exported_kwh"
 MAX_SKIPPED_EXAMPLES = 10
 # Jednostka raportu: wiersze pliku CSV albo akcje pliku urządzeń (JSON).
 UNIT_ROW = "row"
@@ -46,8 +48,9 @@ class DevicesSummary:
     devices_count: int
     actions_count: int
     categories: list[str]
+    # Zużycie wszystkich urządzeń, zanim część pokryje produkcja PV.
     consumption_kwh: float
-    # Energia wyprodukowana przez PV jako liczba dodatnia; nie pomniejsza zużycia w wycenie.
+    # Energia wyprodukowana przez PV jako liczba dodatnia.
     pv_production_kwh: float
 
 
@@ -59,10 +62,17 @@ class ImportReport:
     rows_imported: int = 0
     rows_ignored: int = 0
     resolution_minutes: int | None = None
+    # Sumy z zaimportowanej serii: pobór z sieci i energia oddana do sieci.
+    grid_import_kwh: float = 0.0
+    grid_export_kwh: float = 0.0
     skipped_count: int = 0
     skipped_examples: list[SkippedRow] = field(default_factory=list)
     unit: str = UNIT_ROW
     devices: DevicesSummary | None = None
+
+    def add_energy_totals(self, data: pd.DataFrame) -> None:
+        self.grid_import_kwh = round(float(data[KWH].sum()), 2)
+        self.grid_export_kwh = round(float(data[EXPORTED_KWH].sum()), 2)
 
     def add_skipped(self, rows: pd.Series) -> None:
         self.skipped_count = int(rows.size)
@@ -79,6 +89,8 @@ class ImportReport:
             "rows_imported": self.rows_imported,
             "rows_ignored": self.rows_ignored,
             "resolution_minutes": self.resolution_minutes,
+            "grid_import_kwh": self.grid_import_kwh,
+            "grid_export_kwh": self.grid_export_kwh,
             "unit": self.unit,
             "skipped_rows": {
                 "count": self.skipped_count,

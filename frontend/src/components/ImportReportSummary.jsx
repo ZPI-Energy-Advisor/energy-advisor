@@ -13,7 +13,7 @@ const UNITS = {
     more: ["wiersz", "wiersze", "wierszy"],
     rejected: ["błędny wiersz", "błędne wiersze", "błędnych wierszy"],
     example: (example) => `Wiersz ${example.row}:`,
-    allImported: "Wszystkie wiersze z poborem energii zostały zaimportowane.",
+    allImported: "Wszystkie wiersze z poborem i oddaniem energii zostały zaimportowane.",
     showResolution: true,
   },
   action: {
@@ -34,8 +34,9 @@ function ImportReportSummary({ report }) {
   if (!report) return null;
 
   const unit = UNITS[report.unit] ?? UNITS.row;
-  // Tylko plik urządzeń; produkcja PV jest pokazana osobno, bo nie pomniejsza poboru w wycenie.
+  // Tylko plik urządzeń: zużycie urządzeń i produkcja PV przed autokonsumpcją.
   const devices = report.devices;
+  const hasGridTotals = report.grid_import_kwh !== undefined;
   const skipped = report.skipped_rows ?? { count: 0, examples: [] };
   const notListed = skipped.count - skipped.examples.length;
   const resolution = unit.showResolution && RESOLUTION_LABELS[report.resolution_minutes];
@@ -54,7 +55,16 @@ function ImportReportSummary({ report }) {
         {report.rows_ignored > 0 && (
           <>
             <dt className="text-gray-500">Pominięto</dt>
-            <dd>{formatCount(report.rows_ignored, UNITS.row.imported)} z energią oddaną do sieci lub innym rodzajem energii</dd>
+            <dd>{formatCount(report.rows_ignored, UNITS.row.imported)} z innym rodzajem energii (np. bierną)</dd>
+          </>
+        )}
+        {hasGridTotals && (
+          <>
+            <dt className="text-gray-500">Sieć</dt>
+            <dd>
+              pobór {formatKwh(report.grid_import_kwh)}
+              {report.grid_export_kwh > 0 && ` · oddanie ${formatKwh(report.grid_export_kwh)}`}
+            </dd>
           </>
         )}
         {devices && (
@@ -65,7 +75,7 @@ function ImportReportSummary({ report }) {
             </dd>
             <dt className="text-gray-500">Energia</dt>
             <dd>
-              pobór {formatKwh(devices.consumption_kwh)}
+              zużycie urządzeń {formatKwh(devices.consumption_kwh)}
               {devices.pv_production_kwh > 0 && ` · produkcja PV ${formatKwh(devices.pv_production_kwh)}`}
             </dd>
           </>

@@ -1,10 +1,11 @@
 import pandas as pd
 
-from app.parsers.base import KWH, TIMESTAMP_START, EnergyFileParser, FileImportError, ImportReport, ParsedEnergyFile
+from app.parsers.base import EXPORTED_KWH, KWH, TIMESTAMP_START, EnergyFileParser, FileImportError, ImportReport, ParsedEnergyFile
 from app.parsers.reading import ROW_ERRORS, YEAR_FIRST_DATE, detect_resolution_minutes, parse_reading_ends
 
 
 CONSUMPTION_KINDS = 'pobór|pobor|pobrana'
+EXPORT_KINDS = 'oddanie|oddana|wprowadz'
 DATE_SAMPLE_SIZE = 20
 
 NO_ROWS = "Plik nie zawiera żadnych odczytów."
@@ -48,18 +49,22 @@ class MeterReadingsParser(EnergyFileParser):
         for line, reason in table.attrs.get(ROW_ERRORS, {}).items():
             reasons[line] = reason
 
-        consumption = ~missing & kinds.astype(str).str.lower().str.contains(CONSUMPTION_KINDS, na=False)
-        report.rows_ignored = int((~missing & ~consumption).sum())
+        kind_names = kinds.astype(str).str.lower()
+        consumption = ~missing & kind_names.str.contains(CONSUMPTION_KINDS, na=False)
+        export = ~missing & ~consumption & kind_names.str.contains(EXPORT_KINDS, na=False)
+        energy_rows = consumption | export
+        report.rows_ignored = int((~missing & ~energy_rows).sum())
 
         normalized = values.astype(str).str.replace(r'[\s ]', '', regex=True).str.replace(',', '.', regex=False)
         kwh = pd.to_numeric(normalized, errors='coerce')
-        invalid_value = consumption & kwh.isna()
-        negative_value = consumption & (kwh < 0)
-        reasons[invalid_value] = "nieprawidłowa wartość zużycia: " + _quoted(values[invalid_value])
-        reasons[negative_value] = "ujemna wartość zużycia: " + _quoted(values[negative_value])
-        valid = consumption & ~invalid_value & ~negative_value
+        invalid_value = energy_rows & kwh.isna()
+        negative_value = energy_rows & (kwh < 0)
+        for rows, label in ((consumption, "zużycia"), (export, "energii oddanej")):
+            reasons[invalid_value & rows] = f"nieprawidłowa wartość {label}: " + _quoted(values[invalid_value & rows])
+            reasons[negative_value & rows] = f"ujemna wartość {label}: " + _quoted(values[negative_value & rows])
+        valid = energy_rows & ~invalid_value & ~negative_value
 
-        if not valid.any():
+        if not (valid & consumption).any():
             if consumption.any():
                 first = reasons[consumption].dropna()
                 raise FileImportError(
@@ -82,21 +87,28 @@ class MeterReadingsParser(EnergyFileParser):
         reasons[invalid_date] = "nieprawidłowa data: " + _quoted(dates[invalid_date])
         reading_ends = reading_ends.dropna()
 
-        readings = pd.DataFrame({"end": reading_ends, KWH: kwh[reading_ends.index]})
-        first_line = readings.reset_index().groupby(["end", KWH])["index"].transform("first")
+        readings = pd.DataFrame({
+            "end": reading_ends,
+            KWH: kwh[reading_ends.index],
+            "exported": export[reading_ends.index],
+        })
+        first_line = readings.reset_index().groupby(["end", KWH, "exported"])["index"].transform("first")
         first_line.index = readings.index
         duplicate = readings.duplicated(keep="first")
         reasons[readings.index[duplicate]] = "powtórzony odczyt (taki sam jak w wierszu " + first_line[duplicate].astype(str) + ")"
         readings = readings[~duplicate]
 
+        # Pobór i oddanie z tego samego interwału trafiają do jednego wiersza serii.
         resolution = detect_resolution_minutes(readings["end"])
         data = pd.DataFrame({
             TIMESTAMP_START: readings["end"] - pd.Timedelta(minutes=resolution),
-            KWH: readings[KWH],
-        }).reset_index(drop=True)
+            KWH: readings[KWH].where(~readings["exported"], 0.0),
+            EXPORTED_KWH: readings[KWH].where(readings["exported"], 0.0),
+        }).groupby(TIMESTAMP_START, as_index=False, sort=False).sum()
 
-        report.rows_imported = len(data)
+        report.rows_imported = len(readings)
         report.resolution_minutes = resolution
+        report.add_energy_totals(data)
         report.add_skipped(reasons.dropna())
         return ParsedEnergyFile(data=data, resolution_minutes=resolution, report=report)
 

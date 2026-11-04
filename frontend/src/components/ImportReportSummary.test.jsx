@@ -18,7 +18,7 @@ describe("ImportReportSummary", () => {
 
     expect(screen.getByText(baseReport.format_label)).toBeTruthy();
     expect(screen.getByText(/2976 wierszy z 2976 · odczyty co 15\smin/)).toBeTruthy();
-    expect(screen.getByText(/Wszystkie wiersze z poborem energii zostały zaimportowane/)).toBeTruthy();
+    expect(screen.getByText(/Wszystkie wiersze z poborem i oddaniem energii zostały zaimportowane/)).toBeTruthy();
   });
 
   it("wypisuje odrzucone wiersze z numerami i informuje o pozostałych", () => {
@@ -43,7 +43,7 @@ describe("ImportReportSummary", () => {
     expect(screen.getByText("Wiersz 3:")).toBeTruthy();
     expect(screen.getByText(/nieprawidłowa data: „jutro”/)).toBeTruthy();
     expect(screen.getByText("…i 10 wierszy więcej.")).toBeTruthy();
-    expect(screen.getByText(/2 wiersze z energią oddaną do sieci/)).toBeTruthy();
+    expect(screen.getByText(/2 wiersze z innym rodzajem energii/)).toBeTruthy();
     expect(screen.getByText(/1 wiersz z 15 · odczyty godzinowe/)).toBeTruthy();
   });
 
@@ -74,7 +74,19 @@ describe("ImportReportSummary", () => {
     expect(screen.getByText("…i 1 akcja więcej.")).toBeTruthy();
   });
 
-  it("dla pliku urządzeń pokazuje urządzenia, kategorie, pobór i produkcję PV", () => {
+  it("pokazuje pobór z sieci i energię oddaną do sieci", () => {
+    render(<ImportReportSummary report={{ ...baseReport, grid_import_kwh: 1234.5, grid_export_kwh: 310.25 }} />);
+
+    expect(screen.getByText("pobór 1234,5 kWh · oddanie 310,25 kWh")).toBeTruthy();
+  });
+
+  it("nie pokazuje oddania, gdy plik go nie zawiera", () => {
+    render(<ImportReportSummary report={{ ...baseReport, grid_import_kwh: 12, grid_export_kwh: 0 }} />);
+
+    expect(screen.getByText("pobór 12 kWh")).toBeTruthy();
+  });
+
+  it("dla pliku urządzeń pokazuje urządzenia, kategorie, zużycie i produkcję PV", () => {
     const report = {
       detected_format: "devices",
       format_label: "Plik urządzeń smart home (JSON)",
@@ -96,7 +108,7 @@ describe("ImportReportSummary", () => {
     render(<ImportReportSummary report={report} />);
 
     expect(screen.getByText("24 urządzenia · AGD, OZE")).toBeTruthy();
-    expect(screen.getByText("pobór 52,49 kWh · produkcja PV 14,6 kWh")).toBeTruthy();
+    expect(screen.getByText("zużycie urządzeń 52,49 kWh · produkcja PV 14,6 kWh")).toBeTruthy();
   });
 
   it("nic nie renderuje bez raportu", () => {

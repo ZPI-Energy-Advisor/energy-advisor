@@ -260,12 +260,14 @@ def _seed_calculation_scenarios(db):
         if not db.query(EnergyReading).filter_by(energy_data_file_id=energy_file.id).first():
             for timestamp_text, value in scenario["readings"]:
                 end_time = datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M")
+                # Ujemna wartość scenariusza to energia oddana do sieci, jak wiersz „Oddanie” w CSV.
                 for minutes in (60, 45, 30, 15):
                     db.add(
                         EnergyReading(
                             energy_data_file_id=energy_file.id,
                             measured_at=end_time - timedelta(minutes=minutes),
-                            energy_kwh=Decimal(str(value / 4)),
+                            energy_kwh=Decimal(str(max(value, 0) / 4)),
+                            exported_kwh=Decimal(str(max(-value, 0) / 4)),
                         )
                     )
 

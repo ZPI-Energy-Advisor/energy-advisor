@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, datetime
 from typing import Mapping
 
 import numpy as np
@@ -7,6 +7,7 @@ import pandas as pd
 from fastapi import HTTPException
 
 from app.parsers import (
+    EXPORTED_KWH,
     HOURLY_RESOLUTION,
     KWH,
     TIMESTAMP_START,
@@ -83,16 +84,40 @@ class CalculationService:
         results_dict[IMPORT_REPORT_KEY] = parsed.report.to_dict()
         return results_dict
 
-    def calculate(self, parsed: ParsedEnergyFile) -> dict:
+    @staticmethod
+    def _quarter_hours(parsed: ParsedEnergyFile) -> pd.DataFrame:
+        """Dzieli odczyty na kwadranse; odczyt godzinowy rozkłada równo na cztery."""
         data = parsed.data
         resolution = parsed.resolution_minutes
         slots_per_record = resolution // SLOT_MINUTES
 
         df_15min = data.loc[data.index.repeat(slots_per_record)].reset_index(drop=True)
         df_15min['Wartość kWh'] = df_15min[KWH] / slots_per_record
+        exported = df_15min[EXPORTED_KWH] if EXPORTED_KWH in df_15min else 0.0
+        df_15min['Oddanie kWh'] = exported / slots_per_record
 
         minute_offsets = np.tile(np.arange(0, resolution, SLOT_MINUTES), len(data))
         df_15min['Dokładny Czas'] = df_15min[TIMESTAMP_START] + pd.to_timedelta(minute_offsets, unit='m')
+        return df_15min
+
+    @classmethod
+    def quarter_hour_readings(cls, parsed: ParsedEnergyFile) -> list[tuple[datetime, float, float]]:
+        """Odczyty do zapisu w bazie: (początek kwadransu, pobór z sieci, oddanie do sieci)."""
+        grouped = (
+            cls._quarter_hours(parsed)
+            .groupby('Dokładny Czas')[['Wartość kWh', 'Oddanie kWh']]
+            .sum()
+            .round(6)
+        )
+        return [
+            (timestamp.to_pydatetime(), float(imported), float(exported))
+            for timestamp, imported, exported in grouped.itertuples()
+        ]
+
+    def calculate(self, parsed: ParsedEnergyFile) -> dict:
+        data = parsed.data
+        resolution = parsed.resolution_minutes
+        df_15min = self._quarter_hours(parsed)
 
         tariffs = self.tariff_repository.get_all()
         if not tariffs:

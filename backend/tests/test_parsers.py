@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from app import parsers
 from app.parsers import (
+    EXPORTED_KWH,
     KWH,
     TIMESTAMP_START,
     UNIT_ACTION,
@@ -103,9 +104,10 @@ def test_parse_meter_export_with_zone_and_status_columns():
     assert parsed.report.detected_format == MeterExportParser.name
     assert parsed.resolution_minutes == 60
     assert parsed.report.rows_total == 96
-    assert parsed.report.rows_imported == 48
-    assert parsed.report.rows_ignored == 48
+    assert parsed.report.rows_imported == 96
+    assert parsed.report.rows_ignored == 0
     assert parsed.report.skipped_count == 0
+    assert len(parsed.data) == 48
     assert parsed.data[TIMESTAMP_START].iloc[0] == pd.Timestamp("2026-10-01 00:00")
     assert parsed.data[TIMESTAMP_START].iloc[-1] == pd.Timestamp("2026-10-02 23:00")
     assert parsed.data[KWH].sum() == pytest.approx(19.92)
@@ -244,8 +246,9 @@ def test_parse_reports_skipped_and_ignored_rows():
     report = _parse(lines).report
 
     assert report.rows_total == 9
-    assert report.rows_imported == 2
-    assert report.rows_ignored == 1
+    assert report.rows_imported == 3
+    assert report.rows_ignored == 0
+    assert report.grid_export_kwh == 5.0
     assert [(item.row, item.reason) for item in report.skipped_examples] == [
         (3, "nieprawidłowa wartość zużycia: „abc”"),
         (4, "nieprawidłowa data: „jutro rano”"),
@@ -254,6 +257,82 @@ def test_parse_reports_skipped_and_ignored_rows():
         (10, "nieprawidłowa data: „01.01.2025”"),
         (11, "brak daty, wartości lub rodzaju energii"),
     ]
+
+
+def test_parse_joins_consumption_and_export_of_the_same_hour():
+    lines = [
+        TAURON_HEADER,
+        _row("01.01.2025 01:00", kwh="1,0"),
+        _row("01.01.2025 01:00", kwh="0,4", kind="Oddanie energii czynnej"),
+        _row("01.01.2025 02:00", kwh="0,5"),
+    ]
+
+    parsed = _parse(lines)
+
+    assert parsed.data[[TIMESTAMP_START, KWH, EXPORTED_KWH]].values.tolist() == [
+        [pd.Timestamp("2025-01-01 00:00"), 1.0, 0.4],
+        [pd.Timestamp("2025-01-01 01:00"), 0.5, 0.0],
+    ]
+    assert parsed.report.rows_imported == 3
+    assert parsed.report.rows_ignored == 0
+    assert parsed.report.grid_import_kwh == 1.5
+    assert parsed.report.grid_export_kwh == 0.4
+
+
+def test_parse_export_of_an_hour_without_consumption_row():
+    lines = [
+        TAURON_HEADER,
+        _row("01.01.2025 01:00", kwh="1,0"),
+        _row("01.01.2025 02:00", kwh="2,0", kind="Oddanie energii czynnej"),
+    ]
+
+    data = _parse(lines).data
+
+    assert data[[KWH, EXPORTED_KWH]].values.tolist() == [[1.0, 0.0], [0.0, 2.0]]
+
+
+def test_parse_without_export_rows_has_zero_export():
+    parsed = _parse([TAURON_HEADER, _row("01.01.2025 01:00"), _row("01.01.2025 02:00")])
+
+    assert parsed.data[EXPORTED_KWH].tolist() == [0.0, 0.0]
+    assert parsed.report.grid_export_kwh == 0.0
+
+
+def test_parse_rejects_negative_export_value():
+    lines = [
+        TAURON_HEADER,
+        _row("01.01.2025 01:00"),
+        _row("01.01.2025 01:00", kwh="-0,2", kind="Oddanie energii czynnej"),
+    ]
+
+    report = _parse(lines).report
+
+    assert [(item.row, item.reason) for item in report.skipped_examples] == [
+        (3, "ujemna wartość energii oddanej: „-0,2”"),
+    ]
+
+
+def test_parse_file_with_only_export_rows_is_rejected():
+    lines = [TAURON_HEADER, _row("01.01.2025 01:00", kind="Oddanie energii czynnej")]
+
+    with pytest.raises(FileImportError) as error:
+        _parse(lines)
+
+    assert error.value.status_code == 400
+
+
+def test_parse_ignores_other_kinds_of_energy():
+    lines = [
+        TAURON_HEADER,
+        _row("01.01.2025 01:00"),
+        _row("01.01.2025 01:00", kwh="0,1", kind="Energia bierna indukcyjna"),
+    ]
+
+    report = _parse(lines).report
+
+    assert report.rows_imported == 1
+    assert report.rows_ignored == 1
+    assert report.grid_export_kwh == 0.0
 
 
 def test_parse_limits_skipped_examples_to_ten():
@@ -275,6 +354,8 @@ def test_report_to_dict():
         "rows_imported": 1,
         "rows_ignored": 0,
         "resolution_minutes": 60,
+        "grid_import_kwh": 0.5,
+        "grid_export_kwh": 0.0,
         "unit": "row",
         "skipped_rows": {"count": 1, "examples": [{"row": 3, "reason": "nieprawidłowa wartość zużycia: „x”"}]},
     }

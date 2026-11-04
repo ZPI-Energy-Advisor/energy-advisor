@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.models.EnergyReading import EnergyReading
@@ -14,21 +15,28 @@ class EnergyReadingRepository:
     def replace_for_file(
         self,
         energy_data_file_id: UUID,
-        readings: list[tuple[datetime, float]],
+        readings: list[tuple[datetime, float, float]],
     ) -> None:
-        """Dodaje do bieżącej transakcji; commit robi zapis pliku na końcu uploadu."""
+        """Zapisuje odczyty (czas, pobór, oddanie) jednym wsadowym INSERT-em.
+
+        Dodaje do bieżącej transakcji; commit robi zapis pliku na końcu uploadu.
+        """
         self.db.query(EnergyReading).filter(
             EnergyReading.energy_data_file_id == energy_data_file_id
         ).delete(synchronize_session=False)
-        self.db.add_all(
+        if not readings:
+            return
+        self.db.execute(
+            insert(EnergyReading),
             [
-                EnergyReading(
-                    energy_data_file_id=energy_data_file_id,
-                    measured_at=measured_at,
-                    energy_kwh=Decimal(str(energy_kwh)),
-                )
-                for measured_at, energy_kwh in readings
-            ]
+                {
+                    "energy_data_file_id": energy_data_file_id,
+                    "measured_at": measured_at,
+                    "energy_kwh": Decimal(str(energy_kwh)),
+                    "exported_kwh": Decimal(str(exported_kwh)),
+                }
+                for measured_at, energy_kwh, exported_kwh in readings
+            ],
         )
 
     def list_for_file(self, energy_data_file_id: UUID) -> list[EnergyReading]:

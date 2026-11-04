@@ -199,6 +199,10 @@ Produkcja jest zapisywana jako akcje z ujemną energią i własnym profilem 15-m
 wschodu do zachodu słońca. Moc instalacji (kWp) i sposób rozliczenia (net-billing,
 net-metering) pochodzą z profilu użytkownika, nie z pliku.
 
+Przy imporcie produkcja najpierw pokrywa zużycie w tym samym kwadransie (autokonsumpcja). Do
+odczytów trafia pobór z sieci = max(0, suma akcji) i oddanie do sieci = max(0, −suma akcji),
+tak jak pobór i oddanie z licznika w pliku CSV.
+
 ## Reguły walidacji
 
 Plik jest poprawny, gdy spełnia wszystkie reguły. Reguły 3–5, typy i wymagane pola, format czasu
