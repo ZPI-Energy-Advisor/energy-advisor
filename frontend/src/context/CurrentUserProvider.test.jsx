@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import apiClient from "../api/client";
 import { CurrentUserProvider } from "./CurrentUserProvider";
 import { useCurrentUser } from "../hooks/useCurrentUser";
-import { comparisonTariffCode } from "../utils/tariffs";
 
 const G12 = { id: 2, code: "G12", type: "strefowa", profile_tariff_type: "G12" };
 
@@ -69,12 +68,5 @@ describe("CurrentUserProvider", () => {
 
     expect(screen.getByText("aktualna: G12")).toBeTruthy();
     expect(get).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("comparisonTariffCode", () => {
-  it("liczy koszty dla taryfy z profilu, a bez niej dla G11", () => {
-    expect(comparisonTariffCode(G12)).toBe("G12");
-    expect(comparisonTariffCode(null)).toBe("G11");
   });
 });

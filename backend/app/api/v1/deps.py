@@ -17,7 +17,6 @@ from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
-from app.services.tariff_service import TariffService
 from app.services.calculation_service import CalculationService
 from app.services.new_calculations_service import CalculationsService
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
@@ -36,10 +35,6 @@ from app.config import PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
 
 def get_tariff_repository(db: Session = Depends(get_db)) -> TariffRepository:
     return TariffRepository(db)
-
-
-def get_tariff_service(repository: TariffRepository = Depends(get_tariff_repository)) -> TariffService:
-    return TariffService(repository)
 
 
 def get_user_repository(db: Session = Depends(get_db)) -> UserRepository:

@@ -119,7 +119,7 @@ function ProfilePage() {
       const response = await apiClient.put("/users/me/profile", profileData);
       setProfile(response.data);
       setSuccessMessage("Profil został zapisany.");
-      refreshCurrentUser();
+      await refreshCurrentUser();
     } catch (err) {
       setError(err.response?.data?.detail || "Nie udało się zapisać profilu.");
     } finally {

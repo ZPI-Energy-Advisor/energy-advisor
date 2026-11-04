@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { hasDataInRange } from "../utils/energyFiles";
 import {
@@ -62,7 +62,7 @@ function ChartTooltip({ active, payload, label, metricType }) {
 }
 
 function ResultsPage() {
-  const { currentTariff: userTariff, profileTariff, isReady: isUserReady } = useCurrentUser();
+  const { currentTariff: userTariff } = useCurrentUser();
   const { isReady, results, isLoadingData } = useEnergyFiles();
 
   const [timeResolution, setTimeResolution] = useState("1h");
@@ -110,14 +110,7 @@ function ResultsPage() {
         Analiza opłacalności taryf
       </h2>
 
-      {isUserReady && !profileTariff?.exists && (
-        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <Link to="/profile" className="font-semibold underline hover:text-blue-900">
-            Uzupełnij profil
-          </Link>
-          , żebyśmy mogli oznaczyć Twoją obecną taryfę i porównać ją z pozostałymi.
-        </div>
-      )}
+      <ProfileTariffNotice missingProfile=", żebyśmy mogli oznaczyć Twoją obecną taryfę i porównać ją z pozostałymi." />
 
       <SelectedFileBar />
       {tariffsData.length > 0 && <DateRangeFilter />}

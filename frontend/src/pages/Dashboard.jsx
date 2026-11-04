@@ -5,6 +5,7 @@ import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
+import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { fillMissingDays, hasDataInRange } from "../utils/energyFiles";
 import { comparisonTariffCode } from "../utils/tariffs";
@@ -49,7 +50,7 @@ function ChartTooltip({ active, payload, label, metric, resolution }) {
 
 function Dashboard() {
   const { isReady, results, isLoadingData } = useEnergyFiles();
-  const { currentTariff, profileTariff, isReady: isUserReady } = useCurrentUser();
+  const { currentTariff, profileTariff, isReady: isUserReady, loadError: userLoadError } = useCurrentUser();
 
   const [chartResolution, setChartResolution] = useState("1h");
   const [chartMetric, setChartMetric] = useState("kwh");
@@ -120,22 +121,10 @@ function Dashboard() {
         Mój profil zużycia
       </h2>
 
-      {!profileTariff?.exists ? (
-        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <Link to="/profile" className="font-semibold underline hover:text-blue-900">
-            Uzupełnij profil
-          </Link>
-          , żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy{" "}
-          {costTariff}.
-        </div>
-      ) : (
-        !currentTariff && (
-          <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-            Nie mamy jeszcze cen taryfy {profileTariff.tariff_type} z Twojego profilu, więc koszty
-            liczymy dla taryfy {costTariff}.
-          </div>
-        )
-      )}
+      <ProfileTariffNotice
+        missingProfile={`, żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy ${costTariff}.`}
+        missingPrices={`Nie mamy jeszcze cen taryfy ${profileTariff?.tariff_type} z Twojego profilu, więc koszty liczymy dla taryfy ${costTariff}.`}
+      />
 
       <SelectedFileBar />
       {simulationData && <DateRangeFilter />}
@@ -193,13 +182,15 @@ function Dashboard() {
               <p className="text-lg md:text-xl font-bold text-gray-900">
                 {profileTariff?.tariff_type
                   ? `Taryfa ${currentTariff?.code ?? profileTariff.tariff_type}`
-                  : "Nie znamy jeszcze Twojej taryfy"}
+                  : userLoadError
+                    ? "Nie udało się pobrać taryfy"
+                    : "Nie znamy jeszcze Twojej taryfy"}
               </p>
               <Link
                 to="/profile"
                 className="mt-2 inline-block text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
               >
-                {profileTariff?.exists ? "Zmień w profilu" : "Uzupełnij profil"}
+                {profileTariff?.exists ? "Zmień w profilu" : userLoadError ? "Przejdź do profilu" : "Uzupełnij profil"}
               </Link>
             </div>
           </div>

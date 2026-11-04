@@ -24,7 +24,11 @@ class UserService:
             email=user.email,
             provider=user.provider,
             current_tariff=tariff_out(tariff) if tariff else None,
-            profile=ProfileTariffSummary(exists=profile is not None, tariff_type=tariff_type),
+            profile=ProfileTariffSummary(
+                exists=profile is not None,
+                needs_update=profile is not None and self._validated(profile) is None,
+                tariff_type=tariff_type,
+            ),
         )
 
     def _find_tariff(self, tariff_type: str) -> Tariff | None:
@@ -37,13 +41,18 @@ class UserService:
         profile = self.repository.get_profile(user.id)
         if profile is None:
             raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
+        validated = self._validated(profile)
+        if validated is None:
+            raise HTTPException(status_code=409, detail="Profil użytkownika wymaga ponownego uzupełnienia.")
+        return validated
+
+    @staticmethod
+    def _validated(profile) -> UserProfile | None:
+        """Profil w aktualnym formacie albo None, gdy zapisano go przed zmianą schematu."""
         try:
             return UserProfile.model_validate(profile)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail="Profil użytkownika wymaga ponownego uzupełnienia.",
-            ) from exc
+        except ValueError:
+            return None
 
     def save_profile(self, user: User, profile_data: UserProfile) -> UserProfile:
         if self.repository.get_profile(user.id):

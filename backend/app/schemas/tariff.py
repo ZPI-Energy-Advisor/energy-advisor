@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.other import TariffTypeEnum
 
@@ -13,12 +13,3 @@ class TariffOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-class TariffListResponse(BaseModel):
-    status: str
-    tariffs: list[TariffOut]
-
-
-class TariffUpdateRequest(BaseModel):
-    email: EmailStr
-    new_tariff: str

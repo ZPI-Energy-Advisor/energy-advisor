@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.models.Tariff import Tariff
 from app.models.TariffRate import TariffRate
+from app.models.UserProfile import UserProfile
 from app.schemas.other import TariffTypeEnum
 from app.services.tariff_service import to_profile_tariff_type
 from main import app
@@ -79,7 +80,7 @@ def test_me_without_profile_has_no_tariff(client_a, user_a):
         "email": user_a.email,
         "provider": "local",
         "current_tariff": None,
-        "profile": {"exists": False, "tariff_type": None},
+        "profile": {"exists": False, "needs_update": False, "tariff_type": None},
     }
 
 
@@ -88,7 +89,7 @@ def test_current_tariff_comes_from_profile(client_a, tariffs):
 
     me = client_a.get("/api/v1/users/me").json()
 
-    assert me["profile"] == {"exists": True, "tariff_type": "G12"}
+    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G12"}
     assert me["current_tariff"]["id"] == tariffs["G12"].id
     assert me["current_tariff"]["code"] == "G12"
     assert me["current_tariff"]["profile_tariff_type"] == "G12"
@@ -117,8 +118,20 @@ def test_profile_tariff_without_prices_in_database(client_a, db, tariffs):
     client_a.put("/api/v1/users/me/profile", json=profile_payload("G13"))
 
     me = client_a.get("/api/v1/users/me").json()
-    assert me["profile"] == {"exists": True, "tariff_type": "G13"}
+    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G13"}
     assert me["current_tariff"] is None
+
+
+def test_outdated_profile_needs_update(client_a, user_a, db, tariffs):
+    outdated = profile_payload("G12")
+    del outdated["base_info"]["billing_period_start_date"]
+    db.add(UserProfile(user_id=user_a.id, **outdated))
+    db.commit()
+
+    me = client_a.get("/api/v1/users/me").json()
+
+    assert me["profile"] == {"exists": True, "needs_update": True, "tariff_type": "G12"}
+    assert client_a.get("/api/v1/users/me/profile").status_code == 409
 
 
 def test_dynamic_profile_tariff_points_to_dynamic_tariff(client_a, tariffs):
@@ -126,7 +139,7 @@ def test_dynamic_profile_tariff_points_to_dynamic_tariff(client_a, tariffs):
 
     me = client_a.get("/api/v1/users/me").json()
 
-    assert me["profile"] == {"exists": True, "tariff_type": "dynamic"}
+    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "dynamic"}
     assert me["current_tariff"]["type"] == Tariff.TYPE_DYNAMIC
     assert me["current_tariff"]["profile_tariff_type"] == "dynamic"
 
