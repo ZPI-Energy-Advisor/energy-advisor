@@ -4,7 +4,9 @@ import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { hasDataInRange, resolveTariffName } from "../utils/energyFiles";
+import ProfileTariffNotice from "../components/ProfileTariffNotice";
+import { useCurrentUser } from "../hooks/useCurrentUser";
+import { hasDataInRange } from "../utils/energyFiles";
 import {
   LineChart,
   Line,
@@ -60,7 +62,7 @@ function ChartTooltip({ active, payload, label, metricType }) {
 }
 
 function ResultsPage() {
-  const [user] = useState(() => JSON.parse(localStorage.getItem("user")) || {});
+  const { currentTariff: userTariff } = useCurrentUser();
   const { isReady, results, isLoadingData } = useEnergyFiles();
 
   const [timeResolution, setTimeResolution] = useState("1h");
@@ -78,7 +80,7 @@ function ResultsPage() {
   const tariffsData = Object.entries(results?.tariffs ?? {}).map(
     ([name, tariff]) => ({ name, ...tariff }),
   );
-  const currentTariff = resolveTariffName(results?.tariffs, user.current_tariff);
+  const currentTariff = userTariff?.code ?? null;
 
   const pricedTariffs = tariffsData.filter(
     (tariff) => tariff.estimated_cost_pln != null,
@@ -107,6 +109,8 @@ function ResultsPage() {
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Analiza opłacalności taryf
       </h2>
+
+      <ProfileTariffNotice missingProfile=", żebyśmy mogli oznaczyć Twoją obecną taryfę i porównać ją z pozostałymi." />
 
       <SelectedFileBar />
       {tariffsData.length > 0 && <DateRangeFilter />}

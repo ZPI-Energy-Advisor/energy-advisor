@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import { fillMissingDays, hasDataInRange, resolveTariffName } from "../utils/energyFiles";
+import ProfileTariffNotice from "../components/ProfileTariffNotice";
+import { useCurrentUser } from "../hooks/useCurrentUser";
+import { fillMissingDays, hasDataInRange } from "../utils/energyFiles";
+import { comparisonTariffCode } from "../utils/tariffs";
 import {
   BarChart,
   Bar,
@@ -45,37 +49,28 @@ function ChartTooltip({ active, payload, label, metric, resolution }) {
 }
 
 function Dashboard() {
-  const [user, setUser] = useState(
-    () => JSON.parse(localStorage.getItem("user")) || {},
-  );
   const { isReady, results, isLoadingData } = useEnergyFiles();
-
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const { currentTariff, profileTariff, isReady: isUserReady, loadError: userLoadError } = useCurrentUser();
 
   const [chartResolution, setChartResolution] = useState("1h");
   const [chartMetric, setChartMetric] = useState("kwh");
 
   // Wszystko poniżej wynika z danych aktualnie wybranego pliku, więc zmiana
-  // pliku przełącza wykres, statystyki i taryfę bez dodatkowych zapytań.
-  const tariffs = results?.tariffs ?? {};
-  const availableTariffs = Object.keys(tariffs);
-  const currentTariff = resolveTariffName(tariffs, user.current_tariff);
+  // pliku przełącza wykres i statystyki bez dodatkowych zapytań.
+  const tariffResults = results?.tariffs ?? {};
+  const costTariff = comparisonTariffCode(currentTariff);
+  const hasCostTariff = Boolean(tariffResults[costTariff]);
   const simulationData =
-    results && currentTariff
+    results && Object.keys(tariffResults).length > 0
       ? {
-          ...tariffs[currentTariff],
+          ...Object.values(tariffResults)[0],
+          ...tariffResults[costTariff],
+          estimated_cost_pln: tariffResults[costTariff]?.estimated_cost_pln ?? null,
           chart_hourly: results.chart_hourly,
           chart_15min: results.chart_15min,
           chart_daily: results.chart_daily,
         }
       : null;
-
-  const handleTariffChange = (e) => {
-    const newTariff = e.target.value;
-    const updatedUser = { ...user, current_tariff: newTariff };
-    setUser(updatedUser);
-    localStorage.setItem("user", JSON.stringify(updatedUser));
-  };
 
   const getChartData = () => {
     if (!simulationData) return [];
@@ -107,14 +102,16 @@ function Dashboard() {
         ? null
         : chartMetric === "kwh"
           ? item.kwh
-          : item[`cost_${currentTariff}`] || 0,
+          : hasCostTariff
+            ? item[`cost_${costTariff}`] || 0
+            : null,
     }));
   };
 
   const chartData = getChartData();
   const chartColor = chartMetric === "kwh" ? "#10b981" : "#3b82f6";
 
-  if (!isReady) {
+  if (!isReady || !isUserReady) {
     return <div className="p-10 text-gray-500">Ładowanie danych z bazy...</div>;
   }
 
@@ -123,6 +120,11 @@ function Dashboard() {
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Mój profil zużycia
       </h2>
+
+      <ProfileTariffNotice
+        missingProfile={`, żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy ${costTariff}.`}
+        missingPrices={`Nie mamy jeszcze cen taryfy ${profileTariff?.tariff_type} z Twojego profilu, więc koszty liczymy dla taryfy ${costTariff}.`}
+      />
 
       <SelectedFileBar />
       {simulationData && <DateRangeFilter />}
@@ -143,6 +145,7 @@ function Dashboard() {
             <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
               <p className="text-sm font-medium text-gray-500 mb-2">
                 Szacowany koszt w okresie
+                {!currentTariff && ` (taryfa ${costTariff})`}
               </p>
               <div className="flex items-baseline gap-2">
                 <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
@@ -175,62 +178,20 @@ function Dashboard() {
                 Aktualna taryfa
               </p>
 
-              <div className="relative">
-                <div
-                  onClick={() =>
-                    availableTariffs.length > 0 &&
-                    setIsDropdownOpen(!isDropdownOpen)
-                  }
-                  className={`w-full bg-gray-50 border ${isDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500" : "border-gray-200"} text-gray-900 text-lg md:text-xl font-bold py-2 md:py-3 pl-4 pr-10 rounded-xl hover:bg-gray-100 hover:border-emerald-300 transition-all cursor-pointer shadow-sm flex items-center justify-between ${availableTariffs.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-                >
-                  <span>
-                    {currentTariff
-                      ? `Taryfa ${currentTariff}`
-                      : "Wybierz taryfę"}
-                  </span>
-                  <svg
-                    className={`h-5 w-5 md:h-6 md:w-6 text-emerald-600 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </div>
-
-                {isDropdownOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setIsDropdownOpen(false)}
-                    ></div>
-
-                    <div className="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
-                      {availableTariffs.map((tariffName) => (
-                        <div
-                          key={tariffName}
-                          onClick={() => {
-                            handleTariffChange({ target: { value: tariffName } });
-                            setIsDropdownOpen(false);
-                          }}
-                          className={`px-4 py-3 text-base md:text-lg font-medium cursor-pointer transition-colors ${
-                            currentTariff === tariffName
-                              ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-500"
-                              : "text-gray-700 hover:bg-gray-50 hover:text-emerald-600 border-l-4 border-transparent"
-                          }`}
-                        >
-                          Taryfa {tariffName}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+              {/* Taryfę zmienia się wyłącznie w profilu - tu tylko ją pokazujemy. */}
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {profileTariff?.tariff_type
+                  ? `Taryfa ${currentTariff?.code ?? profileTariff.tariff_type}`
+                  : userLoadError
+                    ? "Nie udało się pobrać taryfy"
+                    : "Nie znamy jeszcze Twojej taryfy"}
+              </p>
+              <Link
+                to="/profile"
+                className="mt-2 inline-block text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+              >
+                {profileTariff?.exists ? "Zmień w profilu" : userLoadError ? "Przejdź do profilu" : "Uzupełnij profil"}
+              </Link>
             </div>
           </div>
 
