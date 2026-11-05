@@ -25,3 +25,7 @@ CORS_ORIGINS = [
 ]
 
 PRICE_SYNC_ADMIN_KEY = os.getenv("PRICE_SYNC_ADMIN_KEY") or None
+
+HUB_URL = os.getenv("HUB_URL") or None
+HUB_API_KEY = os.getenv("HUB_API_KEY") or None
+HUB_TIMEOUT_SECONDS = float(os.getenv("HUB_TIMEOUT_SECONDS", "5"))
