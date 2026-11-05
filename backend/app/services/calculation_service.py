@@ -172,51 +172,36 @@ class CalculationService:
         return covering
 
     @staticmethod
-    def overlap_days(covering: dict[tuple[str, int], list[int]]) -> set[str]:
-        return {day for (day, _), indices in covering.items() if len(indices) > 1}
+    def device_usage_series(covering: dict[tuple[str, int], list[int]], slot_rows) -> dict[str, list[float | None]]:
+        """Seria „Wszystkich plików urządzeń”: kwadranse objęte którymkolwiek plikiem mają co najmniej 0 kWh.
 
-    @classmethod
-    def merge_device_usage(cls, files: list[dict], covering: dict) -> tuple[dict, dict[str, int], list[dict]]:
-        overlap_days = cls.overlap_days(covering)
-
-        def owner(device, day, slot):
-            for index in reversed(covering.get((day, slot), ())):
-                if device in files[index]["devices"]:
-                    return index
-            return None
-
+        `slot_rows` to (dzień lokalny, kwadrans, pobór z sieci) z obowiązujących wersji urządzeń.
+        """
         usage = {}
-        for (day, slot), indices in covering.items():
-            kwh = 0.0 if day in overlap_days else files[indices[0]]["usage_15min"][day][slot]
-            usage.setdefault(day, [None] * SLOTS_PER_DAY)[slot] = kwh
-        actions_per_day = Counter()
-        for index, source in enumerate(files):
-            for day, count in source["actions_per_day"].items():
-                if day not in overlap_days:
-                    actions_per_day[day] += count
-            for device, day, slot, kwh in source["slots"]:
-                if day in overlap_days and owner(device, day, slot) == index:
-                    usage[day][slot] += kwh
-            for device, day, slot in source["actions"]:
-                if day in overlap_days and owner(device, day, slot) == index:
-                    actions_per_day[day] += 1
+        for day, slot in covering:
+            usage.setdefault(day, [None] * SLOTS_PER_DAY)[slot] = 0.0
+        for day, slot, kwh in slot_rows:
+            usage.setdefault(day, [None] * SLOTS_PER_DAY)[slot] = round(float(kwh), 6)
+        return dict(sorted(usage.items()))
 
-        contributions = [{"days_used": set(), "slots_used": 0} for _ in files]
+    @staticmethod
+    def device_contributions(file_devices: list[set], covering: dict[tuple[str, int], list[int]]) -> list[dict]:
+        """Dla każdego pliku: ile dni i kwadransów ma co najmniej jedno urządzenie nieprzykryte nowszym plikiem."""
+        # Kwadranse z tym samym zestawem plików mają ten sam wynik; takich zestawów jest kilka.
+        days_by_files = defaultdict(list)
         for (day, _), indices in covering.items():
+            days_by_files[tuple(indices)].append(day)
+
+        contributions = [{"days_used": set(), "slots_used": 0} for _ in file_devices]
+        for indices, days in days_by_files.items():
             claimed = set()
             for index in reversed(indices):
-                if files[index]["devices"] - claimed:
-                    contributions[index]["days_used"].add(day)
-                    contributions[index]["slots_used"] += 1
+                if file_devices[index] - claimed:
+                    contributions[index]["days_used"].update(days)
+                    contributions[index]["slots_used"] += len(days)
                 if len(indices) > 1:
-                    claimed |= files[index]["devices"]
-
-        usage = {
-            day: [None if kwh is None else round(kwh, 6) for kwh in day_slots]
-            for day, day_slots in sorted(usage.items())
-        }
-        contributions = [{**item, "days_used": len(item["days_used"])} for item in contributions]
-        return usage, dict(sorted(actions_per_day.items())), contributions
+                    claimed |= file_devices[index]
+        return [{**item, "days_used": len(item["days_used"])} for item in contributions]
 
     @staticmethod
     def merge_usage(sources: list[dict]) -> tuple[dict, list[dict]]:
@@ -377,7 +362,10 @@ class CalculationService:
         data_15min = data_15min.rename(columns={'Wartość kWh': 'kwh', 'time_15m': 'time'})
         results_dict["chart_15min"] = cls._to_records(data_15min)
         
-        df_15min['hour'] = df_15min['Dokładny Czas'].apply(cls.format_hour_label)
+        # To samo co format_hour_label, ale wektorowo: przy pliku rocznym apply na 35 tys. wierszach był wolny.
+        times = df_15min['Dokładny Czas'].dt
+        hours = times.hour.where(times.minute != 0, (times.hour - 1) % 24)
+        df_15min['hour'] = hours.astype(str).str.zfill(2) + ":00"
         
         daily_hourly_sum = df_15min.groupby(['date', 'hour'])[columns_to_aggregate].sum(min_count=1).reset_index()
         

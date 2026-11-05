@@ -87,3 +87,68 @@ def test_generator_uses_sample_file_device_catalog():
     demo = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
 
     assert demo["devices"] == sample["devices"]
+
+
+METER_DEMO = Path(__file__).parent / "fixtures" / "meter_demo_30d.csv"
+DEVICES_FROM_METER_DEMO = Path(__file__).parent / "fixtures" / "devices_from_meter_demo_30d.json"
+TAURON_HEADER = "Nr platnika;Nr punktu poboru energii;Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]"
+
+
+def _quarters(path: Path) -> dict:
+    from app.parsers import parse_energy_file
+    from app.services.calculation_service import CalculationService
+
+    with path.open("rb") as handle:
+        return {moment: used for moment, used, _ in CalculationService.quarter_hour_readings(parse_energy_file(handle))}
+
+
+def _hourly_meter(path: Path) -> Path:
+    """Plik godzinowy z sum kwadransów pliku demo, w tym samym formacie Tauron."""
+    hours = {}
+    for moment, used in _quarters(METER_DEMO).items():
+        end = moment.replace(minute=0) + timedelta(hours=1)
+        hours[end] = hours.get(end, 0.0) + used
+    lines = [TAURON_HEADER] + [
+        f"1;2;Pobór energii czynnej;{end:%d.%m.%Y %H:%M};1;{f'{kwh:.3f}'.replace('.', ',')};100"
+        for end, kwh in sorted(hours.items())
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_from_meter_demo_file_matches_generator(tmp_path):
+    generated = generate(tmp_path / "dom.json", "--from-meter", METER_DEMO).decode("utf-8")
+
+    assert generated == DEVICES_FROM_METER_DEMO.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("hourly", [False, True], ids=["co-15-min", "godzinowy"])
+def test_from_meter_devices_add_up_to_meter_in_every_quarter(tmp_path, hourly):
+    meter = _hourly_meter(tmp_path / "licznik.csv") if hourly else METER_DEMO
+    path = tmp_path / "dom.json"
+    generate(path, "--from-meter", meter, "--seed", 7)
+
+    validation = run_script(VALIDATOR, path)
+    metered, devices = _quarters(meter), _quarters(path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    other = sum(action["energy_kwh"] for action in document["energy_usage"] if action["device_id"] == "dev_other_01")
+
+    assert validation.returncode == 0, validation.stdout
+    assert devices.keys() == metered.keys()
+    assert max(abs(devices[moment] - metered[moment]) for moment in metered) <= 0.001
+    assert other < 0.15 * sum(metered.values())
+    assert {"dev_wm_01", "dev_dw_01", "dev_ev_01", "dev_hp_01"} <= {a["device_id"] for a in document["energy_usage"]}
+
+
+def test_from_meter_same_seed_gives_identical_file(tmp_path):
+    first = generate(tmp_path / "a.json", "--from-meter", METER_DEMO, "--seed", 3)
+    second = generate(tmp_path / "b.json", "--from-meter", METER_DEMO, "--seed", 3)
+
+    assert first == second
+
+
+def test_from_meter_does_not_support_pv_yet(tmp_path):
+    result = run_script(GENERATOR, "--from-meter", METER_DEMO, "--with-pv", "--out", tmp_path / "dom.json")
+
+    assert result.returncode != 0
+    assert "--with-pv" in result.stderr

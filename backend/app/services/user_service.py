@@ -17,7 +17,7 @@ class UserService:
 
     def get_current_user(self, user: User) -> CurrentUserResponse:
         profile = self.repository.get_profile(user.id)
-        tariff_type = profile.consumption_and_tariff.get("tariff_type") if profile else None
+        tariff_type = self._tariff_type(profile)
         tariff = self._find_tariff(tariff_type) if tariff_type else None
 
         return CurrentUserResponse(
@@ -30,6 +30,15 @@ class UserService:
                 tariff_type=tariff_type,
             ),
         )
+
+    def profile_tariff(self, user_id) -> tuple[str | None, Tariff | None]:
+        """Taryfa z profilu: wartość z profilu (np. "G13") i odpowiadająca jej taryfa z cennikiem albo None."""
+        tariff_type = self._tariff_type(self.repository.get_profile(user_id))
+        return tariff_type, self._find_tariff(tariff_type) if tariff_type else None
+
+    @staticmethod
+    def _tariff_type(profile) -> str | None:
+        return profile.consumption_and_tariff.get("tariff_type") if profile else None
 
     def _find_tariff(self, tariff_type: str) -> Tariff | None:
         # Taryfa dynamiczna ma w tabeli tariffs inną nazwę niż wartość w profilu.
