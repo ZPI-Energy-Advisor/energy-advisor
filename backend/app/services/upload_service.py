@@ -1,15 +1,14 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
 
 from app.models.EnergyDataFile import EnergyDataFile
-from app.schemas.user_profile import UserProfile
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
-from app.repositories.user_repository import UserRepository
 from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationService, public_results
 
 
@@ -28,7 +27,6 @@ class UploadService:
         calculation_service: CalculationService,
         simulation_repository: SimulationRepository,
         energy_file_repository: EnergyDataFileRepository,
-        user_repository: UserRepository,
         energy_reading_repository: EnergyReadingRepository,
         device_repository: DeviceRepository,
     ):
@@ -36,7 +34,6 @@ class UploadService:
         self.simulation_repository = simulation_repository
         self.energy_file_repository = energy_file_repository
         self.energy_reading_repository = energy_reading_repository
-        self.user_repository = user_repository
         self.device_repository = device_repository
 
     def process_upload(self, file: UploadFile, user_id: UUID):
@@ -60,11 +57,9 @@ class UploadService:
         try:
             parsed = self.calculation_service.parse_file(file.file)
             simulation_results = self.calculation_service.calculate_with_report(parsed)
-            usage = simulation_results.get("usage_15min")
-            if usage is not None:
-                self.energy_reading_repository.replace_for_file(
-                    energy_file.id, self._readings_from_usage(usage)
-                )
+            readings = self.calculation_service.quarter_hour_readings(parsed)
+            self.energy_reading_repository.replace_for_file(energy_file.id, readings)
+            energy_file.period_start, energy_file.period_end = self._period(parsed, readings)
             if parsed.devices is not None:
                 self.device_repository.save_for_file(
                     user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
@@ -121,21 +116,19 @@ class UploadService:
         self.energy_file_repository.save(energy_file)
 
     @staticmethod
-    def _readings_from_usage(usage: dict | None) -> list[tuple[datetime, float]]:
-        if not isinstance(usage, dict):
-            raise ValueError("Wynik kalkulacji nie zawiera serii zużycia energii.")
+    def _period(parsed, readings: list[tuple[datetime, float, float]]) -> tuple[datetime | None, datetime | None]:
+        """Okres zadeklarowany w pliku, a dla pliku z licznika - od pierwszego do końca ostatniego kwadransu."""
+        start, end = getattr(parsed, "period_start", None), getattr(parsed, "period_end", None)
+        if start is not None and end is not None:
+            return start, end
+        if not readings:
+            return None, None
+        first, last = readings[0][0], readings[-1][0] + timedelta(minutes=15)
+        return (
+            first.replace(tzinfo=LOCAL_TIMEZONE).astimezone(timezone.utc),
+            last.replace(tzinfo=LOCAL_TIMEZONE).astimezone(timezone.utc),
+        )
 
-        readings = []
-        for day, slots in usage.items():
-            day_start = datetime.combine(date.fromisoformat(day), datetime.min.time())
-            for slot, energy_kwh in enumerate(slots):
-                if energy_kwh is not None:
-                    readings.append((
-                        day_start + timedelta(minutes=slot * 15),
-                        float(energy_kwh),
-                    ))
-        return readings
-    
     @staticmethod
     def _file_size(file: UploadFile) -> int:
         file.file.seek(0, 2)
@@ -146,28 +139,3 @@ class UploadService:
     @staticmethod
     def _parse_date(value):
         return date.fromisoformat(value) if value else None
-
-
-    def create_user_profile(self, user_id: UUID, profile_data: UserProfile):
-        return self.user_repository.create_profile(user_id, profile_data)
-
-    def get_user_profile(self, user_id: UUID):
-        profile = self.user_repository.get_profile(user_id)
-        if profile is None:
-            raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
-        try:
-            return UserProfile.model_validate(profile)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail="Profil użytkownika wymaga ponownego uzupełnienia.",
-            ) from exc
-
-    def create_or_update_user_profile(self, user_id: UUID, profile_data: UserProfile):
-        existing_profile = self.user_repository.get_profile(user_id)
-
-        if existing_profile:
-            profile = self.user_repository.update_profile(user_id, profile_data)
-        else:
-            profile = self.user_repository.create_profile(user_id, profile_data)
-        return UserProfile.model_validate(profile)

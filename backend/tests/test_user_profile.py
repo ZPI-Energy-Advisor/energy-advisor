@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from app.repositories.user_repository import UserRepository
 from app.schemas.user_profile import UserProfile
-from app.services.upload_service import UploadService
+from app.services.user_service import UserService
 
 
 def valid_profile(**overrides):
@@ -92,14 +92,7 @@ def test_repository_update_profile_updates_every_jsonb_section():
 
 
 def _service(user_repository):
-    return UploadService(
-        calculation_service=MagicMock(),
-        simulation_repository=MagicMock(),
-        energy_file_repository=MagicMock(),
-        user_repository=user_repository,
-        energy_reading_repository=MagicMock(),
-        device_repository=MagicMock(),
-    )
+    return UserService(user_repository, MagicMock())
 
 
 def test_service_creates_profile_when_it_does_not_exist():
@@ -109,7 +102,7 @@ def test_service_creates_profile_when_it_does_not_exist():
     repository.get_profile.return_value = None
     repository.create_profile.return_value = stored
 
-    result = _service(repository).create_or_update_user_profile(uuid4(), profile_data)
+    result = _service(repository).save_profile(MagicMock(id=uuid4()), profile_data)
 
     repository.create_profile.assert_called_once()
     assert result == profile_data
@@ -120,6 +113,6 @@ def test_service_get_profile_returns_404_when_missing():
     repository.get_profile.return_value = None
 
     with pytest.raises(HTTPException) as error:
-        _service(repository).get_user_profile(uuid4())
+        _service(repository).get_profile(MagicMock(id=uuid4()))
 
     assert error.value.status_code == 404

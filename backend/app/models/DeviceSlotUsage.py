@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Index
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Index, false
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
@@ -10,7 +10,7 @@ class DeviceSlotUsage(Base):
 
     __tablename__ = "device_slot_usage"
     __table_args__ = (
-        Index("ix_device_slot_usage_file_slot", "energy_data_file_id", "slot_start"),
+        Index("ix_device_slot_usage_file_superseded_slot", "energy_data_file_id", "superseded", "slot_start"),
     )
 
     device_action_id = Column(
@@ -19,10 +19,10 @@ class DeviceSlotUsage(Base):
         primary_key=True,
     )
     slot_start = Column(DateTime(timezone=True), primary_key=True)
-    # Kopia z device_instances: sumy zużycia pliku w kwadransach liczymy bez złączeń.
     energy_data_file_id = Column(
         UUID(as_uuid=True),
         ForeignKey("energy_data_files.id", ondelete="CASCADE"),
         nullable=False,
     )
     kwh = Column(Float, nullable=False)
+    superseded = Column(Boolean, nullable=False, default=False, server_default=false())

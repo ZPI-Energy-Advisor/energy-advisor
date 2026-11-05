@@ -1,6 +1,7 @@
 import pandas as pd
 
 from app.parsers.base import (
+    EXPORTED_KWH,
     KWH,
     TIMESTAMP_START,
     UNIT_ACTION,
@@ -47,6 +48,7 @@ def parse_energy_file(file_obj) -> ParsedEnergyFile:
 
 __all__ = [
     "DOCUMENT_PARSERS",
+    "EXPORTED_KWH",
     "HOURLY_RESOLUTION",
     "KWH",
     "PARSERS",

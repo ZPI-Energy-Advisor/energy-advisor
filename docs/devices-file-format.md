@@ -43,7 +43,34 @@ python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --s
 | `--devices` | `full` | `standard`: bez EV, pompy ciepła i rekuperatora; `full`: wszystkie urządzenia |
 | `--with-pv` | wyłączone | dodaje instalację PV |
 | `--max-grid-kw` | `9` | limit przyłącza; generator przesuwa akcje, żeby go nie przekroczyć |
+| `--from-meter` | wyłączone | plik licznika (CSV, np. Tauron, godzinowy albo co 15 min); urządzenia są dopasowane do niego |
 | `--out` | wymagany | plik wynikowy |
+
+### Plik urządzeń dopasowany do licznika
+
+Z `--from-meter` okres i zużycie pochodzą z pliku licznika (`--start`, `--days` i
+`--max-grid-kw` są pomijane), a suma energii urządzeń w każdym kwadransie równa się poborowi z
+licznika (z dokładnością do 0,001 kWh). Dzięki temu wykres urządzeń razem z plikiem licznika
+pokazuje cały dom. Pobór jest dzielony w kolejności:
+
+1. obciążenie stałe: lodówka, router, rekuperator;
+2. duże urządzenia tam, gdzie licznik ma nadwyżkę poboru: pralka, zmywarka i suszarka w kształcie
+   swoich programów, ładowarka EV, piekarnik, pompa ciepła (z mocą maksymalną i bez nakładania
+   się akcji);
+3. oświetlenie po zmroku, RTV/IT i małe AGD w swoich porach dnia;
+4. reszta trafia do urządzenia „Inne urządzenia” (`dev_other_01`).
+
+Akcje mają własne `profile_kwh` z dokładnością do 0,001 kWh. Pierwsza wersja nie obsługuje PV:
+energia oddana do sieci z pliku licznika jest pomijana (z ostrzeżeniem).
+
+```bash
+python backend/scripts/generate_devices_file.py --from-meter backend/tests/fixtures/meter_demo_30d.csv \
+    --out backend/tests/fixtures/devices_from_meter_demo_30d.json
+```
+
+Para plików demo `meter_demo_30d.csv` i `devices_from_meter_demo_30d.json` w
+`backend/tests/fixtures` (październik 2026, ze zmianą czasu) służy do testów trybu łączonego
+licznika z urządzeniami (patrz [device-usage.md](device-usage.md)).
 
 Plik demo `backend/tests/fixtures/devices_demo_30d.json` (30 dób od 1.10.2026, z PV) służy
 jako fixtures do testów i dane do prezentacji. Obejmuje zmianę czasu 25.10.2026 (doba ze 100
@@ -198,6 +225,10 @@ koniec okresu jako granicę.
 Produkcja jest zapisywana jako akcje z ujemną energią i własnym profilem 15-minutowym, np. od
 wschodu do zachodu słońca. Moc instalacji (kWp) i sposób rozliczenia (net-billing,
 net-metering) pochodzą z profilu użytkownika, nie z pliku.
+
+Przy imporcie produkcja najpierw pokrywa zużycie w tym samym kwadransie (autokonsumpcja). Do
+odczytów trafia pobór z sieci = max(0, suma akcji) i oddanie do sieci = max(0, −suma akcji),
+tak jak pobór i oddanie z licznika w pliku CSV.
 
 ## Reguły walidacji
 

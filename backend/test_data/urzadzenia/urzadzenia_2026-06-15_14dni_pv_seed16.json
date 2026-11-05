@@ -1,0 +1,2711 @@
+{
+  "period": {
+    "start": "2026-06-15T00:00:00+02:00",
+    "end": "2026-06-29T00:00:00+02:00"
+  },
+  "devices": [
+    {
+      "device_id": "dev_wm_01",
+      "device_name": "Pralka Bosch",
+      "device_type": "washing_machine",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "07:00", "to": "22:00" }
+      },
+      "programs": [
+        {
+          "program_id": "cotton_60",
+          "program_name": "Bawełna 60°C",
+          "duration_min": 120,
+          "profile_kwh": [0.45, 0.45, 0.30, 0.10, 0.10, 0.15, 0.20, 0.20]
+        },
+        {
+          "program_id": "quick_40",
+          "program_name": "Szybkie 40°C",
+          "duration_min": 60,
+          "profile_kwh": [0.35, 0.25, 0.10, 0.10]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_td_01",
+      "device_name": "Suszarka do ubrań Electrolux",
+      "device_type": "tumble_dryer",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "07:00", "to": "22:00" }
+      },
+      "programs": [
+        {
+          "program_id": "cotton_dry",
+          "program_name": "Bawełna do szafy",
+          "duration_min": 120,
+          "profile_kwh": [0.30, 0.35, 0.35, 0.35, 0.30, 0.25, 0.15, 0.05]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_dw_01",
+      "device_name": "Zmywarka Siemens",
+      "device_type": "dishwasher",
+      "device_category": "AGD",
+      "flexibility": {
+        "mode": "shiftable",
+        "allowed_window": { "from": "19:00", "to": "07:00" }
+      },
+      "programs": [
+        {
+          "program_id": "eco",
+          "program_name": "Eco",
+          "duration_min": 180,
+          "profile_kwh": [0.15, 0.15, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03, 0.12, 0.12, 0.06, 0.05]
+        }
+      ]
+    },
+    {
+      "device_id": "dev_ev_01",
+      "device_name": "Ładowarka EV",
+      "device_type": "ev_charger",
+      "device_category": "Pojazd elektryczny",
+      "max_power_kw": 3.7,
+      "flexibility": {
+        "mode": "interruptible",
+        "allowed_window": { "from": "17:00", "to": "07:00" }
+      }
+    },
+    {
+      "device_id": "dev_hp_01",
+      "device_name": "Pompa ciepła Panasonic",
+      "device_type": "heat_pump",
+      "device_category": "Ogrzewanie",
+      "max_power_kw": 4.5,
+      "flexibility": {
+        "mode": "shiftable",
+        "max_shift_min": 60
+      }
+    },
+    {
+      "device_id": "dev_pv_01",
+      "device_name": "Instalacja PV 6 kWp",
+      "device_type": "pv_inverter",
+      "device_category": "OZE",
+      "max_power_kw": 6.0,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_vent_01",
+      "device_name": "Rekuperator",
+      "device_type": "ventilation",
+      "device_category": "Ogrzewanie",
+      "max_power_kw": 0.08,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_fr_01",
+      "device_name": "Lodówka Samsung",
+      "device_type": "fridge",
+      "device_category": "AGD",
+      "max_power_kw": 0.15,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_hob_01",
+      "device_name": "Płyta indukcyjna",
+      "device_type": "induction_hob",
+      "device_category": "AGD",
+      "max_power_kw": 7.2,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_ov_01",
+      "device_name": "Piekarnik elektryczny",
+      "device_type": "oven",
+      "device_category": "AGD",
+      "max_power_kw": 3.0,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_mw_01",
+      "device_name": "Kuchenka mikrofalowa",
+      "device_type": "microwave",
+      "device_category": "AGD",
+      "max_power_kw": 1.2,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_kt_01",
+      "device_name": "Czajnik elektryczny",
+      "device_type": "kettle",
+      "device_category": "AGD",
+      "max_power_kw": 2.2,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_cm_01",
+      "device_name": "Ekspres do kawy",
+      "device_type": "coffee_machine",
+      "device_category": "AGD",
+      "max_power_kw": 1.5,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_01",
+      "device_name": "Oświetlenie salon",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.12,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_02",
+      "device_name": "Oświetlenie kuchnia",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.08,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_03",
+      "device_name": "Oświetlenie sypialnia",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.06,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_04",
+      "device_name": "Oświetlenie łazienka",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.04,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_05",
+      "device_name": "Oświetlenie przedpokój",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.03,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_lt_06",
+      "device_name": "Oświetlenie ogród",
+      "device_type": "light",
+      "device_category": "Oświetlenie",
+      "max_power_kw": 0.05,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_tv_01",
+      "device_name": "Telewizor salon",
+      "device_type": "tv",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.15,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_pc_01",
+      "device_name": "Komputer gabinet",
+      "device_type": "computer",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.25,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_rt_01",
+      "device_name": "Router Wi-Fi",
+      "device_type": "router",
+      "device_category": "RTV/IT",
+      "max_power_kw": 0.012,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_vc_01",
+      "device_name": "Odkurzacz",
+      "device_type": "vacuum_cleaner",
+      "device_category": "Inne",
+      "max_power_kw": 1.6,
+      "flexibility": { "mode": "fixed" }
+    },
+    {
+      "device_id": "dev_hd_01",
+      "device_name": "Suszarka do włosów",
+      "device_type": "hair_dryer",
+      "device_category": "Inne",
+      "max_power_kw": 2.0,
+      "flexibility": { "mode": "fixed" }
+    }
+  ],
+  "energy_usage": [
+    {
+      "action_id": "act_0001",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-15T00:00:00+02:00",
+      "action_end": "2026-06-16T00:00:00+02:00",
+      "energy_kwh": 1.10
+    },
+    {
+      "action_id": "act_0002",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-15T00:00:00+02:00",
+      "action_end": "2026-06-16T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0003",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-15T00:00:00+02:00",
+      "action_end": "2026-06-16T00:00:00+02:00",
+      "energy_kwh": 0.82
+    },
+    {
+      "action_id": "act_0004",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-15T04:00:00+02:00",
+      "action_end": "2026-06-15T05:00:00+02:00",
+      "energy_kwh": 0.74
+    },
+    {
+      "action_id": "act_0005",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-15T04:30:00+02:00",
+      "action_end": "2026-06-15T21:00:00+02:00",
+      "energy_kwh": -17.39,
+      "profile_kwh": [-0.01, -0.04, -0.05, -0.09, -0.09, -0.13, -0.13, -0.16, -0.17, -0.14, -0.16, -0.19,
+                      -0.23, -0.24, -0.28, -0.32, -0.29, -0.29, -0.34, -0.44, -0.42, -0.40, -0.45, -0.33,
+                      -0.31, -0.31, -0.32, -0.30, -0.45, -0.53, -0.33, -0.48, -0.54, -0.50, -0.35, -0.47,
+                      -0.37, -0.34, -0.30, -0.42, -0.51, -0.31, -0.31, -0.36, -0.27, -0.35, -0.39, -0.33,
+                      -0.23, -0.22, -0.24, -0.30, -0.32, -0.24, -0.17, -0.17, -0.18, -0.13, -0.12, -0.13,
+                      -0.13, -0.08, -0.09, -0.06, -0.03, -0.01]
+    },
+    {
+      "action_id": "act_0006",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-15T06:15:00+02:00",
+      "action_end": "2026-06-15T07:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0007",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-15T06:30:00+02:00",
+      "action_end": "2026-06-15T06:45:00+02:00",
+      "energy_kwh": 0.18
+    },
+    {
+      "action_id": "act_0008",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-15T06:30:00+02:00",
+      "action_end": "2026-06-15T06:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0009",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-15T06:45:00+02:00",
+      "action_end": "2026-06-15T07:00:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0010",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-15T17:00:00+02:00",
+      "action_end": "2026-06-15T18:00:00+02:00",
+      "energy_kwh": 0.49
+    },
+    {
+      "action_id": "act_0011",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-15T18:00:00+02:00",
+      "action_end": "2026-06-15T18:45:00+02:00",
+      "energy_kwh": 0.94
+    },
+    {
+      "action_id": "act_0012",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-15T19:30:00+02:00",
+      "action_end": "2026-06-15T19:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0013",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-15T19:30:00+02:00",
+      "action_end": "2026-06-15T22:45:00+02:00",
+      "energy_kwh": 0.41
+    },
+    {
+      "action_id": "act_0014",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-15T20:45:00+02:00",
+      "action_end": "2026-06-15T23:00:00+02:00",
+      "energy_kwh": 0.22
+    },
+    {
+      "action_id": "act_0015",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-15T20:45:00+02:00",
+      "action_end": "2026-06-15T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0016",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-15T20:45:00+02:00",
+      "action_end": "2026-06-15T22:30:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0017",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-15T21:00:00+02:00",
+      "action_end": "2026-06-15T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0018",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-15T22:00:00+02:00",
+      "action_end": "2026-06-16T01:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0019",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-15T22:00:00+02:00",
+      "action_end": "2026-06-15T22:45:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0020",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-15T22:15:00+02:00",
+      "action_end": "2026-06-15T23:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0021",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-16T00:00:00+02:00",
+      "action_end": "2026-06-17T00:00:00+02:00",
+      "energy_kwh": 1.17
+    },
+    {
+      "action_id": "act_0022",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-16T00:00:00+02:00",
+      "action_end": "2026-06-17T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0023",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-16T00:00:00+02:00",
+      "action_end": "2026-06-17T00:00:00+02:00",
+      "energy_kwh": 0.80
+    },
+    {
+      "action_id": "act_0024",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-16T03:30:00+02:00",
+      "action_end": "2026-06-16T04:30:00+02:00",
+      "energy_kwh": 0.65
+    },
+    {
+      "action_id": "act_0025",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-16T04:30:00+02:00",
+      "action_end": "2026-06-16T21:00:00+02:00",
+      "energy_kwh": -18.20,
+      "profile_kwh": [-0.01, -0.03, -0.04, -0.07, -0.08, -0.08, -0.11, -0.13, -0.12, -0.14, -0.19, -0.24,
+                      -0.20, -0.23, -0.30, -0.28, -0.23, -0.36, -0.34, -0.44, -0.30, -0.44, -0.41, -0.40,
+                      -0.48, -0.46, -0.53, -0.37, -0.31, -0.46, -0.51, -0.56, -0.43, -0.43, -0.34, -0.43,
+                      -0.49, -0.35, -0.35, -0.32, -0.38, -0.35, -0.43, -0.42, -0.29, -0.27, -0.44, -0.38,
+                      -0.36, -0.35, -0.34, -0.25, -0.27, -0.19, -0.29, -0.21, -0.23, -0.18, -0.12, -0.15,
+                      -0.09, -0.08, -0.05, -0.05, -0.03, -0.01]
+    },
+    {
+      "action_id": "act_0026",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-16T06:00:00+02:00",
+      "action_end": "2026-06-16T06:45:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0027",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-16T06:15:00+02:00",
+      "action_end": "2026-06-16T06:30:00+02:00",
+      "energy_kwh": 0.18
+    },
+    {
+      "action_id": "act_0028",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-16T06:15:00+02:00",
+      "action_end": "2026-06-16T06:30:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0029",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-16T06:30:00+02:00",
+      "action_end": "2026-06-16T06:45:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0030",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-16T06:30:00+02:00",
+      "action_end": "2026-06-16T06:45:00+02:00",
+      "energy_kwh": 0.21
+    },
+    {
+      "action_id": "act_0031",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-16T17:00:00+02:00",
+      "action_end": "2026-06-16T18:00:00+02:00",
+      "energy_kwh": 0.49
+    },
+    {
+      "action_id": "act_0032",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-16T18:00:00+02:00",
+      "action_end": "2026-06-16T18:45:00+02:00",
+      "energy_kwh": 0.87
+    },
+    {
+      "action_id": "act_0033",
+      "device_id": "dev_ov_01",
+      "action_start": "2026-06-16T18:15:00+02:00",
+      "action_end": "2026-06-16T19:15:00+02:00",
+      "energy_kwh": 1.79
+    },
+    {
+      "action_id": "act_0034",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-16T19:00:00+02:00",
+      "action_end": "2026-06-16T22:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0035",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-06-16T19:00:00+02:00",
+      "action_end": "2026-06-16T21:00:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0036",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-16T20:30:00+02:00",
+      "action_end": "2026-06-16T23:00:00+02:00",
+      "energy_kwh": 0.31
+    },
+    {
+      "action_id": "act_0037",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-16T20:45:00+02:00",
+      "action_end": "2026-06-16T23:15:00+02:00",
+      "energy_kwh": 0.25
+    },
+    {
+      "action_id": "act_0038",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-16T20:45:00+02:00",
+      "action_end": "2026-06-16T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0039",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-16T20:45:00+02:00",
+      "action_end": "2026-06-16T22:45:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0040",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-16T21:00:00+02:00",
+      "action_end": "2026-06-16T21:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0041",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-16T21:00:00+02:00",
+      "action_end": "2026-06-16T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0042",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "action_start": "2026-06-16T21:15:00+02:00",
+      "action_end": "2026-06-16T23:15:00+02:00",
+      "energy_kwh": 2.10
+    },
+    {
+      "action_id": "act_0043",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-16T22:15:00+02:00",
+      "action_end": "2026-06-16T23:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0044",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-16T22:30:00+02:00",
+      "action_end": "2026-06-16T23:30:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0045",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-17T00:00:00+02:00",
+      "action_end": "2026-06-18T00:00:00+02:00",
+      "energy_kwh": 1.09
+    },
+    {
+      "action_id": "act_0046",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-17T00:00:00+02:00",
+      "action_end": "2026-06-18T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0047",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-17T00:00:00+02:00",
+      "action_end": "2026-06-18T00:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0048",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-17T03:45:00+02:00",
+      "action_end": "2026-06-17T04:45:00+02:00",
+      "energy_kwh": 0.67
+    },
+    {
+      "action_id": "act_0049",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-17T04:45:00+02:00",
+      "action_end": "2026-06-17T20:45:00+02:00",
+      "energy_kwh": -5.88,
+      "profile_kwh": [-0.01, -0.02, -0.02, -0.03, -0.04, -0.04, -0.05, -0.06, -0.06, -0.06, -0.07, -0.07,
+                      -0.09, -0.08, -0.08, -0.10, -0.12, -0.11, -0.10, -0.11, -0.14, -0.12, -0.13, -0.11,
+                      -0.14, -0.15, -0.12, -0.12, -0.14, -0.16, -0.15, -0.11, -0.12, -0.16, -0.13, -0.16,
+                      -0.13, -0.15, -0.12, -0.15, -0.13, -0.10, -0.11, -0.10, -0.11, -0.13, -0.12, -0.12,
+                      -0.09, -0.10, -0.09, -0.09, -0.09, -0.08, -0.07, -0.06, -0.05, -0.05, -0.04, -0.04,
+                      -0.03, -0.02, -0.02, -0.01]
+    },
+    {
+      "action_id": "act_0050",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-17T06:15:00+02:00",
+      "action_end": "2026-06-17T07:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0051",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-17T06:30:00+02:00",
+      "action_end": "2026-06-17T06:45:00+02:00",
+      "energy_kwh": 0.20
+    },
+    {
+      "action_id": "act_0052",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-17T06:30:00+02:00",
+      "action_end": "2026-06-17T06:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0053",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-17T06:45:00+02:00",
+      "action_end": "2026-06-17T07:00:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0054",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-17T06:45:00+02:00",
+      "action_end": "2026-06-17T07:00:00+02:00",
+      "energy_kwh": 0.29
+    },
+    {
+      "action_id": "act_0055",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-06-17T08:45:00+02:00",
+      "action_end": "2026-06-17T16:00:00+02:00",
+      "energy_kwh": 1.13
+    },
+    {
+      "action_id": "act_0056",
+      "device_id": "dev_vc_01",
+      "action_start": "2026-06-17T10:00:00+02:00",
+      "action_end": "2026-06-17T10:30:00+02:00",
+      "energy_kwh": 0.56
+    },
+    {
+      "action_id": "act_0057",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-06-17T12:15:00+02:00",
+      "action_end": "2026-06-17T12:30:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0058",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-17T14:30:00+02:00",
+      "action_end": "2026-06-17T14:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0059",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-17T16:00:00+02:00",
+      "action_end": "2026-06-17T16:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0060",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-17T16:30:00+02:00",
+      "action_end": "2026-06-17T17:30:00+02:00",
+      "energy_kwh": 0.63
+    },
+    {
+      "action_id": "act_0061",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-17T18:30:00+02:00",
+      "action_start": "2026-06-17T18:30:00+02:00",
+      "action_end": "2026-06-17T21:45:00+02:00",
+      "energy_kwh": 11.24,
+      "deadline": "2026-06-18T07:30:00+02:00"
+    },
+    {
+      "action_id": "act_0062",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-17T18:30:00+02:00",
+      "action_end": "2026-06-17T19:15:00+02:00",
+      "energy_kwh": 1.07
+    },
+    {
+      "action_id": "act_0063",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-17T19:30:00+02:00",
+      "action_end": "2026-06-17T22:30:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0064",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-17T19:30:00+02:00",
+      "action_end": "2026-06-17T22:15:00+02:00",
+      "energy_kwh": 0.35
+    },
+    {
+      "action_id": "act_0065",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-17T20:30:00+02:00",
+      "action_end": "2026-06-17T20:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0066",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-17T20:45:00+02:00",
+      "action_end": "2026-06-17T22:30:00+02:00",
+      "energy_kwh": 0.17
+    },
+    {
+      "action_id": "act_0067",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-17T20:45:00+02:00",
+      "action_end": "2026-06-17T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0068",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-17T20:45:00+02:00",
+      "action_end": "2026-06-17T22:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0069",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-17T21:00:00+02:00",
+      "action_end": "2026-06-17T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0070",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-17T21:30:00+02:00",
+      "action_end": "2026-06-17T22:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0071",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-17T21:45:00+02:00",
+      "action_end": "2026-06-17T22:45:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0072",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-18T00:00:00+02:00",
+      "action_end": "2026-06-19T00:00:00+02:00",
+      "energy_kwh": 1.04
+    },
+    {
+      "action_id": "act_0073",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-18T00:00:00+02:00",
+      "action_end": "2026-06-19T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0074",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-18T00:00:00+02:00",
+      "action_end": "2026-06-19T00:00:00+02:00",
+      "energy_kwh": 0.80
+    },
+    {
+      "action_id": "act_0075",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-18T04:15:00+02:00",
+      "action_end": "2026-06-18T05:15:00+02:00",
+      "energy_kwh": 0.79
+    },
+    {
+      "action_id": "act_0076",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-18T04:30:00+02:00",
+      "action_end": "2026-06-18T21:00:00+02:00",
+      "energy_kwh": -15.54,
+      "profile_kwh": [-0.01, -0.03, -0.05, -0.05, -0.06, -0.13, -0.11, -0.12, -0.16, -0.17, -0.20, -0.20,
+                      -0.15, -0.17, -0.21, -0.23, -0.34, -0.28, -0.23, -0.36, -0.28, -0.31, -0.36, -0.38,
+                      -0.29, -0.34, -0.26, -0.46, -0.45, -0.44, -0.31, -0.40, -0.36, -0.30, -0.31, -0.45,
+                      -0.39, -0.39, -0.29, -0.38, -0.43, -0.29, -0.29, -0.41, -0.28, -0.30, -0.37, -0.33,
+                      -0.25, -0.24, -0.22, -0.18, -0.23, -0.17, -0.17, -0.21, -0.13, -0.11, -0.10, -0.12,
+                      -0.08, -0.07, -0.06, -0.05, -0.03, -0.01]
+    },
+    {
+      "action_id": "act_0077",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-18T06:00:00+02:00",
+      "action_end": "2026-06-18T06:45:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0078",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-18T06:15:00+02:00",
+      "action_end": "2026-06-18T06:30:00+02:00",
+      "energy_kwh": 0.21
+    },
+    {
+      "action_id": "act_0079",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-18T06:15:00+02:00",
+      "action_end": "2026-06-18T06:30:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0080",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-18T06:30:00+02:00",
+      "action_end": "2026-06-18T06:45:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0081",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-18T06:30:00+02:00",
+      "action_end": "2026-06-18T06:45:00+02:00",
+      "energy_kwh": 0.20
+    },
+    {
+      "action_id": "act_0082",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-06-18T08:45:00+02:00",
+      "action_end": "2026-06-18T17:00:00+02:00",
+      "energy_kwh": 1.30
+    },
+    {
+      "action_id": "act_0083",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-06-18T09:30:00+02:00",
+      "action_end": "2026-06-18T11:30:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0084",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "action_start": "2026-06-18T11:45:00+02:00",
+      "action_end": "2026-06-18T13:45:00+02:00",
+      "energy_kwh": 2.10
+    },
+    {
+      "action_id": "act_0085",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-06-18T12:45:00+02:00",
+      "action_end": "2026-06-18T13:00:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0086",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-18T16:00:00+02:00",
+      "action_end": "2026-06-18T16:15:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0087",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-18T16:30:00+02:00",
+      "action_end": "2026-06-18T17:30:00+02:00",
+      "energy_kwh": 0.64
+    },
+    {
+      "action_id": "act_0088",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-18T18:30:00+02:00",
+      "action_end": "2026-06-18T19:15:00+02:00",
+      "energy_kwh": 1.06
+    },
+    {
+      "action_id": "act_0089",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-18T19:00:00+02:00",
+      "action_start": "2026-06-18T19:00:00+02:00",
+      "action_end": "2026-06-18T21:30:00+02:00",
+      "energy_kwh": 9.03,
+      "deadline": "2026-06-19T07:00:00+02:00"
+    },
+    {
+      "action_id": "act_0090",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-18T19:30:00+02:00",
+      "action_end": "2026-06-18T22:15:00+02:00",
+      "energy_kwh": 0.35
+    },
+    {
+      "action_id": "act_0091",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-18T20:00:00+02:00",
+      "action_end": "2026-06-18T23:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0092",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-18T20:00:00+02:00",
+      "action_end": "2026-06-18T20:15:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0093",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-18T20:45:00+02:00",
+      "action_end": "2026-06-18T22:30:00+02:00",
+      "energy_kwh": 0.17
+    },
+    {
+      "action_id": "act_0094",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-18T20:45:00+02:00",
+      "action_end": "2026-06-18T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0095",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-18T20:45:00+02:00",
+      "action_end": "2026-06-18T22:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0096",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-18T21:00:00+02:00",
+      "action_end": "2026-06-18T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0097",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-18T21:30:00+02:00",
+      "action_end": "2026-06-18T22:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0098",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-18T21:45:00+02:00",
+      "action_end": "2026-06-18T22:45:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0099",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-19T00:00:00+02:00",
+      "action_end": "2026-06-20T00:00:00+02:00",
+      "energy_kwh": 1.06
+    },
+    {
+      "action_id": "act_0100",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-19T00:00:00+02:00",
+      "action_end": "2026-06-20T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0101",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-19T00:00:00+02:00",
+      "action_end": "2026-06-20T00:00:00+02:00",
+      "energy_kwh": 0.81
+    },
+    {
+      "action_id": "act_0102",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-19T04:30:00+02:00",
+      "action_end": "2026-06-19T05:30:00+02:00",
+      "energy_kwh": 0.80
+    },
+    {
+      "action_id": "act_0103",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-19T04:45:00+02:00",
+      "action_end": "2026-06-19T20:45:00+02:00",
+      "energy_kwh": -4.35,
+      "profile_kwh": [-0.01, -0.01, -0.02, -0.02, -0.02, -0.03, -0.03, -0.04, -0.05, -0.06, -0.06, -0.06,
+                      -0.07, -0.07, -0.06, -0.09, -0.09, -0.07, -0.07, -0.07, -0.10, -0.08, -0.08, -0.08,
+                      -0.10, -0.09, -0.10, -0.09, -0.11, -0.11, -0.10, -0.12, -0.11, -0.11, -0.09, -0.10,
+                      -0.11, -0.10, -0.09, -0.10, -0.10, -0.08, -0.08, -0.10, -0.10, -0.08, -0.09, -0.08,
+                      -0.07, -0.07, -0.06, -0.07, -0.06, -0.05, -0.05, -0.04, -0.04, -0.04, -0.04, -0.02,
+                      -0.02, -0.02, -0.01, -0.01]
+    },
+    {
+      "action_id": "act_0104",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-19T06:15:00+02:00",
+      "action_end": "2026-06-19T07:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0105",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-19T06:30:00+02:00",
+      "action_end": "2026-06-19T06:45:00+02:00",
+      "energy_kwh": 0.19
+    },
+    {
+      "action_id": "act_0106",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-19T06:30:00+02:00",
+      "action_end": "2026-06-19T06:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0107",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-19T06:45:00+02:00",
+      "action_end": "2026-06-19T07:00:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0108",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-19T16:45:00+02:00",
+      "action_end": "2026-06-19T17:45:00+02:00",
+      "energy_kwh": 0.58
+    },
+    {
+      "action_id": "act_0109",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-19T18:15:00+02:00",
+      "action_end": "2026-06-19T19:00:00+02:00",
+      "energy_kwh": 0.88
+    },
+    {
+      "action_id": "act_0110",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-19T19:30:00+02:00",
+      "action_end": "2026-06-19T22:15:00+02:00",
+      "energy_kwh": 0.35
+    },
+    {
+      "action_id": "act_0111",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-19T20:45:00+02:00",
+      "action_end": "2026-06-19T22:30:00+02:00",
+      "energy_kwh": 0.17
+    },
+    {
+      "action_id": "act_0112",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-19T20:45:00+02:00",
+      "action_end": "2026-06-19T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0113",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-19T20:45:00+02:00",
+      "action_end": "2026-06-19T22:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0114",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-19T21:00:00+02:00",
+      "action_end": "2026-06-19T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0115",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-19T21:30:00+02:00",
+      "action_end": "2026-06-19T21:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0116",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-19T21:30:00+02:00",
+      "action_end": "2026-06-19T22:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0117",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-19T21:45:00+02:00",
+      "action_end": "2026-06-19T22:45:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0118",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-19T22:00:00+02:00",
+      "action_end": "2026-06-20T01:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0119",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-20T00:00:00+02:00",
+      "action_end": "2026-06-21T00:00:00+02:00",
+      "energy_kwh": 1.18
+    },
+    {
+      "action_id": "act_0120",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-20T00:00:00+02:00",
+      "action_end": "2026-06-21T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0121",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-20T00:00:00+02:00",
+      "action_end": "2026-06-21T00:00:00+02:00",
+      "energy_kwh": 0.83
+    },
+    {
+      "action_id": "act_0122",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-20T04:15:00+02:00",
+      "action_end": "2026-06-20T05:15:00+02:00",
+      "energy_kwh": 0.78
+    },
+    {
+      "action_id": "act_0123",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-20T04:30:00+02:00",
+      "action_end": "2026-06-20T21:00:00+02:00",
+      "energy_kwh": -35.43,
+      "profile_kwh": [-0.02, -0.06, -0.10, -0.14, -0.18, -0.22, -0.25, -0.30, -0.33, -0.36, -0.41, -0.44,
+                      -0.47, -0.51, -0.53, -0.57, -0.61, -0.63, -0.65, -0.68, -0.71, -0.74, -0.74, -0.75,
+                      -0.79, -0.78, -0.81, -0.83, -0.81, -0.83, -0.83, -0.83, -0.82, -0.84, -0.83, -0.85,
+                      -0.83, -0.84, -0.81, -0.80, -0.78, -0.79, -0.77, -0.74, -0.71, -0.71, -0.68, -0.64,
+                      -0.61, -0.59, -0.56, -0.53, -0.52, -0.46, -0.44, -0.41, -0.37, -0.33, -0.29, -0.26,
+                      -0.21, -0.18, -0.14, -0.10, -0.06, -0.02]
+    },
+    {
+      "action_id": "act_0124",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-20T08:30:00+02:00",
+      "action_end": "2026-06-20T09:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0125",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-20T08:45:00+02:00",
+      "action_end": "2026-06-20T09:00:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0126",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-20T09:00:00+02:00",
+      "action_end": "2026-06-20T09:15:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0127",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-20T09:00:00+02:00",
+      "action_end": "2026-06-20T09:15:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0128",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-06-20T12:45:00+02:00",
+      "action_end": "2026-06-20T13:00:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0129",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-20T13:00:00+02:00",
+      "action_end": "2026-06-20T13:45:00+02:00",
+      "energy_kwh": 0.94
+    },
+    {
+      "action_id": "act_0130",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-20T14:30:00+02:00",
+      "action_end": "2026-06-20T14:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0131",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-20T15:00:00+02:00",
+      "action_start": "2026-06-20T15:00:00+02:00",
+      "action_end": "2026-06-20T17:00:00+02:00",
+      "energy_kwh": 6.87,
+      "deadline": "2026-06-21T10:00:00+02:00"
+    },
+    {
+      "action_id": "act_0132",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-20T16:00:00+02:00",
+      "action_end": "2026-06-20T16:15:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0133",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-20T17:00:00+02:00",
+      "action_end": "2026-06-20T18:00:00+02:00",
+      "energy_kwh": 0.56
+    },
+    {
+      "action_id": "act_0134",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-06-20T17:00:00+02:00",
+      "action_end": "2026-06-20T19:00:00+02:00",
+      "energy_kwh": 0.36
+    },
+    {
+      "action_id": "act_0135",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-20T18:30:00+02:00",
+      "action_end": "2026-06-20T19:15:00+02:00",
+      "energy_kwh": 0.96
+    },
+    {
+      "action_id": "act_0136",
+      "device_id": "dev_ov_01",
+      "action_start": "2026-06-20T18:45:00+02:00",
+      "action_end": "2026-06-20T19:45:00+02:00",
+      "energy_kwh": 1.40
+    },
+    {
+      "action_id": "act_0137",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-20T19:00:00+02:00",
+      "action_end": "2026-06-20T23:15:00+02:00",
+      "energy_kwh": 0.54
+    },
+    {
+      "action_id": "act_0138",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-20T19:30:00+02:00",
+      "action_end": "2026-06-20T22:30:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0139",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-20T20:45:00+02:00",
+      "action_end": "2026-06-20T23:30:00+02:00",
+      "energy_kwh": 0.28
+    },
+    {
+      "action_id": "act_0140",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-20T20:45:00+02:00",
+      "action_end": "2026-06-20T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0141",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-20T20:45:00+02:00",
+      "action_end": "2026-06-20T23:00:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0142",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-20T21:00:00+02:00",
+      "action_end": "2026-06-20T21:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0143",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-20T21:00:00+02:00",
+      "action_end": "2026-06-20T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0144",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-20T22:30:00+02:00",
+      "action_end": "2026-06-20T23:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0145",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-20T22:45:00+02:00",
+      "action_end": "2026-06-20T23:45:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0146",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-21T00:00:00+02:00",
+      "action_end": "2026-06-22T00:00:00+02:00",
+      "energy_kwh": 1.12
+    },
+    {
+      "action_id": "act_0147",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-21T00:00:00+02:00",
+      "action_end": "2026-06-22T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0148",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-21T00:00:00+02:00",
+      "action_end": "2026-06-22T00:00:00+02:00",
+      "energy_kwh": 0.78
+    },
+    {
+      "action_id": "act_0149",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-21T04:15:00+02:00",
+      "action_end": "2026-06-21T05:15:00+02:00",
+      "energy_kwh": 0.84
+    },
+    {
+      "action_id": "act_0150",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-21T04:30:00+02:00",
+      "action_end": "2026-06-21T21:00:00+02:00",
+      "energy_kwh": -34.97,
+      "profile_kwh": [-0.02, -0.06, -0.10, -0.14, -0.17, -0.21, -0.25, -0.30, -0.33, -0.36, -0.39, -0.44,
+                      -0.47, -0.49, -0.53, -0.56, -0.60, -0.61, -0.64, -0.66, -0.70, -0.70, -0.74, -0.76,
+                      -0.75, -0.77, -0.78, -0.82, -0.81, -0.84, -0.83, -0.84, -0.81, -0.82, -0.84, -0.84,
+                      -0.84, -0.81, -0.82, -0.78, -0.79, -0.75, -0.75, -0.73, -0.71, -0.68, -0.68, -0.65,
+                      -0.61, -0.58, -0.56, -0.53, -0.51, -0.45, -0.43, -0.40, -0.36, -0.32, -0.29, -0.25,
+                      -0.22, -0.18, -0.13, -0.10, -0.06, -0.02]
+    },
+    {
+      "action_id": "act_0151",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-21T07:30:00+02:00",
+      "action_end": "2026-06-21T08:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0152",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-21T07:45:00+02:00",
+      "action_end": "2026-06-21T08:00:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0153",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-21T08:00:00+02:00",
+      "action_end": "2026-06-21T08:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0154",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-06-21T10:00:00+02:00",
+      "action_end": "2026-06-21T12:00:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0155",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-06-21T12:15:00+02:00",
+      "action_end": "2026-06-21T12:30:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0156",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "action_start": "2026-06-21T12:15:00+02:00",
+      "action_end": "2026-06-21T14:15:00+02:00",
+      "energy_kwh": 2.10
+    },
+    {
+      "action_id": "act_0157",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-21T13:00:00+02:00",
+      "action_end": "2026-06-21T13:45:00+02:00",
+      "energy_kwh": 1.05
+    },
+    {
+      "action_id": "act_0158",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-21T15:00:00+02:00",
+      "action_end": "2026-06-21T15:15:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0159",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-21T16:45:00+02:00",
+      "action_end": "2026-06-21T17:45:00+02:00",
+      "energy_kwh": 0.56
+    },
+    {
+      "action_id": "act_0160",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-21T18:30:00+02:00",
+      "action_end": "2026-06-21T19:15:00+02:00",
+      "energy_kwh": 1.15
+    },
+    {
+      "action_id": "act_0161",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-21T18:30:00+02:00",
+      "action_end": "2026-06-21T23:15:00+02:00",
+      "energy_kwh": 0.60
+    },
+    {
+      "action_id": "act_0162",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-21T20:00:00+02:00",
+      "action_end": "2026-06-21T23:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0163",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-21T20:30:00+02:00",
+      "action_end": "2026-06-21T20:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0164",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-21T20:45:00+02:00",
+      "action_end": "2026-06-21T23:30:00+02:00",
+      "energy_kwh": 0.27
+    },
+    {
+      "action_id": "act_0165",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-21T20:45:00+02:00",
+      "action_end": "2026-06-21T21:45:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0166",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-21T20:45:00+02:00",
+      "action_end": "2026-06-21T23:00:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0167",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-21T21:00:00+02:00",
+      "action_end": "2026-06-21T23:00:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0168",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-21T22:30:00+02:00",
+      "action_end": "2026-06-21T23:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0169",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-21T22:45:00+02:00",
+      "action_end": "2026-06-21T23:45:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0170",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-22T00:00:00+02:00",
+      "action_end": "2026-06-23T00:00:00+02:00",
+      "energy_kwh": 1.05
+    },
+    {
+      "action_id": "act_0171",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-22T00:00:00+02:00",
+      "action_end": "2026-06-23T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0172",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-22T00:00:00+02:00",
+      "action_end": "2026-06-23T00:00:00+02:00",
+      "energy_kwh": 0.84
+    },
+    {
+      "action_id": "act_0173",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-22T04:00:00+02:00",
+      "action_end": "2026-06-22T05:00:00+02:00",
+      "energy_kwh": 0.78
+    },
+    {
+      "action_id": "act_0174",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-22T04:30:00+02:00",
+      "action_end": "2026-06-22T21:00:00+02:00",
+      "energy_kwh": -17.64,
+      "profile_kwh": [-0.01, -0.04, -0.04, -0.07, -0.07, -0.12, -0.16, -0.17, -0.19, -0.14, -0.22, -0.17,
+                      -0.24, -0.25, -0.35, -0.36, -0.22, -0.37, -0.25, -0.26, -0.39, -0.47, -0.34, -0.40,
+                      -0.34, -0.33, -0.36, -0.38, -0.35, -0.47, -0.44, -0.31, -0.45, -0.41, -0.37, -0.45,
+                      -0.35, -0.44, -0.38, -0.37, -0.45, -0.31, -0.41, -0.46, -0.35, -0.29, -0.27, -0.29,
+                      -0.38, -0.35, -0.34, -0.22, -0.29, -0.20, -0.26, -0.21, -0.18, -0.19, -0.13, -0.15,
+                      -0.11, -0.11, -0.09, -0.05, -0.04, -0.01]
+    },
+    {
+      "action_id": "act_0175",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-22T06:30:00+02:00",
+      "action_end": "2026-06-22T07:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0176",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-22T06:45:00+02:00",
+      "action_end": "2026-06-22T07:00:00+02:00",
+      "energy_kwh": 0.18
+    },
+    {
+      "action_id": "act_0177",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-22T06:45:00+02:00",
+      "action_end": "2026-06-22T07:00:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0178",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-22T07:00:00+02:00",
+      "action_end": "2026-06-22T07:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0179",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-22T17:00:00+02:00",
+      "action_end": "2026-06-22T18:00:00+02:00",
+      "energy_kwh": 0.54
+    },
+    {
+      "action_id": "act_0180",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-22T17:15:00+02:00",
+      "action_start": "2026-06-22T17:15:00+02:00",
+      "action_end": "2026-06-22T20:45:00+02:00",
+      "energy_kwh": 12.13,
+      "deadline": "2026-06-23T07:00:00+02:00"
+    },
+    {
+      "action_id": "act_0181",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-22T17:45:00+02:00",
+      "action_end": "2026-06-22T18:30:00+02:00",
+      "energy_kwh": 1.11
+    },
+    {
+      "action_id": "act_0182",
+      "device_id": "dev_wm_01",
+      "program_id": "quick_40",
+      "action_start": "2026-06-22T17:45:00+02:00",
+      "action_end": "2026-06-22T18:45:00+02:00",
+      "energy_kwh": 0.80
+    },
+    {
+      "action_id": "act_0183",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-22T18:45:00+02:00",
+      "action_end": "2026-06-22T21:45:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0184",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-22T20:00:00+02:00",
+      "action_end": "2026-06-22T23:00:00+02:00",
+      "energy_kwh": 0.38
+    },
+    {
+      "action_id": "act_0185",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-22T21:00:00+02:00",
+      "action_end": "2026-06-22T23:15:00+02:00",
+      "energy_kwh": 0.22
+    },
+    {
+      "action_id": "act_0186",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-22T21:00:00+02:00",
+      "action_end": "2026-06-22T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0187",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-22T21:00:00+02:00",
+      "action_end": "2026-06-22T22:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0188",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-22T21:15:00+02:00",
+      "action_end": "2026-06-22T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0189",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-22T21:30:00+02:00",
+      "action_end": "2026-06-22T21:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0190",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-22T22:15:00+02:00",
+      "action_end": "2026-06-22T23:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0191",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-22T22:30:00+02:00",
+      "action_end": "2026-06-22T23:30:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0192",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-23T00:00:00+02:00",
+      "action_end": "2026-06-24T00:00:00+02:00",
+      "energy_kwh": 1.20
+    },
+    {
+      "action_id": "act_0193",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-23T00:00:00+02:00",
+      "action_end": "2026-06-24T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0194",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-23T00:00:00+02:00",
+      "action_end": "2026-06-24T00:00:00+02:00",
+      "energy_kwh": 0.82
+    },
+    {
+      "action_id": "act_0195",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-23T04:00:00+02:00",
+      "action_end": "2026-06-23T05:00:00+02:00",
+      "energy_kwh": 0.76
+    },
+    {
+      "action_id": "act_0196",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-23T04:30:00+02:00",
+      "action_end": "2026-06-23T21:00:00+02:00",
+      "energy_kwh": -36.03,
+      "profile_kwh": [-0.02, -0.06, -0.10, -0.14, -0.18, -0.22, -0.26, -0.30, -0.34, -0.38, -0.41, -0.45,
+                      -0.48, -0.52, -0.54, -0.57, -0.61, -0.64, -0.66, -0.70, -0.70, -0.73, -0.77, -0.76,
+                      -0.80, -0.81, -0.83, -0.82, -0.83, -0.85, -0.86, -0.86, -0.86, -0.84, -0.85, -0.84,
+                      -0.86, -0.86, -0.83, -0.83, -0.80, -0.78, -0.78, -0.74, -0.73, -0.69, -0.68, -0.67,
+                      -0.65, -0.60, -0.58, -0.55, -0.50, -0.47, -0.45, -0.40, -0.38, -0.34, -0.30, -0.25,
+                      -0.22, -0.18, -0.14, -0.10, -0.06, -0.02]
+    },
+    {
+      "action_id": "act_0197",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-23T06:15:00+02:00",
+      "action_end": "2026-06-23T07:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0198",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-23T06:30:00+02:00",
+      "action_end": "2026-06-23T06:45:00+02:00",
+      "energy_kwh": 0.15
+    },
+    {
+      "action_id": "act_0199",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-23T06:30:00+02:00",
+      "action_end": "2026-06-23T06:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0200",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-23T06:45:00+02:00",
+      "action_end": "2026-06-23T07:00:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0201",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-23T06:45:00+02:00",
+      "action_end": "2026-06-23T07:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0202",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-06-23T08:30:00+02:00",
+      "action_end": "2026-06-23T16:00:00+02:00",
+      "energy_kwh": 1.08
+    },
+    {
+      "action_id": "act_0203",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-06-23T09:00:00+02:00",
+      "action_end": "2026-06-23T11:00:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0204",
+      "device_id": "dev_td_01",
+      "program_id": "cotton_dry",
+      "action_start": "2026-06-23T11:15:00+02:00",
+      "action_end": "2026-06-23T13:15:00+02:00",
+      "energy_kwh": 2.10
+    },
+    {
+      "action_id": "act_0205",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-06-23T12:45:00+02:00",
+      "action_end": "2026-06-23T13:00:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0206",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-23T14:00:00+02:00",
+      "action_end": "2026-06-23T14:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0207",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-23T16:30:00+02:00",
+      "action_end": "2026-06-23T17:30:00+02:00",
+      "energy_kwh": 0.50
+    },
+    {
+      "action_id": "act_0208",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-23T18:00:00+02:00",
+      "action_end": "2026-06-23T18:45:00+02:00",
+      "energy_kwh": 0.93
+    },
+    {
+      "action_id": "act_0209",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-23T19:00:00+02:00",
+      "action_start": "2026-06-23T19:00:00+02:00",
+      "action_end": "2026-06-23T22:30:00+02:00",
+      "energy_kwh": 12.30,
+      "deadline": "2026-06-24T06:30:00+02:00"
+    },
+    {
+      "action_id": "act_0210",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-23T20:30:00+02:00",
+      "action_end": "2026-06-23T22:30:00+02:00",
+      "energy_kwh": 0.25
+    },
+    {
+      "action_id": "act_0211",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-23T21:00:00+02:00",
+      "action_end": "2026-06-23T22:45:00+02:00",
+      "energy_kwh": 0.18
+    },
+    {
+      "action_id": "act_0212",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-23T21:00:00+02:00",
+      "action_end": "2026-06-23T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0213",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-23T21:00:00+02:00",
+      "action_end": "2026-06-23T22:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0214",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-23T21:15:00+02:00",
+      "action_end": "2026-06-23T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0215",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-23T21:30:00+02:00",
+      "action_end": "2026-06-23T21:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0216",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-23T21:45:00+02:00",
+      "action_end": "2026-06-23T22:30:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0217",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-23T22:00:00+02:00",
+      "action_end": "2026-06-23T23:00:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0218",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-23T22:15:00+02:00",
+      "action_end": "2026-06-24T01:15:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0219",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-24T00:00:00+02:00",
+      "action_end": "2026-06-25T00:00:00+02:00",
+      "energy_kwh": 1.14
+    },
+    {
+      "action_id": "act_0220",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-24T00:00:00+02:00",
+      "action_end": "2026-06-25T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0221",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-24T00:00:00+02:00",
+      "action_end": "2026-06-25T00:00:00+02:00",
+      "energy_kwh": 0.79
+    },
+    {
+      "action_id": "act_0222",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-24T03:45:00+02:00",
+      "action_end": "2026-06-24T04:45:00+02:00",
+      "energy_kwh": 0.74
+    },
+    {
+      "action_id": "act_0223",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-24T04:30:00+02:00",
+      "action_end": "2026-06-24T21:00:00+02:00",
+      "energy_kwh": -35.02,
+      "profile_kwh": [-0.02, -0.06, -0.10, -0.14, -0.18, -0.22, -0.26, -0.30, -0.33, -0.36, -0.39, -0.44,
+                      -0.46, -0.50, -0.53, -0.57, -0.59, -0.62, -0.64, -0.66, -0.68, -0.71, -0.72, -0.75,
+                      -0.76, -0.78, -0.80, -0.81, -0.81, -0.82, -0.83, -0.85, -0.84, -0.82, -0.83, -0.84,
+                      -0.81, -0.81, -0.79, -0.80, -0.79, -0.75, -0.76, -0.74, -0.72, -0.69, -0.68, -0.65,
+                      -0.61, -0.58, -0.56, -0.53, -0.49, -0.46, -0.44, -0.39, -0.37, -0.32, -0.29, -0.25,
+                      -0.22, -0.18, -0.14, -0.10, -0.06, -0.02]
+    },
+    {
+      "action_id": "act_0224",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-24T06:00:00+02:00",
+      "action_end": "2026-06-24T06:45:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0225",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-24T06:15:00+02:00",
+      "action_end": "2026-06-24T06:30:00+02:00",
+      "energy_kwh": 0.15
+    },
+    {
+      "action_id": "act_0226",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-24T06:15:00+02:00",
+      "action_end": "2026-06-24T06:30:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0227",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-24T06:30:00+02:00",
+      "action_end": "2026-06-24T06:45:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0228",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-24T06:30:00+02:00",
+      "action_end": "2026-06-24T06:45:00+02:00",
+      "energy_kwh": 0.22
+    },
+    {
+      "action_id": "act_0229",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-06-24T09:00:00+02:00",
+      "action_end": "2026-06-24T16:00:00+02:00",
+      "energy_kwh": 0.91
+    },
+    {
+      "action_id": "act_0230",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-06-24T09:00:00+02:00",
+      "action_end": "2026-06-24T11:00:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0231",
+      "device_id": "dev_mw_01",
+      "action_start": "2026-06-24T13:15:00+02:00",
+      "action_end": "2026-06-24T13:30:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0232",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-24T14:00:00+02:00",
+      "action_end": "2026-06-24T14:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0233",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-24T14:30:00+02:00",
+      "action_end": "2026-06-24T14:45:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0234",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-24T16:30:00+02:00",
+      "action_end": "2026-06-24T17:30:00+02:00",
+      "energy_kwh": 0.54
+    },
+    {
+      "action_id": "act_0235",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-24T17:30:00+02:00",
+      "action_end": "2026-06-24T18:15:00+02:00",
+      "energy_kwh": 0.86
+    },
+    {
+      "action_id": "act_0236",
+      "device_id": "dev_ov_01",
+      "action_start": "2026-06-24T17:45:00+02:00",
+      "action_end": "2026-06-24T18:45:00+02:00",
+      "energy_kwh": 1.55
+    },
+    {
+      "action_id": "act_0237",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-24T18:30:00+02:00",
+      "action_end": "2026-06-24T21:30:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0238",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-24T20:30:00+02:00",
+      "action_end": "2026-06-24T23:00:00+02:00",
+      "energy_kwh": 0.31
+    },
+    {
+      "action_id": "act_0239",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-24T21:00:00+02:00",
+      "action_end": "2026-06-24T23:15:00+02:00",
+      "energy_kwh": 0.21
+    },
+    {
+      "action_id": "act_0240",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-24T21:00:00+02:00",
+      "action_end": "2026-06-24T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0241",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-24T21:00:00+02:00",
+      "action_end": "2026-06-24T22:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0242",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-24T21:15:00+02:00",
+      "action_end": "2026-06-24T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0243",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-24T22:15:00+02:00",
+      "action_end": "2026-06-24T23:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0244",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-24T22:30:00+02:00",
+      "action_end": "2026-06-24T23:30:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0245",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-25T00:00:00+02:00",
+      "action_end": "2026-06-26T00:00:00+02:00",
+      "energy_kwh": 1.10
+    },
+    {
+      "action_id": "act_0246",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-25T00:00:00+02:00",
+      "action_end": "2026-06-26T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0247",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-25T00:00:00+02:00",
+      "action_end": "2026-06-26T00:00:00+02:00",
+      "energy_kwh": 0.81
+    },
+    {
+      "action_id": "act_0248",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-25T03:45:00+02:00",
+      "action_end": "2026-06-25T04:45:00+02:00",
+      "energy_kwh": 0.73
+    },
+    {
+      "action_id": "act_0249",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-25T04:45:00+02:00",
+      "action_end": "2026-06-25T20:45:00+02:00",
+      "energy_kwh": -6.18,
+      "profile_kwh": [-0.01, -0.02, -0.02, -0.03, -0.03, -0.04, -0.06, -0.06, -0.05, -0.08, -0.07, -0.07,
+                      -0.10, -0.09, -0.10, -0.10, -0.12, -0.11, -0.12, -0.12, -0.14, -0.13, -0.11, -0.14,
+                      -0.13, -0.14, -0.17, -0.16, -0.14, -0.13, -0.13, -0.15, -0.13, -0.15, -0.16, -0.15,
+                      -0.13, -0.15, -0.14, -0.15, -0.12, -0.12, -0.13, -0.12, -0.13, -0.12, -0.13, -0.11,
+                      -0.09, -0.09, -0.11, -0.09, -0.07, -0.09, -0.07, -0.07, -0.07, -0.05, -0.05, -0.03,
+                      -0.03, -0.03, -0.02, -0.01]
+    },
+    {
+      "action_id": "act_0250",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-25T06:15:00+02:00",
+      "action_end": "2026-06-25T07:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0251",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-25T06:30:00+02:00",
+      "action_end": "2026-06-25T06:45:00+02:00",
+      "energy_kwh": 0.20
+    },
+    {
+      "action_id": "act_0252",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-25T06:30:00+02:00",
+      "action_end": "2026-06-25T06:45:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0253",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-25T06:45:00+02:00",
+      "action_end": "2026-06-25T07:00:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0254",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-25T16:45:00+02:00",
+      "action_end": "2026-06-25T17:45:00+02:00",
+      "energy_kwh": 0.51
+    },
+    {
+      "action_id": "act_0255",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-25T18:30:00+02:00",
+      "action_end": "2026-06-25T19:15:00+02:00",
+      "energy_kwh": 1.02
+    },
+    {
+      "action_id": "act_0256",
+      "device_id": "dev_ov_01",
+      "action_start": "2026-06-25T18:45:00+02:00",
+      "action_end": "2026-06-25T19:45:00+02:00",
+      "energy_kwh": 1.45
+    },
+    {
+      "action_id": "act_0257",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-25T19:30:00+02:00",
+      "action_end": "2026-06-25T19:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0258",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-25T20:00:00+02:00",
+      "action_end": "2026-06-25T22:45:00+02:00",
+      "energy_kwh": 0.35
+    },
+    {
+      "action_id": "act_0259",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-25T21:00:00+02:00",
+      "action_end": "2026-06-25T23:00:00+02:00",
+      "energy_kwh": 0.19
+    },
+    {
+      "action_id": "act_0260",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-25T21:00:00+02:00",
+      "action_end": "2026-06-25T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0261",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-25T21:00:00+02:00",
+      "action_end": "2026-06-25T22:30:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0262",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-25T21:15:00+02:00",
+      "action_end": "2026-06-25T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0263",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-25T22:00:00+02:00",
+      "action_end": "2026-06-26T01:00:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0264",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-25T22:00:00+02:00",
+      "action_end": "2026-06-25T22:45:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0265",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-25T22:15:00+02:00",
+      "action_end": "2026-06-25T23:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0266",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-26T00:00:00+02:00",
+      "action_end": "2026-06-27T00:00:00+02:00",
+      "energy_kwh": 1.08
+    },
+    {
+      "action_id": "act_0267",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-26T00:00:00+02:00",
+      "action_end": "2026-06-27T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0268",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-26T00:00:00+02:00",
+      "action_end": "2026-06-27T00:00:00+02:00",
+      "energy_kwh": 0.87
+    },
+    {
+      "action_id": "act_0269",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-26T04:30:00+02:00",
+      "action_end": "2026-06-26T05:30:00+02:00",
+      "energy_kwh": 0.77
+    },
+    {
+      "action_id": "act_0270",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-26T05:00:00+02:00",
+      "action_end": "2026-06-26T20:30:00+02:00",
+      "energy_kwh": -3.39,
+      "profile_kwh": [-0.01, -0.01, -0.02, -0.02, -0.03, -0.03, -0.03, -0.04, -0.04, -0.04, -0.04, -0.05,
+                      -0.05, -0.05, -0.07, -0.06, -0.06, -0.06, -0.06, -0.07, -0.07, -0.07, -0.08, -0.09,
+                      -0.07, -0.07, -0.07, -0.07, -0.08, -0.09, -0.07, -0.09, -0.08, -0.08, -0.08, -0.08,
+                      -0.09, -0.08, -0.07, -0.08, -0.08, -0.07, -0.07, -0.07, -0.06, -0.07, -0.06, -0.06,
+                      -0.06, -0.04, -0.04, -0.05, -0.05, -0.04, -0.03, -0.03, -0.03, -0.02, -0.02, -0.02,
+                      -0.01, -0.01]
+    },
+    {
+      "action_id": "act_0271",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-26T06:15:00+02:00",
+      "action_end": "2026-06-26T07:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0272",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-26T06:30:00+02:00",
+      "action_end": "2026-06-26T06:45:00+02:00",
+      "energy_kwh": 0.20
+    },
+    {
+      "action_id": "act_0273",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-26T06:30:00+02:00",
+      "action_end": "2026-06-26T06:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0274",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-26T06:45:00+02:00",
+      "action_end": "2026-06-26T07:00:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0275",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-26T17:15:00+02:00",
+      "action_start": "2026-06-26T17:30:00+02:00",
+      "action_end": "2026-06-26T20:15:00+02:00",
+      "energy_kwh": 9.26,
+      "deadline": "2026-06-27T10:00:00+02:00"
+    },
+    {
+      "action_id": "act_0276",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-26T17:30:00+02:00",
+      "action_end": "2026-06-26T18:30:00+02:00",
+      "energy_kwh": 0.62
+    },
+    {
+      "action_id": "act_0277",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-26T17:45:00+02:00",
+      "action_end": "2026-06-26T18:30:00+02:00",
+      "energy_kwh": 0.95
+    },
+    {
+      "action_id": "act_0278",
+      "device_id": "dev_ov_01",
+      "action_start": "2026-06-26T18:00:00+02:00",
+      "action_end": "2026-06-26T19:00:00+02:00",
+      "energy_kwh": 1.65
+    },
+    {
+      "action_id": "act_0279",
+      "device_id": "dev_wm_01",
+      "program_id": "cotton_60",
+      "action_start": "2026-06-26T18:00:00+02:00",
+      "action_end": "2026-06-26T20:00:00+02:00",
+      "energy_kwh": 1.95
+    },
+    {
+      "action_id": "act_0280",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-26T19:30:00+02:00",
+      "action_end": "2026-06-26T19:45:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0281",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-26T19:30:00+02:00",
+      "action_end": "2026-06-26T23:00:00+02:00",
+      "energy_kwh": 0.44
+    },
+    {
+      "action_id": "act_0282",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-26T21:00:00+02:00",
+      "action_end": "2026-06-26T23:15:00+02:00",
+      "energy_kwh": 0.23
+    },
+    {
+      "action_id": "act_0283",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-26T21:00:00+02:00",
+      "action_end": "2026-06-26T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0284",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-26T21:00:00+02:00",
+      "action_end": "2026-06-26T22:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0285",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-26T21:15:00+02:00",
+      "action_end": "2026-06-26T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0286",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-26T22:15:00+02:00",
+      "action_end": "2026-06-26T23:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0287",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-26T22:30:00+02:00",
+      "action_end": "2026-06-26T23:30:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0288",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-26T22:45:00+02:00",
+      "action_end": "2026-06-27T01:45:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0289",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-27T00:00:00+02:00",
+      "action_end": "2026-06-28T00:00:00+02:00",
+      "energy_kwh": 1.06
+    },
+    {
+      "action_id": "act_0290",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-27T00:00:00+02:00",
+      "action_end": "2026-06-28T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0291",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-27T00:00:00+02:00",
+      "action_end": "2026-06-28T00:00:00+02:00",
+      "energy_kwh": 0.81
+    },
+    {
+      "action_id": "act_0292",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-27T04:15:00+02:00",
+      "action_end": "2026-06-27T05:15:00+02:00",
+      "energy_kwh": 0.68
+    },
+    {
+      "action_id": "act_0293",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-27T04:30:00+02:00",
+      "action_end": "2026-06-27T21:00:00+02:00",
+      "energy_kwh": -30.89,
+      "profile_kwh": [-0.02, -0.05, -0.09, -0.12, -0.15, -0.19, -0.22, -0.25, -0.29, -0.32, -0.35, -0.38,
+                      -0.41, -0.44, -0.46, -0.50, -0.51, -0.54, -0.58, -0.60, -0.62, -0.63, -0.65, -0.67,
+                      -0.68, -0.70, -0.71, -0.70, -0.73, -0.72, -0.72, -0.73, -0.72, -0.75, -0.74, -0.74,
+                      -0.73, -0.70, -0.70, -0.71, -0.71, -0.68, -0.67, -0.66, -0.62, -0.60, -0.58, -0.55,
+                      -0.53, -0.51, -0.50, -0.48, -0.44, -0.40, -0.38, -0.36, -0.33, -0.28, -0.25, -0.22,
+                      -0.19, -0.15, -0.12, -0.09, -0.05, -0.02]
+    },
+    {
+      "action_id": "act_0294",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-27T07:30:00+02:00",
+      "action_end": "2026-06-27T08:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0295",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-27T07:45:00+02:00",
+      "action_end": "2026-06-27T08:00:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0296",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-27T08:00:00+02:00",
+      "action_end": "2026-06-27T08:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0297",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-27T08:00:00+02:00",
+      "action_end": "2026-06-27T08:15:00+02:00",
+      "energy_kwh": 0.29
+    },
+    {
+      "action_id": "act_0298",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-27T13:00:00+02:00",
+      "action_end": "2026-06-27T13:45:00+02:00",
+      "energy_kwh": 0.93
+    },
+    {
+      "action_id": "act_0299",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-27T14:00:00+02:00",
+      "action_end": "2026-06-27T14:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0300",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-27T17:15:00+02:00",
+      "action_end": "2026-06-27T18:15:00+02:00",
+      "energy_kwh": 0.55
+    },
+    {
+      "action_id": "act_0301",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-27T18:00:00+02:00",
+      "action_end": "2026-06-27T18:45:00+02:00",
+      "energy_kwh": 0.90
+    },
+    {
+      "action_id": "act_0302",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-27T19:00:00+02:00",
+      "action_end": "2026-06-27T23:30:00+02:00",
+      "energy_kwh": 0.57
+    },
+    {
+      "action_id": "act_0303",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-27T20:30:00+02:00",
+      "action_end": "2026-06-27T20:45:00+02:00",
+      "energy_kwh": 0.11
+    },
+    {
+      "action_id": "act_0304",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-27T21:00:00+02:00",
+      "action_end": "2026-06-27T23:45:00+02:00",
+      "energy_kwh": 0.27
+    },
+    {
+      "action_id": "act_0305",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-27T21:00:00+02:00",
+      "action_end": "2026-06-27T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0306",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-27T21:00:00+02:00",
+      "action_end": "2026-06-27T23:15:00+02:00",
+      "energy_kwh": 0.04
+    },
+    {
+      "action_id": "act_0307",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-27T21:15:00+02:00",
+      "action_end": "2026-06-27T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0308",
+      "device_id": "dev_dw_01",
+      "program_id": "eco",
+      "action_start": "2026-06-27T22:45:00+02:00",
+      "action_end": "2026-06-28T01:45:00+02:00",
+      "energy_kwh": 0.85
+    },
+    {
+      "action_id": "act_0309",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-27T22:45:00+02:00",
+      "action_end": "2026-06-27T23:30:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0310",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-27T23:00:00+02:00",
+      "action_end": "2026-06-28T00:00:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0311",
+      "device_id": "dev_fr_01",
+      "action_start": "2026-06-28T00:00:00+02:00",
+      "action_end": "2026-06-29T00:00:00+02:00",
+      "energy_kwh": 1.09
+    },
+    {
+      "action_id": "act_0312",
+      "device_id": "dev_rt_01",
+      "action_start": "2026-06-28T00:00:00+02:00",
+      "action_end": "2026-06-29T00:00:00+02:00",
+      "energy_kwh": 0.26
+    },
+    {
+      "action_id": "act_0313",
+      "device_id": "dev_vent_01",
+      "action_start": "2026-06-28T00:00:00+02:00",
+      "action_end": "2026-06-29T00:00:00+02:00",
+      "energy_kwh": 0.87
+    },
+    {
+      "action_id": "act_0314",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-28T03:45:00+02:00",
+      "action_end": "2026-06-28T04:45:00+02:00",
+      "energy_kwh": 0.80
+    },
+    {
+      "action_id": "act_0315",
+      "device_id": "dev_pv_01",
+      "action_start": "2026-06-28T04:30:00+02:00",
+      "action_end": "2026-06-28T21:00:00+02:00",
+      "energy_kwh": -17.89,
+      "profile_kwh": [-0.01, -0.02, -0.04, -0.05, -0.08, -0.08, -0.16, -0.12, -0.13, -0.19, -0.19, -0.20,
+                      -0.28, -0.29, -0.32, -0.23, -0.33, -0.24, -0.38, -0.35, -0.41, -0.29, -0.46, -0.33,
+                      -0.41, -0.44, -0.29, -0.39, -0.44, -0.38, -0.52, -0.32, -0.41, -0.53, -0.31, -0.33,
+                      -0.30, -0.47, -0.30, -0.48, -0.41, -0.36, -0.49, -0.30, -0.37, -0.45, -0.42, -0.41,
+                      -0.40, -0.38, -0.22, -0.29, -0.22, -0.21, -0.20, -0.26, -0.15, -0.19, -0.12, -0.13,
+                      -0.14, -0.10, -0.08, -0.05, -0.03, -0.01]
+    },
+    {
+      "action_id": "act_0316",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-28T08:30:00+02:00",
+      "action_end": "2026-06-28T09:15:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0317",
+      "device_id": "dev_hd_01",
+      "action_start": "2026-06-28T08:45:00+02:00",
+      "action_end": "2026-06-28T09:00:00+02:00",
+      "energy_kwh": 0.15
+    },
+    {
+      "action_id": "act_0318",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-28T08:45:00+02:00",
+      "action_end": "2026-06-28T09:00:00+02:00",
+      "energy_kwh": 0.12
+    },
+    {
+      "action_id": "act_0319",
+      "device_id": "dev_cm_01",
+      "action_start": "2026-06-28T09:00:00+02:00",
+      "action_end": "2026-06-28T09:15:00+02:00",
+      "energy_kwh": 0.05
+    },
+    {
+      "action_id": "act_0320",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-28T09:00:00+02:00",
+      "action_end": "2026-06-28T09:15:00+02:00",
+      "energy_kwh": 0.28
+    },
+    {
+      "action_id": "act_0321",
+      "device_id": "dev_vc_01",
+      "action_start": "2026-06-28T10:00:00+02:00",
+      "action_end": "2026-06-28T10:30:00+02:00",
+      "energy_kwh": 0.55
+    },
+    {
+      "action_id": "act_0322",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-28T13:00:00+02:00",
+      "action_end": "2026-06-28T13:45:00+02:00",
+      "energy_kwh": 1.08
+    },
+    {
+      "action_id": "act_0323",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-28T15:00:00+02:00",
+      "action_end": "2026-06-28T15:15:00+02:00",
+      "energy_kwh": 0.09
+    },
+    {
+      "action_id": "act_0324",
+      "device_id": "dev_hp_01",
+      "action_start": "2026-06-28T16:30:00+02:00",
+      "action_end": "2026-06-28T17:30:00+02:00",
+      "energy_kwh": 0.58
+    },
+    {
+      "action_id": "act_0325",
+      "device_id": "dev_ev_01",
+      "plugged_in": "2026-06-28T17:00:00+02:00",
+      "action_start": "2026-06-28T17:00:00+02:00",
+      "action_end": "2026-06-28T20:00:00+02:00",
+      "energy_kwh": 11.01,
+      "deadline": "2026-06-29T06:30:00+02:00"
+    },
+    {
+      "action_id": "act_0326",
+      "device_id": "dev_pc_01",
+      "action_start": "2026-06-28T17:00:00+02:00",
+      "action_end": "2026-06-28T19:00:00+02:00",
+      "energy_kwh": 0.36
+    },
+    {
+      "action_id": "act_0327",
+      "device_id": "dev_tv_01",
+      "action_start": "2026-06-28T18:00:00+02:00",
+      "action_end": "2026-06-28T23:00:00+02:00",
+      "energy_kwh": 0.63
+    },
+    {
+      "action_id": "act_0328",
+      "device_id": "dev_hob_01",
+      "action_start": "2026-06-28T18:30:00+02:00",
+      "action_end": "2026-06-28T19:15:00+02:00",
+      "energy_kwh": 1.08
+    },
+    {
+      "action_id": "act_0329",
+      "device_id": "dev_kt_01",
+      "action_start": "2026-06-28T21:00:00+02:00",
+      "action_end": "2026-06-28T21:15:00+02:00",
+      "energy_kwh": 0.10
+    },
+    {
+      "action_id": "act_0330",
+      "device_id": "dev_lt_01",
+      "action_start": "2026-06-28T21:00:00+02:00",
+      "action_end": "2026-06-28T23:15:00+02:00",
+      "energy_kwh": 0.23
+    },
+    {
+      "action_id": "act_0331",
+      "device_id": "dev_lt_02",
+      "action_start": "2026-06-28T21:00:00+02:00",
+      "action_end": "2026-06-28T22:00:00+02:00",
+      "energy_kwh": 0.06
+    },
+    {
+      "action_id": "act_0332",
+      "device_id": "dev_lt_05",
+      "action_start": "2026-06-28T21:00:00+02:00",
+      "action_end": "2026-06-28T22:45:00+02:00",
+      "energy_kwh": 0.03
+    },
+    {
+      "action_id": "act_0333",
+      "device_id": "dev_lt_06",
+      "action_start": "2026-06-28T21:15:00+02:00",
+      "action_end": "2026-06-28T23:00:00+02:00",
+      "energy_kwh": 0.08
+    },
+    {
+      "action_id": "act_0334",
+      "device_id": "dev_lt_04",
+      "action_start": "2026-06-28T22:15:00+02:00",
+      "action_end": "2026-06-28T23:00:00+02:00",
+      "energy_kwh": 0.02
+    },
+    {
+      "action_id": "act_0335",
+      "device_id": "dev_lt_03",
+      "action_start": "2026-06-28T22:30:00+02:00",
+      "action_end": "2026-06-28T23:30:00+02:00",
+      "energy_kwh": 0.05
+    }
+  ]
+}

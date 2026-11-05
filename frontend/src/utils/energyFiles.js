@@ -53,14 +53,6 @@ export const FILE_STATUS_LABELS = {
   failed: "Błąd przetwarzania",
 };
 
-// Taryfa preferowana przez użytkownika, o ile występuje w wynikach pliku;
-// w przeciwnym razie pierwsza dostępna.
-export const resolveTariffName = (tariffs, preferredName) => {
-  if (!tariffs) return null;
-  if (preferredName && tariffs[preferredName]) return preferredName;
-  return Object.keys(tariffs)[0] ?? null;
-};
-
 export const getApiErrorMessage = (error, fallback) => {
   const detail = error?.response?.data?.detail;
   return typeof detail === "string" ? detail : fallback;

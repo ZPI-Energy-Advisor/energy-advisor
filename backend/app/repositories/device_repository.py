@@ -1,10 +1,11 @@
+import re
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import Integer, and_, cast, delete, exists, extract, func, insert, or_, select
-from sqlalchemy.dialects.postgresql import insert as upsert
+from sqlalchemy import DateTime, Integer, and_, bindparam, cast, delete, exists, extract, func, insert, select, text, tuple_, update
+from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID, insert as upsert
 from sqlalchemy.orm import Session
 
 from app.models.DeviceAction import DeviceAction
@@ -13,7 +14,8 @@ from app.models.DeviceInstance import DeviceInstance
 from app.models.DeviceInstanceFile import DeviceInstanceFile
 from app.models.DeviceProgram import DeviceProgram
 from app.models.DeviceSlotUsage import DeviceSlotUsage
-from app.models.DeviceType import DeviceType  # noqa: F401 - rejestruje tabelę dla FK
+from app.models.DeviceType import DeviceType
+from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.parsers.devices import LOCAL_TIMEZONE
 
@@ -27,14 +29,75 @@ DEVICE_SETTINGS = (
 PROGRAM_SETTINGS = ("name", "duration_min", "profile_kwh")
 
 
+# Flaga superseded (ZP-81). Kolejność plików to kolejność uploadu: (uploaded_at, id).
+_FLAG_BIND_TYPES = {
+    "user_id": PG_UUID(as_uuid=True),
+    "file_id": PG_UUID(as_uuid=True),
+    "device_ids": ARRAY(PG_UUID(as_uuid=True)),
+    "start": DateTime(timezone=True),
+    "end": DateTime(timezone=True),
+}
+
+
+def _flag_sql(source: str):
+    """Zapytanie SQL z typami parametrów, których w nim używa."""
+    names = dict.fromkeys(re.findall(r"(?<!:):(\w+)", source))
+    return text(source).bindparams(*(bindparam(name, type_=_FLAG_BIND_TYPES[name]) for name in names))
+
+
+# Dla każdej pary (plik, urządzenie) w zakresie: przedziały, w których nowszy plik z tym urządzeniem
+# obejmuje kwadranse swoim okresem.
+_COVER_CTE = """
+WITH cover AS MATERIALIZED (
+    SELECT own.id AS file_id, own_link.device_instance_id AS device_id,
+           GREATEST(newer.period_start, :start) AS cover_start,
+           LEAST(newer.period_end, :end) AS cover_end
+    FROM energy_data_files AS own
+    JOIN device_instance_files AS own_link ON own_link.energy_data_file_id = own.id
+    JOIN device_instance_files AS newer_link ON newer_link.device_instance_id = own_link.device_instance_id
+    JOIN energy_data_files AS newer ON newer.id = newer_link.energy_data_file_id
+    WHERE own.user_id = :user_id
+      AND own_link.device_instance_id = ANY(:device_ids)
+      AND (newer.uploaded_at, newer.id) > (own.uploaded_at, own.id)
+      AND newer.period_start < :end AND newer.period_end > :start
+)
+"""
+RESTORE_UNCOVERED = _flag_sql(_COVER_CTE + """
+UPDATE device_slot_usage AS slot SET superseded = false
+FROM device_actions AS action, energy_data_files AS own
+WHERE slot.superseded
+  AND action.id = slot.device_action_id AND own.id = slot.energy_data_file_id
+  AND own.user_id = :user_id AND action.device_instance_id = ANY(:device_ids)
+  AND slot.slot_start >= :start AND slot.slot_start < :end
+  AND NOT EXISTS (
+      SELECT 1 FROM cover
+      WHERE cover.file_id = slot.energy_data_file_id AND cover.device_id = action.device_instance_id
+        AND slot.slot_start >= cover.cover_start AND slot.slot_start < cover.cover_end
+  )
+""")
+MARK_COVERED = _flag_sql(_COVER_CTE + """
+UPDATE device_slot_usage AS slot SET superseded = true
+FROM cover, device_actions AS action
+WHERE slot.energy_data_file_id = cover.file_id AND NOT slot.superseded
+  AND slot.slot_start >= cover.cover_start AND slot.slot_start < cover.cover_end
+  AND action.id = slot.device_action_id AND action.device_instance_id = cover.device_id
+""")
+NEWER_FILE_EXISTS = _flag_sql("""
+SELECT EXISTS (
+    SELECT 1
+    FROM energy_data_files AS new_file, device_instance_files AS link
+    JOIN energy_data_files AS newer ON newer.id = link.energy_data_file_id
+    WHERE new_file.id = :file_id AND link.device_instance_id = ANY(:device_ids)
+      AND (newer.uploaded_at, newer.id) > (new_file.uploaded_at, new_file.id)
+      AND newer.period_start < :end AND newer.period_end > :start
+)
+""")
+
+
 def _local_day_and_slot(column):
     local = func.timezone(LOCAL_TIMEZONE.key, column)
     slot = func.floor((extract("hour", local) * 60 + extract("minute", local)) / (SLOT.seconds // 60))
     return func.to_char(local, "YYYY-MM-DD"), cast(slot, Integer)
-
-
-def _in_ranges(column, ranges: list[tuple[datetime, datetime]]):
-    return or_(*(and_(column >= start, column < end) for start, end in ranges))
 
 
 def _utc(moment: datetime | None) -> datetime | None:
@@ -69,6 +132,92 @@ class DeviceRepository:
         program_ids = self._upsert_programs(devices, instance_ids)
         saved_actions = self._save_actions(devices, energy_data_file_id, instance_ids, program_ids)
         self._save_slots(energy_data_file_id, saved_actions)
+        period = self._file_period(energy_data_file_id, devices)
+        if period is None:
+            return
+        device_ids = list(instance_ids.values())
+        if self._has_newer_file(energy_data_file_id, device_ids, *period):
+            # Plik wgrany z wcześniejszą datą niż istniejące (np. w testach): pełne przeliczenie okresu.
+            self.refresh_superseded(user_id, device_ids, *period)
+        else:
+            self._cover_older_files(user_id, energy_data_file_id, device_ids, *period)
+
+    def refresh_superseded(self, user_id: UUID, device_ids: list[UUID], start_utc: datetime, end_utc: datetime) -> None:
+        """Przelicza flagę superseded kwadransów urządzeń `device_ids` w [start_utc, end_utc).
+
+        Kwadrans urządzenia należy do najnowszego pliku (kolejność uploadu), który zawiera to
+        urządzenie i obejmuje ten kwadrans swoim okresem; wersje z pozostałych plików są przykryte.
+        Najpierw wyznacza przedziały przykrycia dla par (plik, urządzenie) - jest ich kilka, a nie
+        setki tysięcy jak kwadransów - i zmienia tylko wiersze, których flaga ma się zmienić.
+        Wywoływane w transakcji usunięcia pliku, dla urządzeń i okresu tego pliku.
+        """
+        if not device_ids:
+            return
+        self.db.flush()
+        params = self._flag_params(user_id=user_id, device_ids=device_ids, start=start_utc, end=end_utc)
+        self.db.execute(RESTORE_UNCOVERED, params)
+        self.db.execute(MARK_COVERED, params)
+
+    def _cover_older_files(
+        self, user_id: UUID, energy_data_file_id: UUID, device_ids: list[UUID], start_utc: datetime, end_utc: datetime
+    ) -> None:
+        """Nowy plik jest najnowszy: jego kwadranse obowiązują, a starsze wersje w jego okresie są przykryte.
+
+        Upload nie przywraca żadnego wiersza, więc wystarczy oznaczyć te, które jeszcze nie są przykryte.
+        Plik, którego wszystkie urządzenia są w nowym pliku (typowy przypadek: ten sam dom), jest
+        oznaczany bez sprawdzania urządzenia każdego wiersza.
+        """
+        self.db.flush()
+        new_file = self.db.get(EnergyDataFile, energy_data_file_id)
+        older_ids = self.db.execute(
+            select(EnergyDataFile.id).where(
+                EnergyDataFile.user_id == user_id,
+                tuple_(EnergyDataFile.uploaded_at, EnergyDataFile.id) < tuple_(new_file.uploaded_at, new_file.id),
+            )
+        ).scalars().all()
+        new_devices = set(device_ids)
+        for file_id, file_devices in self.device_ids_by_file(older_ids).items():
+            if not file_devices & new_devices:
+                continue
+            statement = update(DeviceSlotUsage).where(
+                DeviceSlotUsage.energy_data_file_id == file_id,
+                DeviceSlotUsage.superseded.is_(False),
+                DeviceSlotUsage.slot_start >= _utc(start_utc),
+                DeviceSlotUsage.slot_start < _utc(end_utc),
+            )
+            if not file_devices <= new_devices:
+                statement = statement.where(DeviceSlotUsage.device_action_id.in_(
+                    select(DeviceAction.id).where(
+                        DeviceAction.energy_data_file_id == file_id,
+                        DeviceAction.device_instance_id.in_(file_devices & new_devices),
+                    )
+                ))
+            self.db.execute(statement.values(superseded=True).execution_options(synchronize_session=False))
+
+    def _has_newer_file(self, energy_data_file_id: UUID, device_ids: list[UUID], start_utc: datetime, end_utc: datetime) -> bool:
+        self.db.flush()
+        params = self._flag_params(device_ids=device_ids, start=start_utc, end=end_utc)
+        return self.db.execute(NEWER_FILE_EXISTS, {**params, "file_id": energy_data_file_id}).scalar()
+
+    @staticmethod
+    def _flag_params(*, device_ids: list[UUID], start: datetime, end: datetime, user_id: UUID | None = None) -> dict:
+        params = {"device_ids": list(device_ids), "start": _utc(start), "end": _utc(end)}
+        if user_id is not None:
+            params["user_id"] = user_id
+        return params
+
+    def _file_period(self, energy_data_file_id: UUID, devices: list[DeviceRecord]) -> tuple[datetime, datetime] | None:
+        """Okres pliku z energy_data_files, a gdy go nie zapisano - od pierwszej do ostatniej akcji."""
+        self.db.flush()
+        start, end = self.db.execute(
+            select(EnergyDataFile.period_start, EnergyDataFile.period_end).where(EnergyDataFile.id == energy_data_file_id)
+        ).one()
+        if start is not None and end is not None:
+            return start, end
+        actions = [action for device in devices for action in device.actions]
+        if not actions:
+            return None
+        return min(_utc(action.start) for action in actions), max(_utc(action.end) for action in actions)
 
     def delete_devices_only_in_file(self, user_id: UUID, energy_data_file_id: UUID) -> None:
         """Usuwa z domu urządzenia, które nie występują w żadnym innym pliku użytkownika.
@@ -179,31 +328,64 @@ class DeviceRepository:
             devices[file_id].add(device_id)
         return devices
 
-    def consumption_slots(
-        self, file_ids: list[UUID], utc_ranges: list[tuple[datetime, datetime]]
-    ) -> list[tuple[UUID, UUID, str, int, float]]:
-        return self.db.execute(
-            select(DeviceSlotUsage.energy_data_file_id, DeviceAction.device_instance_id,
-                   *_local_day_and_slot(DeviceSlotUsage.slot_start), DeviceSlotUsage.kwh)
+    def slot_usage(
+        self, file_ids: list[UUID], start_utc: datetime, end_utc: datetime, *, current_only: bool
+    ) -> list[tuple[datetime, UUID, float]]:
+        """Kwadranse urządzeń (początek w UTC, urządzenie, kWh) w [start_utc, end_utc).
+
+        `current_only` pomija wersje przykryte nowszym plikiem (dane „Wszystkich plików urządzeń”).
+        """
+        query = (
+            select(DeviceSlotUsage.slot_start, DeviceAction.device_instance_id, DeviceSlotUsage.kwh)
             .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
             .where(
                 DeviceSlotUsage.energy_data_file_id.in_(file_ids),
-                _in_ranges(DeviceSlotUsage.slot_start, utc_ranges),
-                DeviceSlotUsage.kwh > 0,
+                DeviceSlotUsage.slot_start >= _utc(start_utc),
+                DeviceSlotUsage.slot_start < _utc(end_utc),
             )
+        )
+        if current_only:
+            query = query.where(DeviceSlotUsage.superseded.is_(False))
+        return self.db.execute(query).all()
+
+    def instances_with_type_labels(self, instance_ids: list[UUID]) -> list[tuple[DeviceInstance, str]]:
+        return self.db.execute(
+            select(DeviceInstance, DeviceType.label)
+            .join(DeviceType, DeviceType.code == DeviceInstance.device_type)
+            .where(DeviceInstance.id.in_(instance_ids))
         ).all()
 
-    def action_starts(
-        self, file_ids: list[UUID], utc_ranges: list[tuple[datetime, datetime]]
-    ) -> list[tuple[UUID, UUID, str, int]]:
+    def merged_grid_import(self, file_ids: list[UUID]) -> list[tuple[str, int, float]]:
+        """Pobór z sieci (dzień lokalny, kwadrans, kWh) z obowiązujących wersji urządzeń plików.
+
+        Jak przy imporcie pliku: w każdym kwadransie produkcja PV najpierw pokrywa zużycie,
+        więc pobór = max(0, suma energii urządzeń).
+        """
+        net = (
+            select(DeviceSlotUsage.slot_start, func.sum(DeviceSlotUsage.kwh).label("kwh"))
+            .where(DeviceSlotUsage.energy_data_file_id.in_(file_ids), DeviceSlotUsage.superseded.is_(False))
+            .group_by(DeviceSlotUsage.slot_start)
+            .subquery()
+        )
+        day, slot = _local_day_and_slot(net.c.slot_start)
         return self.db.execute(
-            select(DeviceAction.energy_data_file_id, DeviceAction.device_instance_id,
-                   *_local_day_and_slot(DeviceAction.action_start))
-            .where(
-                DeviceAction.energy_data_file_id.in_(file_ids),
-                _in_ranges(DeviceAction.action_start, utc_ranges),
-            )
+            select(day.label("day"), slot.label("slot"), func.sum(func.greatest(net.c.kwh, 0.0)))
+            .group_by("day", "slot")
         ).all()
+
+    def merged_actions_per_day(self, file_ids: list[UUID]) -> dict[str, int]:
+        """Liczba akcji w dniach lokalnych; akcja obowiązuje, gdy obowiązuje jej pierwszy kwadrans."""
+        day, _ = _local_day_and_slot(DeviceAction.action_start)
+        rows = self.db.execute(
+            select(day.label("day"), func.count())
+            .join(DeviceSlotUsage, and_(
+                DeviceSlotUsage.device_action_id == DeviceAction.id,
+                DeviceSlotUsage.slot_start == DeviceAction.action_start,
+            ))
+            .where(DeviceAction.energy_data_file_id.in_(file_ids), DeviceSlotUsage.superseded.is_(False))
+            .group_by("day")
+        ).all()
+        return dict(sorted(rows))
 
     @staticmethod
     def _check_records(devices: list[DeviceRecord]) -> None:

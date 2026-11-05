@@ -1,5 +1,4 @@
 import math
-from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
@@ -37,23 +36,13 @@ from app.schemas.energy_file import (
 
 
 
+EARLIEST = datetime(1970, 1, 1, tzinfo=timezone.utc)
+LATEST = datetime(9999, 1, 1, tzinfo=timezone.utc)
+
 AGGREGATE_SOURCES = {
     EnergyDataFile.SOURCE_METER: (ALL_FILES_SOURCE_ID, ALL_FILES_SOURCE_NAME, "plików z licznika"),
     EnergyDataFile.SOURCE_DEVICES: (ALL_DEVICE_FILES_SOURCE_ID, ALL_DEVICE_FILES_SOURCE_NAME, "plików urządzeń"),
 }
-
-
-def _utc_ranges(days: set[str]) -> list[tuple[datetime, datetime]]:
-    ranges = []
-    for day in sorted(date.fromisoformat(day) for day in days):
-        if ranges and ranges[-1][1] == day:
-            ranges[-1][1] = day + timedelta(days=1)
-        else:
-            ranges.append([day, day + timedelta(days=1)])
-    return [
-        (datetime.combine(start, time.min, tzinfo=LOCAL_TIMEZONE), datetime.combine(end, time.min, tzinfo=LOCAL_TIMEZONE))
-        for start, end in ranges
-    ]
 
 
 class EnergyFileService:
@@ -301,33 +290,32 @@ class EnergyFileService:
         )
 
     def _merge_device_files(self, files: list[EnergyDataFile], sources: list[dict]):
+        """Scala pliki urządzeń według zapisanych flag superseded (zasada z ZP-79).
+
+        Kwadrans urządzenia należy do najnowszego pliku, który zawiera to urządzenie i obejmuje ten
+        kwadrans, więc sumowane są tylko wiersze z superseded = false.
+        """
         file_ids = [energy_file.id for energy_file in files]
         covering = CalculationService.device_coverage([source["usage_15min"] for source in sources])
-        overlap_days = CalculationService.overlap_days(covering)
-        slots, actions = defaultdict(list), defaultdict(list)
-        if overlap_days:
-            ranges = _utc_ranges(overlap_days)
-            for file_id, *slot in self.device_repository.consumption_slots(file_ids, ranges):
-                slots[file_id].append(tuple(slot))
-            for file_id, *action in self.device_repository.action_starts(file_ids, ranges):
-                actions[file_id].append(tuple(action))
+        usage = CalculationService.device_usage_series(covering, self.device_repository.merged_grid_import(file_ids))
+        actions_per_day = self.device_repository.merged_actions_per_day(file_ids)
         devices = self.device_repository.device_ids_by_file(file_ids)
-        return CalculationService.merge_device_usage([
-            {
-                "usage_15min": source["usage_15min"],
-                "actions_per_day": source.get(ACTIONS_PER_DAY_KEY, {}),
-                "devices": devices.get(energy_file.id, set()),
-                "slots": slots[energy_file.id],
-                "actions": actions[energy_file.id],
-            }
-            for energy_file, source in zip(files, sources)
-        ], covering)
+        contributions = CalculationService.device_contributions(
+            [devices.get(energy_file.id, set()) for energy_file in files], covering
+        )
+        return usage, actions_per_day, contributions
 
     def delete_file(self, file_id: UUID, user_id: UUID) -> None:
         energy_file = self._get_own_file(file_id, user_id)
-        # Urządzenia obecne tylko w tym pliku znikają z domu; commit robi usunięcie pliku.
+        device_ids = list(self.device_repository.device_ids_by_file([energy_file.id]).get(energy_file.id, ()))
+        # Plik sprzed zapisywania okresu: przeliczamy flagi jego urządzeń w całym czasie.
+        period = (energy_file.period_start or EARLIEST, energy_file.period_end or LATEST)
+        # Urządzenia obecne tylko w tym pliku znikają z domu, a kwadranse, które plik przykrywał,
+        # wracają do obliczeń - wszystko w jednej transakcji.
         self.device_repository.delete_devices_only_in_file(user_id, energy_file.id)
-        self.file_repository.delete(energy_file)
+        self.file_repository.delete_without_commit(energy_file)
+        self.device_repository.refresh_superseded(user_id, device_ids, *period)
+        self.file_repository.commit()
 
     def _get_own_file(self, file_id: UUID, user_id: UUID) -> EnergyDataFile:
         # Cudzy plik zwraca 404 tak samo jak nieistniejący - nie zdradzamy, że istnieje.

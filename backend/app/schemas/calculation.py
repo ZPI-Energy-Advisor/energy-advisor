@@ -69,3 +69,5 @@ class CalculationDetails(BaseModel):
     tariff_calculation: dict[str, object] | None = None
     tariff_calculations: dict[str, dict[str, object]] | None = None
     tariff_calculation_errors: dict[str, str] | None = None
+    # Uwagi do danych wejściowych, które nie blokują kalkulacji (np. pominięte oddanie energii).
+    warnings: list[str] | None = None

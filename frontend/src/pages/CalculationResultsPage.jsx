@@ -141,6 +141,13 @@ function CalculationResultsPage() {
         </div>
       )}
 
+      {calculation?.warnings?.map((warning) => (
+        <div key={warning} className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <FiAlertCircle className="mt-0.5 shrink-0" />
+          <span>{warning}</span>
+        </div>
+      ))}
+
       {tariffRows.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-5 py-4">

@@ -84,6 +84,13 @@ class EnergyDataFileRepository:
         return {source_type: (files_count, data_start, data_end) for source_type, files_count, data_start, data_end in rows}
 
     def delete(self, energy_file: EnergyDataFile) -> None:
-        # Symulacje pliku usuwa baza (ON DELETE CASCADE na simulations.energy_data_file_id).
         self.db.delete(energy_file)
+        self.db.commit()
+
+    def delete_without_commit(self, energy_file: EnergyDataFile) -> None:
+        """Usuwa plik w bieżącej transakcji, żeby dokończyć ją kolejnymi zmianami przed commit()."""
+        self.db.delete(energy_file)
+        self.db.flush()
+
+    def commit(self) -> None:
         self.db.commit()

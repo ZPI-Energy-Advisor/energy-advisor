@@ -1,11 +1,13 @@
 import copy
 import json
+from collections import defaultdict
 from datetime import date, time
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import pytest
 
 from app.parsers import FileImportError, ParsedEnergyFile, parse_energy_file
@@ -44,7 +46,7 @@ def test_devices_files_are_imported_and_priced(path):
 
     assert results["import_report"]["detected_format"] == "devices"
     assert results["import_report"]["unit"] == "action"
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == results["import_report"]["devices"]["consumption_kwh"]
+    assert results["tariffs"]["G11"]["total_usage_kwh"] == results["import_report"]["grid_import_kwh"]
 
 
 def test_action_with_program_uses_program_profile():
@@ -87,15 +89,43 @@ def test_dst_change_day_has_all_quarters_in_local_time():
     assert "2026-10-25" not in results["statistics"]["incomplete_days"]
 
 
-def test_pv_production_does_not_reduce_consumption():
+def _action_energy_per_quarter(parsed) -> pd.Series:
+    """Suma energii wszystkich akcji w kwadransach, w czasie lokalnym jak seria z parsera."""
+    totals = defaultdict(float)
+    for device in parsed.devices:
+        for item in device.actions:
+            start = item.start.astimezone(WARSAW).replace(tzinfo=None)
+            for index, kwh in enumerate(item.slots_kwh):
+                totals[pd.Timestamp(start) + index * pd.Timedelta(minutes=15)] += kwh
+    return pd.Series(totals, dtype=float)
+
+
+def test_grid_import_minus_export_equals_action_energy_in_every_quarter():
+    parsed = parse(SAMPLE)
+    series = parsed.data.set_index("timestamp_start")
+    expected = _action_energy_per_quarter(parsed).reindex(series.index, fill_value=0.0)
+
+    assert (series["exported_kwh"] > 0).any()
+    assert ((series["kwh"] > 0) & (series["exported_kwh"] > 0)).sum() == 0
+    assert (series["kwh"] - series["exported_kwh"]).to_numpy() == pytest.approx(expected.to_numpy(), abs=1e-6)
+
+
+def test_pv_production_covers_consumption_in_the_same_quarter():
     parsed = parse(SAMPLE)
     slots = [kwh for device in parsed.devices for item in device.actions for kwh in item.slots_kwh]
     summary = parsed.report.devices
+    report = parsed.report
 
-    assert parsed.data["kwh"].sum() == pytest.approx(sum(kwh for kwh in slots if kwh > 0))
     assert summary.consumption_kwh == pytest.approx(sum(kwh for kwh in slots if kwh > 0), abs=0.01)
     assert summary.pv_production_kwh == pytest.approx(-sum(kwh for kwh in slots if kwh < 0), abs=0.01)
     assert summary.pv_production_kwh > 0
+    assert report.grid_import_kwh < summary.consumption_kwh
+    assert report.grid_import_kwh == pytest.approx(parsed.data["kwh"].sum(), abs=0.01)
+    assert report.grid_export_kwh == pytest.approx(parsed.data["exported_kwh"].sum(), abs=0.01)
+    # Autokonsumpcja zmniejsza pobór i oddanie o tę samą ilość energii.
+    assert summary.consumption_kwh - report.grid_import_kwh == pytest.approx(
+        summary.pv_production_kwh - report.grid_export_kwh, abs=0.02
+    )
 
 
 def test_day_without_actions_counts_as_zero_usage_not_missing_data():

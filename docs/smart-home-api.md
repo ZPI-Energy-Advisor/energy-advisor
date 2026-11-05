@@ -14,7 +14,7 @@ Symulacja Smart Home składa się z trzech stron:
 - **urządzenie** to sterownik jednego `device_id` na własnym porcie. Nie ma własnego zegara,
   czas dostaje od huba w `POST /tick`.
 
-Ten dokument jest wspólną umową dla ZP-83 (hub) i ZP-84 (mikroserwis urządzenia). Klient po
+Klient po
 stronie backendu: `backend/app/clients/hub_client.py`, modele: `backend/app/schemas/smart_home.py`.
 
 Hub obsługuje **jeden dom** i nie zna użytkowników: `PUT /home/devices` nie ma `user_id`, a nowy
@@ -45,6 +45,7 @@ Webhook czeka na zegar, bo zdarzenia powstają w tickach. Do tego czasu `sim_tim
 | Energia, moc | `*_kwh` w kWh, `*_kw` w kW; ujemne wartości tylko dla kategorii `OZE` (produkcja) |
 | Nieznane pola | Ignorowane przez odbiorcę, żeby kontrakt można było rozszerzać |
 | Błędy | Status HTTP + `{"detail": "opis dla człowieka", "code": "kod_maszynowy"}` |
+| Walidacja danych | Reguły pliku urządzeń (np. dodatnia moc, ujemna energia tylko dla `OZE`) sprawdza backend przy imporcie. Hub i urządzenia sprawdzają tylko to, czego potrzebują do pracy: kształt danych i zgodność profilu z `duration_min` |
 
 ### Uwierzytelnianie
 
@@ -97,7 +98,7 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 409 | `stale_tick` | `sim_time` ticka wcześniejszy niż ostatni |
 | 409 | `config_requires_restart` | `PUT /config` zmienia pole inne niż nazwa lub kategoria |
 | 409 | `port_pool_exhausted` | Rejestr nie mieści się w puli portów 9101–9150 |
-| 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły (np. ujemna moc poza `OZE`) |
+| 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`) |
 | 422 | `start_at_not_supported` | `start_at` w komendzie, dopóki hub nie ma zegara |
 | 502 | `device_unreachable` | Hub nie dostał odpowiedzi od mikroserwisu urządzenia |
 | 503 | `hub_not_ready` | Hub startuje albo nie ma jeszcze rejestru |
@@ -259,7 +260,7 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 | `POST /off` | Wyłączenie, kończy akcję | `200` – stan |
 | `POST /programs/{program_id}/start` | Start programu | `200` – stan; `404 program_not_found`, `409 invalid_state` |
 | `GET /energy` | Zużycie energii | `200` – patrz niżej |
-| `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick` |
+| `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick`; `422 validation_error` dla czasu bez strefy |
 
 ### Zachowanie urządzenia
 
@@ -349,7 +350,8 @@ poprzedniego ticka, także tymi z komend wykonanych między tickami:
 
 Wdrożenie w kolejnym sprincie, razem z zegarem. Urządzenia nie wysyłają niczego same: hub zbiera
 zdarzenia z odpowiedzi na `POST /tick` i wysyła je partiami, co najmniej raz na tick, w którym coś
-zaszło.
+zaszło. Urządzenie zwraca `device_started` i `device_finished`, a `energy_report` i `device_error`
+tworzy hub, odpowiednio z `energy_kwh` ticka i z własnego health-checku.
 
 `POST {BACKEND_URL}/api/v1/home/events` z `X-Hub-Api-Key`:
 
@@ -398,7 +400,7 @@ zaszło.
 | `device_started` | Urządzenie zaczęło pracę / program | `program_id` (albo `null`), `command_id` (gdy start z polecenia) |
 | `device_finished` | Koniec programu albo wyłączenie w trakcie | `program_id`, `started_at`, `energy_kwh` cyklu, `interrupted` |
 | `energy_report` | Co kwadrans dla każdego pracującego urządzenia | `interval_start`, `energy_kwh` |
-| `device_error` | Błąd urządzenia albo brak odpowiedzi (wtedy wysyła hub) | `code`, `message` |
+| `device_error` | Urządzenie nie odpowiada albo wyczerpano limit restartów | `code`, `message` |
 
 Odpowiedź backendu: `202 {"accepted": 4}`. `event_id` jest unikalny w obrębie huba; backend
 ignoruje zdarzenia, które już zapisał, więc hub przy błędzie (timeout, 5xx) ponawia całą partię.
