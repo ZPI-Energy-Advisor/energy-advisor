@@ -45,6 +45,10 @@ class DeviceUsageGroup(EnergySeries):
     device_id: str | None = None
     device_name: str | None = None
     devices_count: int
+    # Ile urządzeń grupy można przenieść na inne godziny (tryb shiftable albo interruptible).
+    flexible_devices_count: int = 0
+    # Tylko group_by=instance: fixed, shiftable albo interruptible.
+    flexibility_mode: str | None = None
 
 
 class RestOfHouse(EnergySeries):

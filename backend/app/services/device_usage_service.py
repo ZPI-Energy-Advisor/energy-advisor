@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from app.models.DeviceInstance import DeviceInstance
 from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
@@ -27,6 +28,8 @@ from app.services.user_service import UserService
 
 SLOT = timedelta(minutes=15)
 DEFAULT_TARIFF = "G11"
+# Urządzenia, których pracę można przenieść na inne godziny (pralka, zmywarka, pompa ciepła, ładowarka EV).
+FLEXIBLE_MODES = (DeviceInstance.SHIFTABLE, DeviceInstance.INTERRUPTIBLE)
 EXCEEDED_TOLERANCE_SHARE = 0.01
 EXCEEDED_TOLERANCE_MIN_KWH = 0.05
 
@@ -129,6 +132,7 @@ class DeviceUsageService:
         tariff: str | None = None,
         category: str | None = None,
         device_type: str | None = None,
+        flexible_only: bool = False,
         meter: str | None = None,
     ) -> DeviceUsageResponse:
         source = self._source(source_id, user_id)
@@ -156,7 +160,7 @@ class DeviceUsageService:
         for slot_start, instance_id, kwh in rows:
             instance, _ = devices[instance_id]
             device_net[_local_slot(slot_start)] += kwh
-            if not self._matches(instance, category, device_type):
+            if not self._matches(instance, category, device_type, flexible_only):
                 continue
             position = axis.position(slot_start)
             if kwh < 0:
@@ -289,9 +293,11 @@ class DeviceUsageService:
         return price
 
     @staticmethod
-    def _matches(instance, category: str | None, device_type: str | None) -> bool:
-        return (category is None or instance.device_category == category) and (
-            device_type is None or instance.device_type == device_type
+    def _matches(instance, category: str | None, device_type: str | None, flexible_only: bool = False) -> bool:
+        return (
+            (category is None or instance.device_category == category)
+            and (device_type is None or instance.device_type == device_type)
+            and (not flexible_only or instance.flexibility_mode in FLEXIBLE_MODES)
         )
 
     @staticmethod
@@ -322,6 +328,8 @@ class DeviceUsageService:
             device_id=instance.source_device_id if instance else None,
             device_name=instance.name if instance else None,
             devices_count=len(devices),
+            flexible_devices_count=sum(instance.flexibility_mode in FLEXIBLE_MODES for instance, _ in devices),
+            flexibility_mode=instance.flexibility_mode if instance else None,
             **accumulator.series(),
         )
 
