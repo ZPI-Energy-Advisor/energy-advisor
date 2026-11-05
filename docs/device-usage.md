@@ -41,6 +41,7 @@ GET /api/v1/energy-files/{file_id | all-devices}/devices/usage
 | `from`, `to` | okres danych | zakres dni lokalnych (RRRR-MM-DD), oba włącznie |
 | `tariff` | taryfa z profilu | taryfa kosztów (np. `G12`); bez taryfy w profilu albo bez jej cennika: G11 z informacją w `tariff.note` |
 | `category`, `type` | – | tylko urządzenia z tej kategorii albo tego typu (drill-down) |
+| `flexible` | `false` | `true`: tylko urządzenia, które można przenieść na inne godziny (`shiftable`, `interruptible`) |
 | `meter` | – | `all` albo id pliku licznika: dodaje grupę „Reszta domu” |
 
 Koszt kwadransu to jego zużycie razy cena tego kwadransu w wybranej taryfie z cennika zapisanego
@@ -51,8 +52,8 @@ Odpowiedź:
 
 - `periods`: początki okresów z przesunięciem względem UTC;
 - `groups`: dla każdej grupy `kwh` i `cost_pln` w okresach, sumy oraz metadane (`category`,
-  `device_type`, `device_type_label`, `device_id`, `device_name`, `devices_count`); posortowane
-  od największego zużycia;
+  `device_type`, `device_type_label`, `device_id`, `device_name`, `devices_count`,
+  `flexible_devices_count`, a dla urządzenia `flexibility_mode`); posortowane od największego zużycia;
 - `production`: produkcja PV jako wartości dodatnie, poza grupami (zużycie grup − produkcja =
   pobór − oddanie w każdym kwadransie);
 - `rest_of_house` (z `meter`): licznik − urządzenia w dniach wspólnych obu źródeł, liczone jako

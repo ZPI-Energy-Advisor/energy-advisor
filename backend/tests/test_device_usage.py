@@ -300,6 +300,24 @@ def test_group_metadata_filters_and_drill_down(db):
     assert instances["total_cost_pln"] == ev_category["total_cost_pln"]
 
 
+def test_flexible_filter_keeps_only_devices_that_can_be_moved(db):
+    user = _create_user(db)
+    energy_file = _create_document_file(db, user, DEVICES_DEMO, name="dom.json", uploaded_at=T0)
+
+    everything = _usage(user, energy_file.id, "?group_by=instance").json()
+    flexible = _usage(user, energy_file.id, "?group_by=instance&flexible=true").json()
+    categories = {group["key"]: group for group in _usage(user, energy_file.id).json()["groups"]}
+
+    modes = {group["device_id"]: group["flexibility_mode"] for group in everything["groups"]}
+    assert modes["dev_wm_01"] == "shiftable" and modes["dev_ev_01"] == "interruptible" and modes["dev_fr_01"] == "fixed"
+    assert {group["device_id"] for group in flexible["groups"]} == {
+        device_id for device_id, mode in modes.items() if mode in ("shiftable", "interruptible")
+    }
+    assert flexible["production"] is None
+    assert categories["AGD"]["flexible_devices_count"] == 3  # pralka, suszarka, zmywarka
+    assert categories["Oświetlenie"]["flexible_devices_count"] == 0
+
+
 def test_range_resolution_and_tariff_parameters(db):
     user = _create_user(db)
     energy_file = _create_document_file(db, user, DEVICES_DEMO, name="dom.json", uploaded_at=T0)

@@ -82,6 +82,7 @@ def get_device_usage(
     tariff: str | None = Query(None, description="Taryfa kosztów; domyślnie taryfa z profilu, a bez niej G11."),
     category: str | None = Query(None, description="Tylko urządzenia z tej kategorii, np. AGD."),
     device_type: str | None = Query(None, alias="type", description="Tylko urządzenia tego typu, np. ev_charger."),
+    flexible: bool = Query(False, description="Tylko urządzenia, które można przenieść na inne godziny."),
     meter: str | None = Query(
         None, description="Plik z licznika albo „all”: dodaje grupę „Reszta domu” = licznik − urządzenia."
     ),
@@ -99,6 +100,7 @@ def get_device_usage(
         tariff=tariff,
         category=category,
         device_type=device_type,
+        flexible_only=flexible,
         meter=meter,
     )
 
