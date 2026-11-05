@@ -191,6 +191,10 @@ Odpowiedź `200`:
 
 Stan `error` oznacza, że hub wyczerpał limit restartów urządzenia.
 
+`energy_kwh` służy tylko do podglądu: restart mikroserwisu (np. po zmianie programów w rejestrze)
+zeruje licznik. Zużycie do obliczeń backend bierze ze zdarzeń `energy_report` i `device_finished`
+z webhooka.
+
 ### `POST /home/devices/{device_id}/commands` – polecenie dla urządzenia
 
 ```json
@@ -203,7 +207,7 @@ Stan `error` oznacza, że hub wyczerpał limit restartów urządzenia.
 |---|---|
 | `command` | `on`, `off`, `start_program` |
 | `program_id` | Wymagane przy `start_program`, niedozwolone przy pozostałych |
-| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans. Brak = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`. Do czasu wdrożenia zegara hub odrzuca to pole kodem `422 start_at_not_supported`, zamiast po cichu startować od razu |
+| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans. Brak = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`: najpierw tick z `sim_time = start_at`, potem start, bo akcja zaczyna się w czasie ostatniego ticka. Do czasu wdrożenia zegara hub odrzuca to pole kodem `422 start_at_not_supported`, zamiast po cichu startować od razu |
 
 Odpowiedź `202`:
 
@@ -277,6 +281,9 @@ Urządzenie startuje w stanie `off`.
   akcją, a energia sumuje się w `total_kwh`.
 - Moc programu w kwadransie to wartość z profilu podzielona przez 0,25 h. Urządzenie bez programów
   zużywa w kwadransie najwyżej `max_power_kw × 0,25 h`.
+- PV produkuje stale `-max_power_kw` niezależnie od pory dnia. To uproszczenie na ten sprint;
+  realistyczna produkcja (krzywa dobowa albo profil z akcji PV z pliku urządzeń) wejdzie razem
+  z zegarem symulacji.
 
 ### `GET /status`
 
