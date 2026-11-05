@@ -1031,6 +1031,8 @@ def _create_devices_file(db, user, document, *, name, uploaded_at):
         records_count=statistics["records_count"],
         source_type=EnergyDataFile.SOURCE_DEVICES,
         status=EnergyDataFile.STATUS_COMPLETED,
+        period_start=parsed.period_start,
+        period_end=parsed.period_end,
     )
     db.add(energy_file)
     db.flush()

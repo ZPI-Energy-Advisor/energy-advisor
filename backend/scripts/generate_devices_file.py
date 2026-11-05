@@ -4,6 +4,11 @@ Użycie (z katalogu projektu):
     python backend/scripts/generate_devices_file.py --out devices.json
     python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --seed 42 \
         --devices full --with-pv --out backend/tests/fixtures/devices_demo_30d.json
+    python backend/scripts/generate_devices_file.py --from-meter backend/tests/fixtures/meter_demo_30d.csv \
+        --out backend/tests/fixtures/devices_from_meter_demo_30d.json
+
+Z --from-meter urządzenia są dopasowane do pliku licznika: w każdym kwadransie suma ich energii
+równa się poborowi z licznika, a to, czego nie da się przypisać, bierze urządzenie „Inne”.
 
 Ten sam seed i te same parametry dają identyczny plik.
 """
@@ -13,8 +18,9 @@ import json
 import math
 import random
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("Europe/Warsaw")
@@ -370,6 +376,251 @@ class Generator:
                            profile_kwh=profile)
 
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+OTHER_DEVICE_ID = "dev_other_01"
+METER_DECIMALS = 3
+# Urządzenia o dużej mocy dostają akcje tam, gdzie licznik pokazuje nadwyżkę poboru; pozostałe
+# dostają energię w swoich porach dnia, a resztę bierze urządzenie „Inne”.
+SPIKES = (  # (urządzenie, okna w minutach od północy, maks. liczba kwadransów, minimalny pobór w kwadransie)
+    ("dev_hob_01", ((390, 540), (720, 840), (1020, 1230)), 3, 0.15),
+    ("dev_kt_01", ((360, 540), (780, 1020), (1140, 1380)), 1, 0.08),
+    ("dev_mw_01", ((420, 540), (720, 840), (1080, 1200)), 1, 0.08),
+    ("dev_cm_01", ((360, 600), (780, 960)), 1, 0.04),
+    ("dev_hd_01", ((360, 480),), 1, 0.10),
+)
+LIGHT_WINDOWS = {
+    "dev_lt_01": ((360, 480), (1020, 1410)),
+    "dev_lt_02": ((360, 480), (1020, 1320)),
+    "dev_lt_03": ((360, 420), (1260, 1440)),
+    "dev_lt_04": ((360, 480), (1260, 1380)),
+    "dev_lt_05": ((360, 480), (1020, 1380)),
+    "dev_lt_06": ((1140, 1380),),
+}
+
+
+def floor3(value: float) -> float:
+    """Zaokrągla w dół do 0,001 kWh, żeby urządzenia nigdy nie przekroczyły licznika."""
+    return math.floor(value * 1000 + 1e-9) / 1000
+
+
+def read_meter(path: str) -> tuple[datetime, datetime, list[float]]:
+    """Pobór z licznika w kwadransach UTC całych dób lokalnych pliku, wczytany parserami aplikacji."""
+    sys.path.insert(0, str(BACKEND_DIR))
+    from app.parsers import EXPORTED_KWH, KWH, TIMESTAMP_START, parse_energy_file
+
+    with open(path, "rb") as handle:
+        parsed = parse_energy_file(handle)
+    if parsed.devices is not None:
+        raise SystemExit("--from-meter wymaga pliku z licznika (CSV), a nie pliku urządzeń.")
+    if parsed.data[EXPORTED_KWH].sum() > 0:
+        print("Uwaga: plik licznika ma energię oddaną do sieci; generator dzieli tylko pobór.", file=sys.stderr)
+
+    per_record = parsed.resolution_minutes // 15
+    local = defaultdict(float)
+    for start, kwh in zip(parsed.data[TIMESTAMP_START], parsed.data[KWH]):
+        for index in range(per_record):
+            local[start.to_pydatetime() + index * SLOT] += float(kwh) / per_record
+    period_start = datetime.combine(min(local).date(), time(), TZ).astimezone(timezone.utc)
+    period_end = datetime.combine(max(local).date() + timedelta(days=1), time(), TZ).astimezone(timezone.utc)
+    naive = [
+        (period_start + index * SLOT).astimezone(TZ).replace(tzinfo=None)
+        for index in range(int((period_end - period_start) / SLOT))
+    ]
+    # Powtórzona godzina przy zmianie czasu ma w pliku licznika jeden odczyt na dwa kwadranse UTC.
+    repeats = Counter(naive)
+    return period_start, period_end, [local.get(moment, 0.0) / repeats[moment] for moment in naive]
+
+
+class MeterHouse:
+    """Rozdziela pobór z licznika na urządzenia, nigdy nie przekraczając licznika w żadnym kwadransie.
+
+    Sumy liczy math.fsum: wbudowane sum() od Pythona 3.12 sumuje liczby zmiennoprzecinkowe inaczej,
+    a od drobnych różnic zależy wybór startu akcji, więc plik wynikowy różniłby się między wersjami.
+    """
+
+    def __init__(self, start: datetime, end: datetime, meter: list[float], devices: dict):
+        self.start, self.end, self.devices = start, end, devices
+        self.remaining = list(meter)
+        self.days = [(start + index * SLOT).astimezone(TZ).date() for index in range(len(meter))]
+        self.filled = defaultdict(lambda: [0.0] * len(meter))
+        self.busy = defaultdict(list)
+        self.actions = []
+
+    def span(self, day: date, from_min: int, to_min: int) -> range:
+        """Kwadranse od `from_min` do `to_min` minut od północy doby `day` (koniec może wypaść następnego dnia)."""
+        first = int((at(day, from_min) - self.start) / SLOT)
+        last = int((at(day, to_min) - self.start) / SLOT)
+        return range(max(0, first), min(len(self.remaining), last))
+
+    def clock_minutes(self, index: int) -> int:
+        local = (self.start + index * SLOT).astimezone(TZ)
+        return local.hour * 60 + local.minute
+
+    def _cap(self, device_id: str) -> float:
+        return self.devices[device_id]["max_power_kw"] * SLOT_HOURS
+
+    def _free(self, device_id: str, first: int, last: int) -> bool:
+        return all(last <= begin or end <= first for begin, end in self.busy[device_id])
+
+    def _take(self, device_id: str, first: int, profile: list[float], **fields) -> dict:
+        for offset, value in enumerate(profile):
+            self.remaining[first + offset] -= value
+        self.busy[device_id].append((first, first + len(profile)))
+        action = {"device_id": device_id, "start": self.start + first * SLOT,
+                  "end": self.start + (first + len(profile)) * SLOT, "deadline": None, **fields}
+        self.actions.append(action)
+        return action
+
+    def program(self, device_id: str, program_id: str, window: range) -> int | None:
+        """Program w kształcie z pliku tam, gdzie licznik ma na niego miejsce; wybiera start z największym poborem."""
+        if device_id not in self.devices:
+            return None
+        profile = next(p["profile_kwh"] for p in self.devices[device_id]["programs"] if p["program_id"] == program_id)
+        best, best_score = None, -1.0
+        for first in window:
+            last = first + len(profile)
+            if last > len(self.remaining) or not self._free(device_id, first, last):
+                continue
+            if all(self.remaining[first + i] >= value - 1e-9 for i, value in enumerate(profile)):
+                score = math.fsum(self.remaining[first:last])
+                if score > best_score:
+                    best, best_score = first, score
+        if best is None:
+            return None
+        self._take(device_id, best, profile, energy=round(math.fsum(profile), 2), program_id=program_id)
+        return best + len(profile)
+
+    def run(self, device_id: str, window: range, threshold: float, min_slots: int, max_slots: int,
+            min_energy: float) -> dict | None:
+        """Akcja z własnym profilem w najmocniejszym ciągu kwadransów z poborem ≥ threshold, do mocy urządzenia."""
+        if device_id not in self.devices:
+            return None
+        cap = self._cap(device_id)
+        runs, current = [], []
+        for index in window:
+            if self.remaining[index] < threshold:
+                if current:
+                    runs.append(current)
+                current = []
+            else:
+                current.append(index)
+        if current:
+            runs.append(current)
+        best = None
+        for indices in runs:
+            if len(indices) < min_slots:
+                continue
+            length = min(max_slots, len(indices))
+            for first in indices[:len(indices) - length + 1]:
+                if not self._free(device_id, first, first + length):
+                    continue
+                profile = [floor3(min(self.remaining[index], cap)) for index in range(first, first + length)]
+                energy = math.fsum(profile)
+                if energy >= min_energy and (best is None or energy > best[1] + 1e-9):
+                    best = (first, energy, profile)
+        if best is None:
+            return None
+        first, energy, profile = best
+        return self._take(device_id, first, profile, energy=round(energy, METER_DECIMALS), profile_kwh=profile)
+
+    def fill(self, device_id: str, indices, kwh_per_slot: float) -> None:
+        """Stały pobór urządzenia w podanych kwadransach, ograniczony mocą urządzenia i licznikiem."""
+        if device_id not in self.devices:
+            return
+        cap = self._cap(device_id)
+        for index in indices:
+            value = floor3(min(kwh_per_slot, cap - self.filled[device_id][index], self.remaining[index]))
+            if value > 0:
+                self.filled[device_id][index] += value
+                self.remaining[index] -= value
+
+    def finish(self) -> None:
+        """Zamienia stały pobór na akcje (ciągi kwadransów w obrębie doby) i oddaje resztę urządzeniu „Inne”."""
+        for device_id, values in self.filled.items():
+            first = None
+            for index in range(len(values) + 1):
+                on = index < len(values) and values[index] > 0
+                if first is not None and (not on or self.days[index] != self.days[first]):
+                    profile = [round(value, METER_DECIMALS) for value in values[first:index]]
+                    self._record(device_id, first, profile)
+                    first = None
+                if on and first is None:
+                    first = index
+        by_day = defaultdict(list)
+        for index, day in enumerate(self.days):
+            by_day[day].append(index)
+        peak = 0.0
+        for indices in by_day.values():
+            profile = [round(max(self.remaining[index], 0.0), METER_DECIMALS) for index in indices]
+            if math.fsum(profile) > 0:
+                self._record(OTHER_DEVICE_ID, indices[0], profile)
+                peak = max(peak, max(profile))
+        self.devices[OTHER_DEVICE_ID]["max_power_kw"] = max(0.1, math.ceil(peak / SLOT_HOURS * 10) / 10)
+
+    def _record(self, device_id: str, first: int, profile: list[float]) -> None:
+        self.actions.append({"device_id": device_id, "start": self.start + first * SLOT,
+                             "end": self.start + (first + len(profile)) * SLOT, "deadline": None,
+                             "energy": round(math.fsum(profile), METER_DECIMALS), "profile_kwh": profile})
+
+
+def split_meter(house: MeterHouse, rng: random.Random) -> None:
+    days = sorted(set(house.days))
+    for day in days:
+        whole_day = house.span(day, 0, 1440)
+        summer = 1.12 if day.month in (6, 7, 8) else 1.0
+        for device_id, daily_kwh in (("dev_fr_01", rng.uniform(0.92, 1.08) * summer), ("dev_rt_01", 0.265),
+                                     ("dev_vent_01", rng.uniform(0.78, 0.88))):
+            house.fill(device_id, whole_day, daily_kwh / 96)
+
+    for day in days:
+        if rng.random() < 0.5:
+            program_id = "cotton_60" if rng.random() < 0.6 else "quick_40"
+            wash_end = house.program("dev_wm_01", program_id, house.span(day, 420, 1320))
+            if wash_end is not None and rng.random() < 0.5:
+                house.program("dev_td_01", "cotton_dry", range(wash_end, min(wash_end + 12, len(house.remaining))))
+        house.program("dev_dw_01", "eco", house.span(day, 1140, 1860))
+        session = house.run("dev_ev_01", house.span(day, 1020, 1860), 0.5, 4, 20, 3.0)
+        if session:
+            # Sesja zaczyna się przy podłączeniu auta; auto ma być gotowe rano.
+            session["plugged_in"] = session["start"]
+            session["deadline"] = max(session["end"], at(day + timedelta(days=1), 420))
+        # Piekarnik tylko w części dni i przy poborze ponad typową moc pompy ciepła (ok. 1,6 kW).
+        if rng.random() < 0.4:
+            house.run("dev_ov_01", house.span(day, 960, 1260), 0.55, 2, 4, 1.0)
+        for _ in range(2):
+            house.run("dev_hp_01", house.span(day, 0, 1440), 0.2, 4, 28, 1.0)
+
+    for day in days:
+        weekend = day.weekday() >= 5
+        sunrise, sunset = sun_times(day)
+        for device_id, windows in LIGHT_WINDOWS.items():
+            if device_id not in house.devices:
+                continue
+            dark = [index for start, end in windows for index in house.span(day, start, end)
+                    if not sunrise + 30 <= house.clock_minutes(index) < sunset - 30]
+            house.fill(device_id, dark, house.devices[device_id]["max_power_kw"] * 0.9 * SLOT_HOURS)
+        house.fill("dev_tv_01", house.span(day, 600 if weekend else 1080, 1410), 0.15 * 0.85 * SLOT_HOURS)
+        house.fill("dev_pc_01", house.span(day, 900, 1020) if weekend else house.span(day, 510, 1020), 0.15 * SLOT_HOURS)
+        for device_id, windows, slots, minimum in SPIKES:
+            for start, end in windows:
+                house.run(device_id, house.span(day, start, end), minimum, 1, slots, minimum)
+        if weekend:
+            house.run("dev_vc_01", house.span(day, 600, 720), 0.2, 1, 2, 0.2)
+    house.finish()
+
+
+def generate_from_meter(meter_path: str, seed: int, device_set: str) -> str:
+    start, end, meter = read_meter(meter_path)
+    devices = {
+        d["device_id"]: dict(d) for d in DEVICES
+        if d["device_id"] != PV_DEVICE and (device_set == "full" or d["device_id"] not in FULL_ONLY)
+    }
+    devices[OTHER_DEVICE_ID] = device(OTHER_DEVICE_ID, "Inne urządzenia", "other", "Inne", FIXED, max_power_kw=0.1)
+    house = MeterHouse(start, end, meter, devices)
+    split_meter(house, random.Random(seed))
+    return dump(build_document(house), decimals=METER_DECIMALS) + "\n"
+
+
 def local_iso(moment: datetime) -> str:
     return moment.astimezone(TZ).isoformat()
 
@@ -399,23 +650,24 @@ def build_document(house: House) -> dict:
     }
 
 
-def dump(value, indent: int = 0, key: str | None = None) -> str:
+def dump(value, indent: int = 0, key: str | None = None, decimals: int = 2) -> str:
     """JSON w układzie pliku przykładowego: krótkie obiekty i listy liczb w jednej linii."""
     pad = "  " * indent
     if isinstance(value, dict):
         if key == "allowed_window" or (key == "flexibility" and value == FIXED):
-            return "{ " + ", ".join(f"{json.dumps(k)}: {dump(v, 0, k)}" for k, v in value.items()) + " }"
-        items = [f"{pad}  {json.dumps(k, ensure_ascii=False)}: {dump(v, indent + 1, k)}" for k, v in value.items()]
+            return "{ " + ", ".join(f"{json.dumps(k)}: {dump(v, 0, k, decimals)}" for k, v in value.items()) + " }"
+        items = [f"{pad}  {json.dumps(k, ensure_ascii=False)}: {dump(v, indent + 1, k, decimals)}"
+                 for k, v in value.items()]
         return "{\n" + ",\n".join(items) + f"\n{pad}}}"
     if isinstance(value, list):
         if value and all(isinstance(item, (int, float)) for item in value):
-            numbers = [f"{item:.2f}" for item in value]
+            numbers = [f"{item:.{decimals}f}" for item in value]
             rows = [", ".join(numbers[i:i + 12]) for i in range(0, len(numbers), 12)]
             return "[" + (",\n" + " " * (len(pad) + len(json.dumps(key)) + 3)).join(rows) + "]"
-        items = [f"{pad}  {dump(item, indent + 1)}" for item in value]
+        items = [f"{pad}  {dump(item, indent + 1, decimals=decimals)}" for item in value]
         return "[\n" + ",\n".join(items) + f"\n{pad}]"
     if key == "energy_kwh":
-        return f"{value:.2f}"
+        return f"{value:.{decimals}f}"
     return json.dumps(value, ensure_ascii=False)
 
 
@@ -440,12 +692,19 @@ def main() -> int:
                         help="standard: bez EV, pompy ciepła i rekuperatora; full: wszystkie urządzenia")
     parser.add_argument("--with-pv", action="store_true", help="dodaje instalację PV")
     parser.add_argument("--max-grid-kw", type=float, default=9.0, help="limit mocy przyłącza (domyślnie 9 kW)")
+    parser.add_argument("--from-meter", metavar="PLIK",
+                        help="plik licznika (CSV, np. Tauron); okres i pobór pochodzą z niego, bez PV")
     parser.add_argument("--out", required=True, help="ścieżka pliku wynikowego")
     args = parser.parse_args()
     if args.days < 1:
         parser.error("--days musi być dodatnie")
+    if args.from_meter and args.with_pv:
+        parser.error("--from-meter nie obsługuje jeszcze PV (--with-pv)")
 
-    content = generate(args.start, args.days, args.seed, args.devices, args.with_pv, args.max_grid_kw)
+    if args.from_meter:
+        content = generate_from_meter(args.from_meter, args.seed, args.devices)
+    else:
+        content = generate(args.start, args.days, args.seed, args.devices, args.with_pv, args.max_grid_kw)
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(content)
     print(f"Zapisano {args.out}")

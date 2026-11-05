@@ -25,6 +25,8 @@ class EnergyDataFile(Base):
 
     data_start = Column(Date, nullable=True)
     data_end = Column(Date, nullable=True)
+    period_start = Column(DateTime(timezone=True), nullable=True)
+    period_end = Column(DateTime(timezone=True), nullable=True)
     records_count = Column(Integer, nullable=True)
     source_type = Column(String(20), nullable=False, default=SOURCE_METER, server_default=SOURCE_METER)
 

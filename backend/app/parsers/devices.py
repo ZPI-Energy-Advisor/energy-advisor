@@ -20,7 +20,6 @@ from app.parsers.device_validation import SLOT, Issue, action_profile, validate_
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Warsaw")
 QUARTER_HOUR = 15
-# Tyle błędów pokazuje UI; liczba wszystkich jest w errors_count.
 MAX_ERRORS_IN_RESPONSE = 100
 
 
@@ -71,7 +70,6 @@ class DevicesJsonParser(DocumentParser):
         return "devices" in document and "energy_usage" in document
 
     def parse(self, document: dict) -> ParsedEnergyFile:
-        # Profil użytkownika nie ma jeszcze mocy przyłącza, więc limit przyłącza (reguła 14) pomijamy.
         validation = validate_document(document, max_grid_kw=None)
         if not validation.is_valid:
             raise _invalid_file_error(validation.issues, document)
@@ -96,7 +94,14 @@ class DevicesJsonParser(DocumentParser):
             ),
         )
         report.add_energy_totals(data)
-        return ParsedEnergyFile(data=data, resolution_minutes=QUARTER_HOUR, report=report, devices=devices)
+        return ParsedEnergyFile(
+            data=data,
+            resolution_minutes=QUARTER_HOUR,
+            report=report,
+            devices=devices,
+            period_start=_time(document["period"]["start"]).astimezone(timezone.utc),
+            period_end=_time(document["period"]["end"]).astimezone(timezone.utc),
+        )
 
     @staticmethod
     def _device_records(document: dict) -> list[DeviceRecord]:

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 
 import pandas as pd
 
@@ -114,8 +115,9 @@ class ParsedEnergyFile:
     data: pd.DataFrame
     resolution_minutes: int
     report: ImportReport
-    # Tylko plik urządzeń: urządzenia z programami i akcjami, obok zagregowanej serii w data.
     devices: list[DeviceRecord] | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
 
 
 class EnergyFileParser(ABC):

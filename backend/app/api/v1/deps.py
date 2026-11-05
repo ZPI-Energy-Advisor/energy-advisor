@@ -18,6 +18,7 @@ from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
+from app.services.device_usage_service import DeviceUsageService
 from app.services.new_calculations_service import CalculationsService
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.services.dynamic_price_service import DynamicPriceService
@@ -146,6 +147,23 @@ def get_energy_file_service(
     price_service: DynamicPriceService = Depends(get_dynamic_price_service),
 ) -> EnergyFileService:
     return EnergyFileService(file_repository, simulation_repository, device_repository, price_service)
+
+
+def get_device_usage_service(
+    file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
+    simulation_repository: SimulationRepository = Depends(get_simulation_repository),
+    device_repository: DeviceRepository = Depends(get_device_repository),
+    energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
+    user_repository: UserRepository = Depends(get_user_repository),
+    tariff_repository: TariffRepository = Depends(get_tariff_repository),
+) -> DeviceUsageService:
+    return DeviceUsageService(
+        file_repository,
+        simulation_repository,
+        device_repository,
+        energy_reading_repository,
+        UserService(user_repository, tariff_repository),
+    )
 
 
 def get_upload_service(

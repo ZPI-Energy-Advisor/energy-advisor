@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.v1.deps import get_authenticated_user, get_energy_file_service
+from app.api.v1.deps import get_authenticated_user, get_device_usage_service, get_energy_file_service
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.User import User
 from app.schemas.energy_file import (
@@ -12,7 +12,9 @@ from app.schemas.energy_file import (
     EnergyDataFileDataResponse,
     EnergyDataFileListResponse,
 )
+from app.schemas.device_usage import DeviceUsageGroupBy, DeviceUsageResolution, DeviceUsageResponse
 from app.schemas.schedule import ScheduleResponse
+from app.services.device_usage_service import DeviceUsageService
 from app.services.dynamic_price_service import DynamicTariffNotFoundError
 from app.services.energy_file_service import EnergyFileService
 
@@ -68,6 +70,37 @@ def get_energy_file_data(
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
     return service.get_file_data(file_id, user.id, date_from, date_to)
+
+
+@router.get("/{source_id}/devices/usage", response_model=DeviceUsageResponse)
+def get_device_usage(
+    source_id: str,
+    group_by: DeviceUsageGroupBy = Query(DeviceUsageGroupBy.CATEGORY, description="Podział: kategoria, typ albo urządzenie."),
+    resolution: DeviceUsageResolution = Query(DeviceUsageResolution.HOUR, description="Długość okresu na osi czasu."),
+    date_from: date | None = DATE_FROM_QUERY,
+    date_to: date | None = DATE_TO_QUERY,
+    tariff: str | None = Query(None, description="Taryfa kosztów; domyślnie taryfa z profilu, a bez niej G11."),
+    category: str | None = Query(None, description="Tylko urządzenia z tej kategorii, np. AGD."),
+    device_type: str | None = Query(None, alias="type", description="Tylko urządzenia tego typu, np. ev_charger."),
+    meter: str | None = Query(
+        None, description="Plik z licznika albo „all”: dodaje grupę „Reszta domu” = licznik − urządzenia."
+    ),
+    user: User = Depends(get_authenticated_user),
+    service: DeviceUsageService = Depends(get_device_usage_service),
+):
+    """Zużycie i koszt urządzeń pliku albo „Wszystkich plików urządzeń” (source_id = all-devices)."""
+    return service.get_usage(
+        source_id,
+        user.id,
+        group_by=group_by,
+        resolution=resolution,
+        date_from=date_from,
+        date_to=date_to,
+        tariff=tariff,
+        category=category,
+        device_type=device_type,
+        meter=meter,
+    )
 
 
 @router.get("/{file_id}/schedule", response_model=ScheduleResponse)

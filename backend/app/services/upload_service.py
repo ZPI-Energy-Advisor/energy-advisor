@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
@@ -56,9 +57,9 @@ class UploadService:
         try:
             parsed = self.calculation_service.parse_file(file.file)
             simulation_results = self.calculation_service.calculate_with_report(parsed)
-            self.energy_reading_repository.replace_for_file(
-                energy_file.id, self.calculation_service.quarter_hour_readings(parsed)
-            )
+            readings = self.calculation_service.quarter_hour_readings(parsed)
+            self.energy_reading_repository.replace_for_file(energy_file.id, readings)
+            energy_file.period_start, energy_file.period_end = self._period(parsed, readings)
             if parsed.devices is not None:
                 self.device_repository.save_for_file(
                     user_id=user_id, energy_data_file_id=energy_file.id, devices=parsed.devices
@@ -113,6 +114,20 @@ class UploadService:
         energy_file.status = EnergyDataFile.STATUS_FAILED
         energy_file.error_message = message
         self.energy_file_repository.save(energy_file)
+
+    @staticmethod
+    def _period(parsed, readings: list[tuple[datetime, float, float]]) -> tuple[datetime | None, datetime | None]:
+        """Okres zadeklarowany w pliku, a dla pliku z licznika - od pierwszego do końca ostatniego kwadransu."""
+        start, end = getattr(parsed, "period_start", None), getattr(parsed, "period_end", None)
+        if start is not None and end is not None:
+            return start, end
+        if not readings:
+            return None, None
+        first, last = readings[0][0], readings[-1][0] + timedelta(minutes=15)
+        return (
+            first.replace(tzinfo=LOCAL_TIMEZONE).astimezone(timezone.utc),
+            last.replace(tzinfo=LOCAL_TIMEZONE).astimezone(timezone.utc),
+        )
 
     @staticmethod
     def _file_size(file: UploadFile) -> int:
