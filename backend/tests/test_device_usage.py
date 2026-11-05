@@ -12,14 +12,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+from app.database import SessionLocal
 from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.Simulation import Simulation
+from app.models.User import User
 from app.parsers import parse_energy_file
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.services.calculation_service import CalculationService
-from test_energy_files import (  # noqa: F401 - db: fixture z tego modułu
+from test_energy_files import (
     T0,
     T1,
     T2,
@@ -33,7 +35,6 @@ from test_energy_files import (  # noqa: F401 - db: fixture z tego modułu
     _headers,
     _upload,
     client,
-    db,
 )
 
 
@@ -45,6 +46,19 @@ DEVICES_DEMO = FIXTURES / "devices_demo_30d.json"
 SAMPLE_DEVICES = BACKEND_DIR.parent / "frontend" / "public" / "samples" / "devices-example.json"
 OCTOBER = ("2026-10-08T00:00:00", "2026-10-11T00:00:00")
 MIGRATION = BACKEND_DIR / "alembic" / "versions" / "b8d4f2a6c9e1_zapisane_scalanie_urzadzen.py"
+
+
+@pytest.fixture
+def db():
+    """Jak w test_energy_files: _create_user zapisuje id użytkowników do usunięcia po teście."""
+    session = SessionLocal()
+    session.created_users = []
+    yield session
+    session.rollback()
+    for user_id in session.created_users:
+        session.query(User).filter(User.id == user_id).delete()
+    session.commit()
+    session.close()
 
 
 def _usage(user, source, query=""):
