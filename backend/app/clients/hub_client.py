@@ -20,6 +20,9 @@ API_KEY_HEADER = "X-Hub-Api-Key"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 # Hub odpowiada na PUT /home/devices dopiero po uruchomieniu wszystkich mikroserwisów.
 REGISTRY_TIMEOUT_SECONDS = 60.0
+# Ponawiać można tylko żądania, których powtórzenie niczego nie zmienia. Komenda mogła dojść do huba
+# mimo timeoutu, a hub nie rozpoznaje powtórzeń, więc ponowiona mogłaby się wykonać drugi raz.
+RETRYABLE_METHODS = ("GET", "PUT")
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -35,10 +38,13 @@ class HubError(Exception):
 
 
 class HubUnavailableError(HubError):
-    """Hub nie odpowiedział (timeout, brak połączenia) albo zwrócił 5xx – warto ponowić."""
+    """Hub nie odpowiedział (timeout, brak połączenia) albo zwrócił 5xx.
 
-    def __init__(self, message: str, status_code: int | None = None, code: str | None = None):
-        super().__init__(message, status_code=status_code, code=code, retryable=True)
+    `retryable` mówi, czy żądanie można bezpiecznie ponowić (tylko GET i PUT).
+    """
+
+    def __init__(self, message: str, status_code: int | None = None, code: str | None = None, retryable: bool = True):
+        super().__init__(message, status_code=status_code, code=code, retryable=retryable)
 
 
 class HubAuthError(HubError):
@@ -88,12 +94,13 @@ class HubClient:
         return self._parse(HubClock, self._request("PUT", "/home/clock", json=payload))
 
     def _request(self, method: str, path: str, json: dict | None = None, timeout=httpx.USE_CLIENT_DEFAULT) -> dict:
+        retryable = method in RETRYABLE_METHODS
         try:
             response = self.client.request(method, path, json=json, timeout=timeout)
         except httpx.TimeoutException as e:
-            raise HubUnavailableError(f"Hub nie odpowiedział w czasie ({method} {path})") from e
+            raise HubUnavailableError(f"Hub nie odpowiedział w czasie ({method} {path})", retryable=retryable) from e
         except httpx.HTTPError as e:
-            raise HubUnavailableError(f"Błąd połączenia z hubem ({method} {path}): {e}") from e
+            raise HubUnavailableError(f"Błąd połączenia z hubem ({method} {path}): {e}", retryable=retryable) from e
 
         if response.is_success:
             try:
@@ -109,7 +116,7 @@ class HubClient:
         if response.status_code in (401, 403):
             raise HubAuthError(message, status_code=response.status_code, code=code)
         if response.status_code >= 500:
-            raise HubUnavailableError(message, status_code=response.status_code, code=code)
+            raise HubUnavailableError(message, status_code=response.status_code, code=code, retryable=retryable)
         raise HubError(message, status_code=response.status_code, code=code)
 
     @staticmethod

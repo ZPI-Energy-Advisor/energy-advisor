@@ -1,3 +1,4 @@
+import importlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -13,6 +14,7 @@ from app.clients.hub_client import (
     HubError,
     HubUnavailableError,
 )
+from app import config
 from app.core import smart_home_factory
 from app.schemas.smart_home import CommandType, DeviceCommand, DeviceState, HubDevice
 
@@ -214,6 +216,15 @@ def test_timeout_raises_retryable_unavailable_error():
     assert exc_info.value.retryable is True
 
 
+def test_command_timeout_is_not_retryable():
+    def handler(request: httpx.Request):
+        raise httpx.ReadTimeout("timeout", request=request)
+
+    with pytest.raises(HubUnavailableError) as exc_info:
+        _client(handler).send_command("dev_wm_01", DeviceCommand(command=CommandType.START_PROGRAM, program_id="eco"))
+    assert exc_info.value.retryable is False
+
+
 def test_connection_error_raises_unavailable_error():
     def handler(request: httpx.Request):
         raise httpx.ConnectError("connection refused", request=request)
@@ -282,6 +293,24 @@ def test_server_errors_are_retryable(status_code):
     with pytest.raises(HubUnavailableError) as exc_info:
         client.get_devices()
     assert exc_info.value.status_code == status_code
+    assert exc_info.value.retryable is True
+
+
+def test_command_server_error_is_not_retryable():
+    client = _client(lambda request: httpx.Response(502, json={"detail": "x", "code": "device_unreachable"}))
+
+    with pytest.raises(HubUnavailableError) as exc_info:
+        client.send_command("dev_wm_01", DeviceCommand(command=CommandType.ON))
+    assert exc_info.value.retryable is False
+
+
+def test_empty_hub_timeout_uses_default(monkeypatch):
+    monkeypatch.setenv("HUB_TIMEOUT_SECONDS", "")
+    try:
+        assert importlib.reload(config).HUB_TIMEOUT_SECONDS == 5.0
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
 
 
 def test_response_breaking_contract_raises_hub_error():
