@@ -38,6 +38,9 @@ services:
       - ACCESS_TOKEN_EXPIRATION_MINUTES=${ACCESS_TOKEN_EXPIRATION_MINUTES}
       - SIGNATURE_ALGORITHM=${SIGNATURE_ALGORITHM}
       - PRICE_SYNC_ADMIN_KEY=${PRICE_SYNC_ADMIN_KEY:-}
+      - HUB_URL=${HUB_URL:-}
+      - HUB_API_KEY=${HUB_API_KEY:-}
+      - HUB_TIMEOUT_SECONDS=${HUB_TIMEOUT_SECONDS:-5}
     depends_on:
       db:
         condition: service_healthy
