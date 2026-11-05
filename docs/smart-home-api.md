@@ -14,7 +14,7 @@ Symulacja Smart Home składa się z trzech stron:
 - **urządzenie** to sterownik jednego `device_id` na własnym porcie. Nie ma własnego zegara,
   czas dostaje od huba w `POST /tick`.
 
-Ten dokument jest wspólną umową dla ZP-83 (hub) i ZP-84 (mikroserwis urządzenia). Klient po
+Klient po
 stronie backendu: `backend/app/clients/hub_client.py`, modele: `backend/app/schemas/smart_home.py`.
 
 Hub obsługuje **jeden dom** i nie zna użytkowników: `PUT /home/devices` nie ma `user_id`, a nowy
@@ -259,7 +259,7 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 | `POST /off` | Wyłączenie, kończy akcję | `200` – stan |
 | `POST /programs/{program_id}/start` | Start programu | `200` – stan; `404 program_not_found`, `409 invalid_state` |
 | `GET /energy` | Zużycie energii | `200` – patrz niżej |
-| `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick` |
+| `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick`; `422 validation_error` dla czasu bez strefy |
 
 ### Zachowanie urządzenia
 
@@ -349,7 +349,8 @@ poprzedniego ticka, także tymi z komend wykonanych między tickami:
 
 Wdrożenie w kolejnym sprincie, razem z zegarem. Urządzenia nie wysyłają niczego same: hub zbiera
 zdarzenia z odpowiedzi na `POST /tick` i wysyła je partiami, co najmniej raz na tick, w którym coś
-zaszło.
+zaszło. Urządzenie zwraca `device_started` i `device_finished`, a `energy_report` i `device_error`
+tworzy hub, odpowiednio z `energy_kwh` ticka i z własnego health-checku.
 
 `POST {BACKEND_URL}/api/v1/home/events` z `X-Hub-Api-Key`:
 
@@ -398,7 +399,7 @@ zaszło.
 | `device_started` | Urządzenie zaczęło pracę / program | `program_id` (albo `null`), `command_id` (gdy start z polecenia) |
 | `device_finished` | Koniec programu albo wyłączenie w trakcie | `program_id`, `started_at`, `energy_kwh` cyklu, `interrupted` |
 | `energy_report` | Co kwadrans dla każdego pracującego urządzenia | `interval_start`, `energy_kwh` |
-| `device_error` | Błąd urządzenia albo brak odpowiedzi (wtedy wysyła hub) | `code`, `message` |
+| `device_error` | Urządzenie nie odpowiada albo wyczerpano limit restartów | `code`, `message` |
 
 Odpowiedź backendu: `202 {"accepted": 4}`. `event_id` jest unikalny w obrębie huba; backend
 ignoruje zdarzenia, które już zapisał, więc hub przy błędzie (timeout, 5xx) ponawia całą partię.

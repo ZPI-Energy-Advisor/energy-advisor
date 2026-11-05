@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "smart-home-hub/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main]
@@ -57,6 +58,8 @@ jobs:
         run: |
           cd backend
           ruff check .
+          cd ../smart-home-hub
+          ruff check .
 
       - name: Walidacja bazy danych (Alembic)
         run: |
@@ -68,4 +71,9 @@ jobs:
       - name: Uruchomienie testów (Pytest)
         run: |
           cd backend
+          python -m pytest tests/
+
+      - name: Uruchomienie testów Smart Home (Pytest)
+        run: |
+          cd smart-home-hub
           python -m pytest tests/
