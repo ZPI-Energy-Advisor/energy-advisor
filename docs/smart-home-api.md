@@ -45,6 +45,7 @@ Webhook czeka na zegar, bo zdarzenia powstają w tickach. Do tego czasu `sim_tim
 | Energia, moc | `*_kwh` w kWh, `*_kw` w kW; ujemne wartości tylko dla kategorii `OZE` (produkcja) |
 | Nieznane pola | Ignorowane przez odbiorcę, żeby kontrakt można było rozszerzać |
 | Błędy | Status HTTP + `{"detail": "opis dla człowieka", "code": "kod_maszynowy"}` |
+| Walidacja danych | Reguły pliku urządzeń (np. dodatnia moc, ujemna energia tylko dla `OZE`) sprawdza backend przy imporcie. Hub i urządzenia sprawdzają tylko to, czego potrzebują do pracy: kształt danych i zgodność profilu z `duration_min` |
 
 ### Uwierzytelnianie
 
@@ -97,7 +98,7 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 409 | `stale_tick` | `sim_time` ticka wcześniejszy niż ostatni |
 | 409 | `config_requires_restart` | `PUT /config` zmienia pole inne niż nazwa lub kategoria |
 | 409 | `port_pool_exhausted` | Rejestr nie mieści się w puli portów 9101–9150 |
-| 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły (np. ujemna moc poza `OZE`) |
+| 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`) |
 | 422 | `start_at_not_supported` | `start_at` w komendzie, dopóki hub nie ma zegara |
 | 502 | `device_unreachable` | Hub nie dostał odpowiedzi od mikroserwisu urządzenia |
 | 503 | `hub_not_ready` | Hub startuje albo nie ma jeszcze rejestru |
