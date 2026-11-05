@@ -1,0 +1,9 @@
+# Tryb demo Smart Home: sterowniki urządzeń dostępne z przeglądarki na tym komputerze.
+# docker compose -f docker-compose.yml -f docker-compose.demo.yml up
+services:
+  hub:
+    environment:
+      - DEVICE_BIND_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:9100:9100"
+      - "127.0.0.1:9101-9150:9101-9150"

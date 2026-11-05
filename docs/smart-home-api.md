@@ -101,7 +101,6 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`) |
 | 422 | `start_at_not_supported` | `start_at` w komendzie, dopóki hub nie ma zegara |
 | 502 | `device_unreachable` | Hub nie dostał odpowiedzi od mikroserwisu urządzenia |
-| 503 | `hub_not_ready` | Hub startuje albo nie ma jeszcze rejestru |
 
 ## 1. Backend → hub
 
@@ -192,6 +191,10 @@ Odpowiedź `200`:
 
 Stan `error` oznacza, że hub wyczerpał limit restartów urządzenia.
 
+`energy_kwh` służy tylko do podglądu: restart mikroserwisu (np. po zmianie programów w rejestrze)
+zeruje licznik. Zużycie do obliczeń backend bierze ze zdarzeń `energy_report` i `device_finished`
+z webhooka.
+
 ### `POST /home/devices/{device_id}/commands` – polecenie dla urządzenia
 
 ```json
@@ -204,7 +207,7 @@ Stan `error` oznacza, że hub wyczerpał limit restartów urządzenia.
 |---|---|
 | `command` | `on`, `off`, `start_program` |
 | `program_id` | Wymagane przy `start_program`, niedozwolone przy pozostałych |
-| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans. Brak = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`. Do czasu wdrożenia zegara hub odrzuca to pole kodem `422 start_at_not_supported`, zamiast po cichu startować od razu |
+| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans. Brak = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`: najpierw tick z `sim_time = start_at`, potem start, bo akcja zaczyna się w czasie ostatniego ticka. Do czasu wdrożenia zegara hub odrzuca to pole kodem `422 start_at_not_supported`, zamiast po cichu startować od razu |
 
 Odpowiedź `202`:
 
@@ -278,6 +281,9 @@ Urządzenie startuje w stanie `off`.
   akcją, a energia sumuje się w `total_kwh`.
 - Moc programu w kwadransie to wartość z profilu podzielona przez 0,25 h. Urządzenie bez programów
   zużywa w kwadransie najwyżej `max_power_kw × 0,25 h`.
+- PV produkuje stale `-max_power_kw` niezależnie od pory dnia. To uproszczenie na ten sprint;
+  realistyczna produkcja (krzywa dobowa albo profil z akcji PV z pliku urządzeń) wejdzie razem
+  z zegarem symulacji.
 
 ### `GET /status`
 
@@ -416,3 +422,5 @@ Na `401` hub nie ponawia i loguje błąd konfiguracji.
 | `HUB_HOME_USER_EMAIL` | backend | Użytkownik, do którego należy dom huba; wchodzi razem z webhookiem |
 | `BACKEND_URL` | hub | Adres backendu dla webhooka, np. `http://backend:8000` |
 | `DEVICE_BIND_HOST` | hub | Adres nasłuchu urządzeń: `127.0.0.1` domyślnie, `0.0.0.0` w trybie demo |
+| `HUB_STATE_DIR` | hub | Katalog pliku stanu i konfiguracji urządzeń, domyślnie `/data` |
+| `HUB_HEALTH_INTERVAL_SECONDS` | hub | Co ile sekund hub sprawdza urządzenia, domyślnie 5 |
