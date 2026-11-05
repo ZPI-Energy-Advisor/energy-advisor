@@ -63,5 +63,15 @@ services:
         condition: service_healthy
     command: python -m app.workers.price_sync_worker run
 
+  hub:
+    build: ./smart-home-hub
+    container_name: energy_advisor_hub
+    restart: always
+    environment:
+      - HUB_API_KEY=${HUB_API_KEY:-}
+    volumes:
+      - hub_data:/data
+
 volumes:
   postgres_data:
+  hub_data:

@@ -24,6 +24,43 @@ nie postępuje i energia nie rośnie.
 
 Sterownik można uruchomić ręcznie i otworzyć Swaggera pod `http://127.0.0.1:<port>/docs`.
 
+## Hub
+
+Serwis (`hub/`), z którym rozmawia backend. Stawia mikroserwisy urządzeń według rejestru, pilnuje
+ich i przekazuje komendy. Zegar symulacji i webhook do backendu to kolejny sprint.
+
+| Plik | Odpowiedzialność |
+|---|---|
+| `hub/supervisor.py` | Rekoncyliacja rejestru, procesy urządzeń, health-check, przekazywanie komend |
+| `hub/api.py` | Endpointy, klucz `X-Hub-Api-Key` i format błędów |
+| `hub/state.py` | Plik stanu: rejestr z portami, odtwarzany po restarcie huba |
+| `hub/models.py` | Modele żądań |
+| `hub/config.py` | Ustawienia ze zmiennych środowiskowych |
+
+Hub wymaga `HUB_API_KEY` w `.env`. Uruchomienie:
+
+```bash
+docker compose up hub
+```
+
+Tryb demo otwiera hub i sterowniki na `127.0.0.1`, np. Swagger pralki pod `http://127.0.0.1:9101/docs`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up hub
+```
+
+### Zużycie pamięci
+
+Pomiar dla pliku przykładowego w kontenerze `python:3.11-slim`, po starcie, bez ticków:
+
+| Pomiar | Wynik |
+|---|---|
+| Hub i 24 urządzenia, `docker stats` | około 806 MiB |
+| Na jeden proces | około 32 MiB |
+| Pełny rejestr na 50 portów (oszacowanie) | około 1,6 GiB |
+
+Każde urządzenie to osobny proces Pythona z FastAPI, więc pamięć rośnie liniowo z ich liczbą.
+
 ## Testy
 
 Z katalogu `smart-home-hub`:

@@ -101,7 +101,6 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`) |
 | 422 | `start_at_not_supported` | `start_at` w komendzie, dopóki hub nie ma zegara |
 | 502 | `device_unreachable` | Hub nie dostał odpowiedzi od mikroserwisu urządzenia |
-| 503 | `hub_not_ready` | Hub startuje albo nie ma jeszcze rejestru |
 
 ## 1. Backend → hub
 
@@ -416,3 +415,5 @@ Na `401` hub nie ponawia i loguje błąd konfiguracji.
 | `HUB_HOME_USER_EMAIL` | backend | Użytkownik, do którego należy dom huba; wchodzi razem z webhookiem |
 | `BACKEND_URL` | hub | Adres backendu dla webhooka, np. `http://backend:8000` |
 | `DEVICE_BIND_HOST` | hub | Adres nasłuchu urządzeń: `127.0.0.1` domyślnie, `0.0.0.0` w trybie demo |
+| `HUB_STATE_DIR` | hub | Katalog pliku stanu i konfiguracji urządzeń, domyślnie `/data` |
+| `HUB_HEALTH_INTERVAL_SECONDS` | hub | Co ile sekund hub sprawdza urządzenia, domyślnie 5 |
