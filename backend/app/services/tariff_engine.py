@@ -7,7 +7,8 @@ from typing import Any, Iterable
 from dateutil.relativedelta import relativedelta
 
 from app.schemas.calculation import CalculationDetails
-from app.schemas.other import PhaseTypeEnum
+from app.schemas.other import PhaseTypeEnum, TariffTypeEnum
+from app.services.tariff_zones import zone_count, zone_for
 
 
 CENT = Decimal("0.01")
@@ -67,7 +68,11 @@ class TariffCalculationResult:
 
 
 class ZonedTariffCalculationStrategy:
-    """Calculates a tariff definition against balanced energy grouped by zones."""
+    """Calculates a tariff definition against balanced energy grouped by zones.
+
+    Dla taryfy dynamicznej stawka energii z supplier_ure_rates (strefa 1) jest marżą sprzedawcy
+    doliczaną do ceny RCE: energia netto = Σ kWh × (RCE / 1000 + marża).
+    """
 
     def __init__(self, vat_rate: Decimal = DEFAULT_VAT_RATE):
         if vat_rate < 0:
@@ -84,13 +89,19 @@ class ZonedTariffCalculationStrategy:
         tariff_definition: Any,
     ) -> TariffCalculationResult:
         cycles = []
+        tariff_type = tariff_definition.tariff_code
         expected_zones = tariff_definition.number_of_zones
+        if expected_zones != zone_count(tariff_type):
+            raise ValueError(
+                f"Definicja taryfy {tariff_type.value} ma {expected_zones} stref, "
+                f"a godziny stref tej taryfy przewidują {zone_count(tariff_type)}."
+            )
         energy_rates = self._rates_by_zone(tariff_definition.supplier_ure_rates, "energy_price_per_kwh_net_pln")
         network_rates = self._rates_by_zone(
             tariff_definition.variable_network_rates, "rate_per_kwh_net_pln"
         )
-        is_dynamic = tariff_definition.tariff_code.value == "dynamic"
-        if (not is_dynamic and len(energy_rates) != expected_zones) or len(network_rates) != expected_zones:
+        is_dynamic = tariff_type == TariffTypeEnum.DYNAMIC
+        if len(energy_rates) != expected_zones or len(network_rates) != expected_zones:
             raise ValueError("Brak kompletu stawek dla wszystkich stref taryfowych.")
         if is_dynamic and self.dynamic_price_resolver is None:
             raise ValueError("Brak resolvera cen RCE dla taryfy dynamicznej.")
@@ -106,31 +117,22 @@ class ZonedTariffCalculationStrategy:
         )
 
         for cycle_start, energy in self._cycles(calculation_details):
-            zone_energy = self._zone_totals(energy, expected_zones)
+            zone_energy = self._zone_totals(energy, tariff_type)
             active_kwh = sum(zone_energy, Decimal("0"))
-            if is_dynamic and isinstance(energy, dict):
+            if is_dynamic:
+                records = energy.items() if isinstance(energy, dict) else energy
+                if records and not isinstance(next(iter(records)), tuple):
+                    raise ValueError(
+                        "Taryfa dynamiczna wymaga zużycia z zachowanymi znacznikami czasu."
+                    )
+                margin = energy_rates[1]
                 active_net = sum(
                     (
                         Decimal(str(value))
-                        * Decimal(str(self.dynamic_price_resolver(timestamp)))
-                        for timestamp, value in energy.items()
+                        * (Decimal(str(self.dynamic_price_resolver(timestamp))) + margin)
+                        for timestamp, value in records
                     ),
                     Decimal("0"),
-                )
-            elif is_dynamic and isinstance(energy, list) and (
-                not energy or isinstance(energy[0], tuple)
-            ):
-                active_net = sum(
-                    (
-                        Decimal(str(value))
-                        * Decimal(str(self.dynamic_price_resolver(timestamp)))
-                        for timestamp, value in energy
-                    ),
-                    Decimal("0"),
-                )
-            elif is_dynamic:
-                raise ValueError(
-                    "Taryfa dynamiczna wymaga zużycia z zachowanymi znacznikami czasu."
                 )
             else:
                 active_net = sum(
@@ -204,37 +206,21 @@ class ZonedTariffCalculationStrategy:
         raise ValueError(f"Brak opłaty abonamentowej dla cyklu {months} miesięcy.")
 
     @staticmethod
-    def _zone_totals(energy: Any, expected_zones: int) -> list[Decimal]:
-        if isinstance(energy, dict):
-            totals = [Decimal("0")] * expected_zones
-            for timestamp, value in energy.items():
-                if not isinstance(timestamp, datetime):
-                    raise ValueError("Odczyt energii musi mieć znacznik datetime.")
-                totals[ZonedTariffCalculationStrategy._zone_for(timestamp, expected_zones)] += Decimal(str(value))
-            return totals
-        values = list(energy)
+    def _zone_totals(energy: Any, tariff_type: TariffTypeEnum) -> list[Decimal]:
+        """Energia cyklu w strefach: z odczytów ze znacznikiem czasu albo już zbilansowana przez PV."""
+        values = list(energy.items()) if isinstance(energy, dict) else list(energy)
         if values and isinstance(values[0], tuple):
-            totals = [Decimal("0")] * expected_zones
+            totals = [Decimal("0")] * zone_count(tariff_type)
             for timestamp, value in values:
                 if not isinstance(timestamp, datetime):
                     raise ValueError("Odczyt energii musi mieć znacznik datetime.")
-                totals[ZonedTariffCalculationStrategy._zone_for(timestamp, expected_zones)] += Decimal(str(value))
+                totals[zone_for(timestamp, tariff_type)] += Decimal(str(value))
             return totals
-        if len(values) != expected_zones:
+        if not values:
+            return [Decimal("0")] * zone_count(tariff_type)
+        if len(values) != zone_count(tariff_type):
             raise ValueError("Zbilansowana energia nie pasuje do liczby stref taryfowych.")
         return [Decimal(str(value)) for value in values]
-
-    @staticmethod
-    def _zone_for(timestamp: datetime, zones: int) -> int:
-        """Fallback time mapping for raw 15-minute series; balanced zone totals remain authoritative."""
-        hour = timestamp.hour
-        if zones == 1:
-            return 0
-        if zones == 2:
-            return 0 if 6 <= hour < 22 else 1
-        if zones == 3:
-            return min((hour // 8), 2)
-        return min((hour // 6), 3)
 
 
 class FinancialSettlement:

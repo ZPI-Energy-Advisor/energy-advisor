@@ -326,6 +326,7 @@ def seed_calculation_data():
                 (Decimal("0.35"), Decimal("0.14")),
             ],
         )
+        # Dla taryfy dynamicznej stawka energii to marża sprzedawcy doliczana do ceny RCE.
         _seed_tariff(
             db,
             TariffTypeEnum.DYNAMIC,

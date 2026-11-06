@@ -78,7 +78,7 @@ function CalculationResultsPage() {
     return <div className="p-10 text-gray-500">Ładowanie danych kalkulacji...</div>;
   }
 
-  if (!selectedFile || selectedFileId === "all") {
+  if (!selectedFile || isAggregateSource(selectedFileId)) {
     return (
       <div className="max-w-6xl mx-auto">
         <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-8">

@@ -49,6 +49,10 @@ Migracje są uruchamiane automatycznie przed startem backendu. Dla już działaj
 docker compose exec backend alembic upgrade head
 ```
 
+Cofanie migracji (`alembic downgrade`) działa tylko do migracji `a1b2c3d4e5f6`. Dodaje ona wartość
+do typu enum, a PostgreSQL nie potrafi jej usunąć, więc aby cofnąć się dalej, trzeba odtworzyć
+bazę od zera albo z kopii.
+
 ### 4. Dane początkowe (taryfy)
 
 Taryfy G11, G12 i dynamiczna są wymagane do obliczania kosztów. Skrypt jest idempotentny:

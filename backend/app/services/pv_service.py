@@ -6,6 +6,7 @@ from typing import Callable
 from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.providers.prices.pse_provider import PseRcePriceProvider
+from app.services.tariff_zones import zone_count, zone_for
 
 
 
@@ -81,39 +82,10 @@ class PVBalancingEngine:
         tariff_type: TariffTypeEnum,
     ) -> list[float]:
         """Aggregate hourly records into the tariff's deterministic time zones."""
-        zone_count = len(PVBalancingEngine.get_energy_price_zones(tariff_type))
-        grouped = [0.0] * zone_count
+        grouped = [0.0] * zone_count(tariff_type)
         for timestamp, energy_kwh in energy_records:
-            grouped[PVBalancingEngine._zone_for(timestamp, tariff_type)] += energy_kwh
+            grouped[zone_for(timestamp, tariff_type)] += energy_kwh
         return grouped
-
-    @staticmethod
-    def _zone_for(timestamp: datetime, tariff_type: TariffTypeEnum) -> int:
-        weekday = timestamp.weekday()
-        minutes = timestamp.hour * 60 + timestamp.minute
-        if tariff_type == TariffTypeEnum.G11:
-            return 0
-        if tariff_type == TariffTypeEnum.DYNAMIC:
-            return 0
-        if tariff_type == TariffTypeEnum.G12W and weekday >= 5:
-            return 1
-        if tariff_type in (TariffTypeEnum.G12, TariffTypeEnum.G12W):
-            return 0 if 6 * 60 <= minutes < 13 * 60 or 15 * 60 <= minutes < 22 * 60 else 1
-        if tariff_type in (TariffTypeEnum.G13, TariffTypeEnum.G13S):
-            if 7 * 60 <= minutes < 13 * 60 or 16 * 60 <= minutes < 21 * 60:
-                return 0
-            if 13 * 60 <= minutes < 16 * 60 or 21 * 60 <= minutes < 22 * 60:
-                return 1
-            return 2
-        if tariff_type == TariffTypeEnum.G14D:
-            if 7 * 60 <= minutes < 13 * 60:
-                return 0
-            if 13 * 60 <= minutes < 16 * 60:
-                return 1
-            if 16 * 60 <= minutes < 22 * 60:
-                return 2
-            return 3
-        raise ValueError(f"Brak mapowania stref dla taryfy {tariff_type.value}.")
 
     def get_price_for_pv_energy(
         self,
@@ -126,9 +98,9 @@ class PVBalancingEngine:
                 "Skonfiguruj resolver RCE/RCEm."
             )
         price = self.market_price_resolver(timestamp, type_of_market_energy)
-        if price < 0:
-            raise ValueError("Cena rynkowa energii nie może być ujemna.")
-        return price
+        # Przy ujemnej cenie rynkowej energię wprowadzoną do sieci w tym okresie wycenia się na zero
+        # (zasady net-billingu sprzedawców na podstawie art. 4b ustawy o OZE).
+        return max(price, 0.0)
 
     def _remove_expired_energy(self, past_accumulated_pv_energy: deque, current_cycle_date: datetime, billing_cycle: BillingCycleEnum, pv_validity_days: int) -> None:
             while past_accumulated_pv_energy:
