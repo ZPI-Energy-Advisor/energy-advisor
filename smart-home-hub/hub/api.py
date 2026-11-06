@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from hub.config import HubSettings
-from hub.models import DeviceCommand, RegistryRequest
+from hub.models import ClockUpdate, DeviceCommand, RegistryRequest
 from hub.supervisor import DeviceSupervisor, HubError
 
 
@@ -21,11 +21,15 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await supervisor.start()
-        health_loop = asyncio.create_task(supervisor.run_health_loop())
+        loops = [
+            asyncio.create_task(supervisor.run_health_loop()),
+            asyncio.create_task(supervisor.run_clock_loop()),
+        ]
         yield
-        health_loop.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await health_loop
+        for loop in loops:
+            loop.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await loop
         await supervisor.stop()
 
     def verify_api_key(x_hub_api_key: str | None = Header(default=None)) -> None:
@@ -60,11 +64,20 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
 
     @router.get("/devices")
     async def get_devices():
-        return {"sim_time": None, "devices": await supervisor.list_devices()}
+        devices = await supervisor.list_devices()
+        return {"sim_time": supervisor.clock.state()["sim_time"], "devices": devices}
 
     @router.post("/devices/{device_id}/commands", status_code=202)
     async def send_command(device_id: str, command: DeviceCommand):
         return await supervisor.send_command(device_id, command)
+
+    @router.get("/clock")
+    async def get_clock():
+        return supervisor.clock.state()
+
+    @router.put("/clock")
+    async def put_clock(update: ClockUpdate):
+        return await supervisor.update_clock(update)
 
     app.include_router(router)
     return app

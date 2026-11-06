@@ -60,6 +60,11 @@ def create_app(driver: DeviceDriver) -> FastAPI:
     async def energy():
         return driver.energy()
 
+    @app.post("/reset")
+    async def reset():
+        driver.reset()
+        return driver.status()
+
     @app.post("/tick")
     async def tick(request: TickRequest):
         return driver.tick(request.sim_time)

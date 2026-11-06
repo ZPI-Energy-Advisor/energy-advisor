@@ -23,16 +23,15 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 
 ### Zakres w czasie
 
-| Element | Ten sprint | Kolejny sprint |
-|---|---|---|
-| Rejestr, stan i komendy (`/home/devices`) | ZP-83, komendy wykonywane od razu | `start_at` |
-| API urządzenia, w tym `POST /tick` | ZP-84, tick wywołują testy | tick wysyła zegar huba |
-| `HubClient` i kontrakt webhooka | ZP-54 | |
-| Zegar `/home/clock` | | hub |
-| Webhook `/api/v1/home/events` | | hub i backend |
+| Element | Stan |
+|---|---|
+| Rejestr, stan i komendy (`/home/devices`) | ZP-83, `start_at` ZP-94 |
+| API urządzenia, w tym `POST /tick` | ZP-84 |
+| `HubClient` i kontrakt webhooka | ZP-54 |
+| Zegar `/home/clock` | ZP-94 |
+| Webhook `/api/v1/home/events` | do zrobienia w ZP-95 |
 
-Webhook czeka na zegar, bo zdarzenia powstają w tickach. Do tego czasu `sim_time` w
-`GET /home/devices` ma wartość `null`.
+Do czasu wdrożenia webhooka hub zbiera zdarzenia z ticków w buforze w pamięci.
 
 ## Zasady ogólne
 
@@ -82,8 +81,10 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 - Urządzenie liczy stan (postęp programu, energię) wyłącznie na podstawie `sim_time` z ticka.
   Nie używa `datetime.now()`.
 - Akcja zaczyna się w czasie ostatniego ticka, a przed pierwszym tickiem w czasie pierwszego ticka.
+  Hub wysyła tick z bieżącym czasem zaraz po uruchomieniu mikroserwisu, więc komenda przed kolejnym
+  krokiem zegara zaczyna się w bieżącym czasie symulacji.
 - Krok ticka jest dowolny: urządzenie musi poprawnie policzyć każdy dodatni krok, także
-  dwugodzinny. Hub będzie tykał co 15 minut czasu symulacji.
+  dwugodzinny. Hub tyka co 15 minut czasu symulacji.
 - Pierwszy tick ustawia tylko punkt odniesienia i nie nalicza energii.
 
 ### Kody błędów
@@ -98,8 +99,9 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 409 | `stale_tick` | `sim_time` ticka wcześniejszy niż ostatni |
 | 409 | `config_requires_restart` | `PUT /config` zmienia pole inne niż nazwa lub kategoria |
 | 409 | `port_pool_exhausted` | Rejestr nie mieści się w puli portów 9101–9150 |
-| 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`) |
-| 422 | `start_at_not_supported` | `start_at` w komendzie, dopóki hub nie ma zegara |
+| 409 | `clock_running` | Zmiana `sim_time`, gdy zegar działa |
+| 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`, czas bez strefy albo poza pełnym kwadransem) |
+| 422 | `start_at_in_past` | `start_at` wcześniejszy niż bieżący czas symulacji |
 | 502 | `device_unreachable` | Hub nie dostał odpowiedzi od mikroserwisu urządzenia |
 
 ## 1. Backend → hub
@@ -207,7 +209,7 @@ z webhooka.
 |---|---|
 | `command` | `on`, `off`, `start_program` |
 | `program_id` | Wymagane przy `start_program`, niedozwolone przy pozostałych |
-| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans. Brak = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`: najpierw tick z `sim_time = start_at`, potem start, bo akcja zaczyna się w czasie ostatniego ticka. Do czasu wdrożenia zegara hub odrzuca to pole kodem `422 start_at_not_supported`, zamiast po cichu startować od razu |
+| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans ze strefą. Brak albo czas równy bieżącemu = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`: najpierw tick z `sim_time = start_at`, potem start, bo akcja zaczyna się w czasie ostatniego ticka |
 
 Odpowiedź `202`:
 
@@ -223,17 +225,44 @@ Odpowiedź `202`:
 `status`: `accepted` (wykonane albo przekazane do urządzenia), `scheduled` (start w przyszłości).
 `off` w trakcie programu przerywa go, a akcja kończy się z `interrupted: true` i energią do tego
 momentu. Błędy: `404 device_not_found`, `404 program_not_found`, `409 invalid_state`,
-`422 start_at_not_supported`, `502 device_unreachable`.
+`422 start_at_in_past`, `422 validation_error`, `502 device_unreachable`.
 
-### `GET /home/clock`, `PUT /home/clock` – zegar symulacji (kolejny sprint)
+Komenda `scheduled` nie ma jeszcze wyniku. Jeśli w chwili `start_at` urządzenie nie wykona jej (np.
+trwa inny program albo nie odpowiada), hub zapisuje zdarzenie `device_error` z kodem błędu i nie
+ponawia komendy. Usunięcie urządzenia z rejestru kasuje jego zaplanowane komendy.
+
+### `GET /home/clock`, `PUT /home/clock` – zegar symulacji
 
 ```json
-{ "sim_time": "2026-10-19T09:45:00+02:00", "running": true, "speed": 60.0 }
+{ "sim_time": "2026-10-19T09:45:00+02:00", "running": true, "speed": 288.0 }
 ```
 
-`PUT` przyjmuje dowolny podzbiór pól: `sim_time` (ustawienie czasu, tylko gdy zegar stoi),
-`running` (`true` start, `false` pauza), `speed` (ile sekund symulacji na sekundę rzeczywistą,
-`> 0`). Odpowiedź `200` z pełnym stanem zegara.
+`PUT` przyjmuje dowolny podzbiór pól. Odpowiedź `200` z pełnym stanem zegara.
+
+| Pole | Opis |
+|---|---|
+| `sim_time` | Bieżący czas symulacji w strefie domu (`Europe/Warsaw`), pełny kwadrans z lat 1970–2100. W `PUT` dowolna strefa, tylko gdy zegar stoi; inaczej `409 clock_running` |
+| `running` | `true` start, `false` pauza. Pauza zatrzymuje ticki, więc energia przestaje rosnąć |
+| `speed` | Ile sekund symulacji na sekundę rzeczywistą, `> 0`. Doba w 5 minut to `288` (domyślnie) |
+
+Hub startuje z zatrzymanym zegarem ustawionym na północ bieżącego dnia. Zegar i zaplanowane komendy
+są tylko w pamięci, więc restart huba ustawia je od nowa.
+
+**Ustawienie `sim_time` zaczyna nową symulację**: hub wysyła urządzeniom `POST /reset` i kasuje
+zaplanowane komendy. Dzięki temu tę samą dobę można puścić drugi raz, także po cofnięciu zegara.
+Dlatego kolejność jest stała: najpierw `sim_time`, potem komendy ze `start_at`, na końcu
+`running: true`. `PUT` z czasem równym bieżącemu niczego nie zmienia, więc można go ponawiać.
+
+Gdy któreś urządzenie nie wykona resetu, `PUT` zwraca `502 device_unreachable`, a czas, `running`,
+`speed` i zaplanowane komendy zostają bez zmian. Urządzenia, które zdążyły się zresetować, tracą
+swój stan, więc `PUT` trzeba ponowić. Urządzenia w stanie `error` są pomijane.
+
+Zegar przesuwa czas krokami po 15 minut w UTC, dlatego doba ze zmianą czasu ma 92 albo 100
+kwadransów. Zmiana tempa i pauza nie gubią zaplanowanych komend ani rozpoczętego kroku. Czas ticka
+wlicza się w krok, ale kolejny krok zaczyna się dopiero po odpowiedziach urządzeń, więc tempo jest
+górną granicą: gdy tick trwa dłużej niż krok, zegar zwalnia i niczego nie nadrabia, a żaden kwadrans
+nie jest pomijany. Urządzenie, które nie odpowiada, nie wstrzymuje
+ticka pozostałych; hub zapisuje dla niego `device_error`, a urządzenia w stanie `error` pomija.
 
 ## 2. Hub → urządzenie
 
@@ -262,6 +291,7 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 | `POST /on` | Włączenie | `200` – stan; `409 invalid_state`, gdy trwa program |
 | `POST /off` | Wyłączenie, kończy akcję | `200` – stan |
 | `POST /programs/{program_id}/start` | Start programu | `200` – stan; `404 program_not_found`, `409 invalid_state` |
+| `POST /reset` | Powrót do stanu po uruchomieniu: `off`, zerowe liczniki, brak czasu symulacji i zdarzeń | `200` – stan |
 | `GET /energy` | Zużycie energii | `200` – patrz niżej |
 | `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick`; `422 validation_error` dla czasu bez strefy |
 
@@ -282,8 +312,7 @@ Urządzenie startuje w stanie `off`.
 - Moc programu w kwadransie to wartość z profilu podzielona przez 0,25 h. Urządzenie bez programów
   zużywa w kwadransie najwyżej `max_power_kw × 0,25 h`.
 - PV produkuje stale `-max_power_kw` niezależnie od pory dnia. To uproszczenie na ten sprint;
-  realistyczna produkcja (krzywa dobowa albo profil z akcji PV z pliku urządzeń) wejdzie razem
-  z zegarem symulacji.
+  realistyczna produkcja (profil z akcji PV z pliku urządzeń) wejdzie w ZP-96.
 
 ### `GET /status`
 
@@ -354,7 +383,7 @@ poprzedniego ticka, także tymi z komend wykonanych między tickami:
 
 ## 3. Hub → backend: webhook zdarzeń
 
-Wdrożenie w kolejnym sprincie, razem z zegarem. Urządzenia nie wysyłają niczego same: hub zbiera
+Wdrożenie: ZP-95. Urządzenia nie wysyłają niczego same: hub zbiera
 zdarzenia z odpowiedzi na `POST /tick` i wysyła je partiami, co najmniej raz na tick, w którym coś
 zaszło. Urządzenie zwraca `device_started` i `device_finished`, a `energy_report` i `device_error`
 tworzy hub, odpowiednio z `energy_kwh` ticka i z własnego health-checku.

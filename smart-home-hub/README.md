@@ -27,11 +27,12 @@ Sterownik można uruchomić ręcznie i otworzyć Swaggera pod `http://127.0.0.1:
 ## Hub
 
 Serwis (`hub/`), z którym rozmawia backend. Stawia mikroserwisy urządzeń według rejestru, pilnuje
-ich i przekazuje komendy. Zegar symulacji i webhook do backendu to kolejny sprint.
+ich, przekazuje komendy i odmierza czas symulacji. Webhook do backendu to ZP-95.
 
 | Plik | Odpowiedzialność |
 |---|---|
-| `hub/supervisor.py` | Rekoncyliacja rejestru, procesy urządzeń, health-check, przekazywanie komend |
+| `hub/supervisor.py` | Rekoncyliacja rejestru, procesy urządzeń, health-check, komendy, ticki i zaplanowane starty |
+| `hub/clock.py` | Zegar symulacji: czas, pauza, tempo i odmierzanie kroku, bez HTTP |
 | `hub/api.py` | Endpointy, klucz `X-Hub-Api-Key` i format błędów |
 | `hub/state.py` | Plik stanu: rejestr z portami, odtwarzany po restarcie huba |
 | `hub/models.py` | Modele żądań |
