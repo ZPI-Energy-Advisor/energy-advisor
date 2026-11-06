@@ -28,7 +28,7 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
         yield
         for loop in loops:
             loop.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await loop
         await supervisor.stop()
 

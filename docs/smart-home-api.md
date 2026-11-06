@@ -241,7 +241,7 @@ ponawia komendy. Usunięcie urządzenia z rejestru kasuje jego zaplanowane komen
 
 | Pole | Opis |
 |---|---|
-| `sim_time` | Bieżący czas symulacji w strefie domu (`Europe/Warsaw`), pełny kwadrans. W `PUT` dowolna strefa, tylko gdy zegar stoi; inaczej `409 clock_running` |
+| `sim_time` | Bieżący czas symulacji w strefie domu (`Europe/Warsaw`), pełny kwadrans z lat 1970–2100. W `PUT` dowolna strefa, tylko gdy zegar stoi; inaczej `409 clock_running` |
 | `running` | `true` start, `false` pauza. Pauza zatrzymuje ticki, więc energia przestaje rosnąć |
 | `speed` | Ile sekund symulacji na sekundę rzeczywistą, `> 0`. Doba w 5 minut to `288` (domyślnie) |
 
@@ -252,6 +252,10 @@ są tylko w pamięci, więc restart huba ustawia je od nowa.
 zaplanowane komendy. Dzięki temu tę samą dobę można puścić drugi raz, także po cofnięciu zegara.
 Dlatego kolejność jest stała: najpierw `sim_time`, potem komendy ze `start_at`, na końcu
 `running: true`. `PUT` z czasem równym bieżącemu niczego nie zmienia, więc można go ponawiać.
+
+Gdy któreś urządzenie nie wykona resetu, `PUT` zwraca `502 device_unreachable`, a czas, `running`,
+`speed` i zaplanowane komendy zostają bez zmian. Urządzenia, które zdążyły się zresetować, tracą
+swój stan, więc `PUT` trzeba ponowić. Urządzenia w stanie `error` są pomijane.
 
 Zegar przesuwa czas krokami po 15 minut w UTC, dlatego doba ze zmianą czasu ma 92 albo 100
 kwadransów. Zmiana tempa i pauza nie gubią zaplanowanych komend ani rozpoczętego kroku. Czas ticka

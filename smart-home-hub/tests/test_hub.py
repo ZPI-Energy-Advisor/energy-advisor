@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from hub.api import create_app
 from hub.clock import SIM_TIMEZONE, TICK_STEP, SimClock
 from hub.config import HubSettings
+from hub.supervisor import DeviceSupervisor, HubError, ManagedDevice
+from device.models import DeviceConfig
 
 
 API_KEY = "test-hub-key"
@@ -404,6 +406,9 @@ def test_sim_time_is_returned_in_home_timezone(client):
     {"speed": -1},
     {"sim_time": "2026-10-19T12:00:00"},
     {"sim_time": "2026-10-19T12:05:00+02:00"},
+    {"sim_time": "0001-01-01T00:00:00+01:00"},
+    {"sim_time": "9999-12-31T23:45:00-01:00"},
+    {"sim_time": "9999-12-31T23:45:00+00:00"},
 ])
 def test_invalid_clock_update_is_rejected(client, body):
     before = client.get("/home/clock").json()
@@ -575,6 +580,108 @@ def test_repeated_put_with_same_sim_time_keeps_simulation(client):
 
     assert _device_status(client, "dev_wm_01")["state"] == "running"
     assert len(client.app.state.supervisor._scheduled) == 1
+
+
+@pytest.mark.parametrize("sim_time", ["2026-10-25T02:15:00+02:00", "2026-10-25T02:15:00+01:00"])
+def test_repeated_put_in_repeated_dst_hour_keeps_simulation(client, sim_time):
+    _put(client, [_washing_machine()])
+    _set_clock(client, sim_time)
+    _start_program(client)
+
+    _set_clock(client, sim_time)
+
+    assert _device_status(client, "dev_wm_01")["state"] == "running"
+
+
+def _fail_reset_once(supervisor: DeviceSupervisor, monkeypatch) -> None:
+    forward = supervisor._forward
+    failures = [HubError(502, "device_unreachable", "Timeout")]
+
+    async def flaky_forward(device, path, *args, **kwargs):
+        if path == "/reset" and failures:
+            raise failures.pop()
+        return await forward(device, path, *args, **kwargs)
+
+    monkeypatch.setattr(supervisor, "_forward", flaky_forward)
+
+
+def test_failed_reset_keeps_clock_so_put_can_be_retried(client, monkeypatch):
+    _put(client, [_washing_machine()])
+    _set_clock(client)
+    _start_program(client)
+    _start_program(client, "2026-10-19T15:00:00+02:00")
+    _fail_reset_once(client.app.state.supervisor, monkeypatch)
+    body = {"sim_time": "2026-10-19T08:00:00+02:00", "running": True}
+
+    response = client.put("/home/clock", json=body)
+
+    assert response.status_code == 502
+    assert response.json()["code"] == "device_unreachable"
+    assert "dev_wm_01" in response.json()["detail"]
+    clock = client.get("/home/clock").json()
+    assert clock["sim_time"] == "2026-10-19T12:00:00+02:00"
+    assert clock["running"] is False
+    assert len(client.app.state.supervisor._scheduled) == 1
+
+    assert client.put("/home/clock", json={"sim_time": body["sim_time"]}).status_code == 200
+
+    assert _device_status(client, "dev_wm_01")["state"] == "off"
+    assert client.app.state.supervisor._scheduled == []
+    _tick(client)
+    assert _events(client, "dev_wm_01", "device_error") == []
+
+
+@pytest.mark.parametrize(("status_code", "content"), [
+    (200, b"<html>obcy proces</html>"),
+    (200, b"[]"),
+    (500, b"[]"),
+])
+def test_unexpected_device_response_is_reported_as_unreachable(settings, status_code, content):
+    async def forward() -> None:
+        supervisor = DeviceSupervisor(settings)
+        supervisor._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(status_code, content=content)),
+        )
+        async with supervisor._client:
+            await supervisor._forward(ManagedDevice(DeviceConfig.model_validate(_lamp()), FIRST_PORT), "/tick")
+
+    with pytest.raises(HubError) as error:
+        asyncio.run(forward())
+
+    assert error.value.code == "device_unreachable"
+
+
+def test_clock_loop_survives_unexpected_tick_error(client, monkeypatch):
+    supervisor = client.app.state.supervisor
+    tick = supervisor._tick
+    failures = [RuntimeError("awaria")]
+
+    async def flaky_tick():
+        if failures:
+            raise failures.pop()
+        await tick()
+
+    monkeypatch.setattr(supervisor, "_tick", flaky_tick)
+    before = client.get("/home/clock").json()["sim_time"]
+
+    client.put("/home/clock", json={"running": True, "speed": 36000})
+
+    _wait_until(lambda: client.get("/home/clock").json()["sim_time"] != before)
+    assert failures == []
+
+
+def test_failed_background_loop_does_not_block_stopping_devices(settings):
+    app = create_app(settings)
+
+    async def failing_loop():
+        raise RuntimeError("awaria")
+
+    app.state.supervisor.run_health_loop = failing_loop
+    with TestClient(app, headers=HEADERS) as client:
+        _put(client, [_lamp()])
+        process = app.state.supervisor.devices["dev_lt_01"].process
+
+    assert process.poll() is not None
 
 
 def test_dead_device_does_not_block_tick_of_others(client):

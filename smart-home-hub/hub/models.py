@@ -7,11 +7,16 @@ from pydantic import BaseModel, model_validator
 from device.models import DeviceConfig
 
 
+MIN_SIM_YEAR = 1970
+MAX_SIM_YEAR = 2100
 
-def _require_full_quarter(value: datetime, name: str) -> None:
+
+def _validate_sim_moment(value: datetime, name: str) -> None:
     """Zegar tyka co kwadrans, więc inny czas nigdy nie wypadłby w ticku."""
     if value.tzinfo is None:
         raise ValueError(f"{name} musi zawierać strefę czasową")
+    if not MIN_SIM_YEAR <= value.year <= MAX_SIM_YEAR:
+        raise ValueError(f"{name} musi być z lat {MIN_SIM_YEAR}-{MAX_SIM_YEAR}")
     moment = value.astimezone(timezone.utc)
     if moment.minute % 15 or moment.second or moment.microsecond:
         raise ValueError(f"{name} musi być pełnym kwadransem")
@@ -41,7 +46,7 @@ class DeviceCommand(BaseModel):
         elif self.program_id is not None or self.start_at is not None:
             raise ValueError("program_id i start_at są dozwolone tylko przy start_program")
         if self.start_at is not None:
-            _require_full_quarter(self.start_at, "start_at")
+            _validate_sim_moment(self.start_at, "start_at")
         return self
 
 
@@ -53,7 +58,7 @@ class ClockUpdate(BaseModel):
     @model_validator(mode="after")
     def validate_clock(self):
         if self.sim_time is not None:
-            _require_full_quarter(self.sim_time, "sim_time")
+            _validate_sim_moment(self.sim_time, "sim_time")
         if self.speed is not None and not (math.isfinite(self.speed) and self.speed > 0):
             raise ValueError("speed musi być dodatnie")
         return self

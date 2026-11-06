@@ -34,6 +34,10 @@ class SimClock:
     def next_time(self) -> datetime:
         return (self._now + TICK_STEP).astimezone(SIM_TIMEZONE)
 
+    def is_at(self, moment: datetime) -> bool:
+        """Porównuje w UTC: między strefami Python uznaje godzinę powtórzoną przy zmianie czasu za różną."""
+        return moment.astimezone(timezone.utc) == self._now
+
     def state(self) -> dict:
         return {"sim_time": self.sim_time.isoformat(), "running": self.running, "speed": self.speed}
 

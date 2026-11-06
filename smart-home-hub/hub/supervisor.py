@@ -152,7 +152,7 @@ class DeviceSupervisor:
     async def update_clock(self, update: ClockUpdate) -> dict:
         async with self._clock_lock:
             # Ponowiony PUT z tym samym czasem niczego nie zmienia, a HubClient ponawia PUT-y.
-            if update.sim_time is not None and update.sim_time != self.clock.sim_time:
+            if update.sim_time is not None and not self.clock.is_at(update.sim_time):
                 if self.clock.running:
                     raise HubError(409, "clock_running", "Czas można ustawić tylko przy zatrzymanym zegarze")
                 await self._start_new_simulation(update.sim_time)
@@ -169,7 +169,10 @@ class DeviceSupervisor:
             async with self._clock_lock:
                 if self.clock.running:  # Zegar mógł stanąć w trakcie czekania na blokadę.
                     started = time.monotonic()
-                    await self._tick()
+                    try:
+                        await self._tick()
+                    except Exception:
+                        logger.exception("Tick nie powiódł się, zegar ponowi ten kwadrans")
                     self.clock.spend(time.monotonic() - started)
 
     async def check_health(self) -> None:
@@ -201,7 +204,7 @@ class DeviceSupervisor:
         except HubError as e:
             self._record_device_error(device, sim_time, e)
             return
-        self.events.extend({**event, "device_id": device.config.device_id} for event in result["events"])
+        self.events.extend({**event, "device_id": device.config.device_id} for event in result.get("events", []))
 
     async def _run_scheduled(self, device: ManagedDevice, item: ScheduledCommand, sim_time: datetime) -> None:
         try:
@@ -219,18 +222,22 @@ class DeviceSupervisor:
         })
 
     async def _start_new_simulation(self, sim_time: datetime) -> None:
+        devices = [device for device in self.devices.values() if not device.failed]
+        results = await asyncio.gather(*(self._reset_device(device) for device in devices))
+        not_reset = [device.config.device_id for device, reset in zip(devices, results) if not reset]
+        if not_reset:
+            raise HubError(502, "device_unreachable", f"Urządzenia bez resetu: {', '.join(not_reset)}")
         self.clock.set_time(sim_time)
         self._scheduled.clear()
-        devices = [device for device in self.devices.values() if not device.failed]
-        await asyncio.gather(*(self._reset_device(device) for device in devices))
+        await asyncio.gather(*(self._sync_time(device) for device in devices))
 
-    async def _reset_device(self, device: ManagedDevice) -> None:
+    async def _reset_device(self, device: ManagedDevice) -> bool:
         try:
             await self._forward(device, "/reset")
         except HubError as e:
             logger.warning("Urządzenie %s bez resetu: %s", device.config.device_id, e.detail)
-            return
-        await self._sync_time(device)
+            return False
+        return True
 
     async def _sync_time(self, device: ManagedDevice) -> None:
         """Tick z bieżącym czasem: dzięki niemu komenda zacznie się teraz, a nie przy kolejnym kroku."""
@@ -347,12 +354,14 @@ class DeviceSupervisor:
             response = await self._client.request(method, f"{device.url}{path}", json=payload)
         except httpx.HTTPError as e:
             raise HubError(502, "device_unreachable", f"Brak odpowiedzi urządzenia: {e}") from e
-        if response.is_success:
-            return response.json()
         try:
             body = response.json()
-        except ValueError as e:
-            raise HubError(502, "device_unreachable", f"Urządzenie zwróciło HTTP {response.status_code}") from e
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise HubError(502, "device_unreachable", f"Urządzenie zwróciło HTTP {response.status_code} bez obiektu JSON")
+        if response.is_success:
+            return body
         raise HubError(response.status_code, body.get("code"), body.get("detail"))
 
     def _save_state(self) -> None:
