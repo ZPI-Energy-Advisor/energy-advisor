@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,7 +27,8 @@ from app.services.energy_file_service import EnergyFileService
 
 DEMO_FILE = Path(__file__).parent / "fixtures" / "devices_demo_30d.json"
 DEMO = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
-SAVE_LIMIT_SECONDS = 3
+# Zapis 30 dni trwa lokalnie 3-4 s; maszyny GitHub Actions (CI=true) są wolniejsze.
+SAVE_LIMIT_SECONDS = 6 * (2 if os.getenv("CI") else 1)
 
 
 with DEMO_FILE.open("rb") as demo_handle:
