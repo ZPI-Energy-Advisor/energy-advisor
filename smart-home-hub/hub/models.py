@@ -1,10 +1,20 @@
-from datetime import datetime
+import math
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, model_validator
 
 from device.models import DeviceConfig
 
+
+
+def _require_full_quarter(value: datetime, name: str) -> None:
+    """Zegar tyka co kwadrans, więc inny czas nigdy nie wypadłby w ticku."""
+    if value.tzinfo is None:
+        raise ValueError(f"{name} musi zawierać strefę czasową")
+    moment = value.astimezone(timezone.utc)
+    if moment.minute % 15 or moment.second or moment.microsecond:
+        raise ValueError(f"{name} musi być pełnym kwadransem")
 
 
 class RegistryRequest(BaseModel):
@@ -30,4 +40,20 @@ class DeviceCommand(BaseModel):
                 raise ValueError("start_program wymaga program_id")
         elif self.program_id is not None or self.start_at is not None:
             raise ValueError("program_id i start_at są dozwolone tylko przy start_program")
+        if self.start_at is not None:
+            _require_full_quarter(self.start_at, "start_at")
+        return self
+
+
+class ClockUpdate(BaseModel):
+    sim_time: datetime | None = None
+    running: bool | None = None
+    speed: float | None = None
+
+    @model_validator(mode="after")
+    def validate_clock(self):
+        if self.sim_time is not None:
+            _require_full_quarter(self.sim_time, "sim_time")
+        if self.speed is not None and not (math.isfinite(self.speed) and self.speed > 0):
+            raise ValueError("speed musi być dodatnie")
         return self

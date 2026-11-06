@@ -155,3 +155,19 @@ def _wait_for_health(port: int) -> dict:
             if time.monotonic() > deadline:
                 raise
             time.sleep(0.1)
+
+
+def test_reset_returns_device_to_initial_state(client):
+    _tick(client, "2026-10-19T13:00:00+02:00")
+    client.post("/programs/cotton_60/start")
+    _tick(client, "2026-10-19T13:15:00+02:00")
+
+    response = client.post("/reset")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "off"
+    assert response.json()["energy_kwh"] == 0
+    assert response.json()["sim_time"] is None
+    assert client.get("/energy").json()["last_action"] is None
+    assert _tick(client, "2026-10-19T08:00:00+02:00").status_code == 200
+    assert _tick(client, "2026-10-19T08:15:00+02:00").json()["events"] == []
