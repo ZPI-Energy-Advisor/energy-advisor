@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,6 +48,8 @@ def _g12_definition():
     return SimpleNamespace(
         tariff_code=TariffTypeEnum.G12,
         number_of_zones=2,
+        valid_from=date(2026, 1, 1),
+        valid_to=date(2026, 12, 31),
         fixed_network_fee_1phase_monthly=Decimal("8.50"),
         fixed_network_fee_3phase_monthly=Decimal("16.50"),
         supplier_ure_rates=[SimpleNamespace(zone_index=zone, energy_price_per_kwh_net_pln=energy)
@@ -55,6 +57,20 @@ def _g12_definition():
         variable_network_rates=[SimpleNamespace(zone_index=zone, rate_per_kwh_net_pln=network)
                                 for zone, _, network in rates],
         subscription_fees=[SimpleNamespace(billing_cycle_months=1, monthly_fee_net_pln=Decimal("3.00"))],
+    )
+
+
+def _regulatory_period():
+    thresholds = [SimpleNamespace(min_kwh_annual=Decimal("0"), max_kwh_annual=None, monthly_fee_net_pln=Decimal("0"))]
+    return SimpleNamespace(
+        valid_from=date(2026, 1, 1),
+        valid_to=date(2026, 12, 31),
+        quality_fee_per_kwh=Decimal("0"),
+        renewable_energy_fee_per_kwh=Decimal("0"),
+        cogeneration_fee_per_kwh=Decimal("0"),
+        vat_rate=Decimal("0.23"),
+        capacity_thresholds=thresholds,
+        transition_thresholds=thresholds,
     )
 
 
@@ -87,7 +103,7 @@ def _calculate(scenario, readings):
         _Repository(get_profile=profile),
         _Repository(get_by_id_for_user=energy_file),
         _Repository(list_for_file=rows),
-        _Repository(list_for_calculation=[_g12_definition()]),
+        _Repository(list_for_period=[_g12_definition()], list_regulatory_periods=[_regulatory_period()]),
         market_price_repository=_Prices(),
     )
     return service.perform_tariff_calculations(user_id=None, file_id=None)

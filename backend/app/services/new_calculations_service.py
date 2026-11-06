@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from decimal import Decimal
 import logging
 from uuid import UUID
 
@@ -11,11 +12,19 @@ from app.repositories.energy_data_file_repository import EnergyDataFileRepositor
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.calculation import CalculationDetails, PVDetails, TariffData
+from app.schemas.calculation import AnnualConsumption, CalculationDetails, PVDetails, TariffData
 from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import DynamicMarketPriceResolver, PVBalancingEngine
-from app.services.tariff_engine import FinancialSettlement, ZonedTariffCalculationStrategy
+from app.services.tariff_engine import (
+    DAYS_IN_YEAR,
+    BillingContext,
+    FinancialSettlement,
+    ZonedTariffCalculationStrategy,
+    covers,
+    days_between,
+    format_day_ranges,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -98,10 +107,8 @@ class CalculationsService:
             contracted_power_kw=base_info.contracted_power_kw,
         )
 
-        used_energy_cycles, produced_energy_cycles = self._cycles_from_readings(
-            self.energy_reading_repository.list_for_file(file_id),
-            tariff_data,
-        )
+        readings = self.energy_reading_repository.list_for_file(file_id)
+        used_energy_cycles, produced_energy_cycles = self._cycles_from_readings(readings, tariff_data)
 
         pv_details = self._build_pv_details(profile_data.pv_config, produced_energy_cycles)
         warnings = []
@@ -118,32 +125,62 @@ class CalculationsService:
             pv_details=pv_details,
             used_energy_cycles=used_energy_cycles,
             tariff_data=tariff_data,
+            annual_consumption=self._annual_consumption(readings),
             warnings=warnings or None,
         )
 
 
     def perform_tariff_calculations(self, user_id: UUID, file_id: UUID) -> CalculationDetails:
         base_details = self.compute_calculation_details(user_id, file_id)
-        definitions = self.tariff_repository.list_for_calculation(
-            operator=base_details.tariff_data.distribution_operator,
-            calculation_date=base_details.tariff_data.billing_period_start_date,
+        consumption = base_details.annual_consumption
+        first_day, last_day = consumption.data_start, consumption.data_end
+        operator = base_details.tariff_data.distribution_operator
+        definitions = self.tariff_repository.list_for_period(
+            operator=operator, date_from=first_day, date_to=last_day
         )
         if not definitions:
             raise HTTPException(
                 status_code=409,
-                detail="Brak stawek taryfowych dla wybranego operatora i daty.",
+                detail=(
+                    f"Brak stawek taryfowych operatora {operator.value} dla okresu pliku "
+                    f"{first_day.isoformat()} – {last_day.isoformat()}."
+                ),
             )
+        regulatory_periods = self.tariff_repository.list_regulatory_periods(date_from=first_day, date_to=last_day)
+        missing_days = [
+            day for day in days_between(first_day, last_day)
+            if not any(covers(period, day) for period in regulatory_periods)
+        ]
+        if missing_days:
+            # Bez opłat regulacyjnych rachunek byłby zaniżony, więc nie liczymy go wcale.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Brak opłat regulacyjnych (jakościowej, OZE, kogeneracyjnej, mocowej i przejściowej) "
+                    f"dla dni: {format_day_ranges(missing_days)}."
+                ),
+            )
+        context = BillingContext(
+            regulatory_periods=regulatory_periods,
+            annual_kwh=Decimal(str(consumption.annual_kwh)),
+            first_day=first_day,
+            last_day=last_day,
+            raw_cycles=base_details.used_energy_cycles,
+        )
+        definitions_by_code = {}
+        for definition in definitions:
+            definitions_by_code.setdefault(definition.tariff_code, []).append(definition)
 
         calculations = {}
         calculation_errors = {}
-        for definition in definitions:
-            tariff_name = definition.tariff_code.value
+        for tariff_code, tariff_definitions in definitions_by_code.items():
+            tariff_name = tariff_code.value
             try:
                 details = base_details.model_copy(deep=True)
                 details.tariff_data.tariff_type = TariffTypeEnum(tariff_name)
                 if details.pv_details is not None:
                     details = self.pv_balancer.balance_pv(details)
-                result = self.tariff_engine.calculate(details, definition)
+                result = self.tariff_engine.calculate(details, tariff_definitions, context)
                 result = self.settlement.settle(result, details.overpayment_cycles)
                 calculations[tariff_name] = result.as_dict()
             except (ValueError, KeyError) as exc:
@@ -198,6 +235,22 @@ class CalculationsService:
                 (cycle_start, produced_cycles.get(cycle_start, []))
                 for cycle_start in sorted(cycle_starts)
             ],
+        )
+
+    @staticmethod
+    def _annual_consumption(readings) -> AnnualConsumption:
+        """Pobór z sieci w pliku przeskalowany do roku (próg opłaty mocowej i przejściowej)."""
+        first_day = min(reading.measured_at for reading in readings).date()
+        last_day = max(reading.measured_at for reading in readings).date()
+        days = (last_day - first_day).days + 1
+        consumption_kwh = sum(float(reading.energy_kwh) for reading in readings)
+        return AnnualConsumption(
+            data_start=first_day,
+            data_end=last_day,
+            days=days,
+            consumption_kwh=round(consumption_kwh, 3),
+            annual_kwh=round(consumption_kwh * DAYS_IN_YEAR / days, 3),
+            scaled=days != DAYS_IN_YEAR,
         )
 
     @staticmethod

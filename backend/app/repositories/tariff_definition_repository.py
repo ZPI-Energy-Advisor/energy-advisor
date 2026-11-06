@@ -2,7 +2,7 @@ from datetime import date
 from sqlalchemy.orm import Session, selectinload
 
 from app.schemas.other import TariffTypeEnum, DistributionOperatorEnum
-from app.models.NewModels import  TariffDefinition
+from app.models.NewModels import RegulatoryPeriod, TariffDefinition
 
 
 
@@ -36,19 +36,34 @@ class TariffDefinitionRepository:
             .first()
         )
 
-    def list_for_calculation(
+    def list_for_period(
         self,
         *,
         operator: DistributionOperatorEnum,
-        calculation_date: date,
+        date_from: date,
+        date_to: date,
     ) -> list[TariffDefinition]:
+        """Definicje operatora ważne choćby przez jeden dzień okresu [date_from, date_to]."""
         return (
             self._with_rates(self.db.query(TariffDefinition))
             .filter(
                 TariffDefinition.osd_operator == operator,
-                TariffDefinition.valid_from <= calculation_date,
-                TariffDefinition.valid_to >= calculation_date,
+                TariffDefinition.valid_from <= date_to,
+                TariffDefinition.valid_to >= date_from,
             )
-            .order_by(TariffDefinition.tariff_code)
+            .order_by(TariffDefinition.tariff_code, TariffDefinition.valid_from)
+            .all()
+        )
+
+    def list_regulatory_periods(self, *, date_from: date, date_to: date) -> list[RegulatoryPeriod]:
+        """Okresy opłat regulacyjnych ważne choćby przez jeden dzień okresu [date_from, date_to]."""
+        return (
+            self.db.query(RegulatoryPeriod)
+            .options(
+                selectinload(RegulatoryPeriod.capacity_thresholds),
+                selectinload(RegulatoryPeriod.transition_thresholds),
+            )
+            .filter(RegulatoryPeriod.valid_from <= date_to, RegulatoryPeriod.valid_to >= date_from)
+            .order_by(RegulatoryPeriod.valid_from)
             .all()
         )

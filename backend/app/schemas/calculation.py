@@ -58,11 +58,27 @@ class PVDetails(BaseModel):
         return 0.8 if self.power_of_pv_kwp <= 10.0 else 0.7
 
 
+class AnnualConsumption(BaseModel):
+    """Roczne zużycie, od którego zależą progi opłaty mocowej i przejściowej.
+
+    Suma poboru z sieci w pliku przeskalowana do 365 dni: plik krótszy niż rok jest rozszerzany
+    proporcjonalnie, dłuższy - uśredniany.
+    """
+
+    data_start: date
+    data_end: date
+    days: int
+    consumption_kwh: float
+    annual_kwh: float
+    scaled: bool
+
+
 class CalculationDetails(BaseModel):
     pv_details: PVDetails | None = None
     
     used_energy_cycles: CalculationEnergyCycles
     tariff_data: TariffData
+    annual_consumption: AnnualConsumption | None = None
 
     used_energy_after_balancing_cycles: BalancedEnergyCycles | None = None
     overpayment_cycles: list[dict[str, float]] | None = None

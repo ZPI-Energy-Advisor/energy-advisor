@@ -20,6 +20,23 @@ const formatDate = (value) =>
 const formatPeriod = (cycle) =>
   `${formatDate(cycle.cycle_start)} – ${formatDate(cycle.cycle_end)}`;
 
+const formatKwh = (value) =>
+  `${Number(value).toLocaleString("pl-PL", { maximumFractionDigits: 0 })} kWh`;
+
+// Składniki rachunku netto w okresie, w kolejności z faktury.
+const CYCLE_COLUMNS = [
+  ["active_energy_net", "Energia czynna"],
+  ["variable_network_net", "Dystrybucja zmienna"],
+  ["quality_net", "Opłata jakościowa"],
+  ["renewable_net", "Opłata OZE"],
+  ["cogeneration_net", "Opłata kogeneracyjna"],
+  ["fixed_network_net", "Opłata stała"],
+  ["subscription_net", "Abonament"],
+  ["capacity_net", "Opłata mocowa"],
+  ["transition_net", "Opłata przejściowa"],
+  ["vat", "VAT"],
+];
+
 const modeLabels = {
   net_metering: "Net-metering",
   net_billing: "Net-billing",
@@ -99,6 +116,7 @@ function CalculationResultsPage() {
   const selectedTariff = calculation?.tariff_data?.tariff_type;
   const cycles = tariffCalculation?.cycles ?? [];
   const pvMode = calculation?.pv_details?.mode;
+  const annualConsumption = calculation?.annual_consumption;
 
   return (
     <div className="mx-auto max-w-6xl pb-12">
@@ -207,7 +225,7 @@ function CalculationResultsPage() {
           </div>
 
           <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
-            <div className="grid gap-4 text-sm sm:grid-cols-3">
+            <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <span className="text-gray-500">Tryb PV</span>
                 <p className="mt-1 font-semibold text-gray-900">
@@ -224,6 +242,17 @@ function CalculationResultsPage() {
                 <span className="text-gray-500">Liczba okresów</span>
                 <p className="mt-1 font-semibold text-gray-900">{cycles.length}</p>
               </div>
+              {annualConsumption && (
+                <div>
+                  <span className="text-gray-500">Roczne zużycie (próg opłaty mocowej)</span>
+                  <p className="mt-1 font-semibold text-gray-900">{formatKwh(annualConsumption.annual_kwh)}</p>
+                  {annualConsumption.scaled && (
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      przeskalowane z {annualConsumption.days} dni pliku
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -235,7 +264,7 @@ function CalculationResultsPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    {["Okres", "Energia czynna", "Opłata za dystrybucję energii", "Opłaty stałe", "VAT", "Brutto"].map((label) => (
+                    {["Okres", ...CYCLE_COLUMNS.map(([, label]) => label), "Brutto"].map((label) => (
                       <th key={label} className="whitespace-nowrap px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 first:text-left">
                         {label}
                       </th>
@@ -247,13 +276,17 @@ function CalculationResultsPage() {
                     <tr key={cycle.cycle_start} className="hover:bg-gray-50">
                       <td className="whitespace-nowrap px-5 py-4 text-sm font-medium text-gray-900">
                         {formatPeriod(cycle)}
+                        {cycle.days_billed < cycle.days_in_cycle && (
+                          <p className="text-xs font-normal text-gray-500">
+                            opłaty miesięczne za {cycle.days_billed} z {cycle.days_in_cycle} dni (okres pliku)
+                          </p>
+                        )}
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-right text-sm">{formatMoney(cycle.active_energy_net)}</td>
-                      <td className="whitespace-nowrap px-5 py-4 text-right text-sm">{formatMoney(cycle.variable_network_net)}</td>
-                      <td className="whitespace-nowrap px-5 py-4 text-right text-sm">
-                        {formatMoney(Number(cycle.fixed_network_net) + Number(cycle.subscription_net))}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-right text-sm">{formatMoney(cycle.vat)}</td>
+                      {CYCLE_COLUMNS.map(([key]) => (
+                        <td key={key} className="whitespace-nowrap px-5 py-4 text-right text-sm">
+                          {formatMoney(cycle[key])}
+                        </td>
+                      ))}
                       <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold">{formatMoney(cycle.gross_total)}</td>
                     </tr>
                   ))}
