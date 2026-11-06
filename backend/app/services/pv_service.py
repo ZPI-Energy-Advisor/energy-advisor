@@ -323,15 +323,14 @@ class PVBalancingEngine:
                     (cycle_start, list(energy.items()))
                     for cycle_start, energy in zip(cycle_starts, energy_usage_after_balancing_cycles)
                 ]
-                calculations_details.used_energy_cycles = energy_usage_after_balancing_cycles
             else:
-                grouped_cycles = self._group_balanced_billing_cycles(
+                calculations_details.used_energy_after_balancing_cycles = self._group_balanced_billing_cycles(
                     energy_usage_after_balancing_cycles,
                     cycle_starts,
                     calculations_details.tariff_data.tariff_type,
                 )
-                calculations_details.used_energy_after_balancing_cycles = grouped_cycles
-                calculations_details.used_energy_cycles = grouped_cycles
+            # Silnik dostaje energię ze znacznikami czasu, żeby sam podzielił ją na strefy i dni ze stawkami.
+            calculations_details.used_energy_cycles = list(zip(cycle_starts, energy_usage_after_balancing_cycles))
             calculations_details.overpayment_cycles = overpayment_cycles
 
         else:
