@@ -1,0 +1,479 @@
+{
+  "operator": "PGE",
+  "year": 2025,
+  "covers": {
+    "from": "2025-01-01",
+    "to": "2025-12-31"
+  },
+  "documents": {
+    "osd-2025": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej PGE Dystrybucja S.A. na rok 2025, decyzja Prezesa URE DRE.WRE.4211.44.7.2024.AKr3 z 16.12.2024 (BB URE Nr 274 (4518) z 17.12.2024), zatwierdzona na okres 1.01.2025–31.12.2025",
+      "url": "https://bip.ure.gov.pl/download/3/19080/PGEDystrybucja.pdf"
+    },
+    "obrot-2024": {
+      "title": "Taryfa dla energii elektrycznej dla Odbiorców z grup taryfowych G – PGE Obrót S.A., decyzja Prezesa URE DRE.WRE.4211.57.14.2023.JCz z 15.12.2023 (BB URE Nr 417 (4234) z 15.12.2023) – tekst podstawowy",
+      "url": "https://bip.ure.gov.pl/download/3/17818/PGEObrot.pdf"
+    },
+    "obrot-2024-07": {
+      "title": "Zmiana Taryfy dla energii elektrycznej dla Odbiorców z grup taryfowych G – PGE Obrót S.A., decyzja Prezesa URE DRE.WRE.4211.32.11.2024.MKa4 z 28.06.2024 (BB URE Nr 161 (4405) z 28.06.2024); stosowana od 1.07.2024, okres obowiązywania taryfy przedłużony do 31.12.2025",
+      "url": "https://bip.ure.gov.pl/download/3/18554/PGEObrot.pdf"
+    },
+    "obrot-2025-10": {
+      "title": "Zmiana taryfy PGE Obrót S.A. w Rzeszowie, decyzja Prezesa URE DRE.WRE.4211.41.15.2025.AKr3/JTr z 30.09.2025 (BB URE Nr 218 (4748) z 30.09.2025), zatwierdzona na okres 1.10.2025–31.12.2025, stosowana od 1.10.2025",
+      "url": "https://bip.ure.gov.pl/download/3/20033/PGEObrotSA.pdf"
+    },
+    "obrot-2025-odmowa": {
+      "title": "Informacja o decyzji Prezesa URE DRE.WRE.4211.43.8.2024.MKa4 z 3.03.2025 odmawiającej PGE Obrót S.A. zatwierdzenia zmiany taryfy dla odbiorców z grup taryfowych G (BB URE Nr 56 (4586) z 6.03.2025)",
+      "url": "https://bip.ure.gov.pl/download/3/19363/PGEObrotSA.pdf"
+    },
+    "ustawa-2022-2243": {
+      "title": "Ustawa z dnia 27 października 2022 r. o środkach nadzwyczajnych mających na celu ograniczenie wysokości cen energii elektrycznej oraz wsparciu niektórych odbiorców w latach 2023–2025 (t.j. Dz.U. 2024 poz. 1622 z późn. zm.; art. 3 ust. 1 pkt 1 lit. d dodana przez Dz.U. 2024 poz. 1831, lit. e przez Dz.U. 2025 poz. 1302)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220002243"
+    },
+    "pge-dyn-2026-2-zal2": {
+      "title": "Załącznik nr 2 do Regulaminu Oferty „Dynamiczna energia z PGE” – Ceny energii elektrycznej dla Klientów z grupy taryfowej G1x (wersja do Ed. 2.2026, plik z 26.06.2026)",
+      "url": "https://www.gkpge.pl/content/download/6f23e27ebdb19716dc20233047913cc5/file/zal-nr-2-ceny-energii-elektrycznej-dla-g1x-1-.pdf"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "subscription": {
+        "1": "4.50",
+        "2": "2.25",
+        "6": "0.75"
+      },
+      "subscription_source": {
+        "doc": "osd-2025",
+        "page": "pkt 7.9 lp. 5, s. 61 (PDF 63); okresy rozliczeniowe 1, 2 lub 6 miesięcy: pkt 2.3.1.1–2.3.1.8, s. 18–19 (PDF 20–21)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.3469"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "5.50",
+            "3f": "9.98"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 7.9, s. 61 (PDF 63)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.1.2 (G11 – jednostrefowa), s. 10 (PDF 12)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.4015"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0765"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "8.50",
+            "3f": "14.40"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 7.9, s. 61 (PDF 63)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["06:00", "15:00"],
+                ["17:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["00:00", "06:00"],
+                ["15:00", "17:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "1",
+              "days": "all",
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.2.7 lit. a, s. 16 (PDF 18)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.4276"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0845"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "9.15",
+            "3f": "14.98"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 7.9, s. 61 (PDF 63)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["06:00", "15:00"],
+                ["17:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["00:00", "06:00"],
+                ["15:00", "17:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.2.9 lit. a, s. 17 (PDF 19)"
+          }
+        },
+        "G12n": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.3478"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0348"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "8.50",
+            "3f": "14.40"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 7.9, s. 61 (PDF 63)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday", "saturday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "01:00"],
+                ["05:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday", "saturday"],
+              "season": "all",
+              "intervals": [
+                ["01:00", "05:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.2.8, s. 16 (PDF 18)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-09-30",
+      "seller": "PGE Obrót S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "obrot-2024-07",
+        "page": "pkt 5.6, PDF 6"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. d (dodana ustawą z 27.11.2024, Dz.U. 2024 poz. 1831, art. 1 pkt 3)"
+      },
+      "trade_fee_monthly": "0.00",
+      "trade_fee_source": {
+        "doc": "obrot-2024",
+        "page": "pkt 5, s. 6 (PDF 8) – taryfa podaje tylko ceny energii, bez opłaty handlowej"
+      },
+      "source": {
+        "doc": "obrot-2024-07",
+        "page": "pkt 5.1, PDF 5"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.6288"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.7108",
+            "2": "0.4451"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.7307",
+            "2": "0.5123"
+          }
+        },
+        "G12n": {
+          "zones": {
+            "1": "0.6910",
+            "2": "0.4749"
+          }
+        }
+      }
+    },
+    {
+      "valid_from": "2025-10-01",
+      "valid_to": "2025-12-31",
+      "seller": "PGE Obrót S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "obrot-2025-10",
+        "page": "pkt 5.7, PDF 7"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. e (dodana ustawą z 12.09.2025, Dz.U. 2025 poz. 1302, art. 15 pkt 2)"
+      },
+      "trade_fee_monthly": "0.00",
+      "trade_fee_source": {
+        "doc": "obrot-2025-10",
+        "page": "pkt 5.1, PDF 5 – zmiana podaje tylko ceny energii; taryfa podstawowa bez opłaty handlowej (pkt 5, s. 6)"
+      },
+      "source": {
+        "doc": "obrot-2025-10",
+        "page": "pkt 5.1, PDF 5"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.5760"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.6539",
+            "2": "0.4220"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.6730",
+            "2": "0.4857"
+          }
+        },
+        "G12n": {
+          "zones": {
+            "1": "0.6371",
+            "2": "0.4497"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-03-31",
+      "seller": "PGE Obrót S.A.",
+      "name": "Dynamiczna energia z PGE",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G12n"],
+      "billing_cycle_months": 1,
+      "margin": "0.0855",
+      "prosumer_margin": "0.1150",
+      "trade_fee_monthly": "22.00",
+      "prosumer_trade_fee_monthly": "27.00",
+      "market_price_floor": "0",
+      "market_price_cap": "1999",
+      "prices_include_excise": false,
+      "source": {
+        "text": "w tym okresie obowiązywała Ed. 1/2024 (wg nieoficjalnych wskazówek do 31.03.2025, aktualizacja 1.02.2025), której oficjalnego dokumentu nie mamy; przyjęto warunki najbliższej dostępnej oficjalnej edycji Ed. 2.2026 (od 1.07.2026)",
+        "doc": "pge-dyn-2026-2-zal2",
+        "page": "pkt 1–4, s. 1 (PDF 1)"
+      },
+      "note": "Ed. 1/2024 – warunki szacowane z Ed. 2.2026"
+    },
+    {
+      "valid_from": "2025-04-01",
+      "valid_to": "2025-08-24",
+      "seller": "PGE Obrót S.A.",
+      "name": "Dynamiczna energia z PGE",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G12n"],
+      "billing_cycle_months": 1,
+      "margin": "0.0855",
+      "prosumer_margin": "0.1150",
+      "trade_fee_monthly": "22.00",
+      "prosumer_trade_fee_monthly": "27.00",
+      "market_price_floor": "0",
+      "market_price_cap": "1999",
+      "prices_include_excise": false,
+      "source": {
+        "text": "w tym okresie obowiązywała Ed. 2/2025 (data startu 1.04.2025 niepotwierdzona – istnienie edycji znane tylko z odwołania w Załączniku nr 1), której oficjalnego dokumentu nie mamy; przyjęto warunki najbliższej dostępnej oficjalnej edycji Ed. 2.2026 (od 1.07.2026)",
+        "doc": "pge-dyn-2026-2-zal2",
+        "page": "pkt 1–4, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "valid_from": {
+          "text": "granica Ed. 1/2024 → Ed. 2/2025 przyjęta na 1.04.2025 z nieoficjalnych wskazówek (wyniki wyszukiwania); brak dokumentu PGE"
+        }
+      },
+      "note": "Ed. 2/2025 – warunki szacowane z Ed. 2.2026"
+    },
+    {
+      "valid_from": "2025-08-25",
+      "valid_to": "2025-12-31",
+      "seller": "PGE Obrót S.A.",
+      "name": "Dynamiczna energia z PGE",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G12n"],
+      "billing_cycle_months": 1,
+      "margin": "0.0855",
+      "prosumer_margin": "0.1150",
+      "trade_fee_monthly": "22.00",
+      "prosumer_trade_fee_monthly": "27.00",
+      "market_price_floor": "0",
+      "market_price_cap": "1999",
+      "prices_include_excise": false,
+      "source": {
+        "text": "w tym okresie obowiązywała Ed. 3/2025 (od 25.08.2025, aktualizacja 1.12.2025), której oficjalnego dokumentu nie mamy (gkpge.pl blokuje pobieranie); przyjęto warunki najbliższej dostępnej oficjalnej edycji Ed. 2.2026 (od 1.07.2026)",
+        "doc": "pge-dyn-2026-2-zal2",
+        "page": "pkt 1–4, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "valid_from": {
+          "text": "start Ed. 3/2025 25.08.2025 z nieoficjalnych wskazówek (tytuł pliku i wyniki wyszukiwania); brak dokumentu PGE"
+        }
+      },
+      "note": "Ed. 3/2025 – warunki szacowane z Ed. 2.2026"
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "Taryfa antysmogowa",
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "reason": "Obniżona stawka nocna składnika zmiennego (0,0489 zł/kWh) dotyczy tylko zużycia w strefie nocnej ponad zużycie z analogicznego okresu rozliczeniowego roku poprzedzającego pierwszy rok zakwalifikowania do G12as (do tej ilości 0,3469 zł/kWh), a tej wielkości nie ma w pliku z odczytami. Taryfa sprzedawcy z urzędu PGE Obrót nie obejmuje G12as (pkt 3.1.1, s. 4 (PDF 6)), więc brak też ceny energii.",
+      "source": {
+        "doc": "osd-2025",
+        "page": "pkt 3.1.30–3.1.33, s. 28 (PDF 30); strefy pkt 2.2.10, s. 17 (PDF 19); stawki pkt 7.9, s. 61 (PDF 63)"
+      }
+    }
+  ],
+  "notes": [
+    "Dystrybucja 2025: jedna taryfa PGE Dystrybucja na cały rok (decyzja z 16.12.2024, okres 1.01–31.12.2025). W wykazie taryf URE opublikowanych w 2025 r. nie ma zmiany tej taryfy (jest tylko nowa taryfa na 2026 r. z 17.12.2025). Stawki grup G są jednakowe dla wszystkich ośmiu oddziałów (jedna tabela pkt 7.9).",
+    "Ceny energii 1.01–30.09.2025: taryfa PGE Obrót w brzmieniu zmiany z 28.06.2024 (DRE.WRE.4211.32.11.2024.MKa4, okres obowiązywania do 31.12.2025). Wniosek PGE Obrót o zmianę taryfy G odrzucono 3.03.2025 (DRE.WRE.4211.43.8.2024.MKa4), więc ceny się nie zmieniły. Zmiana z 30.09.2025 (pkt 5.5, PDF 6) potwierdza te same ceny jako ceny odniesienia na 1.07.2024–30.09.2025.",
+    "Ceny energii 1.10–31.12.2025: zmiana taryfy PGE Obrót z 30.09.2025 (DRE.WRE.4211.41.15.2025.AKr3/JTr), pkt 5.1 (PDF 5); pkt 5.6 (PDF 7) podaje te same ceny jako ceny odniesienia na 1.10–31.12.2025. Taryfa obejmuje tylko G11, G12, G12w i G12n (pkt 3.1.1 taryfy podstawowej).",
+    "Cena maksymalna 0,5000 zł/kWh netto (bez VAT i akcyzy) z ustawy; pkt 5.3 lit. b taryfy PGE Obrót w brzmieniu zmiany z 30.09.2025 (PDF 6) powtarza ją na 1.07.2024–31.12.2025, z wyłączeniem umów z ceną dynamiczną. Do 30.09.2025 wszystkie ceny stref są wyższe niż 0,50 zł/kWh; od 1.10.2025 ceny nocne G12 (0,4220), G12w (0,4857) i G12n (0,4497) są niższe, więc stosuje się cenę taryfową (pkt 5.3: niższa cena).",
+    "G12 i G12w: przyjęto godziny z wariantu a) (układy pomiarowe z oddzielnymi nastawami lato/zima, pkt 2.2.7 lit. a i 2.2.9 lit. a). Wariantu b) dla liczników bez tej funkcji (cały rok dzień 6–13 i 15–22) nie modelujemy, bo pliki 15-minutowe pochodzą z liczników zdalnego odczytu.",
+    "G12n: strefę dzienną 5:00–1:00 (poniedziałek–sobota) zapisano w dobie kalendarzowej: 00:00–01:00 i 05:00–24:00 strefa dzienna, 01:00–05:00 nocna; w niedziele i dni ustawowo wolne od pracy cała doba nocna (pkt 2.2.8). Godzina 00:00–01:00 w poniedziałek lub w dzień po święcie jest więc dzienna.",
+    "Zegar liczników: pkt 2.2.11 taryfy OSD (s. 17, PDF 19) i pkt 3.2.2 taryfy PGE Obrót (s. 5, PDF 7) – zegary ustawia się według czasu zimowego, chyba że urządzenie samo utrzymuje godziny stref w czasie letnim i zimowym. Godziny stosujemy w czasie lokalnym.",
+    "Okresy rozliczeniowe grup G (G11, G12, G12as, G12n, G12w): 1, 2 lub 6 miesięcy we wszystkich ośmiu oddziałach (pkt 2.3.1.1–2.3.1.8, s. 18–19); okresu 12-miesięcznego nie ma. Abonament 4,50 / 2,25 / 0,75 zł/mies. jednakowy dla wszystkich grup G; przy układzie przedpłatowym 50% stawki dla najdłuższego okresu (pkt 3.1.18, s. 26) – tego wariantu nie liczymy.",
+    "Opłaty krajowe w taryfie OSD 2025 (dane w regulatory.json, tu tylko do porównania): jakościowa 0,0321 zł/kWh, przejściowa 0,02 / 0,10 / 0,33 zł/mies. (<500 / 500–1200 / >1200 kWh rocznie), s. 61 (PDF 63); OZE 3,50 zł/MWh, kogeneracyjna 3,00 zł/MWh, mocowa 0,1412 zł/kWh (odbiorcy inni niż gospodarstwa domowe) oraz 2,86 / 6,86 / 11,44 / 16,01 zł/mies. dla gospodarstw domowych (<500 / 500–1200 / 1200–2800 / >2800 kWh), w okresie 1.01–30.06.2025 0 zł/mies., pkt 7.12–7.14, s. 62 (PDF 64).",
+    "Jedyna dostępna oficjalna edycja to Ed. 2.2026 (od 1.07.2026): Regulamin + Załączniki nr 2, 3 i 5 w do-pobrania-recznie/pge (pliki PDF utworzone 26.06–1.07.2026). Wpis 2026-07-01…2026-12-31 jest z dokumentu; wszystkie wcześniejsze wpisy przyjęto z warunków Ed. 2.2026.",
+    "Plik pobrane-automatycznie/pge/dyn/reg_v19.pdf (584 B) to nie PDF, tylko strona HTML odmowy WAF gkpge.pl („To dzialanie zostalo odrzucone…”, komunikat błędu 14547839092652858008). Nie jest to Ed. 1.2026 ani żadna inna edycja – nie użyto go.",
+    "Podział na wpisy odpowiada edycjom (Ed. 1/2024 od 24.08.2024, Ed. 2/2025 od ok. 1.04.2025, Ed. 3/2025 od 25.08.2025, Ed. 1.2026 od 1.03.2026, Ed. 2.2026 od 1.07.2026); granice edycji przed 1.07.2026 pochodzą z nieoficjalnych wskazówek (README, wyniki wyszukiwania). Po zdobyciu oficjalnej edycji wystarczy podmienić jej wpis.",
+    "Wzór (Zał. 2 pkt 1, s. 1): CK = Σ(CRDN(i)/1000 × V(i)) / ΣV(i) + K + A, CRDN(i) = kurs jednolity RDN TGE fixing I (do końca 2026; od 2027 fixing II) dla godziny/kwadransa, ujemna → 0, powyżej 1999 zł/MWh → 1999. Rachunek CK × ΣV = Σ[clamp(CRDN(i), 0, 1999)/1000 + K] × V(i) + A × ΣV, więc odpowiada modelowi clamp(cena, floor, cap)/1000 + marża (marża = K), z akcyzą A doliczaną osobno ze stawki w regulatory.json (prices_include_excise = false). Przybliżenie: zamiast fixingu I TGE bierzemy RCE (PSE).",
+    "Opłata handlowa 22,00 zł/mies. netto (27,06 brutto), prosument 27,00 (33,21 brutto) – pobierana „w pełnej wysokości za dany miesiąc” (Regulamin pkt 21, s. 3); silnik liczy opłaty miesięczne proporcjonalnie do dni pliku – różnica przy niepełnych miesiącach.",
+    "Oferta przyjmowana na 24 miesiące (Regulamin pkt 1 lit. c; Zał. 5 s. 1) – klient zachowuje warunki edycji, którą przyjął (K „w podziale na lata”). Model przypisuje dniu warunki edycji oferowanej w tym dniu (nowa umowa).",
+    "Oferta dotyczy grup G11, G12, G12w, G12n, G12e (Regulamin pkt 1 lit. b; Zał. 2 pkt 4); cena energii jest jedna dla wszystkich stref, a dystrybucja według taryfy OSD klienta (pkt 9). Model liczy dystrybucję jak G11 (distribution_tariff).",
+    "Ed. 2.2026 nie podaje daty końcowej; przyjęto, że obowiązuje do 31.12.2026 (brak informacji o późniejszej edycji; gkpge.pl niedostępny dla automatu)."
+  ]
+}

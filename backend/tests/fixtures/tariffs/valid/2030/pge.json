@@ -1,0 +1,148 @@
+{
+  "operator": "PGE",
+  "year": 2030,
+  "covers": {"from": "2030-01-01", "to": "2030-12-31"},
+  "documents": {
+    "osd": {"title": "Zmyślona taryfa OSD 2030 (dane testowe)"},
+    "obrot": {"title": "Zmyślona taryfa sprzedawcy 2030 (dane testowe)"},
+    "dyn": {"title": "Zmyślona oferta dynamiczna 2030 (dane testowe)"}
+  },
+  "distribution": [
+    {
+      "valid_from": "2030-01-01",
+      "valid_to": "2030-06-30",
+      "subscription": {"1": "4.00", "2": "2.00", "6": "1.00"},
+      "subscription_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+      "tariffs": {
+        "G11": {
+          "zones": {"1": {"name": "całodobowa", "rate": "0.3000"}},
+          "fixed_monthly": {"1f": "5.00", "3f": "9.00"},
+          "rates_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+          "hours": [{"zone": "1", "days": "all", "season": "all", "intervals": [["00:00", "24:00"]]}],
+          "hours_source": {"doc": "osd", "page": "s. 1 (PDF 3)"}
+        },
+        "G12": {
+          "zones": {"1": {"name": "dzienna", "rate": "0.4000"}, "2": {"name": "nocna", "rate": "0.1000"}},
+          "fixed_monthly": {"1f": "8.00", "3f": "14.00"},
+          "rates_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+          "hours": [
+            {"zone": "1", "days": "all", "season": ["04-01", "09-30"], "intervals": [["06:00", "15:00"], ["17:00", "22:00"]]},
+            {"zone": "2", "days": "all", "season": ["04-01", "09-30"], "intervals": [["00:00", "06:00"], ["15:00", "17:00"], ["22:00", "24:00"]]},
+            {"zone": "1", "days": "all", "season": ["10-01", "03-31"], "intervals": [["06:00", "13:00"], ["15:00", "22:00"]]},
+            {"zone": "2", "days": "all", "season": ["10-01", "03-31"], "intervals": [["00:00", "06:00"], ["13:00", "15:00"], ["22:00", "24:00"]]}
+          ],
+          "hours_source": {"doc": "osd", "page": "s. 1 (PDF 3)"}
+        },
+        "G12w": {
+          "zones": {"1": {"name": "szczytowa", "rate": "0.4200"}, "2": {"name": "pozaszczytowa", "rate": "0.0800"}},
+          "fixed_monthly": {"1f": "9.00", "3f": "15.00"},
+          "rates_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+          "hours": [
+            {"zone": "1", "days": ["workday"], "season": "all", "intervals": [["06:00", "13:00"], ["15:00", "22:00"]]},
+            {"zone": "2", "days": ["workday"], "season": "all", "intervals": [["00:00", "06:00"], ["13:00", "15:00"], ["22:00", "24:00"]]},
+            {"zone": "2", "days": ["saturday", "sunday_holiday"], "season": "all", "intervals": [["00:00", "24:00"]]}
+          ],
+          "hours_source": {"doc": "osd", "page": "s. 2 (PDF 4)"}
+        }
+      }
+    },
+    {
+      "valid_from": "2030-07-01",
+      "valid_to": "2030-12-31",
+      "subscription": {"1": "0.00", "2": "0.00", "6": "0.00"},
+      "subscription_source": {"text": "abonament zniesiony od lipca (dane testowe)", "doc": "osd", "page": "s. 4"},
+      "tariffs": {
+        "G11": {
+          "zones": {"1": {"name": "całodobowa", "rate": "0.3200"}},
+          "fixed_monthly": {"1f": "5.00", "3f": "9.00"},
+          "rates_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+          "hours": [{"zone": "1", "days": "all", "season": "all", "intervals": [["00:00", "24:00"]]}],
+          "hours_source": {"doc": "osd", "page": "s. 1 (PDF 3)"}
+        },
+        "G12": {
+          "zones": {"1": {"name": "dzienna", "rate": "0.4100"}, "2": {"name": "nocna", "rate": "0.1100"}},
+          "fixed_monthly": {"1f": "8.00", "3f": "14.00"},
+          "rates_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+          "hours": [
+            {"zone": "1", "days": "all", "season": ["04-01", "09-30"], "intervals": [["06:00", "15:00"], ["17:00", "22:00"]]},
+            {"zone": "2", "days": "all", "season": ["04-01", "09-30"], "intervals": [["00:00", "06:00"], ["15:00", "17:00"], ["22:00", "24:00"]]},
+            {"zone": "1", "days": "all", "season": ["10-01", "03-31"], "intervals": [["06:00", "13:00"], ["15:00", "22:00"]]},
+            {"zone": "2", "days": "all", "season": ["10-01", "03-31"], "intervals": [["00:00", "06:00"], ["13:00", "15:00"], ["22:00", "24:00"]]}
+          ],
+          "hours_source": {"doc": "osd", "page": "s. 1 (PDF 3)"}
+        },
+        "G12w": {
+          "zones": {"1": {"name": "szczytowa", "rate": "0.4200"}, "2": {"name": "pozaszczytowa", "rate": "0.0800"}},
+          "fixed_monthly": {"1f": "9.00", "3f": "15.00"},
+          "rates_source": {"doc": "osd", "page": "s. 3 (PDF 5)"},
+          "hours": [
+            {"zone": "1", "days": ["workday"], "season": "all", "intervals": [["06:00", "13:00"], ["15:00", "22:00"]]},
+            {"zone": "2", "days": ["workday"], "season": "all", "intervals": [["00:00", "06:00"], ["13:00", "15:00"], ["22:00", "24:00"]]},
+            {"zone": "2", "days": ["saturday", "sunday_holiday"], "season": "all", "intervals": [["00:00", "24:00"]]}
+          ],
+          "hours_source": {"doc": "osd", "page": "s. 2 (PDF 4)"}
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2030-01-01",
+      "valid_to": "2030-09-30",
+      "seller": "Sprzedawca testowy S.A.",
+      "prices_include_excise": false,
+      "excise_source": {"doc": "obrot", "page": "pkt 1.6, s. 1"},
+      "price_cap": "0.5000",
+      "price_cap_source": {"doc": "obrot", "page": "pkt 5.3"},
+      "source": {"doc": "obrot", "page": "s. 2"},
+      "tariffs": {
+        "G11": {"zones": {"1": "0.6000"}},
+        "G12": {"zones": {"1": "0.7000", "2": "0.4000"}},
+        "G12w": {"zones": {"1": "0.7200", "2": "0.4200"}}
+      }
+    },
+    {
+      "valid_from": "2030-10-01",
+      "valid_to": "2030-12-31",
+      "seller": "Sprzedawca testowy S.A.",
+      "prices_include_excise": false,
+      "excise_source": {"doc": "obrot", "page": "pkt 1.6, s. 1"},
+      "trade_fee_monthly": "2.00",
+      "trade_fee_source": {"doc": "obrot", "page": "s. 3"},
+      "source": {"doc": "obrot", "page": "s. 3"},
+      "tariffs": {
+        "G11": {"zones": {"1": "0.5500"}},
+        "G12": {"zones": {"1": "0.6000", "2": "0.3500"}},
+        "G12w": {"zones": {"1": "0.6200", "2": "0.3600"}}
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2030-03-01",
+      "valid_to": "2030-12-31",
+      "seller": "Sprzedawca testowy S.A.",
+      "name": "Oferta dynamiczna testowa",
+      "distribution_tariffs": ["G11", "G12"],
+      "billing_cycle_months": 1,
+      "margin": "0.0800",
+      "prosumer_margin": "0.1100",
+      "trade_fee_monthly": "20.00",
+      "prosumer_trade_fee_monthly": "25.00",
+      "market_price_floor": "0",
+      "market_price_cap": "2000",
+      "prices_include_excise": false,
+      "source": {"doc": "dyn", "page": "s. 1"}
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "Taryfa antysmogowa",
+      "valid_from": "2030-01-01",
+      "valid_to": "2030-12-31",
+      "reason": "Stawka nocna zależy od zużycia z poprzedniego roku (dane testowe).",
+      "source": {"doc": "osd", "page": "s. 5"}
+    }
+  ]
+}

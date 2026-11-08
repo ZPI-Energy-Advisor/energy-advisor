@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from collections import deque
 from typing import Callable
@@ -6,12 +6,11 @@ from typing import Callable
 from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.providers.prices.pse_provider import PseRcePriceProvider
-from app.services.tariff_zones import zone_count, zone_for
+from app.services.tariff_zones import ZoneSchedule
 
 
 
 PV_ENERGY_VALIDITY_DAYS = 365
-RCEM_SOURCE = "pse_rcem"
 
 def get_deadline_date(start_date: datetime, billing_cycle: BillingCycleEnum, additional_days: int) -> datetime:
     next_cycle_start_date = start_date + relativedelta(months=billing_cycle.value)
@@ -23,35 +22,47 @@ def get_deadline_date(start_date: datetime, billing_cycle: BillingCycleEnum, add
 
 
 class DynamicMarketPriceResolver:
-    """Reads RCE interval prices and RCEm monthly averages from stored observations."""
+    """Ceny RCE (kwadrans) z zapisanych obserwacji.
+
+    Net-billing od 1.07.2024 rozlicza energię oddaną według RCE z okresu rozliczeniowego (art. 4b ust. 2
+    ustawy o OZE), a cennik zaczyna się 24.08.2024, więc miesięcznej ceny RCEm nie używamy.
+
+    Ceny RCE wczytujemy z bazy całymi miesiącami (doba lokalna, zapis w UTC), a nie zapytaniem na każdy kwadrans —
+    roczny plik to 35 tys. kwadransów. Odczyty są w czasie lokalnym bez strefy; powtórzoną godzinę doby zmiany
+    czasu (zsumowaną w jednym lokalnym kwadransie) wyceniamy ceną jej pierwszego wystąpienia.
+    """
 
     def __init__(self, price_repository):
         self.price_repository = price_repository
+        self._rce_months: dict[tuple[int, int], dict[datetime, float]] = {}
 
     def __call__(
         self,
         timestamp: datetime,
         type_of_market_energy: TypeOfMarketEnergyEnum,
     ) -> float:
-        day = timestamp.date()
-        if type_of_market_energy == TypeOfMarketEnergyEnum.RCE:
-            # Odczyty są zapisane w czasie lokalnym bez strefy, a ceny RCE w UTC.
-            utc_timestamp = timestamp
-            if utc_timestamp.tzinfo is None:
-                utc_timestamp = utc_timestamp.replace(tzinfo=LOCAL_TIMEZONE)
+        return self.rce(timestamp)
+
+    def rce(self, timestamp: datetime) -> float:
+        local = timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=LOCAL_TIMEZONE)
+        local = local.astimezone(LOCAL_TIMEZONE)
+        key = (local.year, local.month)
+        if key not in self._rce_months:
+            month_start = datetime(local.year, local.month, 1, tzinfo=LOCAL_TIMEZONE)
+            month_end = month_start + relativedelta(months=1)
             prices = self.price_repository.get_prices_between(
                 PseRcePriceProvider.source,
-                utc_timestamp,
-                utc_timestamp + timedelta(minutes=15),
+                month_start.astimezone(timezone.utc),
+                month_end.astimezone(timezone.utc),
             )
-            if not prices:
-                raise ValueError(f"Brak ceny RCE dla interwału {timestamp.isoformat()}.")
-            return float(next(iter(prices.values()))) / 1000.0
-
-        price = self.price_repository.get_rcem_price(RCEM_SOURCE, day)
+            self._rce_months[key] = {
+                moment.astimezone(timezone.utc): float(price) / 1000.0 for moment, price in prices.items()
+            }
+        price = self._rce_months[key].get(local.astimezone(timezone.utc))
         if price is None:
-            raise ValueError(f"Brak oficjalnej ceny RCEm dla miesiąca {day.replace(day=1).isoformat()}.")
-        return float(price) / 1000.0
+            raise ValueError(f"Brak ceny RCE dla interwału {timestamp.isoformat()}.")
+        return price
+
 
 
 class PVBalancingEngine:
@@ -62,29 +73,23 @@ class PVBalancingEngine:
         self.market_price_resolver = market_price_resolver
 
     @staticmethod
-    def get_energy_price_zones(tariff_type: TariffTypeEnum) -> list[float]:
-        """Relative prices used to prioritize PV energy in net-metering."""
-        if tariff_type == TariffTypeEnum.G11:
-            return [1.0]
-        if tariff_type in (TariffTypeEnum.G12, TariffTypeEnum.G12W):
-            return [1.0, 0.6]
-        if tariff_type in (TariffTypeEnum.G13, TariffTypeEnum.G13S):
-            return [1.0, 0.75, 0.5]
-        if tariff_type == TariffTypeEnum.G14D:
-            return [1.0, 0.8, 0.6, 0.4]
-        if tariff_type == TariffTypeEnum.DYNAMIC:
-            return [1.0]
-        raise ValueError(f"Brak mapowania stref dla taryfy {tariff_type.value}.")
+    def zone_priority(schedule: ZoneSchedule, cycle_start: datetime) -> list[int]:
+        """Strefy (indeksy od 0) od najdroższej: cena energii po cenie maksymalnej + dystrybucja zmienna z definicji
+        ważnej na początku okresu (albo w pierwszym dniu, od którego mamy stawki). Energia z PV pokrywa najpierw
+        zużycie w najdroższej strefie."""
+        day = max(cycle_start.date(), schedule.first_day())
+        prices = schedule.zone_prices(day)
+        return sorted(range(len(prices)), key=lambda zone: prices[zone], reverse=True)
 
     @staticmethod
     def get_grouped_energy_by_zones(
         energy_records: list[tuple[datetime, float]],
-        tariff_type: TariffTypeEnum,
+        schedule: ZoneSchedule,
     ) -> list[float]:
-        """Aggregate hourly records into the tariff's deterministic time zones."""
-        grouped = [0.0] * zone_count(tariff_type)
+        """Energia w strefach taryfy (lista od strefy 1) według godzin stref ważnych w dniu odczytu."""
+        grouped = [0.0] * schedule.zone_count
         for timestamp, energy_kwh in energy_records:
-            grouped[zone_for(timestamp, tariff_type)] += energy_kwh
+            grouped[schedule.zone_index(timestamp) - 1] += energy_kwh
         return grouped
 
     def get_price_for_pv_energy(
@@ -95,7 +100,7 @@ class PVBalancingEngine:
         if self.market_price_resolver is None:
             raise ValueError(
                 "Brak źródła cen rynkowych dla net-billingu. "
-                "Skonfiguruj resolver RCE/RCEm."
+                "Skonfiguruj resolver cen RCE."
             )
         price = self.market_price_resolver(timestamp, type_of_market_energy)
         # Przy ujemnej cenie rynkowej energię wprowadzoną do sieci w tym okresie wycenia się na zero
@@ -117,7 +122,7 @@ class PVBalancingEngine:
         self,
         pv_energy_cycles: list[tuple[datetime, list[tuple[datetime, float]]]],
         used_energy_cycles: list[tuple[datetime, list[tuple[datetime, float]]]],
-        tariff_type: TariffTypeEnum,
+        schedule: ZoneSchedule,
         k_var: float,
         pv_validity_days: int,
         billing_cycle: BillingCycleEnum
@@ -128,8 +133,6 @@ class PVBalancingEngine:
 
         
         past_accumulated_pv_energy = deque() 
-        energy_price_zones = self.get_energy_price_zones(tariff_type)
-        sorted_zones_by_price = sorted(range(len(energy_price_zones)), key=lambda i: energy_price_zones[i], reverse=True)
 
         used_energy_after_balancing_cycles = []
         for pv_energy_tuples, used_energy_tuples in zip(pv_energy_cycles, used_energy_cycles):
@@ -139,6 +142,7 @@ class PVBalancingEngine:
 
             # Delete expired PV energy from the virtual storage based on the current cycle date, billing cycle, and PV validity days
             self._remove_expired_energy(past_accumulated_pv_energy, cycle_begining_date, billing_cycle, pv_validity_days)
+            sorted_zones_by_price = self.zone_priority(schedule, cycle_begining_date)
 
             balanced_energy = {}
             for interval_start_datetime, pv_energy_kwh in pv_energy_records:
@@ -161,7 +165,7 @@ class PVBalancingEngine:
                     accumulated_pv_energy += abs(energy_balance_kwh) * k_var
 
 
-            used_energy_after_balancing_zones = self.get_grouped_energy_by_zones(used_energy_after_balancing, tariff_type)
+            used_energy_after_balancing_zones = self.get_grouped_energy_by_zones(used_energy_after_balancing, schedule)
 
 
             # Balancing accumulated PV energy with used energy in zones (from highest to lowest price)
@@ -272,7 +276,7 @@ class PVBalancingEngine:
     def _group_balanced_billing_cycles(
         balanced_cycles: list[dict[datetime, float]],
         cycle_starts: list[datetime],
-        tariff_type: TariffTypeEnum,
+        schedule: ZoneSchedule,
     ) -> list[tuple[datetime, list[float]]]:
         if len(balanced_cycles) != len(cycle_starts):
             raise ValueError("Liczba zbilansowanych cykli nie zgadza się z liczbą cykli zużycia.")
@@ -285,14 +289,15 @@ class PVBalancingEngine:
                         for timestamp, energy_kwh in balanced_energy.items()
                         if abs(energy_kwh) >= 1e-9
                     ],
-                    tariff_type,
+                    schedule,
                 ),
             )
             for cycle_start, balanced_energy in zip(cycle_starts, balanced_cycles)
         ]
 
 
-    def balance_pv(self, calculations_details):
+    def balance_pv(self, calculations_details, schedule: ZoneSchedule):
+        """Bilansuje PV w cyklach z `calculations_details`; strefy i ich kolejność bierze z `schedule` taryfy."""
 
         if calculations_details.pv_details is None:
             return calculations_details
@@ -301,7 +306,7 @@ class PVBalancingEngine:
             used_energy_after_balancing_cycles = self._apply_net_metering(
                 pv_energy_cycles=calculations_details.pv_details.pv_energy_cycles,
                 used_energy_cycles=calculations_details.used_energy_cycles,
-                tariff_type=calculations_details.tariff_data.tariff_type,
+                schedule=schedule,
                 k_var=calculations_details.pv_details.k_var,
                 pv_validity_days=PV_ENERGY_VALIDITY_DAYS,
                 billing_cycle=calculations_details.tariff_data.billing_cycle
@@ -327,7 +332,7 @@ class PVBalancingEngine:
                 calculations_details.used_energy_after_balancing_cycles = self._group_balanced_billing_cycles(
                     energy_usage_after_balancing_cycles,
                     cycle_starts,
-                    calculations_details.tariff_data.tariff_type,
+                    schedule,
                 )
             # Silnik dostaje energię ze znacznikami czasu, żeby sam podzielił ją na strefy i dni ze stawkami.
             calculations_details.used_energy_cycles = list(zip(cycle_starts, energy_usage_after_balancing_cycles))

@@ -1,0 +1,567 @@
+{
+  "operator": "ENERGA",
+  "year": 2026,
+  "covers": {
+    "from": "2026-01-01",
+    "to": "2026-12-31"
+  },
+  "documents": {
+    "osd-2026": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej Energa-Operator S.A. z siedzibą w Gdańsku, obowiązująca od 1 stycznia do 31 grudnia 2026 r., zatwierdzona decyzją Prezesa URE DRE.WPR.4211.9.8.2025.JSz z 17.12.2025 (Biuletyn Branżowy URE – Energia elektryczna Nr 271 (4801) z 17.12.2025)",
+      "url": "https://cdn-netpr.pl/file/mediakit/2933024/8/20251217_taryfa_2026.pdf"
+    },
+    "obrot-2026": {
+      "title": "Taryfa ENERGA-OBRÓT S.A. dla energii elektrycznej dla Odbiorców z grup taryfowych G, obowiązuje od 1 stycznia 2026 r., zatwierdzona decyzją Prezesa URE DRE.WPR.4211.8.9.2025.JSz z 17.12.2025 (Biuletyn Branżowy URE – Energia elektryczna Nr 270 (4800) z 17.12.2025)",
+      "url": "https://www.energa.pl/dam/jcr:1f730159-7aab-4815-8a17-e0f6f0a6a223/Taryfa%20ENERGA-OBR%C3%93T%20SA%20dla%20energii%20elektrycznej%20dla%20odbiorc%C3%B3w%20z%20grup%20taryfowych%20G%20obowi%C4%85zuj%C4%85ca%20od%201%20stycznia%202026%20roku.pdf"
+    },
+    "rozp-2026-1182": {
+      "title": "Rozporządzenie Ministra Energii z dnia 3 września 2026 r. w sprawie sposobu kształtowania i kalkulacji taryf oraz sposobu rozliczeń w obrocie energią elektryczną (Dz.U. 2026 poz. 1182)",
+      "url": "https://eli.gov.pl/api/acts/DU/2026/1182/text/O/D20261182.pdf"
+    },
+    "energa-dyn2-r4": {
+      "title": "Regulamin naszej oferty Oferta dynamiczna II (dla domu), wersja R4, obowiązujący od 1 listopada 2026 r. (ENERGA-OBRÓT S.A.)",
+      "url": "https://www.energa.pl/dam/jcr:2971d640-ec36-434b-ab84-e310a8b1ea07/Regulamin%20naszej%20oferty%20Oferta%20dynamiczna%20II%20dla%20domu%20obowi%C4%85zuj%C4%85cy%20od%201%20listopada%202026%20roku.pdf"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-09-30",
+      "subscription": {
+        "1": "0.74",
+        "2": "0.70"
+      },
+      "subscription_source": {
+        "doc": "osd-2026",
+        "page": "pkt 8, s. 39 (PDF 39), kolumny „okres 1-miesięczny / 2-miesięczny dla zdalnego odczytu”; okresy rozliczeniowe pkt 3.3.2 lit. c, s. 12–13 (PDF 12–13)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.3485"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.83",
+            "3f": "11.77"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.1.2, s. 8 (PDF 8)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.3844"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0827"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.35",
+            "3f": "20.17"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.2.5, s. 12 (PDF 12)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.4017"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0851"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.35",
+            "3f": "20.17"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.2.6, s. 12 (PDF 12)"
+          }
+        },
+        "G12r": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.3640"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0882"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.35",
+            "3f": "20.17"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["07:00", "13:00"],
+                ["16:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "07:00"],
+                ["13:00", "16:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.2.8, s. 12 (PDF 12)"
+          }
+        }
+      }
+    },
+    {
+      "valid_from": "2026-10-01",
+      "valid_to": "2026-12-31",
+      "subscription": {
+        "1": "0.00",
+        "2": "0.00"
+      },
+      "subscription_source": {
+        "doc": "rozp-2026-1182",
+        "page": "§ 56 ust. 3 w zw. z § 57"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.3485"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.83",
+            "3f": "11.77"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.1.2, s. 8 (PDF 8)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.3844"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0827"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.35",
+            "3f": "20.17"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.2.5, s. 12 (PDF 12)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.4017"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0851"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.35",
+            "3f": "20.17"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.2.6, s. 12 (PDF 12)"
+          }
+        },
+        "G12r": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.3640"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0882"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.35",
+            "3f": "20.17"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 9.2, s. 41 (PDF 41)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["07:00", "13:00"],
+                ["16:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "07:00"],
+                ["13:00", "16:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 3.2.8, s. 12 (PDF 12)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "seller": "ENERGA-OBRÓT S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "obrot-2026",
+        "page": "pkt 5.2, s. 2 (PDF 2)"
+      },
+      "source": {
+        "doc": "obrot-2026",
+        "page": "pkt 5.1, s. 2 (PDF 2)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.4968"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.5789",
+            "2": "0.3753"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.6057",
+            "2": "0.3940"
+          }
+        },
+        "G12r": {
+          "zones": {
+            "1": "0.6667",
+            "2": "0.3017"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-10-31",
+      "seller": "ENERGA-OBRÓT S.A.",
+      "name": "Oferta dynamiczna II dla domu",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G12r"],
+      "billing_cycle_months": 1,
+      "margin": "0.0878",
+      "prosumer_margin": "0.0878",
+      "trade_fee_monthly": "12.19",
+      "prosumer_trade_fee_monthly": "12.19",
+      "prices_include_excise": true,
+      "source": {
+        "text": "warunki wersji R4 regulaminu (obowiązującej od 1.11.2026) przyjęte dla okresu przed jej wejściem w życie; wcześniejsze wersje R1–R3 nie są publicznie dostępne; data startu oferty 24.08.2024 = początek obowiązku art. 5ag Prawa energetycznego, brak dokumentu Energi z datą wprowadzenia",
+        "doc": "energa-dyn2-r4",
+        "page": "Tabela nr 1, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "margin": {
+          "text": "WK 0,0878 zł/kWh netto z R4",
+          "doc": "energa-dyn2-r4",
+          "page": "Tabela nr 1, s. 1 (PDF 1)"
+        },
+        "prosumer_margin": {
+          "text": "brak odrębnego wariantu dla prosumentów, jak margin (pkt 23 zmienia tylko sposób liczenia zużycia)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 23, s. 2 (PDF 2)"
+        },
+        "trade_fee_monthly": {
+          "text": "warunki Regulaminu R4 (od 1.11.2026) przyjęte dla wcześniejszego okresu; opłata handlowa w wariancie podstawowym (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto (14,99 / 1,23); wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto — przyjęto droższy wariant (ostrożniej)",
+          "doc": "energa-dyn2-r4",
+          "page": "Tabela nr 1 i przypis „Opłata handlowa zawiera VAT”, s. 1 (PDF 1)"
+        },
+        "prosumer_trade_fee_monthly": {
+          "text": "warunki Regulaminu R4 (od 1.11.2026) przyjęte dla wcześniejszego okresu; opłata handlowa w wariancie podstawowym (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto (14,99 / 1,23); wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto — przyjęto droższy wariant (ostrożniej)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 5 i 23, s. 1–2 (PDF 1–2)"
+        },
+        "prices_include_excise": {
+          "text": "WK zawiera akcyzę (pkt 9)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 9, s. 2 (PDF 2)"
+        },
+        "billing_cycle_months": {
+          "text": "okres rozliczeniowy nie jest w regulaminie wyrażony liczbą miesięcy; opłata handlowa za każdy rozpoczęty miesiąc (pkt 5) – przyjęto 1",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 5 i 17, s. 1–2 (PDF 1–2)"
+        }
+      }
+    },
+    {
+      "valid_from": "2026-11-01",
+      "valid_to": "2026-12-31",
+      "seller": "ENERGA-OBRÓT S.A.",
+      "name": "Oferta dynamiczna II dla domu",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G12r"],
+      "billing_cycle_months": 1,
+      "margin": "0.0878",
+      "prosumer_margin": "0.0878",
+      "trade_fee_monthly": "12.19",
+      "prosumer_trade_fee_monthly": "12.19",
+      "prices_include_excise": true,
+      "source": {
+        "doc": "energa-dyn2-r4",
+        "page": "Tabela nr 1, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "margin": {
+          "doc": "energa-dyn2-r4",
+          "page": "Tabela nr 1, s. 1 (PDF 1)"
+        },
+        "prosumer_margin": {
+          "text": "brak odrębnego wariantu dla prosumentów, jak margin (pkt 23 zmienia tylko sposób liczenia zużycia)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 23, s. 2 (PDF 2)"
+        },
+        "trade_fee_monthly": {
+          "doc": "energa-dyn2-r4",
+          "page": "Tabela nr 1 i przypis „Opłata handlowa zawiera VAT”, s. 1 (PDF 1)"
+        },
+        "prosumer_trade_fee_monthly": {
+          "text": "Regulamin R4 nie przewiduje odrębnej opłaty handlowej dla prosumenta (pkt 23 zmienia tylko sposób liczenia zużycia) — przyjęto opłatę jak dla pozostałych klientów: wariant podstawowy (faktura papierowa) 14,99 zł brutto = 12,19 zł netto",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 5 i 23, s. 1–2 (PDF 1–2)"
+        },
+        "prices_include_excise": {
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 9, s. 2 (PDF 2)"
+        },
+        "billing_cycle_months": {
+          "text": "okres rozliczeniowy nie jest w regulaminie wyrażony liczbą miesięcy; opłata handlowa za każdy rozpoczęty miesiąc (pkt 5) – przyjęto 1",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 5 i 17, s. 1–2 (PDF 1–2)"
+        }
+      },
+      "note": "Opłata handlowa w wariancie podstawowym (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto (14,99 / 1,23); wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto — przyjęto droższy wariant (ostrożniej)."
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "G12as – dzień/noc z obniżoną stawką nocną",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Niższa stawka nocna (0,0337 zł/kWh zamiast 0,3485 zł/kWh) dotyczy tylko zużycia ponad zużycie z analogicznego okresu roku poprzedzającego zakwalifikowanie do G12as, a tej wielkości nie ma w pliku z odczytami. Taryfa ENERGA-OBRÓT nie podaje też ceny energii dla G12as.",
+      "source": {
+        "doc": "osd-2026",
+        "page": "pkt 3.1.11–3.1.14, s. 10 (PDF 10); przypisy 5) i 6) do tabeli 9.2, s. 41 (PDF 41)"
+      }
+    },
+    {
+      "code": "G11f",
+      "name": "G11f – jednostrefowa dla umów z ceną dynamiczną",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Grupę G11f można wybrać tylko przy umowie ze sprzedawcą z ceną dynamiczną energii elektrycznej (po jej zakończeniu odbiorca przechodzi do G11). Taryfa sprzedawcy z urzędu ENERGA-OBRÓT nie ma ceny energii dla G11f.",
+      "source": {
+        "doc": "osd-2026",
+        "page": "pkt 3.1.2, s. 9 (PDF 9); pkt 3.1.16, s. 10 (PDF 10)"
+      }
+    }
+  ],
+  "notes": ["Abonament: taryfa (pkt 8, s. 39) podaje dla G11, G12, G12w, G12r i G12as 4,64 zł/mies. przy okresie 1-miesięcznym i 2,32 zł/mies. przy 2-miesięcznym oraz 0,74 i 0,70 zł/mies. dla okresów 1- i 2-miesięcznego „dla zdalnego odczytu” (pkt 3.3.2 lit. c: odbiorcy, u których Operator zainstalował licznik ze zdalną transmisją danych). Pliki 15-minutowe pochodzą z liczników zdalnego odczytu, więc wpisano stawki dla zdalnego odczytu. Odbiorca bez takiego licznika płaciłby 4,64 / 2,32 zł/mies.", "Okresy rozliczeniowe w grupach G: tylko 1- i 2-miesięczny (pkt 3.3.2, s. 12–13). Okresów 6- i 12-miesięcznych Energa-Operator nie ma, więc wymóg okresu nie dłuższego niż 2 miesiące (rozporządzenie Dz.U. 2026 poz. 1182, § 39 ust. 3, dla umów od 5.09.2026; § 56 ust. 8–9) niczego tu nie zmienia.", "Od 1.10.2026 abonament 0,00 zł: rozporządzenie ogłoszono 4.09.2026 i weszło w życie 5.09.2026 (§ 57); OSD przestają naliczać opłatę abonamentową od pierwszego dnia następnego miesiąca kalendarzowego (§ 56 ust. 3). Komunikatu Energa-Operator o zniesieniu abonamentu nie znaleziono (strona taryfy operatora zapisana 6.11.2026). Pozostałe stawki dystrybucyjne bez zmian: wykaz taryf 2026 w BIP URE (wpisy do 28.10.2026) nie zawiera zmiany taryfy Energa-Operator.", "Stawka jakościowa (opłata krajowa, regulatory.json): 0,0331 zł/kWh w styczniu (s. 40), od 1.02.2026 0,0332 zł/kWh (komunikat Energa-Operator na podstawie pkt 9.1.1–9.1.2 taryfy po zmianie taryfy PSE decyzją DRE.WPR.4211.1.4.2026.BTS z 16.01.2026; wyciąg z taryfy w wersji 2026_02_01, s. 8). Pozostałe stawki wyciągu z 1.02.2026 są takie same jak w taryfie.", "„Informacja o stawkach brutto” Energa-Operator (wersje 2026_01_01 i 2026_02_01) podaje dla G12r w strefie pozaszczytowej 0,1081 zł/kWh brutto, a 0,0882 × 1,23 = 0,1085. Pozostałe pozycje zgadzają się z netto × 1,23, a informacja ma charakter poglądowy. Przyjęto 0,0882 z zatwierdzonej taryfy (s. 41), co potwierdzają wyciąg (s. 9) i kopia taryfy w Biuletynie URE Nr 271 (4801) (s. 41, PDF 43).", "Godziny stref w czasie lokalnym. Taryfa OSD (pkt 3.2.10, s. 12) i taryfa sprzedawcy (pkt 3.2.2, s. 1): zegary liczników strefowych ustawia się według czasu zimowego i nie zmienia w czasie letnim, chyba że urządzenia automatycznie utrzymują godziny stref w czasie letnim i zimowym.", "G12w: do strefy nocnej należą wszystkie godziny sobót, niedziel i innych dni ustawowo wolnych od pracy (pkt 3.2.6, s. 12). G12r: strefy szczytowa i pozaszczytowa (pkt 3.1.2, s. 8; pkt 3.2.8, s. 12).", "Ceny ENERGA-OBRÓT nie zawierają VAT ani akcyzy (pkt 5.2, s. 2); ceny brutto w nawiasach (pkt 5.1) to (netto + 0,005 zł/kWh akcyzy) × 1,23 – sprawdzone dla wszystkich stref. Taryfa nie ma opłaty handlowej. W 2026 r. nie ma ceny maksymalnej.", "Ceny ENERGA-OBRÓT bez zmian przez cały 2026 r.: wykaz taryf 2026 w BIP URE (wpisy do 28.10.2026) nie zawiera zmiany taryfy ENERGA-OBRÓT. Rozporządzenie Dz.U. 2026 poz. 1182 (§ 56 ust. 4–5) zobowiązuje sprzedawców obsługujących ponad 100 000 odbiorców do złożenia wniosku o dostosowanie taryfy; do czasu zatwierdzenia stosuje się taryfę dotychczasową.", "Odbiorcy przedpłatowi płacą abonament w wysokości 50% stawki dla najdłuższego okresu rozliczeniowego (pkt 4.1.13, s. 18) – nie modelujemy.", "Oferta dynamiczna ENERGA-OBRÓT: cena kwadransa = CTGE (TGE RDN Fixing I; cena godzinowa dla wszystkich czterech kwadransów) + WK 0,0878 zł/kWh netto; WK zawiera akcyzę. Ujemne CTGE dozwolone (brak progu dolnego i górnego).", "Jedyne źródło wartości to regulamin wersji R4 (od 1.11.2026). Dla 24.08.2024–31.10.2026 przyjęto te same warunki; wersje R1–R3 nie są publicznie dostępne.", "Data startu oferty 24.08.2024 to początek obowiązku oferowania umów z ceną dynamiczną (art. 5ag Prawa energetycznego; strona Energi: „nowy rodzaj umowy, zdefiniowany od 24 sierpnia 2024 r.”). Dokument Energi z datą wprowadzenia oferty nie został znaleziony – start przyjęto od 24.08.2024.", "Opłata handlowa oferty dynamicznej: przyjęto wariant podstawowy (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto; wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto (wybrano wyższą opłatę — ostrożniej).", "Brak odrębnych warunków dla prosumentów – marża i opłata prosumenta równe zwykłym; pkt 23 dotyczy wyłącznie ustalania zużycia (pobór z sieci po bilansowaniu godzinowym).", "Rozliczenie dystrybucji według G11 (Energa-Operator ma też G11f dla umów dynamicznych od 1.07.2025, nie stosujemy)."]
+}

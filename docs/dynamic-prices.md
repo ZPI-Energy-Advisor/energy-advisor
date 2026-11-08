@@ -67,7 +67,7 @@ Serwis, repozytoria, worker i endpointy pozostają bez zmian.
 
 ## Tabele
 
-**`dynamic_price_observations`**: jedna obserwacja ceny.
+**`rce_price_observations`**: jedna obserwacja ceny.
 
 | kolumna | opis |
 |---|---|

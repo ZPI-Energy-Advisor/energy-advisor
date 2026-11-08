@@ -1,0 +1,479 @@
+{
+  "operator": "TAURON",
+  "year": 2025,
+  "covers": {
+    "from": "2025-01-01",
+    "to": "2025-12-31"
+  },
+  "documents": {
+    "osd-2025": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej TAURON Dystrybucja S.A. na rok 2025, zatwierdzona decyzją Prezesa URE DRE.WRE.4211.47.9.2024.ASa1 z 16.12.2024 (Biuletyn Branżowy URE – Energia elektryczna Nr 275 (4519) z 17.12.2024)",
+      "url": "https://www.tauron-dystrybucja.pl/-/media/offer-documents/dystrybucja/archiwum-taryf/2025/taryfa-td_sa-na-rok-2025.ashx"
+    },
+    "osd-2025-sprostowanie": {
+      "title": "Postanowienie Prezesa URE DRE.WRE.4211.47.14.2024.ASa1 z 20.01.2025 o sprostowaniu oczywistych omyłek w taryfie TAURON Dystrybucja S.A. na rok 2025 (Biuletyn Branżowy URE – Energia elektryczna Nr 24 (4554) z 20.01.2025)",
+      "url": "https://bip.ure.gov.pl/download/3/19214/TauronDystrybucja.pdf"
+    },
+    "osd-2025-zmiana": {
+      "title": "Zmiana Taryfy dla usług dystrybucji energii elektrycznej TAURON Dystrybucja S.A. na rok 2025, zatwierdzona decyzją Prezesa URE DRE.WRE.4211.28.7.2025.ASa1/TG z 9.06.2025, stosowana od 1.07.2025 (skan; kopia URE: Biuletyn Branżowy URE – Energia elektryczna Nr 127 (4657) z 9.06.2025, https://bip.ure.gov.pl/download/3/19706/TAURONDystrybucja.pdf)",
+      "url": "https://www.tauron-dystrybucja.pl/-/media/offer-documents/dystrybucja/archiwum-taryf/2025/zmiana-taryfy-td_sa-na-rok-2025.ashx"
+    },
+    "osd-2025-wyciag-g": {
+      "title": "Wyciąg z Taryfy dla usług dystrybucji energii elektrycznej TAURON Dystrybucja S.A. na rok 2025 dotyczący rozliczeń z odbiorcami grup taryfowych G (decyzje DRE.WRE.4211.47.9.2024.ASa1 z 16.12.2024 i DRE.WRE.4211.28.7.2025.ASa1/TG z 9.06.2025, obowiązuje od 1.07.2025)",
+      "url": "https://www.tauron-dystrybucja.pl/-/media/offer-documents/dystrybucja/archiwum-taryf/2025/wyci%C4%85g-typu-g-z-taryfy-td_sa-na-rok-2025.ashx"
+    },
+    "osd-2026-wyciag-g": {
+      "title": "Wyciąg z Taryfy dla usług dystrybucji energii elektrycznej TAURON Dystrybucja S.A. na rok 2026 dotyczący rozliczeń z odbiorcami grup taryfowych G (decyzja DRE.WRE.4211.54.8.2025.ASa1 z 17.12.2025) – podstawa godzin G12",
+      "url": "https://www.tauron-dystrybucja.pl/-/media/offer-documents/dystrybucja/aktualna-taryfa/wyciag-z-taryfy-td-sa-na-rok-2026-dla-odbiorcow-grup-g.ashx"
+    },
+    "sprzedaz-2024": {
+      "title": "Taryfa dla energii elektrycznej dla Odbiorców z grup taryfowych G TAURON Sprzedaż sp. z o.o., zatwierdzona decyzją Prezesa URE DRE.WRE.4211.58.11.2023.AKr3 z 15.12.2023 (Biuletyn Branżowy URE – Energia elektryczna Nr 416 (4233) z 15.12.2023; tekst podstawowy, skan)",
+      "url": "https://bip.ure.gov.pl/download/3/17817/TauronSprzedaz.pdf"
+    },
+    "sprzedaz-2024-07": {
+      "title": "Zmiana Nr 2 Taryfy dla energii elektrycznej dla Odbiorców z grup taryfowych G TAURON Sprzedaż sp. z o.o. (ceny od 1.07.2024, pkt 5.1a), zatwierdzona decyzją Prezesa URE DRE.WRE.4211.29.11.2024.AKr3 z 28.06.2024 (Biuletyn Branżowy URE – Energia elektryczna Nr 163 (4407) z 28.06.2024; skan)",
+      "url": "https://bip.ure.gov.pl/download/3/18556/TAURONSprzedazSpzoo.pdf"
+    },
+    "sprzedaz-2025-10": {
+      "title": "Zmiana Taryfy dla energii elektrycznej dla Odbiorców z grup taryfowych G TAURON Sprzedaż sp. z o.o. (ceny od 1.10.2025, pkt 5.1b), zatwierdzona decyzją Prezesa URE DRE.WRE.4211.39.13.2025.ASa1 z 30.09.2025 (Biuletyn Branżowy URE – Energia elektryczna Nr 221 (4751) z 30.09.2025; skan)",
+      "url": "https://bip.ure.gov.pl/download/3/20036/TAURONSprzedaz.pdf"
+    },
+    "ustawa-2022-2243": {
+      "title": "Ustawa z dnia 27 października 2022 r. o środkach nadzwyczajnych mających na celu ograniczenie wysokości cen energii elektrycznej oraz wsparciu niektórych odbiorców w 2023 roku oraz w 2024 roku (t.j. Dz.U. 2024 poz. 1622 z późn. zm.)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220002243"
+    },
+    "tauron-dyn-komunikat-2024": {
+      "title": "Komunikat prasowy TAURON Polska Energia S.A. z 26.08.2024 „Oferta na umowę z ceną dynamiczną. Tauron gotowy na pierwszych klientów” (biuro prasowe TAURON, media.tauron.pl)",
+      "url": "https://media.tauron.pl/pr/839439/oferta-na-umowe-z-cena-dynamiczna-tauron-gotowy-na-pierwszych-klientow"
+    },
+    "tauron-dyn-ts-2026-04": {
+      "title": "Cennik „Prąd z Ceną Dynamiczną – dla Domu – na czas nieokreślony”, Cennik EE_GD CDzcb Bezpieczny TS_0 (TAURON Sprzedaż sp. z o.o.), obowiązuje od 01.04.2026 na czas nieokreślony",
+      "url": "https://www.tauron.pl/-/media/offer-documents/produkty/2024/08-2024/dynamiczne/ts/EE-GD-CDzcb-Bezpieczny-TS-0.ashx"
+    },
+    "sprzedaz-2024-01": {
+      "title": "Zmiana Taryfy dla energii elektrycznej dla Odbiorców z grup taryfowych G TAURON Sprzedaż sp. z o.o. (nowy pkt 1.6 i pkt 5.1–5.5), zatwierdzona decyzją Prezesa URE DRE.WRE.4211.8.2.2024.AKr3 z 30.01.2024 (Biuletyn Branżowy URE – Energia elektryczna Nr 27 (4271) z 30.01.2024; skan)",
+      "url": "https://bip.ure.gov.pl/download/3/17983/TauronSprzedaz.pdf"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "subscription": {
+        "1": "4.56",
+        "2": "2.28",
+        "6": "0.76",
+        "12": "0.38"
+      },
+      "subscription_source": {
+        "doc": "osd-2025",
+        "page": "tabela 7.1, s. 41 (PDF 43); okresy rozliczeniowe pkt 2.3.1 lit. c, s. 12 (PDF 14); bez zmian w wyciągu G od 1.07.2025, s. 3 (PDF 3)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2541"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.02",
+            "3f": "10.34"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "tabela 7.1, s. 41 (PDF 43); bez zmian w wyciągu G od 1.07.2025, s. 3 (PDF 3)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.1.2, s. 8 (PDF 10)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2899"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0609"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.02",
+            "3f": "10.34"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "tabela 7.1, s. 41 (PDF 43); bez zmian w wyciągu G od 1.07.2025, s. 3 (PDF 3)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "text": "taryfa TAURON Dystrybucja na 2025 r. (pkt 2.2.6, s. 12 (PDF 14); bez zmian w wyciągu G od 1.07.2025, s. 2 (PDF 2)) podaje tylko zasadę – 14 godzin w strefie dziennej i 10 w nocnej (8 kolejnych godzin między 22:00 a 7:00 oraz 2 kolejne między 13:00 a 16:00), a godziny zegarowe określa Operator. Dokumentu Operatora z godzinami obowiązującymi w 2025 r. nie znaleziono, więc przyjęto godziny ustalone w taryfie na 2026 r.: noc 22:00–6:00 i 13:00–15:00, dzień 6:00–13:00 i 15:00–22:00 (spełniają zasadę z 2025 r.; te same godziny podają obecne, niedatowane strony tauron.pl i taniej.tauron-dystrybucja.pl). Licznik konkretnego odbiorcy mógł mieć inne godziny w granicach tej zasady.",
+            "doc": "osd-2026-wyciag-g",
+            "page": "s. 1 (PDF 1)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.3271"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0518"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.02",
+            "3f": "10.34"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "tabela 7.1, s. 41 (PDF 43); bez zmian w wyciągu G od 1.07.2025, s. 3 (PDF 3)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.2.7, s. 12 (PDF 14); bez zmian w wyciągu G od 1.07.2025, s. 2 (PDF 2)"
+          }
+        },
+        "G13": {
+          "zones": {
+            "1": {
+              "name": "szczyt przedpołudniowy",
+              "rate": "0.1883"
+            },
+            "2": {
+              "name": "szczyt popołudniowy",
+              "rate": "0.3332"
+            },
+            "3": {
+              "name": "pozostałe godziny doby",
+              "rate": "0.0349"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.02",
+            "3f": "10.34"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "tabela 7.1, s. 41 (PDF 43); bez zmian w wyciągu G od 1.07.2025, s. 3 (PDF 3)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["07:00", "13:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["19:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "3",
+              "days": ["workday"],
+              "season": ["04-01", "09-30"],
+              "intervals": [
+                ["00:00", "07:00"],
+                ["13:00", "19:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["07:00", "13:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["16:00", "21:00"]
+              ]
+            },
+            {
+              "zone": "3",
+              "days": ["workday"],
+              "season": ["10-01", "03-31"],
+              "intervals": [
+                ["00:00", "07:00"],
+                ["13:00", "16:00"],
+                ["21:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "3",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 2.2.2, s. 11 (PDF 13); bez zmian w wyciągu G od 1.07.2025, s. 1 (PDF 1)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-09-30",
+      "seller": "TAURON Sprzedaż sp. z o.o.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "sprzedaz-2024-01",
+        "page": "pkt 5.5 (dodany zmianą z 30.01.2024), s. 3 (PDF 6); pkt 9 zmiany z 28.06.2024 rozszerza go na ceny z pkt 5.1a (sprzedaz-2024-07, s. 2 (PDF 6))"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. d (dodana ustawą z 27.11.2024, Dz.U. 2024 poz. 1831, art. 1 pkt 3)"
+      },
+      "trade_fee_monthly": "0.00",
+      "trade_fee_source": {
+        "doc": "sprzedaz-2024",
+        "page": "pkt 3.3.1 i pkt 5, s. 4–6 (PDF 7–9) – taryfa podaje tylko ceny energii, bez opłaty handlowej"
+      },
+      "source": {
+        "doc": "sprzedaz-2024-07",
+        "page": "pkt 5.1a, s. 1 (PDF 5); koniec okresu 30.09.2025 wg zmiany z 30.09.2025 (sprzedaz-2025-10, pkt 7, s. 1 (PDF 5))"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.6270"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.7120",
+            "2": "0.4620"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.8440",
+            "2": "0.4620"
+          }
+        },
+        "G13": {
+          "zones": {
+            "1": "0.6700",
+            "2": "0.9560",
+            "3": "0.5140"
+          }
+        }
+      }
+    },
+    {
+      "valid_from": "2025-10-01",
+      "valid_to": "2025-12-31",
+      "seller": "TAURON Sprzedaż sp. z o.o.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "sprzedaz-2024-01",
+        "page": "pkt 5.5 (dodany zmianą z 30.01.2024), s. 3 (PDF 6); pkt 12 zmiany z 30.09.2025 rozszerza go na ceny z pkt 5.1b i 5.4b (sprzedaz-2025-10)"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. e (dodana ustawą z 12.09.2025, Dz.U. 2025 poz. 1302, art. 15 pkt 2)"
+      },
+      "trade_fee_monthly": "0.00",
+      "trade_fee_source": {
+        "doc": "sprzedaz-2024",
+        "page": "pkt 3.3.1 i pkt 5, s. 4–6 (PDF 7–9) – taryfa podaje tylko ceny energii, bez opłaty handlowej; zmiana z 30.09.2025 dodaje tylko ceny (pkt 5.1b)"
+      },
+      "source": {
+        "doc": "sprzedaz-2025-10",
+        "page": "pkt 5.1b, s. 1 (PDF 5)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.5767"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.6510",
+            "2": "0.4300"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.7560",
+            "2": "0.4300"
+          }
+        },
+        "G13": {
+          "zones": {
+            "1": "0.5470",
+            "2": "0.8934",
+            "3": "0.4820"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "seller": "TAURON Sprzedaż sp. z o.o.",
+      "name": "Prąd z Ceną Dynamiczną",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G13"],
+      "billing_cycle_months": 1,
+      "margin": "0.0892",
+      "trade_fee_monthly": "0.00",
+      "market_price_floor": null,
+      "market_price_cap": null,
+      "prices_include_excise": true,
+      "source": {
+        "text": "cennika EE_GD CDzcb Bezpieczny TS obowiązującego przed 01.04.2026 nie ma w sieci (pod tym samym adresem jest tylko wersja TS_0 od 01.04.2026); przyjęto jej warunki: SC 0,0892 zł/kWh netto dla G11, G12, G12w i G13 we wszystkich strefach, bez opłaty handlowej, bez ograniczenia ceny godziny/kwadransa (cena minimalna 0,0050 zł/kWh tylko dla średniej okresu), okres 1-miesięczny, akcyza w cenie (do należności doliczany tylko VAT)",
+        "doc": "tauron-dyn-ts-2026-04",
+        "page": "§ 2 ust. 1, § 3 ust. 1 pkt 1.4, § 4 ust. 3–5, PDF 1"
+      },
+      "field_sources": {
+        "margin": {
+          "text": "SC 0,0892 zł/kWh netto z cennika od 01.04.2026; wartość SC we wcześniejszej wersji cennika nieznana",
+          "doc": "tauron-dyn-ts-2026-04",
+          "page": "§ 2 ust. 1 (tabela netto), PDF 1"
+        },
+        "billing_cycle_months": {
+          "doc": "tauron-dyn-komunikat-2024",
+          "page": "treść komunikatu: „W umowach z ceną dynamiczną rozliczenia odbywają się w okresach jednomiesięcznych.”"
+        },
+        "trade_fee_monthly": {
+          "text": "brak opłaty handlowej jak w cenniku od 01.04.2026 (tabela § 2 zawiera tylko SC, § 4 ust. 5 nalicza tylko energię i VAT); obecna strona oferty: „Nie będziesz ponosić dodatkowych opłat…”",
+          "doc": "tauron-dyn-ts-2026-04",
+          "page": "§ 2 ust. 1 i § 4 ust. 5, PDF 1"
+        },
+        "prices_include_excise": {
+          "text": "jak w cenniku od 01.04.2026 – cena = Fixing I + SC, do należności doliczany tylko VAT, więc akcyza jest w cenie",
+          "doc": "tauron-dyn-ts-2026-04",
+          "page": "§ 2 ust. 1 i § 4 ust. 5, PDF 1"
+        },
+        "market_price_floor": {
+          "text": "jak w cenniku od 01.04.2026 – brak ograniczenia ceny godziny/kwadransa; cena minimalna 0,0050 zł/kWh netto tylko dla średniej ważonej okresu",
+          "doc": "tauron-dyn-ts-2026-04",
+          "page": "§ 4 ust. 3 pkt 3.1 i ust. 4, PDF 1"
+        }
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "G12as – taryfa antysmogowa (dzień/noc)",
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "reason": "Niższa stawka nocna (0,0254 zł/kWh zamiast 0,2541 zł/kWh) dotyczy tylko zużycia ponad zużycie z analogicznego okresu roku poprzedzającego zakwalifikowanie do G12as, a tej wielkości nie ma w pliku z odczytami. Taryfa sprzedawcy z urzędu TAURON Sprzedaż nie ma też ceny energii dla G12as (obejmuje tylko G11, G12, G12w i G13).",
+      "source": {
+        "doc": "osd-2025",
+        "page": "pkt 3.1.30–3.1.33, s. 20 (PDF 22); przypisy 1 i 2 do tabeli 7.1, s. 41 (PDF 43)"
+      }
+    },
+    {
+      "code": "G14dynamic",
+      "name": "G14dynamic – czterostrefowa ze strefami z Energetycznego kompasu PSE",
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "reason": "Strefy S1–S4 są przypisywane każdej godzinie według Energetycznego kompasu publikowanego przez PSE, więc liczenie wymaga harmonogramu stref operatora dla każdego dnia, którego nie mamy. Grupa wymaga licznika zdalnego odczytu i okresu rozliczeniowego 1-miesięcznego, a taryfa sprzedawcy z urzędu TAURON Sprzedaż nie ma dla niej ceny energii.",
+      "source": {
+        "doc": "osd-2025",
+        "page": "pkt 2.2.10, s. 12 (PDF 14); pkt 2.3.1 lit. b, s. 12 (PDF 14); pkt 3.1.61–3.1.62, s. 25 (PDF 27); stawki w tabeli 7.3, s. 42 (PDF 44)"
+      }
+    },
+    {
+      "code": "G13s",
+      "name": "G13s – trójstrefowa sezonowa z różnymi stawkami w dni robocze i wolne",
+      "valid_from": "2025-07-01",
+      "valid_to": "2025-12-31",
+      "reason": "Grupa wprowadzona zmianą taryfy od 1.07.2025 (strefy dzienna pozaszczytowa, dzienna szczytowa i nocna, inne w lecie i zimie, inne stawki w dni robocze i wolne; tylko licznik zdalnego odczytu i okres 1-miesięczny). Taryfa sprzedawcy z urzędu TAURON Sprzedaż, także po zmianie od 1.10.2025, nie ma ceny energii dla G13s (obejmuje tylko G11, G12, G12w i G13).",
+      "source": {
+        "doc": "osd-2025-zmiana",
+        "page": "pkt 2.1.2, s. 2 (PDF 4); pkt 2.2.2a i 2.3.1 lit. b, s. 3 (PDF 5); tabela 7.3, s. 5 (PDF 7)"
+      }
+    }
+  ],
+  "notes": ["Dystrybucja ma jeden wpis na cały 2025 r. Zmiana taryfy od 1.07.2025 (decyzja DRE.WRE.4211.28.7.2025.ASa1/TG z 9.06.2025) dodaje grupę G13s (pkt 2.1.2, 2.2.2a, 3.1.63, tabela 7.3), zmienia pkt 3.1.61–3.1.62 (rozliczenie G13s i G14dynamic) oraz pkt 2.3.1 (okresy rozliczeniowe prosumentów), a tabele 7.4 powtarza bez zmian. Stawki zmienne, składniki stałe, abonament i strefy G11, G12, G12w i G13 są w wyciągu G od 1.07.2025 (s. 1–3) takie same jak w taryfie z 16.12.2024 (s. 11–12 i 41).", "Postanowienie Prezesa URE z 20.01.2025 (DRE.WRE.4211.47.14.2024.ASa1) prostuje tylko opis grup O11/O12, adres Energetycznego kompasu w pkt 2.2.10, usuwa pkt 1.3.32–1.3.33, 3.2.18–3.2.19, 3.4.14–3.4.15 (usługi IDC/IRB) i uzupełnia abonament C11s – bez wpływu na grupy G.", "Godziny G12: taryfa 2025 (pkt 2.2.6, s. 12) zostawia godziny zegarowe Operatorowi. Przyjęto noc 22:00–6:00 i 13:00–15:00 (jak w taryfie 2026, gdzie są już ustalone). Rzeczywiste godziny licznika mogły się różnić w granicach zasady 8 kolejnych godzin między 22:00 a 7:00 i 2 kolejnych między 13:00 a 16:00.", "Okresy rozliczeniowe G11, G12, G12w, G12as i G13: 1, 2, 6 lub 12 miesięcy (pkt 2.3.1 lit. c, s. 12); kolumna „dekadowy” abonamentu jest dla grup G pusta. Od 1.07.2025 prosumenci (art. 2 pkt 27a ustawy o OZE) są rozliczani w okresach 1-miesięcznych, a prosumentom z umowami sprzed 1.07.2025 Operator dopuszcza dłuższy okres do przystąpienia do CSIRE (zmiana pkt 2.3.1, s. 3 (PDF 5)). Zostawiono wszystkie klucze 1/2/6/12 (stawki abonamentu bez zmian).", "G12w i G13: wszystkie godziny sobót, niedziel i innych dni ustawowo wolnych od pracy należą do strefy pozaszczytowej (G12w, pkt 2.2.7) i do strefy „pozostałe godziny doby” (G13, pkt 2.2.2). Sezony G13: lato 1.04–30.09, zima 1.10–31.03. Strefy G12 i G12w są całoroczne.", "Numeracja stref G13 zgodnie z formatem: 1 szczyt przedpołudniowy, 2 szczyt popołudniowy, 3 pozostałe godziny doby (najdroższa jest strefa 2 – w dystrybucji i w energii).", "Godziny stref w czasie lokalnym. Taryfa OSD (pkt 2.2.9, s. 12 (PDF 14)) i taryfa sprzedawcy (pkt 3.2.2, s. 4 (PDF 7)): zegary sterujące w układach pomiarowo-rozliczeniowych ustawia się według czasu zimowego i nie zmienia w czasie letnim, chyba że urządzenia automatycznie utrzymują godziny stref w czasie letnim i zimowym.", "Taryfa TAURON Sprzedaż obowiązuje odbiorców G przyłączonych do sieci TAURON Dystrybucja z wyłączeniem obszaru gliwickiego (pkt 1.1, s. 2 (PDF 5)); obszar dawnego GZE ma osobną taryfę TAURON Sprzedaż GZE (poza zakresem pliku). Grupy w taryfie sprzedawcy: tylko G11, G12, G12w i G13 (pkt 3.1.1, s. 2); strefy jak w taryfie OSD, z godzinami G12 określanymi przez Operatora (pkt 3.2.1, s. 4).", "Ceny TAURON Sprzedaż nie zawierają VAT ani akcyzy (pkt 1.6: „Ustalone ceny energii elektrycznej nie zawierają podatku od towarów i usług (VAT) oraz podatku akcyzowego. W odniesieniu do nich podatek VAT oraz podatek akcyzowy nalicza się zgodnie z obowiązującymi przepisami prawa.”). Zmiany z 28.06.2024 i 30.09.2025 nie zmieniają pkt 1.6. Taryfa nie ma opłaty handlowej (przy cenie maksymalnej i tak jest ona jedyną składową opłat w obrocie, art. 3 ust. 8 ustawy).", "Ceny 1.01–30.09.2025: pkt 5.1a dodany zmianą Nr 2 z 28.06.2024 (pierwotnie do 31.12.2025; zmiana z 30.09.2025, pkt 7, skraca go do 30.09.2025). Ceny 1.10–31.12.2025: pkt 5.1b dodany zmianą z 30.09.2025. Ceny odniesienia z pkt 5.4a i 5.4b (art. 8 ust. 3 ustawy) są równe cenom z pkt 5.1a i 5.1b.", "Cena maksymalna: pkt 5.3 taryfy sprzedawcy (w brzmieniu zmian z 28.06.2024 i 30.09.2025) – 0,500 zł/kWh od 1.07.2024 do 31.12.2025, z wyłączeniem umów z ceną dynamiczną; gdy cena z taryfy jest niższa, stosuje się niższą. Ceny powyżej 0,5000 zł/kWh: do 30.09.2025 G11, G12 dzień, G12w szczyt i wszystkie strefy G13; od 1.10.2025 G11, G12 dzień, G12w szczyt oraz strefy 1 i 2 G13 (strefy nocne/pozaszczytowe 0,4620 i 0,4300 oraz G13 strefa 3 0,4820 od 1.10.2025 są poniżej ceny maksymalnej).", "Opłaty krajowe w taryfie OSD 2025 (do porównania z regulatory.json): stawka jakościowa G 0,0321 zł/kWh (tabela 7.4, s. 42 (PDF 44)); opłata przejściowa G 0,02 / 0,10 / 0,33 zł/mies. przy zużyciu rocznym < 500 / 500–1200 / > 1200 kWh (s. 43 (PDF 45)); OZE 3,50 zł/MWh (pkt 7.5); kogeneracyjna 3,00 zł/MWh (pkt 7.6); mocowa dla gospodarstw domowych 2,86 / 6,86 / 11,44 / 16,01 zł/mies. (< 500 / 500–1200 / 1200–2800 / > 2800 kWh), a od 1.01 do 30.06.2025 0 zł/mies. (pkt 7.7, s. 43 (PDF 45)). Zmiana od 1.07.2025 i wyciąg G powtarzają te same kwoty. Stawki OSD bez VAT (pkt 1.2.3).", "Oferta „Prąd z Ceną Dynamiczną” (TAURON Sprzedaż, cennik EE_GD CDzcb Bezpieczny TS) jest dostępna od 24.08.2024: komunikat prasowy TAURON z 26.08.2024 („Od 24 sierpnia na stronach internetowych firmy dostępna jest nowa oferta.”), zgodnie ze ścieżką dokumentów /produkty/2024/08-2024/ i z ustawowym obowiązkiem od 24.08.2024 (art. 5ag Prawa energetycznego, Dz.U. 2023 poz. 1681).", "W sieci jest tylko cennik TS_0 obowiązujący od 01.04.2026 (ten sam adres URL co od 2024 r., treść podmieniona). Wpis 2026-04-01…2026-12-31 pochodzi z dokumentu; wpisy 2024-08-24…2024-12-31, 2025 i 2026-01-01…2026-03-31 przyjęto z jego warunków (wartość SC we wcześniejszych wersjach nieznana).", "Wzór: stawka godziny/kwadransa = cena Fixingu I RDN (zł/kWh) + SC 0,0892 zł/kWh netto (§ 4 ust. 3); SC jednakowy dla G11, G12, G12w, G13 i wszystkich stref (§ 2), więc jeden wpis z distribution_tariff G11. Rozliczenie średnią ważoną zużyciem za okres (§ 4 ust. 4–5) daje tę samą kwotę co suma kwadransów (pomijając zaokrąglenia: średnia do 5 miejsc, suma do 0,01 zł, zużycie do pełnych kWh). Cenę giełdową silnik bierze z RCE zamiast Fixingu I – przybliżenie.", "Cena minimalna 0,0050 zł/kWh netto (§ 4 ust. 4) dotyczy średniej ważonej całego okresu, nie kwadransa, więc market_price_floor = null (ceny ujemne w kwadransie dozwolone, jak w cenniku). Próg zadziałałby dopiero, gdy ważona zużyciem średnia cena Fixingu I w miesiącu spadłaby poniżej −84,2 zł/MWh (0,0050 − 0,0892 zł/kWh) – przy średnich miesięcznych cenach RDN rzędu kilkuset zł/MWh i ujemnych cenach tylko w pojedynczych godzinach praktycznie się to nie zdarza; gdyby się zdarzyło, model zaniżyłby rachunek. Ceny maksymalnej oferta nie ma (market_price_cap = null).", "Opłata handlowa 0,00 zł: tabela § 2 cennika zawiera tylko SC (dla porównania cennik MAX ma w tej samej tabeli „Opłata handlowa 19,10 zł/mc”), § 4 ust. 5 nalicza tylko energię i VAT, FAQ strony oferty: „Nie będziesz ponosić dodatkowych opłat”.", "prices_include_excise = true: cena = Fixing I + SC, a do należności Sprzedawca dolicza tylko VAT (§ 4 ust. 5); SC obejmuje koszty sprzedaży energii zakupionej na TGE i marżę (§ 2 ust. 1); strona oferty: do notowań RDN „musisz doliczyć opłatę 0,1097 zł/kWh brutto” (= 0,0892 × 1,23) i nic więcej. Akcyza (0,005 zł/kWh, płaci ją sprzedawca) jest więc w cenie; cena minimalna 0,0050 zł/kWh równa stawce akcyzy to potwierdza. Przy false silnik doliczyłby akcyzę drugi raz.", "Prosument: cennik nie podaje osobnego SC; „szczegółowe zasady rozliczeń określa Aneks do Umowy” (§ 4 ust. 5), którego nie opublikowano – nie wpisano prosumer_margin ani prosumer_trade_fee_monthly (silnik użyje SC 0,0892 i opłaty 0,00).", "Warianty i inne produkty: cennik TS E_0 (…/exp-ts/EE-GD-CDzcb-Bezpieczny-TS-E-0.ashx) to nie wariant e-faktury, tylko wersja dla klientów NIEprzyłączonych do sieci TAURON Dystrybucja (§ 3 ust. 1 pkt 1.3), te same ceny; cennik GZE dotyczy obszaru gliwickiego (TAURON Sprzedaż GZE), wyłączonego w § 3 ust. 1 pkt 1.3 cennika TS; „Prąd z Ceną Dynamiczną MAX” (EE_GD CDmax Bezpieczny TS_1_Q4, od 01.11.2026, umowy zawierane 01–30.11.2026, SC 0,0892, opłata handlowa 19,10 zł/mc, średnia cena min. 0,0050 / maks. 0,5550 zł/kWh netto) to inny produkt – nie wprowadzony."]
+}

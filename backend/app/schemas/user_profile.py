@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Annotated, Literal
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.schemas.other import (
     BillingCycleEnum,
@@ -8,7 +8,6 @@ from app.schemas.other import (
     PhaseTypeEnum,
     PropertyTypeEnum,
     TariffTypeEnum,
-    TypeOfMarketEnergyEnum,
 )
 
 
@@ -48,8 +47,9 @@ class NoPV(BaseModel):
 
 
 class NetBillingPV(BaseModel):
+    # Energię oddaną od 1.07.2024 wycenia się według RCE z okresu rozliczeniowego; dawne pole type_of_price
+    # (RCE / RCEm) w zapisanych profilach jest pomijane.
     mode: Literal["net_billing"] = "net_billing"
-    type_of_price: TypeOfMarketEnergyEnum = TypeOfMarketEnergyEnum.RCEm
 
 
 class NetMeteringPV(BaseModel):
@@ -73,7 +73,27 @@ PVConfig = Annotated[
 # ==========================================
 
 class ConsumptionAndTariff(BaseModel):
+    """Grupa taryfowa (wspólna dla dystrybucji i zwykłej ceny sprzedawcy) i rodzaj umowy na energię.
+
+    Przy umowie z ceną dynamiczną energia ma cenę z kwadransa, a dystrybucja dalej liczy się według grupy.
+    """
+
     tariff_type: TariffTypeEnum
+    dynamic_price: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def legacy_dynamic(cls, data):
+        # Profile zapisane przed rozdzieleniem pól miały „dynamic” jako taryfę: to G11 z ceną dynamiczną.
+        if isinstance(data, dict) and data.get("tariff_type") == TariffTypeEnum.DYNAMIC.value:
+            return {**data, "tariff_type": TariffTypeEnum.G11.value, "dynamic_price": True}
+        return data
+
+    @model_validator(mode="after")
+    def group_is_not_dynamic(self):
+        if self.tariff_type == TariffTypeEnum.DYNAMIC:
+            raise ValueError("tariff_type to grupa taryfowa (np. G11); cenę dynamiczną wybiera pole dynamic_price.")
+        return self
 
 
 # ==========================================

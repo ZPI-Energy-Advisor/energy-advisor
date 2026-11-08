@@ -55,8 +55,16 @@ bazę od zera albo z kopii.
 
 ### 4. Dane początkowe (taryfy)
 
-Taryfy G11, G12 i dynamiczna są wymagane do obliczania kosztów. Skrypt jest idempotentny:
-nie wprowadza zmian, jeśli taryfy istnieją już w bazie.
+Cennik (stawki dystrybucyjne i sprzedaży, opłaty regulacyjne) jest w plikach JSON w `backend/data/tariffs`
+(format: [docs/tariff-data-format.md](docs/tariff-data-format.md)). Ładuje się go skryptem, który waliduje
+pliki i zapisuje wszystko w jednej transakcji; ponowne uruchomienie nie tworzy duplikatów:
+
+```bash
+docker compose exec backend python scripts/load_tariffs.py data/tariffs
+docker compose exec backend python scripts/load_tariffs.py --check data/tariffs   # tylko walidacja, bez bazy
+```
+
+`seed.py` jest nadal potrzebny dla tabeli taryf używanej przez Dashboard:
 
 ```bash
 docker compose exec backend python seed.py
@@ -64,7 +72,7 @@ docker compose exec backend python seed.py
 
 ### 5. Ceny dynamiczne
 
-Ceny RCE zapisywane są w tabeli `dynamic_price_observations` i są niezależne od taryf z kroku 4
+Ceny RCE zapisywane są w tabeli `rce_price_observations` i są niezależne od taryf z kroku 4
 (taryfa dynamiczna przechowuje jedynie narzut i stawkę VAT doliczane do ceny rynkowej).
 
 **Synchronizacja bieżąca.** Kontener `price-worker` uruchamia się w kroku 2 i czeka do 5 minut na
@@ -95,6 +103,10 @@ przypadku należy poczekać na wpis w logach i uruchomić polecenie ponownie.
 Dane PSE są dostępne od 2024-06-14. Backfill pobiera je w paczkach po 31 dni; ponowne uruchomienie
 dla tego samego zakresu aktualizuje istniejące rekordy i nie tworzy duplikatów.
 Szczegóły: [docs/dynamic-prices.md](docs/dynamic-prices.md).
+
+Net-billing: energia oddana do sieci jest rozliczana po RCE w cyklu 15-minutowym (art. 4b ust. 2 ustawy
+o OZE, ujemna cena liczona jako 0). Cennik zaczyna się 24.08.2024, więc RCEm (dla energii oddanej do
+30.06.2024) nie jest potrzebna.
 
 ### 6. Frontend
 

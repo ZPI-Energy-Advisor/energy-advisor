@@ -1,0 +1,190 @@
+{
+  "year": 2026,
+  "covers": {
+    "from": "2026-01-01",
+    "to": "2026-12-31"
+  },
+  "documents": {
+    "akcyza": {
+      "title": "Ustawa z dnia 6 grudnia 2008 r. o podatku akcyzowym (tekst jednolity Dz.U. 2026 poz. 412)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20260000412"
+    },
+    "vat": {
+      "title": "Ustawa z dnia 11 marca 2004 r. o podatku od towarów i usług (tekst jednolity Dz.U. 2025 poz. 775)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20250000775"
+    },
+    "kdt": {
+      "title": "Ustawa z dnia 29 czerwca 2007 r. o zasadach pokrywania kosztów powstałych u wytwórców w związku z przedterminowym rozwiązaniem umów długoterminowych sprzedaży mocy i energii elektrycznej (tekst jednolity Dz.U. 2022 poz. 311)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220000311"
+    },
+    "osd-2026": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej PGE Dystrybucja S.A. na rok 2026, decyzja Prezesa URE DRE.WRE.4211.50.7.2025.JTr z 17.12.2025",
+      "url": "https://bip.ure.gov.pl/download/3/20345/PGEDystrybucja.pdf"
+    },
+    "osd-2026-tj": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej PGE Dystrybucja S.A. — tekst jednolity stosowany od 1.02.2026",
+      "url": "https://pgedystrybucja.pl/uslugi-dystrybucyjne/taryfa-i-cenniki/taryfa2"
+    },
+    "td-jakosc-2026": {
+      "title": "TAURON Dystrybucja S.A.: Nowa stawka opłaty jakościowej od 1 lutego 2026 r. (0,0332 zł/kWh dla nN)"
+    },
+    "pse-zmiana-2026": {
+      "title": "Zmiana taryfy PSE S.A. na rok 2026, decyzja Prezesa URE DRE.WPR.4211.1.4.2026.BTS z 16.01.2026 (BB URE Nr 5 (4819)); kok = 1,01577"
+    },
+    "ure-oze-2026": {
+      "title": "Informacja Prezesa URE nr 61/2025 z 7.11.2025 w sprawie wysokości stawki opłaty OZE na rok kalendarzowy 2026 (7,30 zł/MWh)"
+    },
+    "kog-2026": {
+      "title": "Rozporządzenie Ministra Energii z dnia 28 listopada 2025 r. w sprawie wysokości stawki opłaty kogeneracyjnej na rok 2026 (Dz.U. 2025 poz. 1664)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20250001664"
+    },
+    "ure-mocowa-2026": {
+      "title": "Informacja Prezesa URE nr 58/2025 z 30.10.2025 w sprawie stawek opłaty mocowej na rok 2026"
+    },
+    "mp-1211": {
+      "title": "Obwieszczenie Ministra Energii z dnia 25 listopada 2025 r. w sprawie ogłoszenia roku, w którym wygaśnie obowiązek uiszczania opłaty przejściowej (M.P. 2025 poz. 1211)"
+    }
+  },
+  "periods": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-01-31",
+      "quality_fee_per_kwh": {
+        "value": "0.0331",
+        "source": {
+          "doc": "osd-2026",
+          "page": "tabela 7.9 poz. 3, s. 59 (PDF 61): 0,0331 zł/kWh (stosowana w styczniu 2026)"
+        }
+      },
+      "renewable_fee_per_kwh": {
+        "value": "0.0073",
+        "source": {
+          "doc": "ure-oze-2026",
+          "page": "Informacja nr 61/2025, s. 1 (PDF 1): „stawka opłaty OZE, obowiązująca w roku 2026 wynosi: 7,30 zł/MWh”; osd-2026 pkt 7.11, s. 60 (PDF 62)"
+        }
+      },
+      "cogeneration_fee_per_kwh": {
+        "value": "0.0030",
+        "source": {
+          "doc": "kog-2026",
+          "page": "§ 1: „Wysokość stawki opłaty kogeneracyjnej na rok 2026 wynosi 3,00 zł/MWh”; osd-2026 pkt 7.12, s. 60 (PDF 62)"
+        }
+      },
+      "excise_per_kwh": {
+        "value": "0.0050",
+        "source": {
+          "doc": "akcyza",
+          "page": "art. 89 ust. 3 (Dz.U. 2026 poz. 412, s. 131): „Stawka akcyzy na energię elektryczną wynosi 5,00 zł za megawatogodzinę (MWh)”"
+        }
+      },
+      "vat_rate": {
+        "value": "0.23",
+        "source": {
+          "doc": "vat",
+          "page": "art. 146ef ust. 1 pkt 1 (Dz.U. 2025 poz. 775, s. 200): stawka z art. 41 ust. 1 wynosi 23 %"
+        }
+      },
+      "capacity_fee_monthly": {
+        "bands": [
+          {
+            "min_kwh": "0",
+            "max_kwh": "500",
+            "fee": "4.29"
+          },
+          {
+            "min_kwh": "500",
+            "max_kwh": "1200",
+            "fee": "10.31"
+          },
+          {
+            "min_kwh": "1200",
+            "max_kwh": "2800",
+            "fee": "17.18"
+          },
+          {
+            "min_kwh": "2800",
+            "max_kwh": null,
+            "fee": "24.05"
+          }
+        ],
+        "source": {
+          "doc": "ure-mocowa-2026",
+          "page": "Informacja nr 58/2025, s. 1 (PDF 1) pkt 1–4 (stawki netto, 1.01–31.12.2026); osd-2026 pkt 7.13 ppkt 2, s. 60 (PDF 62)"
+        }
+      },
+      "transition_fee_monthly": null
+    },
+    {
+      "valid_from": "2026-02-01",
+      "valid_to": "2026-12-31",
+      "quality_fee_per_kwh": {
+        "value": "0.0332",
+        "source": {
+          "doc": "td-jakosc-2026",
+          "page": "s. 1 (PDF 1): od 1.02.2026 „0,0332 zł/kWh (odbiorcy zasilani z sieci niskiego napięcia)”; osd-2026-tj tabela 7.9 poz. 3, s. 59 (PDF 59); podstawa: pse-zmiana-2026 s. 2 (PDF 5), kok 1,01577"
+        }
+      },
+      "renewable_fee_per_kwh": {
+        "value": "0.0073",
+        "source": {
+          "doc": "ure-oze-2026",
+          "page": "Informacja nr 61/2025, s. 1 (PDF 1): „stawka opłaty OZE, obowiązująca w roku 2026 wynosi: 7,30 zł/MWh”; osd-2026 pkt 7.11, s. 60 (PDF 62)"
+        }
+      },
+      "cogeneration_fee_per_kwh": {
+        "value": "0.0030",
+        "source": {
+          "doc": "kog-2026",
+          "page": "§ 1: „Wysokość stawki opłaty kogeneracyjnej na rok 2026 wynosi 3,00 zł/MWh”; osd-2026 pkt 7.12, s. 60 (PDF 62)"
+        }
+      },
+      "excise_per_kwh": {
+        "value": "0.0050",
+        "source": {
+          "doc": "akcyza",
+          "page": "art. 89 ust. 3 (Dz.U. 2026 poz. 412, s. 131): „Stawka akcyzy na energię elektryczną wynosi 5,00 zł za megawatogodzinę (MWh)”"
+        }
+      },
+      "vat_rate": {
+        "value": "0.23",
+        "source": {
+          "doc": "vat",
+          "page": "art. 146ef ust. 1 pkt 1 (Dz.U. 2025 poz. 775, s. 200): stawka z art. 41 ust. 1 wynosi 23 %"
+        }
+      },
+      "capacity_fee_monthly": {
+        "bands": [
+          {
+            "min_kwh": "0",
+            "max_kwh": "500",
+            "fee": "4.29"
+          },
+          {
+            "min_kwh": "500",
+            "max_kwh": "1200",
+            "fee": "10.31"
+          },
+          {
+            "min_kwh": "1200",
+            "max_kwh": "2800",
+            "fee": "17.18"
+          },
+          {
+            "min_kwh": "2800",
+            "max_kwh": null,
+            "fee": "24.05"
+          }
+        ],
+        "source": {
+          "doc": "ure-mocowa-2026",
+          "page": "Informacja nr 58/2025, s. 1 (PDF 1) pkt 1–4 (stawki netto, 1.01–31.12.2026); osd-2026 pkt 7.13 ppkt 2, s. 60 (PDF 62)"
+        }
+      },
+      "transition_fee_monthly": null
+    }
+  ],
+  "notes": [
+    "Opłata przejściowa: od 2026 r. brak (transition_fee_monthly = null) — M.P. 2025 poz. 1211 (PDF 1): „obowiązek uiszczania opłaty przejściowej wygaśnie w roku 2026”; taryfa PGE Dystrybucja 2026 nie ma wiersza opłaty przejściowej (tabela 7.9, s. 59).",
+    "Stawki opłaty mocowej 2026 (Informacja nr 58/2025) są wynikiem ponownej kalkulacji wg art. 16 ust. 3 ustawy Dz.U. 2025 poz. 1302."
+  ]
+}
