@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from hub.api import create_app
 from hub.clock import SIM_TIMEZONE, TICK_STEP, SimClock
 from hub.config import HubSettings
+from hub.models import DeviceCommand
 from hub.supervisor import DeviceSupervisor, HubError, ManagedDevice
 from device.models import DeviceConfig
 
@@ -834,5 +835,41 @@ def test_exhausted_step_waits_for_resume_when_paused():
 
         clock.configure(running=True, speed=None)
         await asyncio.wait_for(waiting, 1)
+
+    asyncio.run(scenario())
+
+
+def test_command_sent_during_tick_waits_for_it_and_starts_at_new_time(settings):
+    supervisor = DeviceSupervisor(settings)
+    supervisor.devices["dev_wm_01"] = ManagedDevice(DeviceConfig(**_washing_machine()), port=FIRST_PORT)
+    calls = []
+
+    async def scenario():
+        tick_started, release_tick = asyncio.Event(), asyncio.Event()
+
+        async def forward(device, path, method="POST", payload=None):
+            calls.append((path, supervisor.clock.sim_time))
+            if path == "/tick":
+                tick_started.set()
+                await release_tick.wait()
+            return {"state": "running"}
+
+        supervisor._forward = forward
+        before = supervisor.clock.sim_time
+        tick = asyncio.create_task(supervisor.tick())
+        await tick_started.wait()
+        command = asyncio.create_task(
+            supervisor.send_command("dev_wm_01", DeviceCommand(command="start_program", program_id="cotton_60"))
+        )
+        await asyncio.sleep(0.05)
+
+        # Komenda czeka na koniec ticka, zamiast trafić do urządzenia, które dostało już czas kolejnego kwadransa.
+        assert [path for path, _ in calls] == ["/tick"]
+        release_tick.set()
+        await tick
+        result = await command
+
+        assert result["status"] == "accepted"
+        assert calls[1] == ("/programs/cotton_60/start", before + TICK_STEP)
 
     asyncio.run(scenario())

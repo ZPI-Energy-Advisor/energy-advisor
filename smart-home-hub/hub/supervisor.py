@@ -135,17 +135,23 @@ class DeviceSupervisor:
         device = self.devices.get(device_id)
         if device is None:
             raise HubError(404, "device_not_found", f"Nie ma urządzenia {device_id!r} w rejestrze")
-        if command.start_at is not None and command.start_at < self.clock.sim_time:
-            raise HubError(422, "start_at_in_past", "start_at jest wcześniejszy niż czas symulacji")
-
         command_id = f"cmd_{uuid.uuid4().hex[:12]}"
-        if command.start_at is not None and command.start_at > self.clock.sim_time:
-            self._require_program(device, command.program_id)
-            self._scheduled.append(ScheduledCommand(device_id, command_id, command))
+        # Pod blokadą zegara: tick w trakcie przesuwa urządzeniom czas na kolejny kwadrans, więc komenda „teraz”
+        # wysłana w jego trakcie zaczęłaby się kwadrans później, a decyzja „teraz czy później” opierałaby się na
+        # czasie, który zaraz się zmieni.
+        async with self._clock_lock:
+            if command.start_at is not None and command.start_at < self.clock.sim_time:
+                raise HubError(422, "start_at_in_past", "start_at jest wcześniejszy niż czas symulacji")
+            if command.start_at is not None and command.start_at > self.clock.sim_time:
+                self._require_program(device, command.program_id)
+                self._scheduled.append(ScheduledCommand(device_id, command_id, command))
+                status = None
+            else:
+                status = await self._forward(device, self._command_path(command))
+        if status is None:
             status = await self._read_status(device)
             result = "scheduled"
         else:
-            status = await self._forward(device, self._command_path(command))
             result = "accepted"
         return {"command_id": command_id, "device_id": device_id, "status": result, "state": status["state"]}
 
