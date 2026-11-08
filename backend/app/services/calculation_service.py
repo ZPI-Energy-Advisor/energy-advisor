@@ -18,6 +18,7 @@ from app.parsers import (
 )
 from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.devices import LOCAL_TIMEZONE
+from app.providers.prices.base import expected_intervals
 from app.repositories.tariff_repository import TariffRepository
 from app.services.pricing_strategies import (
     SLOT_MINUTES,
@@ -381,7 +382,12 @@ class CalculationService:
         last_date = df_15min['date'].max()
         
         daily_counts = df_15min.groupby('date').size()
-        incomplete_days = daily_counts[daily_counts < SLOTS_PER_DAY].index.tolist()
+        # Doba ze zmianą czasu na letni ma 92 kwadranse; 25-godzinna mieści się w 96 slotach.
+        incomplete_days = [
+            day
+            for day, count in daily_counts.items()
+            if count < min(expected_intervals(date.fromisoformat(day), SLOT_MINUTES), SLOTS_PER_DAY)
+        ]
 
         if actions_per_day is not None:
             records_count = sum(actions_per_day.get(day, 0) for day in usage)

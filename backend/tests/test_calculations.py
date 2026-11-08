@@ -637,3 +637,22 @@ def test_device_usage_series_has_zero_in_covered_slots_without_devices():
     assert usage["2026-01-05"][:48] == [None] * 48
     assert usage["2026-01-05"][48] == 0.0
     assert usage["2026-01-05"][60] == 1.5
+
+
+def test_incomplete_days_respect_daylight_saving_change():
+    full_day = [0.1] * 96
+    spring_change = [None if 8 <= slot < 12 else 0.1 for slot in range(96)]
+    gap = [None if slot == 40 else 0.1 for slot in range(96)]
+    spring_change_with_gap = [None if slot == 40 else value for slot, value in enumerate(spring_change)]
+
+    usage = {
+        "2026-03-28": full_day,
+        "2026-03-29": spring_change,
+        "2026-03-30": gap,
+        "2026-10-25": full_day,
+        "2027-03-28": spring_change_with_gap,
+    }
+    statistics = CalculationService.summarize_usage(usage, {})["statistics"]
+
+    assert statistics["incomplete_days"] == ["2026-03-30", "2027-03-28"]
+    assert statistics["has_missing_data"] is True

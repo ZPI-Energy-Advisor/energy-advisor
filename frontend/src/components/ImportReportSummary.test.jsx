@@ -111,6 +111,30 @@ describe("ImportReportSummary", () => {
     expect(screen.getByText("zużycie urządzeń 52,49 kWh · produkcja PV 14,6 kWh")).toBeTruthy();
   });
 
+  it("pokazuje nazwę pliku, zakres dat i liczbę dni", () => {
+    const statistics = { data_start: "2026-03-01", data_end: "2026-03-31", days_analyzed: 31, incomplete_days: [] };
+
+    render(<ImportReportSummary report={baseReport} fileName="marzec.csv" statistics={statistics} />);
+
+    expect(screen.getByText("marzec.csv")).toBeTruthy();
+    expect(screen.getByText("01.03.2026 – 31.03.2026 · 31 dni")).toBeTruthy();
+    expect(screen.queryByText(/niepełn/)).toBeNull();
+  });
+
+  it("ostrzega o niepełnych dniach", () => {
+    const statistics = {
+      data_start: "2026-03-01",
+      data_end: "2026-03-02",
+      days_analyzed: 2,
+      incomplete_days: ["2026-03-02"],
+    };
+
+    render(<ImportReportSummary report={baseReport} statistics={statistics} />);
+
+    expect(screen.getByText(/Dane zawierają 1 niepełny dzień/)).toBeTruthy();
+    expect(screen.getByText("02.03.2026")).toBeTruthy();
+  });
+
   it("nic nie renderuje bez raportu", () => {
     const { container } = render(<ImportReportSummary report={null} />);
 

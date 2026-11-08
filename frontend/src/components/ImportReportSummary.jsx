@@ -1,5 +1,6 @@
 import { FiAlertTriangle, FiCheckCircle } from "react-icons/fi";
-import { formatCount } from "../utils/energyFiles";
+import { formatCount, formatDateRange } from "../utils/energyFiles";
+import IncompleteDaysNotice from "./IncompleteDaysNotice";
 
 const RESOLUTION_LABELS = {
   15: "odczyty co 15 min",
@@ -27,10 +28,11 @@ const UNITS = {
 };
 
 const DEVICES = ["urządzenie", "urządzenia", "urządzeń"];
+const DAYS = ["dzień", "dni", "dni"];
 
 const formatKwh = (value) => `${value.toLocaleString("pl-PL", { maximumFractionDigits: 2 })} kWh`;
 
-function ImportReportSummary({ report }) {
+function ImportReportSummary({ report, fileName, statistics }) {
   if (!report) return null;
 
   const unit = UNITS[report.unit] ?? UNITS.row;
@@ -45,8 +47,22 @@ function ImportReportSummary({ report }) {
     <div className="mt-6 text-left bg-white border border-emerald-100 rounded-lg p-4 md:p-5 text-sm">
       <h4 className="font-bold text-gray-900 mb-3">Raport z importu</h4>
       <dl className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-gray-700">
+        {fileName && (
+          <>
+            <dt className="text-gray-500">Plik</dt>
+            <dd className="font-medium break-all">{fileName}</dd>
+          </>
+        )}
         <dt className="text-gray-500">Rozpoznany format</dt>
         <dd className="font-medium">{report.format_label}</dd>
+        {statistics?.data_start && (
+          <>
+            <dt className="text-gray-500">Zakres dat</dt>
+            <dd>
+              {formatDateRange(statistics)} · {formatCount(statistics.days_analyzed, DAYS)}
+            </dd>
+          </>
+        )}
         <dt className="text-gray-500">Zaimportowano</dt>
         <dd className="font-medium">
           {formatCount(report.rows_imported, unit.imported)} z {report.rows_total}
@@ -81,6 +97,8 @@ function ImportReportSummary({ report }) {
           </>
         )}
       </dl>
+
+      <IncompleteDaysNotice statistics={statistics} className="mt-4" />
 
       {skipped.count > 0 ? (
         <div className="mt-4 p-3 rounded-lg bg-amber-50 text-amber-900">

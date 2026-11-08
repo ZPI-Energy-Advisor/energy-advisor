@@ -6,6 +6,8 @@ import SegmentedControl from "../components/SegmentedControl";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
+import ChartTooltip from "../components/ChartTooltip";
+import IncompleteDaysNotice from "../components/IncompleteDaysNotice";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -23,32 +25,32 @@ import {
   Cell,
 } from "recharts";
 
-function ChartTooltip({ active, payload, label, metric, resolution }) {
-  if (active && payload && payload.length) {
-    const unit = metric === "kwh" ? "kWh" : "PLN";
-    const prefix = resolution === "1d" ? "Dzień:" : "Godzina:";
+const INCOMPLETE_DAY_COLOR = "#f59e0b";
 
-    return (
-      <div className="bg-white p-3 border border-gray-100 shadow-xl rounded-lg min-w-[120px]">
-        <p className="text-gray-500 font-medium text-sm mb-1">
-          {prefix} {label}
+function TooltipValue({ point, metric }) {
+  const unit = metric === "kwh" ? "kWh" : "PLN";
+
+  return (
+    <>
+      <p
+        className={`font-bold text-xl ${metric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
+      >
+        {point.value == null ? (
+          <span className="text-sm font-medium text-gray-400">Brak danych</span>
+        ) : (
+          <>
+            {Number(point.value).toFixed(2)}{" "}
+            <span className="text-sm font-normal">{unit}</span>
+          </>
+        )}
+      </p>
+      {point.payload.incomplete && (
+        <p className="mt-1 text-xs font-medium text-amber-700">
+          Niepełny dzień – brakuje części pomiarów
         </p>
-        <p
-          className={`font-bold text-xl ${metric === "kwh" ? "text-emerald-600" : "text-blue-600"}`}
-        >
-          {payload[0].value == null ? (
-            <span className="text-sm font-medium text-gray-400">Brak danych</span>
-          ) : (
-            <>
-              {Number(payload[0].value).toFixed(2)}{" "}
-              <span className="text-sm font-normal">{unit}</span>
-            </>
-          )}
-        </p>
-      </div>
-    );
-  }
-  return null;
+      )}
+    </>
+  );
 }
 
 const METRIC_OPTIONS = [
@@ -125,8 +127,11 @@ function Dashboard() {
         sourceData = simulationData.chart_hourly || [];
     }
 
+    const incompleteDays = new Set(results?.statistics?.incomplete_days ?? []);
+
     return sourceData.map((item) => ({
       label: item[labelKey],
+      incomplete: chartResolution === "1d" && incompleteDays.has(item.date),
       value: item.missing
         ? null
         : chartMetric === "kwh"
@@ -167,6 +172,8 @@ function Dashboard() {
         <NoDataInRange />
       ) : (
         <>
+          <IncompleteDaysNotice statistics={results?.statistics} className="mb-6" />
+
           <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
             <SegmentedControl
               label="Widok"
@@ -279,6 +286,15 @@ function Dashboard() {
                     Część plików zawiera odczyty godzinowe – dla ich danych wartości 15-minutowe to równy podział godziny.
                   </p>
                 )}
+                {chartData.some((point) => point.incomplete) && (
+                  <p className="-mt-2 mb-4 flex items-center gap-2 text-xs md:text-sm text-gray-500">
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
+                      style={{ backgroundColor: INCOMPLETE_DAY_COLOR }}
+                    />
+                    Niepełne dni
+                  </p>
+                )}
 
                 <div className="h-[300px] md:h-[400px] w-full">
                   {chartData.length > 0 ? (
@@ -308,8 +324,10 @@ function Dashboard() {
                         <Tooltip
                           content={
                             <ChartTooltip
-                              metric={chartMetric}
                               resolution={chartResolution}
+                              render={([point]) => (
+                                <TooltipValue point={point} metric={chartMetric} />
+                              )}
                             />
                           }
                           cursor={{ fill: "#f8fafc" }}
@@ -319,8 +337,11 @@ function Dashboard() {
                           radius={[4, 4, 0, 0]}
                           animationDuration={1000}
                         >
-                          {chartData.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={chartColor} />
+                          {chartData.map((point, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={point.incomplete ? INCOMPLETE_DAY_COLOR : chartColor}
+                            />
                           ))}
                         </Bar>
                       </BarChart>
