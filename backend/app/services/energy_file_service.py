@@ -18,9 +18,10 @@ from app.services.calculation_service import (
     source_resolution,
 )
 from app.schemas.schedule import ScheduledActionOut, SchedulePriceOut, ScheduleResponse
-from app.services.dynamic_price_service import DynamicPriceService
 from app.services.pricing_strategies import SLOT_MINUTES
 from app.services.scheduling import SLOT, actions_from_devices, schedule
+from app.services.schedule_prices import SchedulePriceService
+from app.services.schedule_bill import shifted_readings
 from app.schemas.energy_file import (
     ALL_DEVICE_FILES_SOURCE_ID,
     ALL_DEVICE_FILES_SOURCE_NAME,
@@ -51,12 +52,14 @@ class EnergyFileService:
         file_repository: EnergyDataFileRepository,
         simulation_repository: SimulationRepository,
         device_repository: DeviceRepository,
-        price_service: DynamicPriceService,
+        schedule_prices: SchedulePriceService,
+        calculations_service=None,
     ):
         self.file_repository = file_repository
         self.simulation_repository = simulation_repository
         self.device_repository = device_repository
-        self.price_service = price_service
+        self.schedule_prices = schedule_prices
+        self.calculations_service = calculations_service
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:
         items, total = self.file_repository.list_by_user_id(
@@ -218,10 +221,36 @@ class EnergyFileService:
             results=public_results(CalculationService.calculate_for_range(merged_results, date_from, date_to)),
         )
 
+    def _readings_in_range(self, file_id: UUID, date_from: date, date_to: date) -> list:
+        if self.calculations_service is None:
+            return []
+        readings = self.calculations_service.energy_reading_repository.list_for_file(file_id)
+        return [reading for reading in readings if date_from <= reading.measured_at.date() <= date_to]
+
+    def _bills(self, user_id: UUID, file_id: UUID, readings: list, actions) -> dict:
+        """Pełny rachunek taryfy z profilu przed i po przesunięciu akcji (ten sam silnik co Wyniki kalkulacji)."""
+        if self.calculations_service is None or not readings:
+            return {}
+        try:
+            before = self.calculations_service.perform_tariff_calculations(
+                user_id, file_id, readings, selected_only=True
+            )
+            after = self.calculations_service.perform_tariff_calculations(
+                user_id, file_id, shifted_readings(readings, actions), selected_only=True
+            )
+        except HTTPException as error:
+            return {"bill_note": f"Nie udało się policzyć rachunku: {error.detail}"}
+        if before.tariff_calculation is None or after.tariff_calculation is None:
+            return {"bill_note": "Taryfy z profilu nie da się policzyć dla tego okresu, więc pokazujemy koszt akcji."}
+        return {
+            "bill_before": round(float(before.tariff_calculation["payable_gross"]), 2),
+            "bill_after": round(float(after.tariff_calculation["payable_gross"]), 2),
+        }
+
     def get_file_schedule(
         self, file_id: UUID, user_id: UUID, date_from: date | None, date_to: date | None
     ) -> ScheduleResponse:
-        """Najtańsze rozmieszczenie akcji pliku urządzeń przy cenach taryfy dynamicznej."""
+        """Najtańsze rozmieszczenie akcji pliku urządzeń przy cenach kwadransów taryfy z profilu (nowy cennik)."""
         energy_file = self._get_own_file(file_id, user_id)
         date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
         start = datetime.combine(date_from, time(), LOCAL_TIMEZONE).astimezone(timezone.utc)
@@ -235,14 +264,21 @@ class EnergyFileService:
                 detail="Optymalizacja działa tylko dla plików urządzeń z akcjami poboru energii w wybranym okresie.",
             )
         # Akcja może skończyć się po północy ostatniej doby, stąd ceny z zapasem jednej doby.
-        prices = self.price_service.consumer_prices(start, end + timedelta(days=1))
+        readings = self._readings_in_range(energy_file.id, date_from, date_to)
+        exports = {
+            reading.measured_at.replace(tzinfo=LOCAL_TIMEZONE).astimezone(timezone.utc): float(reading.exported_kwh)
+            for reading in readings
+            if reading.exported_kwh and reading.exported_kwh > 0
+        }
+        pricing = self.schedule_prices.for_user(user_id, start, end + timedelta(days=1), exports)
+        prices = pricing.prices
         result = schedule(actions, prices)
 
         missing_prices = [item for item in result.actions if item.cost_before is None]
         if len(missing_prices) == len(result.actions):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Brak cen taryfy dynamicznej dla wybranego okresu, więc nie da się policzyć optymalizacji.",
+                detail=f"Brak cen taryfy {pricing.description} dla wybranego okresu, więc nie da się policzyć optymalizacji.",
             )
 
         # Akcja, która kończy się po ostatniej dobie, ma na wykresie także dobę z dokończeniem.
@@ -260,6 +296,8 @@ class EnergyFileService:
         return ScheduleResponse(
             date_from=date_from,
             date_to=date_to,
+            pricing=pricing.description,
+            **self._bills(user_id, energy_file.id, readings, result.actions),
             cost_before=round(result.cost_before, 2),
             cost_after=round(result.cost_after, 2),
             missing_price_actions=len(missing_prices),

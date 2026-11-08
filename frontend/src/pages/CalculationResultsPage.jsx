@@ -26,6 +26,7 @@ const formatKwh = (value) =>
 // Składniki rachunku netto w okresie, w kolejności z faktury.
 const CYCLE_COLUMNS = [
   ["active_energy_net", "Energia czynna"],
+  ["excise_net", "Akcyza"],
   ["variable_network_net", "Dystrybucja zmienna"],
   ["quality_net", "Opłata jakościowa"],
   ["renewable_net", "Opłata OZE"],
@@ -34,13 +35,42 @@ const CYCLE_COLUMNS = [
   ["subscription_net", "Abonament"],
   ["capacity_net", "Opłata mocowa"],
   ["transition_net", "Opłata przejściowa"],
+  ["trade_fee_net", "Opłata handlowa"],
   ["vat", "VAT"],
 ];
+
+const OPERATOR_NAMES = {
+  PGE: "PGE Dystrybucja",
+  TAURON: "TAURON Dystrybucja",
+  ENEA: "Enea Operator",
+  ENERGA: "Energa-Operator",
+  STOEN: "Stoen Operator",
+};
 
 const modeLabels = {
   net_metering: "Net-metering",
   net_billing: "Net-billing",
 };
+
+// Kwota do zapłaty w porównaniu taryf; przy depozycie prosumenta pod spodem brutto i depozyt.
+function PriceCell({ result, selected }) {
+  if (!result) {
+    return <td className="whitespace-nowrap px-5 py-4 text-right text-sm text-gray-400">—</td>;
+  }
+  return (
+    <td className={`whitespace-nowrap px-5 py-4 text-right text-sm ${selected ? "bg-emerald-50" : ""}`}>
+      {selected && (
+        <span className="mr-2 rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">Z profilu</span>
+      )}
+      <span className="font-bold text-emerald-700">{formatMoney(result.payable_gross)}</span>
+      {Number(result.deposit_amount) > 0 && (
+        <p className="text-xs text-gray-500">
+          brutto {formatMoney(result.gross_total)}, depozyt {formatMoney(result.deposit_amount)}
+        </p>
+      )}
+    </td>
+  );
+}
 
 function Metric({ label, value, accent = false }) {
   return (
@@ -111,12 +141,28 @@ function CalculationResultsPage() {
 
   const tariffCalculation = calculation?.tariff_calculation;
   const tariffCalculations = calculation?.tariff_calculations ?? {};
-  const tariffRows = Object.entries(tariffCalculations);
+  const dynamicCalculations = calculation?.dynamic_calculations ?? {};
+  // Wiersz = grupa taryfowa; obok zwykłej umowy ta sama grupa z ceną dynamiczną (jeśli sprzedawca ją dopuszcza).
+  const tariffRows = [
+    ...Object.keys(tariffCalculations),
+    ...Object.keys(dynamicCalculations).filter((group) => !(group in tariffCalculations)),
+  ].map((group) => [group, tariffCalculations[group], dynamicCalculations[group]]);
+  const hasDynamic = Object.keys(dynamicCalculations).length > 0;
+  const dynamicName = Object.values(dynamicCalculations)[0]?.name ?? "Cena dynamiczna";
+  const selectedDynamic = Boolean(calculation?.tariff_data?.dynamic_price);
   const tariffCalculationErrors = calculation?.tariff_calculation_errors ?? {};
   const selectedTariff = calculation?.tariff_data?.tariff_type;
   const cycles = tariffCalculation?.cycles ?? [];
   const pvMode = calculation?.pv_details?.mode;
   const annualConsumption = calculation?.annual_consumption;
+  const unsupportedTariffs = calculation?.unsupported_tariffs ?? [];
+  const tariffNotes = Object.values(calculation?.tariff_notes ?? {});
+  const operatorCode = calculation?.tariff_data?.distribution_operator;
+  const operatorName = OPERATOR_NAMES[operatorCode] ?? operatorCode;
+  const selectedHasTradeFee = Number(tariffCalculation?.trade_fee_net) > 0;
+  const cycleColumns = CYCLE_COLUMNS.filter(
+    ([key]) => key !== "trade_fee_net" || selectedHasTradeFee,
+  );
 
   return (
     <div className="mx-auto max-w-6xl pb-12">
@@ -171,14 +217,16 @@ function CalculationResultsPage() {
           <div className="border-b border-gray-200 px-5 py-4">
             <h3 className="font-semibold text-gray-900">Porównanie taryf</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Ten sam plik i profil PV policzone dla każdej taryfy dostępnej u operatora.
+              Ten sam plik i profil PV policzone dla każdej grupy taryfowej operatora: przy zwykłej umowie
+              {hasDynamic && ` i z ceną dynamiczną (${dynamicName}; dystrybucja według grupy, okres rozliczeniowy oferty)`}.
+              Kwoty do zapłaty brutto.
             </p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {["Taryfa", "Brutto", "Depozyt", "Do zapłaty", "Energia czynna brutto"].map((label) => (
+                  {["Grupa taryfowa", "Zwykła umowa", ...(hasDynamic ? ["Cena dynamiczna"] : [])].map((label) => (
                     <th key={label} className="whitespace-nowrap px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 first:text-left">
                       {label}
                     </th>
@@ -186,25 +234,31 @@ function CalculationResultsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {tariffRows.map(([name, result]) => (
-                  <tr key={name} className={name === selectedTariff ? "bg-emerald-50" : "hover:bg-gray-50"}>
-                    <td className="whitespace-nowrap px-5 py-4 text-sm font-semibold text-gray-900">
-                      {name}
-                      {name === selectedTariff && (
-                        <span className="ml-2 rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">
-                          Z profilu
-                        </span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right text-sm">{formatMoney(result.gross_total)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right text-sm">{formatMoney(result.deposit_amount)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-bold text-emerald-700">{formatMoney(result.payable_gross)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right text-sm">{formatMoney(result.active_energy_gross)}</td>
+                {tariffRows.map(([group, regular, dynamic]) => (
+                  <tr key={group} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-5 py-4 text-sm font-semibold text-gray-900">{group}</td>
+                    <PriceCell result={regular} selected={group === selectedTariff && !selectedDynamic} />
+                    {hasDynamic && <PriceCell result={dynamic} selected={group === selectedTariff && selectedDynamic} />}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {unsupportedTariffs.length > 0 && (
+            <p className="border-t border-gray-100 px-5 py-3 text-xs text-gray-500">
+              U operatora {operatorName} są też:{" "}
+              {unsupportedTariffs.map((item, index) => (
+                <span key={item.code}>
+                  {index > 0 && ", "}
+                  <span title={item.reason} className="cursor-help underline decoration-dotted">{item.code}</span>
+                </span>
+              ))}
+              . Jeszcze ich nie liczymy.
+            </p>
+          )}
+          {tariffNotes.map((note) => (
+            <p key={note} className="border-t border-gray-100 px-5 py-2 text-xs text-gray-500">{note}</p>
+          ))}
         </div>
       )}
 
@@ -264,7 +318,7 @@ function CalculationResultsPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    {["Okres", ...CYCLE_COLUMNS.map(([, label]) => label), "Brutto"].map((label) => (
+                    {["Okres", ...cycleColumns.map(([, label]) => label), "Brutto"].map((label) => (
                       <th key={label} className="whitespace-nowrap px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 first:text-left">
                         {label}
                       </th>
@@ -282,7 +336,7 @@ function CalculationResultsPage() {
                           </p>
                         )}
                       </td>
-                      {CYCLE_COLUMNS.map(([key]) => (
+                      {cycleColumns.map(([key]) => (
                         <td key={key} className="whitespace-nowrap px-5 py-4 text-right text-sm">
                           {formatMoney(cycle[key])}
                         </td>

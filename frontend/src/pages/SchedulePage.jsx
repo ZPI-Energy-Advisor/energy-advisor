@@ -64,7 +64,11 @@ function SchedulePage() {
     }
   };
 
-  const saved = shown ? shown.cost_before - shown.cost_after : 0;
+  // Pełny rachunek przed i po (jak w Wynikach kalkulacji); bez niego koszt samych akcji urządzeń.
+  const hasBills = shown?.bill_before != null && shown?.bill_after != null;
+  const before = shown ? (hasBills ? shown.bill_before : shown.cost_before) : 0;
+  const after = shown ? (hasBills ? shown.bill_after : shown.cost_after) : 0;
+  const saved = before - after;
   const moved = shown ? shown.actions.filter((action) => action.status === "moved") : [];
   const conflicts = shown ? shown.actions.filter(isConflict) : [];
   const missingPrices = shown ? missingPricesNote(shown.missing_price_actions, shown.missing_price_days) : null;
@@ -120,17 +124,23 @@ function SchedulePage() {
           {shown && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <StatTile label="Koszt przed" value={formatPln(shown.cost_before)} />
-                <StatTile label="Koszt po" value={formatPln(shown.cost_after)} />
+                <StatTile label={hasBills ? "Rachunek przed" : "Koszt akcji przed"} value={formatPln(before)} />
+                <StatTile label={hasBills ? "Rachunek po" : "Koszt akcji po"} value={formatPln(after)} />
                 <StatTile
                   label="Oszczędność"
                   value={formatPln(saved)}
-                  hint={shown.cost_before > 0 ? `${((saved / shown.cost_before) * 100).toFixed(1)}%` : undefined}
+                  hint={before > 0 ? `${((saved / before) * 100).toFixed(1)}%` : undefined}
                 />
               </div>
 
               <p className="text-xs text-gray-500">
-                Koszt energii przy cenach taryfy dynamicznej, bez opłat dystrybucyjnych. Wynik zakłada, że rano wiadomo,
+                {hasBills
+                  ? "Pełny rachunek do zapłaty za wybrany okres (jak w Wynikach kalkulacji: opłaty, fotowoltaika i depozyt) przed i po przesunięciu urządzeń, "
+                  : `${shown.bill_note ?? ""} Koszt akcji urządzeń (energia, dystrybucja zmienna, opłaty za kWh, VAT), `}
+                według taryfy z profilu{shown.pricing ? `: ${shown.pricing}` : ""}. Godziny dobieramy po cenach kwadransów;
+                gdy panele oddają nadwyżkę do sieci, zużycie liczymy po wartości tej energii (RCE w net-billingu), więc
+                urządzenia chętnie trafiają na godziny produkcji. Przy zwykłej taryfie bez PV zysk daje tylko przejście do
+                tańszej strefy. Wynik zakłada, że rano wiadomo,
                 jakie akcje będą danego dnia, więc pokazuje potencjał oszczędności. Ładowanie EV nie jest jeszcze
                 optymalizowane.
               </p>

@@ -1,0 +1,474 @@
+{
+  "operator": "STOEN",
+  "year": 2026,
+  "covers": {
+    "from": "2026-01-01",
+    "to": "2026-12-31"
+  },
+  "documents": {
+    "osd-2026": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej Stoen Operator Sp. z o.o., obowiązuje od 1 stycznia 2026 r. (opracowanie na podstawie taryfy zatwierdzonej decyzją Prezesa URE DRE.WPR.4211.7.6.2025.AMi1 z 17.12.2025, BB URE – Energia Elektryczna nr 264 (4794) z 17.12.2025, z uwzględnieniem zmiany stawki jakościowej od 1.02.2026 wynikającej ze zmiany Taryfy PSE, BB URE nr 5 (4819) z 16.01.2026)",
+      "url": "https://www.stoen.pl/files/2026-03/stoen-taryfa-dystrybucji-calosc-25.02.2026-v2.pdf"
+    },
+    "eon-g-2026": {
+      "title": "Taryfa dla energii elektrycznej E.ON Polska S.A. dla odbiorców w grupie taryfowej G przyłączonych do sieci dystrybucyjnej Stoen Operator Sp. z o.o. – ceny i stawki opłat zatwierdzone przez Zarząd Sprzedawcy uchwałą z 29.10.2025, obowiązuje od 1.01.2026 (wersja z dnia 20251105nr1)",
+      "url": "https://eon.pl/-/media/Eon/Dokumenty/Dla-domu/Taryfa-energii-elektrycznej-EON-Polska-SA-dla-Grup-taryfowych-G--obowizuje-od-dnia-01_01_2026.ashx"
+    },
+    "rozp-2026-1182": {
+      "title": "Rozporządzenie Ministra Energii z dnia 3 września 2026 r. w sprawie sposobu kształtowania i kalkulacji taryf oraz sposobu rozliczeń w obrocie energią elektryczną (Dz.U. 2026 poz. 1182)",
+      "url": "https://eli.gov.pl/eli/DU/2026/1182"
+    },
+    "stoen-okresy-2026-09": {
+      "title": "Stoen Operator: Zmiana w okresach rozliczeniowych z odbiorcami – obowiązuje od dnia 5 września 2026 r. (komunikat z 8.09.2026)",
+      "url": "https://www.stoen.pl/pl/aktualnosc/zmiana-w-okresach-rozliczeniowych-z-odbiorcami-obowiazuje-od-dnia-5-wrzesnia-2026-r"
+    },
+    "eon-dyn-regulamin-2025-10": {
+      "title": "Regulamin produktu „Domowa energia pod kontrolą” E.ON Polska S.A., wersja z dnia 2.10.2025 (nr 1316)",
+      "url": "https://eon.pl/-/media/Eon/Dokumenty/Dla-domu/Produkty/1316HH_Regulamin-produktu-cena-dynamiczna-2025_10_02.ashx"
+    },
+    "eon-dyn-strona-2026-02": {
+      "title": "Strona produktu „Domowa energia pod kontrolą” na eon.pl — kopia archiwalna web.archive.org z 7.02.2026",
+      "url": "https://web.archive.org/web/20260207164648/https://eon.pl/dla-domu/oferta/energia-elektryczna/domowa-energia-pod-kontrola"
+    },
+    "eon-dyn-strona-2026-11": {
+      "title": "Strona produktu „Domowa energia pod kontrolą” na eon.pl (stan na 7.11.2026)",
+      "url": "https://www.eon.pl/dla-domu/oferta/energia-elektryczna/domowa-energia-pod-kontrola"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-09-30",
+      "subscription": {
+        "1": "2.88",
+        "6": "0.48",
+        "12": "0.24"
+      },
+      "subscription_source": {
+        "doc": "osd-2026",
+        "page": "pkt 7.5, s. 50 (PDF 50); okresy rozliczeniowe pkt 2.3.1 lit. b, s. 16 (PDF 16)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2342"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "11.46",
+            "3f": "18.53"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 7.5, s. 50 (PDF 50)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 2.1.2 (G11 – rozliczenie jednostrefowe), s. 12 (PDF 12)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2545"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0555"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "11.46",
+            "3f": "18.53"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 7.5, s. 50 (PDF 50)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 2.2.5, s. 15 (PDF 15)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.2570"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.1079"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "11.46",
+            "3f": "18.53"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 7.5, s. 50 (PDF 50)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 2.2.6, s. 15 (PDF 15)"
+          }
+        }
+      }
+    },
+    {
+      "valid_from": "2026-10-01",
+      "valid_to": "2026-12-31",
+      "subscription": {
+        "1": "0.00",
+        "6": "0.00",
+        "12": "0.00"
+      },
+      "subscription_source": {
+        "doc": "rozp-2026-1182",
+        "page": "§ 56 ust. 3 w zw. z § 57"
+      },
+      "note": "Od 1.10.2026 operatorzy nie naliczają opłaty abonamentowej (§ 56 ust. 3 rozporządzenia Dz.U. 2026 poz. 1182, które weszło w życie 5.09.2026). Stoen Operator nie opublikował dokumentu o tej zmianie (strona informacji stoen.pl sprawdzona 7.11.2026). Pozostałe stawki bez zmian (taryfa 2026, pkt 7.5).",
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2342"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "11.46",
+            "3f": "18.53"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 7.5, s. 50 (PDF 50)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 2.1.2 (G11 – rozliczenie jednostrefowe), s. 12 (PDF 12)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2545"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0555"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "11.46",
+            "3f": "18.53"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 7.5, s. 50 (PDF 50)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 2.2.5, s. 15 (PDF 15)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.2570"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.1079"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "11.46",
+            "3f": "18.53"
+          },
+          "rates_source": {
+            "doc": "osd-2026",
+            "page": "pkt 7.5, s. 50 (PDF 50)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026",
+            "page": "pkt 2.2.6, s. 15 (PDF 15)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "seller": "E.ON Polska S.A.",
+      "prices_include_excise": true,
+      "excise_source": {
+        "doc": "eon-g-2026",
+        "page": "pkt 1.7, s. 1 (PDF 1)"
+      },
+      "trade_fee_monthly": "13.23",
+      "trade_fee_source": {
+        "doc": "eon-g-2026",
+        "page": "pkt 3.5.2 i tabela w pkt 3.6, s. 3 (PDF 3)"
+      },
+      "source": {
+        "doc": "eon-g-2026",
+        "page": "tabela w pkt 3.6, s. 3 (PDF 3)"
+      },
+      "note": "Ceny netto z akcyzą (wartości w nawiasach w tabeli pkt 3.6; poza nawiasami ceny brutto z VAT 23% i akcyzą). Opłata handlowa 13,23 zł/mies. netto (16,27 brutto) jest jedna dla wszystkich grup i okresów rozliczeniowych. Taryfa E.ON nie jest zatwierdzana przez Prezesa URE; w 2026 r. nie ma ceny maksymalnej.",
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.5050"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.5394",
+            "2": "0.4295"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.5294",
+            "2": "0.4445"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-02-07",
+      "seller": "E.ON Polska S.A.",
+      "name": "Domowa energia pod kontrolą",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.1400",
+      "trade_fee_monthly": "27.63",
+      "prices_include_excise": false,
+      "source": {
+        "doc": "eon-dyn-regulamin-2025-10",
+        "page": "§ 1 ust. 3, § 2 ust. 1 lit. c, § 3 ust. 1 (tabela opłaty handlowej), PDF 1; § 3 ust. 2–3 (wzór CR, Kt, A, VAT), PDF 2"
+      },
+      "field_sources": {
+        "margin": {
+          "doc": "eon-dyn-strona-2026-02",
+          "page": "przypis * pod kafelkiem „Twoja cena dynamiczna”: koszty transakcyjne 0,14 zł za 1 kWh, akcyza 0,005 zł za 1 kWh, do sumy 23% VAT"
+        }
+      }
+    },
+    {
+      "valid_from": "2026-02-08",
+      "valid_to": "2026-03-31",
+      "seller": "E.ON Polska S.A.",
+      "name": "Domowa energia pod kontrolą",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.1400",
+      "trade_fee_monthly": "27.63",
+      "prices_include_excise": false,
+      "source": {
+        "doc": "eon-dyn-regulamin-2025-10",
+        "page": "§ 1 ust. 3, § 2 ust. 1 lit. c, § 3 ust. 1 (tabela opłaty handlowej), PDF 1; § 3 ust. 2–3 (wzór CR, Kt, A, VAT), PDF 2"
+      },
+      "field_sources": {
+        "margin": {
+          "text": "Kt 0,14 zł/kWh netto widać na stronie produktu jeszcze 7.02.2026, a 0,09 zł/kWh dopiero w kopii z 7.04.2026; dokładna data zmiany nieznana — ostrożnie przyjęto wyższą wartość do 31.03.2026 i 0,09 zł/kWh od 1.04.2026.",
+          "doc": "eon-dyn-strona-2026-02",
+          "page": "przypis * pod kafelkiem „Twoja cena dynamiczna”: koszty transakcyjne 0,14 zł za 1 kWh, akcyza 0,005 zł za 1 kWh, do sumy 23% VAT"
+        }
+      }
+    },
+    {
+      "valid_from": "2026-04-01",
+      "valid_to": "2026-12-31",
+      "seller": "E.ON Polska S.A.",
+      "name": "Domowa energia pod kontrolą",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.0900",
+      "trade_fee_monthly": "27.63",
+      "prices_include_excise": false,
+      "source": {
+        "doc": "eon-dyn-regulamin-2025-10",
+        "page": "§ 1 ust. 3, § 2 ust. 1 lit. c, § 3 ust. 1 (tabela opłaty handlowej), PDF 1; § 3 ust. 2–3 (wzór CR, Kt, A, VAT), PDF 2"
+      },
+      "field_sources": {
+        "margin": {
+          "doc": "eon-dyn-strona-2026-11",
+          "page": "przypis * pod kafelkiem „Twoja cena dynamiczna”: koszty transakcyjne 0,09 zł za 1 kWh, akcyza 0,005 zł za 1 kWh, do sumy 23% VAT"
+        }
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "Taryfa antysmogowa (E.ON: „Bezpieczne ogrzewanie”)",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Niższa nocna stawka składnika zmiennego stawki sieciowej (0,0677 zł/kWh) dotyczy tylko energii ponad zużycie z analogicznego okresu rozliczeniowego roku poprzedzającego zakwalifikowanie do G12as (do tej ilości 0,2342 zł/kWh), a tej wielkości nie ma w pliku z odczytami.",
+      "source": {
+        "doc": "osd-2026",
+        "page": "pkt 3.1.26–3.1.29, s. 25 (PDF 25); pkt 7.5, s. 50 (PDF 50)"
+      }
+    },
+    {
+      "code": "G12eko",
+      "name": "Taryfa G12eko (strefa zalecanego poboru)",
+      "valid_from": "2026-10-01",
+      "valid_to": "2026-12-31",
+      "reason": "Grupa stosowana od 1.10.2026, tylko z licznikiem zdalnego odczytu i 1-miesięcznym okresem rozliczeniowym (taryfa Stoen pkt 2.1.2.2, 2.1.12, 2.3.1). Taryfa E.ON Polska (sprzedawca z urzędu) nie ma grupy G12eko ani cen dla jej stref: według pkt 3.2.4 klient jest wtedy rozliczany po cenach G12 w strefach OSD, ale taryfa nie mówi, która cena (dzienna czy nocna) dotyczy strefy zalecanego poboru, a która pozostałych godzin doby.",
+      "source": {
+        "doc": "eon-g-2026",
+        "page": "pkt 3.1.2 i 3.2.4, s. 1–2 (PDF 1–2)"
+      }
+    }
+  ],
+  "notes": [
+    "Numery stron taryfy Stoen 2026 są równe numerom stron PDF (okładka i strona tytułowa liczą się do numeracji); wskazówki z README (PDF 14/15/49) były indeksami liczonymi od 0.",
+    "Tekst taryfy Stoen z 25.02.2026 uwzględnia zmianę stawki jakościowej od 1.02.2026; stawki grup G w pkt 7.5 są takie same jak w kopii taryfy na stronie E.ON (tekst sprzed zmiany z lutego).",
+    "Ceny E.ON: zapisane wartości w nawiasach z tabeli pkt 3.6 (netto z akcyzą, pkt 1.7), dlatego prices_include_excise = true. Kontrola: netto × 1,23 = brutto, np. G11 0,5050 × 1,23 = 0,62115 ≈ 0,6212; G12 0,5394 → 0,6635 i 0,4295 → 0,5283; G12w 0,5294 → 0,6512 i 0,4445 → 0,5467.",
+    "Opłata handlowa E.ON: jedna stawka dla wszystkich grup G i okresów rozliczeniowych, 16,27 zł/mies. brutto i 13,23 zł/mies. netto (13,23 × 1,23 = 16,2729 ≈ 16,27); naliczana za każdy miesiąc (pkt 3.5.2).",
+    "Abonament Stoen (pkt 7.5): 2,88 zł/mies. przy okresie 1-miesięcznym, 0,48 przy 6-miesięcznym, 0,24 przy 12-miesięcznym. Od 1.10.2026 0,00 zł (§ 56 ust. 3 rozporządzenia Dz.U. 2026 poz. 1182, w mocy od 5.09.2026 – § 57).",
+    "Okresy rozliczeniowe G11, G12, G12w: 1, 6 lub 12 miesięcy (taryfa Stoen pkt 2.3.1 lit. b; taryfa E.ON pkt 3.3.2). Od 5.09.2026 Stoen zawiera nowe umowy tylko z okresem 1-miesięcznym (komunikat z 8.09.2026, § 39 ust. 3 rozporządzenia); umowy zawarte wcześniej mogą zachować dłuższe okresy najdłużej do 31.12.2028 (§ 56 ust. 8), dlatego zostają klucze 1, 6 i 12.",
+    "G12w: taryfa E.ON nazywa strefy dzienną i nocną (pkt 3.2.2), taryfa Stoen szczytową i pozaszczytową (pkt 2.2.6); godziny są te same: strefa 1 pon.–pt. 6–22, strefa 2 pon.–pt. 22–6 oraz całe soboty, niedziele i dni ustawowo wolne od pracy. G12: strefy E.ON (pkt 3.2.1) takie same jak OSD (pkt 2.2.5).",
+    "Zegar liczników: taryfa Stoen pkt 2.2.11 (s. 16) i taryfa E.ON pkt 3.2.5 – zegary ustawia się według czasu zimowego i nie zmienia w okresie czasu letniego, chyba że urządzenia same utrzymują godziny stref; godziny stosujemy w czasie lokalnym (założenie projektu).",
+    "Opłaty krajowe w taryfie Stoen 2026 (są w regulatory.json, nie w tym pliku): stawka jakościowa 0,0331 zł/kWh od 1 do 31.01.2026 i 0,0332 zł/kWh od 1.02.2026 (pkt 7.5, s. 50); OZE 7,30 zł/MWh (pkt 7.8, s. 51); kogeneracyjna 3,00 zł/MWh (pkt 7.9, s. 51); mocowa dla gospodarstw domowych 4,29 / 10,31 / 17,18 / 24,05 zł/mies. przy rocznym zużyciu poniżej 500 / 500–1200 / powyżej 1200 do 2800 / powyżej 2800 kWh (pkt 7.10, s. 51). Opłaty przejściowej w taryfie 2026 nie ma.",
+    "Odbiorcy z licznikiem przedpłatowym płacą 50% stawki abonamentowej dla najdłuższego okresu (pkt 3.1.14); Stoen nie ma osobnej grupy przedpłatowej G, więc tego wariantu nie liczymy.",
+    "E.ON Polska S.A., produkt „Domowa energia pod kontrolą” (cena dynamiczna) dla konsumentów w grupach G11, G12, G12w, G12as przyłączonych do sieci Stoen Operator, z licznikiem zdalnego odczytu i 1-miesięcznym okresem rozliczeniowym (Regulamin § 2 ust. 1). Oferowany od 24.08.2024 r. do odwołania (Regulamin § 1 ust. 3, obie dostępne wersje).",
+    "Wzór (Regulamin § 3 ust. 2): CR = SPOT_RDN + Kt + A [PLN/MWh netto], SPOT_RDN = Σ(RDN_NJR × V_NJR) / Σ V_NJR — średnia cen RDN Fixing I ważona zużyciem w okresie rozliczeniowym. Należność CR × ΣV = Σ(RDN_NJR × V_NJR) + (Kt + A) × ΣV, czyli tyle samo, co wycena każdej NJR po RDN_NJR + Kt + A — model aplikacji (cena kwadransa + marża) odtwarza wzór. margin = Kt; A = akcyza (5 PLN/MWh netto) → prices_include_excise = false, akcyzę dolicza silnik z regulatory.json. Wzór nie ma ograniczeń ceny → brak market_price_floor i market_price_cap (ujemne ceny przechodzą do średniej).",
+    "Kt nie ma w Regulaminie liczby (odsyła do Aneksu, Część B ust. 2 lit. b; wzór Aneksu z 30.04.2025 ma tam puste pole wypełniane przy umowie). Wartość z oficjalnej strony produktu (przypis „koszty transakcyjne … zł za każdą 1 kWh”, kwoty netto, VAT doliczany): 0,14 zł/kWh w kopiach archiwalnych z 6.10.2024, 24.04.2025, 9.07.2025, 12.12.2025 i 7.02.2026; 0,09 zł/kWh w kopii z 7.04.2026 i na stronie 7.11.2026. Kt jest stały przez okres Aneksu — wpisy odpowiadają warunkom dla umowy zawieranej w danym dniu.",
+    "Opłata handlowa (Regulamin § 3 ust. 1): 33,98 zł brutto/mies., jedna kwota dla G11, G12, G12w i G12as; netto 33,98 / 1,23 = 27,626… ≈ 27,63 zł (27,63 × 1,23 = 33,98). Ta sama kwota na stronie produktu od 6.10.2024 do 7.11.2026.",
+    "Prosument: Regulamin nie podaje innego Kt ani innej opłaty (V_NJR prosumenta = energia zbilansowana godzinowo wg ustawy OZE) — pola prosumer_* pominięte, silnik użyje wartości ogólnych.",
+    "Dystrybucja liczona wg G11 Stoen (format danych); produkt dostępny też dla G12, G12w i G12as. Cena giełdowa w aplikacji to RCE (PSE), a w umowie RDN Fixing I TGE (gdy brak — Fixing II, potem cena niezbilansowania) — przybliżenie.",
+    "Granice wpisów: wersje Regulaminu (2.01.2025, 30.04.2025 — niedostępna, 2.10.2025) i zmiana Kt (0,14 → 0,09 zł/kWh między 8.02 a 7.04.2026, przyjęto od 1.04.2026).",
+    "Oferta E.ON „Domowa energia pod kontrolą”: oświadczenia o akceptacji ryzyka (1318HH, wersje 7.08.2024 i 30.04.2025) liczą przykład z Kt = 123 zł/MWh brutto (ok. 0,10 zł/kWh netto), a strona produktu podaje koszty transakcyjne 0,14 zł/kWh netto — przyjęto wartość ze strony produktu (wyższą, ostrożniej)."
+  ]
+}

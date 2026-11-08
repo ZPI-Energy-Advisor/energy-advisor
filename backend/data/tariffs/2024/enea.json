@@ -1,0 +1,299 @@
+{
+  "operator": "ENEA",
+  "year": 2024,
+  "covers": {
+    "from": "2024-08-24",
+    "to": "2024-12-31"
+  },
+  "documents": {
+    "osd-2024-wyciag-07": {
+      "title": "Wyciąg z Taryfy dla usług dystrybucji energii elektrycznej ENEA Operator sp. z o.o. (wersja od 1 lipca 2024 r.; taryfa zatwierdzona decyzją Prezesa URE DRE.WRE.4211.60.10.2023.MKa4 z 15.12.2023, obowiązująca od 1.01.2024, zmieniona decyzją DRE.WRE.4211.9.2.2024.MKa4/ASa1 z 30.01.2024)",
+      "url": "https://operator.enea.pl/uploads-ev2/Operator/us%C5%82ugidystrybucyjne/Taryfy%20i%20cenniki/ENEA%20Operator_wyci%C4%85g%20z%20taryfy_od%201%20lipca%202024.pdf"
+    },
+    "enea-sa-2024": {
+      "title": "Taryfa dla energii elektrycznej dla odbiorców z grup taryfowych G – ENEA S.A., zatwierdzona decyzją Prezesa URE DRE.WRE.4211.61.13.2023.AKr3 z 15.12.2023 (Biuletyn Branżowy URE – Energia elektryczna Nr 415 (4232) z 15.12.2023)",
+      "url": "https://bip.ure.gov.pl/download/3/17816/Enea.pdf"
+    },
+    "enea-sa-2024-07": {
+      "title": "Zmiana Taryfy dla energii elektrycznej dla odbiorców z grup taryfowych G – ENEA S.A., decyzja Prezesa URE DRE.WRE.4211.31.11.2024.JTr z 28.06.2024 (Biuletyn Branżowy URE – Energia elektryczna Nr 162 (4406) z 28.06.2024); stosowana od 1.07.2024, okres obowiązywania taryfy przedłużony do 31.12.2025",
+      "url": "https://bip.ure.gov.pl/download/3/18555/ENEA.pdf"
+    },
+    "enea-strefy-www": {
+      "title": "ENEA S.A. – strona „Możliwe grupy taryfowe i strefy godzinowe” (stan z 7.11.2026)",
+      "url": "https://www.enea.pl/dla-domu/oferta/mozliwe-grupy-taryfowe-i-strefy-godzinowe"
+    },
+    "enea-strefy-www-2025-05": {
+      "title": "ENEA S.A. – strona „Możliwe grupy taryfowe i strefy godzinowe”, najstarsza kopia archiwalna w Internet Archive (16.05.2025)",
+      "url": "http://web.archive.org/web/20250516151725/https://www.enea.pl/dla-domu/oferta/mozliwe-grupy-taryfowe-i-strefy-godzinowe"
+    },
+    "ustawa-2022-2243": {
+      "title": "Ustawa z dnia 27 października 2022 r. o środkach nadzwyczajnych mających na celu ograniczenie wysokości cen energii elektrycznej oraz wsparciu niektórych odbiorców w 2023 roku oraz w 2024 roku (t.j. Dz.U. 2024 poz. 1622 z późn. zm.)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220002243"
+    },
+    "enea-dyn-cennik-2026": {
+      "title": "Cennik nr DI12010328_G – Oferta Ceny Dynamiczne (ważny od 01.10.2026 do 31.12.2026), Załącznik nr 1 do Regulaminu Oferty Ceny Dynamiczne z 01.10.2026",
+      "url": "https://www.enea.pl/media/10114/cennik-oferty-ceny-dynamicznedi12010328god-01102026-do-31122026pdf.pdf"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "subscription": {
+        "1": "3.84",
+        "2": "1.92",
+        "6": "0.64",
+        "12": "0.32"
+      },
+      "subscription_source": {
+        "doc": "osd-2024-wyciag-07",
+        "page": "pkt 8.4, s. 9 (PDF 9); okresy rozliczeniowe 1, 2, 6 lub 12 mies. dla G11, G12, G12w, G12as: pkt 3.3.1 ppkt 2), s. 2 (PDF 2)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2486"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.25",
+            "3f": "10.14"
+          },
+          "rates_source": {
+            "doc": "osd-2024-wyciag-07",
+            "page": "pkt 8.2, s. 8 (PDF 8)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2024-wyciag-07",
+            "page": "pkt 8.2 (G11: składnik zmienny „cała doba”), s. 8 (PDF 8)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2817"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0927"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "9.34",
+            "3f": "14.18"
+          },
+          "rates_source": {
+            "doc": "osd-2024-wyciag-07",
+            "page": "pkt 8.2, s. 8 (PDF 8)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "text": "taryfa OSD 2024 (pkt 3.2.7, s. 2 (PDF 2)) podaje tylko zasadę (8 kolejnych godzin spośród 22–7 i 2 kolejne spośród 13–17), a godziny zegarowe określa Operator; dokumentu z 2024 r. z godzinami nie znaleziono. Przyjęto godziny ze strony ENEA S.A. (noc 22–6 i 13–15, dzień 6–13 i 15–22), takie same w kopii z 7.11.2026 i w najstarszej kopii archiwalnej strony z 16.05.2025 (dokument enea-strefy-www-2025-05); zakładamy, że obowiązywały też w 2024 r.",
+            "doc": "enea-strefy-www",
+            "page": "sekcja „Strefa godzinowa w taryfie G12”"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.2736"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0825"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "16.41",
+            "3f": "24.54"
+          },
+          "rates_source": {
+            "doc": "osd-2024-wyciag-07",
+            "page": "pkt 8.2, s. 8 (PDF 8)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "21:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["21:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2024-wyciag-07",
+            "page": "pkt 3.2.5, s. 1 (PDF 1)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "seller": "ENEA S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "enea-sa-2024-07",
+        "page": "zmiana pkt 5 (nowe brzmienie pkt 1.6 taryfy) i nagłówek tabeli pkt 5.1 „bez podatku od towarów i usług oraz podatku akcyzowego”, s. 2 (PDF 5)"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. c"
+      },
+      "trade_fee_monthly": "0.00",
+      "trade_fee_source": {
+        "doc": "enea-sa-2024-07",
+        "page": "pkt 5 w nowym brzmieniu, s. 2–3 (PDF 5–6) – tylko ceny energii, bez opłaty handlowej; taryfa podstawowa (enea-sa-2024) nie ma rozdziału o opłatach handlowych (spis treści, s. 2 (PDF 4))"
+      },
+      "source": {
+        "doc": "enea-sa-2024-07",
+        "page": "pkt 5.1, s. 2 (PDF 5)"
+      },
+      "note": "Ceny z pkt 5.1 obowiązują od 1.07.2024 (decyzja, pouczenie pkt 6, PDF 3) do 31.12.2025; pkt 5.3 (s. 3, PDF 6) podaje te same ceny jako ceny odniesienia na 1.07–31.12.2024. Pkt 5.2 (s. 2–3, PDF 5–6) powtarza cenę maksymalną 0,500 zł/kWh na 1.07–31.12.2024 (z wyłączeniem umów z ceną dynamiczną, od 24.08.2024) i nakazuje stosować niższą cenę z taryfy, gdy jest niższa — dotyczy strefy nocnej G12 (0,4056) i pozaszczytowej G12w (0,4171). Taryfa obejmuje tylko G11, G12, G12w, G11p i G12p (pkt 3.1.1 taryfy podstawowej, s. 4 (PDF 6)).",
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.6265"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.7506",
+            "2": "0.4056"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.8404",
+            "2": "0.4171"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "seller": "ENEA S.A.",
+      "name": "Ceny Dynamiczne",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.0820",
+      "trade_fee_monthly": "18.12",
+      "prices_include_excise": false,
+      "source": {
+        "text": "brak cennika sprzedawcy dla tego okresu; przyjęto warunki z Cennika nr DI12010328_G obowiązującego od 01.10.2026 (B = 0,0820 zł/kWh, opłata handlowa 22,29 zł brutto = 18,12 zł netto). Początek oferty = ustawowy obowiązek od 24.08.2024 (art. 5ag Prawa energetycznego); nie znaleziono dokumentu ENEA z datą uruchomienia oferty dla gospodarstw domowych.",
+        "doc": "enea-dyn-cennik-2026",
+        "page": "pkt 1.1–1.3, 1.7, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "margin": {
+          "text": "jak w cenniku od 01.10.2026",
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1–1.3, 1.7, s. 1 (PDF 1)"
+        },
+        "trade_fee_monthly": {
+          "text": "jak w cenniku od 01.10.2026, 22,29/1,23 = 18,12",
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1–1.3, 1.7, s. 1 (PDF 1)"
+        },
+        "prices_include_excise": {
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1 i 1.3, s. 1 (PDF 1)"
+        }
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "G12as – taryfa antysmogowa",
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "reason": "Niższa stawka sieciowa w strefie nocnej (0,0249 zamiast 0,2486 zł/kWh) dotyczy tylko zużycia ponad zużycie z analogicznego okresu rozliczeniowego roku poprzedniego, a tej wielkości nie ma w pliku z odczytami. Taryfa sprzedawcy z urzędu ENEA S.A. nie ma też ceny energii dla G12as.",
+      "source": {
+        "doc": "osd-2024-wyciag-07",
+        "page": "pkt 3.1.10–3.1.13, s. 1 (PDF 1); pkt 8.2 z przypisami * i **, s. 8 (PDF 8)"
+      }
+    },
+    {
+      "code": "G11p",
+      "name": "G11p – A KONTO DZIEŃ I NOC (licznik przedpłatowy)",
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "reason": "Rozliczenie w systemie przedpłatowym: opłaty pobiera się z góry przy zakupie energii, bez okresów rozliczeniowych. Stawki dystrybucji i cena energii są takie same jak w G11; różni się abonament (0,16 zł/mies., 50% stawki dla najdłuższego okresu rozliczeniowego).",
+      "source": {
+        "doc": "osd-2024-wyciag-07",
+        "page": "pkt 3.3.1 (ostatni akapit), s. 2 (PDF 2); pkt 4.1.17–4.1.18, s. 4 (PDF 4); pkt 8.2 i 8.4, s. 8–9 (PDF 8–9)"
+      }
+    },
+    {
+      "code": "G12p",
+      "name": "G12p – A KONTO CIEPŁY DOM (licznik przedpłatowy)",
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "reason": "Rozliczenie w systemie przedpłatowym: opłaty pobiera się z góry przy zakupie energii, bez okresów rozliczeniowych. Stawki dystrybucji, zasada stref (pkt 3.2.7) i ceny energii są takie same jak w G12; różni się abonament (0,16 zł/mies., 50% stawki dla najdłuższego okresu rozliczeniowego).",
+      "source": {
+        "doc": "osd-2024-wyciag-07",
+        "page": "pkt 3.3.1 (ostatni akapit), s. 2 (PDF 2); pkt 4.1.17–4.1.18, s. 4 (PDF 4); pkt 8.2 i 8.4, s. 8–9 (PDF 8–9)"
+      }
+    }
+  ],
+  "notes": ["Okres pliku 24.08–31.12.2024: stawki dystrybucyjne z taryfy ENEA Operator na 2024 r. (wyciąg w wersji od 1.07.2024, druk = strona PDF). W II półroczu 2024 r. nie było nowej decyzji URE dla ENEA Operator (lista BIP URE 2024: następna taryfa od 1.01.2025, decyzja DRE.WRE.4211.46.9.2024.MKa4). Zmiana z 30.01.2024 (DRE.WRE.4211.9.2.2024.MKa4/ASa1; pkt 4.1.44–4.1.60 i rozdz. 9 wyciągu, stawki z 2022 r.) dotyczy tylko odbiorców uprawnionych od 1.01 do 30.06.2024, więc po 24.08.2024 nie ma zastosowania.", "Ceny energii: taryfa ENEA S.A. w brzmieniu zmiany z 28.06.2024 (DRE.WRE.4211.31.11.2024.JTr), stosowana od 1.07.2024. Postępowanie w sprawie innej zmiany taryfy umorzono 17.07.2024 (DRE.WRE.4211.25.8.2024.AKr3, BB URE Nr 177 (4421)) — bez nowych cen.", "Cena maksymalna 0,5000 zł/kWh netto (bez VAT i akcyzy) z ustawy; pkt 5.2 taryfy ENEA S.A. powtarza ją na 1.07–31.12.2024. Ceny G11 (0,6265), G12 dzień (0,7506) i G12w szczyt (0,8404) są wyższe niż 0,50, więc płaci się 0,50 zł/kWh plus akcyza; G12 noc (0,4056) i G12w poza szczytem (0,4171) są niższe — płaci się cenę z taryfy.", "G12: taryfa OSD (pkt 3.2.7) podaje tylko zasadę, a godziny zegarowe określa Operator. Godziny 22–6 i 13–15 (noc) przyjęto ze strony ENEA S.A. dla 2024 r.: strona istnieje od 2025 r. (najstarsza kopia w Internet Archive z 16.05.2025, te same godziny co 7.11.2026); dokumentu z 2024 r. z godzinami nie znaleziono.", "Zegar liczników: taryfa OSD pkt 3.2.9 (s. 2, PDF 2) i taryfa ENEA S.A. pkt 3.2.2 (s. 5, PDF 7) — zegary strefowe ustawia się według czasu zimowego i nie zmienia w okresie czasu letniego, chyba że urządzenie samo utrzymuje godziny stref; godziny stosujemy w czasie lokalnym (założenie projektu).", "Okresy rozliczeniowe G11, G12, G12w, G12as: 1, 2, 6 lub 12 miesięcy (pkt 3.3.1 ppkt 2)); abonament 3,84 / 1,92 / 0,64 / 0,32 zł/mies., jednakowy dla tych grup (pkt 8.4). Abonament nalicza się w pełnej wysokości niezależnie od dnia zawarcia lub rozwiązania umowy (pkt 4.1.16, s. 4).", "G11p i G12p (liczniki przedpłatowe) mają stawki i ceny jak G11 i G12, ale nie ma ich w TariffTypeEnum, a rozliczenie przedpłatowe nie ma okresów rozliczeniowych — wpisane do „unsupported” (jak w pliku 2026).", "Opłaty krajowe w taryfie OSD 2024 (dane w regulatory.json, tu tylko do porównania): jakościowa 0,0314 zł/kWh (pkt 8.2, s. 8); przejściowa 0,02 / 0,10 / 0,33 zł/mies. (poniżej 500 / od 500 do 1200 / powyżej 1200 kWh rocznie, pkt 8.3.2, s. 9); OZE 0,00 zł/MWh, kogeneracyjna 6,18 zł/MWh, mocowa 0,1267 zł/kWh (odbiorcy inni niż gospodarstwa domowe) oraz 2,66 / 6,39 / 10,64 / 14,90 zł/mies. dla gospodarstw domowych (poniżej 500 / od 500 do 1200 / powyżej 1200 do 2800 / powyżej 2800 kWh), z przypisem: od 1.07 do 31.12.2024 stawka 0,00 zł/mies. (art. 28 ustawy z 23.05.2024, Dz.U. 2024 poz. 859), s. 9–10 (PDF 9–10).", "Oferta „Ceny Dynamiczne” ENEA: Ch = CTGEh (RDN Fixing I) + A (akcyza 0,005 zł/kWh) + B (0,0820 zł/kWh); marża B nie zawiera akcyzy (A doliczana osobno) -> prices_include_excise = false.", "Jedyny dostępny cennik obowiązuje od 01.10.2026 do 31.12.2026. Wartości przed 01.10.2026 przyjęto z tego cennika (te same warunki).", "Początek oferty (24.08.2024) wynika z art. 5ag Prawa energetycznego, nie z dokumentu ENEA.", "Brak odrębnego wariantu prosumenta: cennik pkt 1.6 zmienia tylko sposób ważenia (energia zbilansowana godzinowo), stawki B i opłaty handlowej są te same.", "Opłata handlowa 22,29 zł brutto/mies. = 18,12 zł netto; wariant e-faktura 9,99 zł brutto = 8,12 zł netto; z oświadczeniem o magazynie energii 0,00 zł. Przyjęto stawkę podstawową.", "Okres rozliczeniowy oferty: 1 lub 2 miesiące (regulamin § 1 ust. 4 lit. c); przyjęto 1. Brak dolnego i górnego limitu ceny rynkowej w cenniku.", "Sprzedawca w regulaminie: ENEA Sprzedaż Sp. z o.o.; produkt „Ceny Dynamiczne Max” (osobny, tylko odnotowany) nie jest modelowany.", "Oferta „Ceny Dynamiczne”: regulamin z 01.10.2026 wskazuje sprzedawcę ENEA Sprzedaż Sp. z o.o.; dla okresów przed 1.10.2026 wpisano ENEA S.A. (sprzedawca z urzędu z taryfy G). Nazwa nie wpływa na rachunek."]
+}

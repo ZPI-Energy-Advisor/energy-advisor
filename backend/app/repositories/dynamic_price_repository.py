@@ -6,8 +6,6 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models.RcePriceObservation import RcePriceObservation
-from app.models.RcEmPriceObservation import RcEmPriceObservation
-from app.models.DynamicPriceObservation import DynamicPriceObservation
 from app.providers.prices.base import PricePoint
 
 
@@ -42,19 +40,8 @@ class DynamicPriceRepository:
                 "updated_at": func.now(),
             },
         )
-        legacy_stmt = insert(DynamicPriceObservation).values(rows)
-        legacy_stmt = legacy_stmt.on_conflict_do_update(
-            constraint="uq_dynamic_price_source_interval",
-            set_={
-                "interval_minutes": legacy_stmt.excluded.interval_minutes,
-                "business_date": legacy_stmt.excluded.business_date,
-                "price_pln_mwh": legacy_stmt.excluded.price_pln_mwh,
-                "updated_at": func.now(),
-            },
-        )
         try:
             self.db.execute(rce_stmt)
-            self.db.execute(legacy_stmt)
             self.db.commit()
         except Exception:
             self.db.rollback()
@@ -170,28 +157,3 @@ class DynamicPriceRepository:
             RcePriceObservation.business_date <= date_to,
         )
 
-    def upsert_rcem_many(self, rows: Sequence[dict]) -> int:
-        if not rows:
-            return 0
-        stmt = insert(RcEmPriceObservation).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_rcem_price_source_month",
-            set_={
-                "price_pln_mwh": stmt.excluded.price_pln_mwh,
-                "published_at": stmt.excluded.published_at,
-                "updated_at": func.now(),
-            },
-        )
-        self.db.execute(stmt)
-        self.db.commit()
-        return len(rows)
-
-    def get_rcem_price(self, source: str, price_month: date) -> Decimal | None:
-        return (
-            self.db.query(RcEmPriceObservation.price_pln_mwh)
-            .filter(
-                RcEmPriceObservation.source == source,
-                RcEmPriceObservation.price_month == price_month.replace(day=1),
-            )
-            .scalar()
-        )

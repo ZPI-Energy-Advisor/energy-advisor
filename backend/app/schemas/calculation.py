@@ -25,6 +25,8 @@ class TariffData(BaseModel):
     """User inputs required to select the applicable tariff rates."""
 
     tariff_type: TariffTypeEnum
+    # Umowa z ceną dynamiczną (dystrybucja według tariff_type).
+    dynamic_price: bool = False
     billing_cycle: BillingCycleEnum
     billing_period_start_date: date
     distribution_operator: DistributionOperatorEnum
@@ -73,6 +75,14 @@ class AnnualConsumption(BaseModel):
     scaled: bool
 
 
+class UnsupportedTariffInfo(BaseModel):
+    """Taryfa operatora, której jeszcze nie liczymy (pokazywana jedną linijką pod porównaniem)."""
+
+    code: str
+    name: str
+    reason: str
+
+
 class CalculationDetails(BaseModel):
     pv_details: PVDetails | None = None
     
@@ -85,5 +95,10 @@ class CalculationDetails(BaseModel):
     tariff_calculation: dict[str, object] | None = None
     tariff_calculations: dict[str, dict[str, object]] | None = None
     tariff_calculation_errors: dict[str, str] | None = None
+    # Oferta z ceną dynamiczną dla każdej grupy, którą dopuszcza sprzedawca: {grupa: wynik}.
+    dynamic_calculations: dict[str, dict[str, object]] | None = None
     # Uwagi do danych wejściowych, które nie blokują kalkulacji (np. pominięte oddanie energii).
     warnings: list[str] | None = None
+    # Krótkie informacje o taryfach niepoliczonych dla tego pliku, np. „oferta dostępna od …”.
+    tariff_notes: dict[str, str] | None = None
+    unsupported_tariffs: list[UnsupportedTariffInfo] | None = None

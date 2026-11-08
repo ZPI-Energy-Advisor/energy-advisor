@@ -1,0 +1,139 @@
+{
+  "year": 2024,
+  "covers": {
+    "from": "2024-08-24",
+    "to": "2024-12-31"
+  },
+  "documents": {
+    "akcyza": {
+      "title": "Ustawa z dnia 6 grudnia 2008 r. o podatku akcyzowym (tekst jednolity Dz.U. 2026 poz. 412)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20260000412"
+    },
+    "vat": {
+      "title": "Ustawa z dnia 11 marca 2004 r. o podatku od towarów i usług (tekst jednolity Dz.U. 2025 poz. 775)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20250000775"
+    },
+    "kdt": {
+      "title": "Ustawa z dnia 29 czerwca 2007 r. o zasadach pokrywania kosztów powstałych u wytwórców w związku z przedterminowym rozwiązaniem umów długoterminowych sprzedaży mocy i energii elektrycznej (tekst jednolity Dz.U. 2022 poz. 311)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220000311"
+    },
+    "osd-2024": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej PGE Dystrybucja S.A. na rok 2024, decyzja Prezesa URE DRE.WRE.4211.63.7.2023.JCz z 15.12.2023 (BB URE Nr 410 (4227))",
+      "url": "https://bip.ure.gov.pl/download/3/17803/PGEDystrybucja.pdf"
+    },
+    "ure-kalkulacja-osd-2024": {
+      "title": "Informacja Prezesa URE w sprawie kalkulacji taryf OSD na 2024 r. (stawka jakościowa PSE 31,10 zł/MWh, współczynnik kok 1,01009, opłata OZE 0,00 zł/MWh)",
+      "url": "https://www.ure.gov.pl/download/9/14426/InformacjawsprawiekalukacjitaryfOSDna2024r.pdf"
+    },
+    "enea-2407": {
+      "title": "Wyciąg z taryfy dla usług dystrybucji Enea Operator Sp. z o.o. (decyzja DRE.WRE.4211.60.10.2023.MKa4) — opłata OZE 0,00 zł/MWh wg Informacji Prezesa URE nr 66/2023 oraz przypis o zerowej opłacie mocowej od 1.07.2024"
+    },
+    "kog-2024": {
+      "title": "Rozporządzenie Ministra Klimatu i Środowiska z dnia 13 października 2023 r. w sprawie wysokości stawki opłaty kogeneracyjnej na rok 2024 (Dz.U. 2023 poz. 2265)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20230002265"
+    },
+    "ustawa-859": {
+      "title": "Ustawa z dnia 23 maja 2024 r. o bonie energetycznym oraz o zmianie niektórych ustaw w celu ograniczenia cen energii elektrycznej, gazu ziemnego i ciepła systemowego (Dz.U. 2024 poz. 859)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20240000859"
+    },
+    "ure-mocowa-2024": {
+      "title": "Informacja Prezesa URE nr 48/2023 z 15.09.2023 w sprawie stawek opłaty mocowej na rok 2024 (2,66 / 6,39 / 10,64 / 14,90 zł/mies.; zastąpione zerem na 1.07–31.12.2024 przez art. 28 ustawy poz. 859)"
+    }
+  },
+  "periods": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "quality_fee_per_kwh": {
+        "value": "0.0314",
+        "source": {
+          "doc": "osd-2024",
+          "page": "pkt 7.9 lp. 4, s. 57 (PDF 59): 0,0314 zł/kWh; potwierdzenie: ure-kalkulacja-osd-2024 pkt 3, s. 2 (PDF 2): SoSJ 31,10 zł/MWh × kok 1,01009 = 31,41 zł/MWh"
+        }
+      },
+      "renewable_fee_per_kwh": {
+        "value": "0.0000",
+        "source": {
+          "doc": "ure-kalkulacja-osd-2024",
+          "page": "pkt 5, s. 2 (PDF 2): stawka OZE na 2024 r. (Informacja URE nr 66/2023) wynosi 0,00 zł/MWh; osd-2024 pkt 7.10, s. 58 (PDF 60); enea-2407 s. 9"
+        }
+      },
+      "cogeneration_fee_per_kwh": {
+        "value": "0.00618",
+        "source": {
+          "doc": "kog-2024",
+          "page": "§ 1: „Wysokość stawki opłaty kogeneracyjnej na rok 2024 wynosi 6,18 zł/MWh”"
+        }
+      },
+      "excise_per_kwh": {
+        "value": "0.0050",
+        "source": {
+          "doc": "akcyza",
+          "page": "art. 89 ust. 3 (Dz.U. 2026 poz. 412, s. 131): „Stawka akcyzy na energię elektryczną wynosi 5,00 zł za megawatogodzinę (MWh)”"
+        }
+      },
+      "vat_rate": {
+        "value": "0.23",
+        "source": {
+          "doc": "vat",
+          "page": "art. 146ef ust. 1 pkt 1 (Dz.U. 2025 poz. 775, s. 200): stawka z art. 41 ust. 1 wynosi 23 %"
+        }
+      },
+      "capacity_fee_monthly": {
+        "bands": [
+          {
+            "min_kwh": "0",
+            "max_kwh": "500",
+            "fee": "0.00"
+          },
+          {
+            "min_kwh": "500",
+            "max_kwh": "1200",
+            "fee": "0.00"
+          },
+          {
+            "min_kwh": "1200",
+            "max_kwh": "2800",
+            "fee": "0.00"
+          },
+          {
+            "min_kwh": "2800",
+            "max_kwh": null,
+            "fee": "0.00"
+          }
+        ],
+        "source": {
+          "doc": "ustawa-859",
+          "page": "art. 28 ust. 1: w okresie od 1.07.2024 do 31.12.2024 stawki opłaty mocowej z art. 89a ust. 1 pkt 1 dla odbiorców z art. 89b ust. 3 ustawy o rynku mocy wynoszą 0 zł na miesiąc (bez VAT); potwierdzenie: enea-2407 s. 9, przypis 1. Stawki bez tej ustawy: ure-mocowa-2024 s. 1 (2,66 / 6,39 / 10,64 / 14,90)"
+        }
+      },
+      "transition_fee_monthly": {
+        "bands": [
+          {
+            "min_kwh": "0",
+            "max_kwh": "500",
+            "fee": "0.02"
+          },
+          {
+            "min_kwh": "500",
+            "max_kwh": "1200",
+            "fee": "0.10"
+          },
+          {
+            "min_kwh": "1200",
+            "max_kwh": null,
+            "fee": "0.33"
+          }
+        ],
+        "source": {
+          "doc": "kdt",
+          "page": "art. 11b ust. 1 pkt 1–3 w zw. z art. 10 ust. 1 pkt 1 lit. a–c (PDF 6 i 5)"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Opłata mocowa 0 zł/mies. dla gospodarstw domowych od 1.07.2024 do 31.12.2024 wynika z art. 28 ustawy Dz.U. 2024 poz. 859; taryfa PGE Dystrybucja 2024 (wersja z 15.12.2023) jej nie uwzględnia i podaje stawki 2,66 / 6,39 / 10,64 / 14,90.",
+    "Stawka jakościowa 0,0314 zł/kWh: taryfa PGE Dystrybucja 2024 pkt 7.9 lp. 4; wartość z taryfy PSE (31,10 zł/MWh × kok 1,01009) policzona w informacji URE o kalkulacji taryf OSD 2024."
+  ]
+}

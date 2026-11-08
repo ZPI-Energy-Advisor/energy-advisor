@@ -17,7 +17,7 @@ HTTP_TIMEOUT_SECONDS = 15.0
 
 
 def build_http_client() -> httpx.Client:
-    return httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, headers={"Accept": "application/json"})
+    return httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, headers={"Accept": "application/json", "User-Agent": "energy-advisor-price-worker"})
 
 
 def build_price_provider(http_client: httpx.Client) -> PriceProvider:
