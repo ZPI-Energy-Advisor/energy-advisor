@@ -45,6 +45,10 @@ class DeviceDriver:
 
     def __init__(self, config: DeviceConfig):
         self.config = config
+        self.reset()
+
+    def reset(self) -> None:
+        """Stan jak po uruchomieniu: nowa symulacja może zacząć się przed ostatnim tickiem."""
         self.state = OFF
         self.total_kwh = 0.0
         self.last_action: dict | None = None
