@@ -3,7 +3,7 @@
 Hub obsługuje jeden dom, więc home_connection ma jeden wiersz (id = 1), zakładany tutaj.
 
 Revision ID: c3e8a1f5d7b2
-Revises: 4b7d2e9c1a60
+Revises: a7c3e9f1d2b4
 """
 from typing import Sequence, Union
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "c3e8a1f5d7b2"
-down_revision: Union[str, Sequence[str], None] = "4b7d2e9c1a60"
+down_revision: Union[str, Sequence[str], None] = "a7c3e9f1d2b4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
