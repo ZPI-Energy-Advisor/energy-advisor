@@ -3,6 +3,7 @@ import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
+import ChartTooltip from "../components/ChartTooltip";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -18,47 +19,39 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-function ChartTooltip({ active, payload, label, metricType }) {
-  if (active && payload && payload.length) {
-    const unit = metricType === "price" ? "PLN/kWh" : "PLN";
+function TariffValues({ payload, metricType }) {
+  const unit = metricType === "price" ? "PLN/kWh" : "PLN";
 
-    return (
-      <div className="bg-white p-3 md:p-4 border border-gray-100 shadow-xl rounded-xl min-w-[150px] md:min-w-[180px]">
-        <p className="text-gray-500 font-medium text-xs md:text-sm mb-2 md:mb-3 border-b border-gray-100 pb-2">
-          Godzina: {label}
-        </p>
-        <div className="space-y-1.5 md:space-y-2">
-          {payload.map((entry, index) => {
-            const cleanName = entry.name
-              .replace("cost_", "Taryfa ")
-              .replace("price_", "Taryfa ");
+  return (
+    <div className="space-y-1.5 md:space-y-2">
+      {payload.map((entry, index) => {
+        const cleanName = entry.name
+          .replace("cost_", "Taryfa ")
+          .replace("price_", "Taryfa ");
 
-            return (
-              <div
-                key={index}
-                className="flex justify-between items-center gap-3 md:gap-4"
-              >
-                <span className="text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2">
-                  <span
-                    className="w-2 h-2 rounded-full inline-block"
-                    style={{ backgroundColor: entry.color }}
-                  ></span>
-                  {cleanName}
-                </span>
-                <span className="font-bold text-gray-900 text-sm md:text-base">
-                  {Number(entry.value).toFixed(2)}{" "}
-                  <span className="text-[10px] md:text-xs text-gray-500 font-normal">
-                    {unit}
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-  return null;
+        return (
+          <div
+            key={index}
+            className="flex justify-between items-center gap-3 md:gap-4"
+          >
+            <span className="text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2">
+              <span
+                className="w-2 h-2 rounded-full inline-block"
+                style={{ backgroundColor: entry.color }}
+              ></span>
+              {cleanName}
+            </span>
+            <span className="font-bold text-gray-900 text-sm md:text-base">
+              {Number(entry.value).toFixed(2)}{" "}
+              <span className="text-[10px] md:text-xs text-gray-500 font-normal">
+                {unit}
+              </span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function ResultsPage() {
@@ -311,7 +304,16 @@ function ResultsPage() {
                       tickLine={false}
                       tick={{ fontSize: 10, fill: "#64748b" }}
                     />
-                    <Tooltip content={<ChartTooltip metricType={metricType} />} />
+                    <Tooltip
+                      content={
+                        <ChartTooltip
+                          resolution={timeResolution}
+                          render={(payload) => (
+                            <TariffValues payload={payload} metricType={metricType} />
+                          )}
+                        />
+                      }
+                    />
                     <Legend
                       verticalAlign="top"
                       height={36}

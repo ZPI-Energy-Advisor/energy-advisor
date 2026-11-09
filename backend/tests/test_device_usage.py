@@ -242,7 +242,8 @@ def test_groups_sum_to_file_usage_and_dashboard_cost_without_pv(db):
     assert body["production"] is None
     assert sum(per_quarter) == pytest.approx(sum(expected), abs=0.01)
     assert body["total_kwh"] == pytest.approx(dashboard["total_usage_kwh"], abs=0.01)
-    assert body["total_cost_pln"] == pytest.approx(dashboard["estimated_cost_pln"], abs=0.01)
+    # Suma kosztów grup zaokrąglonych do groszy (7 kategorii) może odbiegać od kosztu Dashboardu o kilka groszy.
+    assert body["total_cost_pln"] == pytest.approx(dashboard["estimated_cost_pln"], abs=0.05)
     assert body["tariff"] == {
         "name": "G11", "source": "default", "note": "Profil nie wskazuje taryfy, więc koszty są w taryfie G11.",
     }
@@ -255,8 +256,10 @@ def test_every_quarter_of_device_groups_matches_imported_series(db):
     body = _usage(user, energy_file.id, "?resolution=1d").json()
     data = _get_data(user, energy_file).json()["results"]["chart_daily"]
 
-    assert [round(sum(group["kwh"][i] for group in body["groups"]), 2) for i in range(30)] == [
-        pytest.approx(day["kwh"], abs=0.006) for day in data
+    # Dzienne kWh na wykresie są zaokrąglone do 0,01, grupy do 0,001: suma grup nie jest zaokrąglana drugi raz,
+    # bo przy wartości typu 18,755 dwa zaokrąglenia (zależnie od kolejności sumowania) dają 18,75 albo 18,76.
+    assert [sum(group["kwh"][i] for group in body["groups"]) for i in range(30)] == [
+        pytest.approx(day["kwh"], abs=0.01) for day in data
     ]
 
 

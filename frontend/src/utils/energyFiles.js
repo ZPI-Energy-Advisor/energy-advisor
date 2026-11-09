@@ -142,6 +142,21 @@ export const fillMissingDays = (rows) => {
   return filled;
 };
 
+const MINUTES_PER_DAY = 24 * 60;
+
+const quarterHourEnd = (label) => {
+  const [hour, minute] = label.split(":").map(Number);
+  const end = (hour * 60 + minute + 15) % MINUTES_PER_DAY;
+  return `${pad(Math.floor(end / 60))}:${pad(end % 60)}`;
+};
+
+// Opis punktu wykresu; etykieta widoku 15 min to początek kwadransu.
+export const formatChartLabel = (label, resolution) => {
+  if (resolution === "15m") return `${label}–${quarterHourEnd(label)}`;
+  if (resolution === "1d") return `Dzień: ${formatDate(label)}`;
+  return `Godzina: ${label}`;
+};
+
 export const formatDataResolution = (statistics) => {
   if (!statistics || !("resolution_minutes" in statistics)) return null;
   if (statistics.data_source === SOURCE_TYPE_DEVICES) return "akcje urządzeń";

@@ -16,7 +16,7 @@ function ImportPage() {
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
-  const [importReport, setImportReport] = useState(null);
+  const [importResult, setImportResult] = useState(null);
 
   const navigate = useNavigate();
   const { refreshFiles, selectFile } = useEnergyFiles();
@@ -26,7 +26,7 @@ function ImportPage() {
       setFile(acceptedFiles[0]);
       setError(null);
       setSuccessMsg(null);
-      setImportReport(null);
+      setImportResult(null);
       setProgress(0);
     }
   }, []);
@@ -51,7 +51,7 @@ function ImportPage() {
     setProgress(0);
     setError(null);
     setSuccessMsg(null);
-    setImportReport(null);
+    setImportResult(null);
   };
 
   const handleUpload = async () => {
@@ -80,7 +80,7 @@ function ImportPage() {
         },
       );
 
-      setImportReport(response.data.import_report ?? null);
+      setImportResult(response.data);
       setSuccessMsg(
         response.data.message || "Plik został pomyślnie przetworzony!",
       );
@@ -129,13 +129,25 @@ function ImportPage() {
           </div>
           <h3 className="text-xl md:text-2xl font-bold text-emerald-800 mb-2">Sukces!</h3>
           <p className="text-emerald-600 mb-6">{successMsg}</p>
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="w-full sm:w-auto bg-emerald-600 text-white px-8 py-3 rounded font-medium hover:bg-emerald-700 transition-colors"
-          >
-            Zobacz wyniki na Dashboardzie
-          </button>
-          <ImportReportSummary report={importReport} />
+          <div className="flex flex-col sm:flex-row sm:justify-center gap-3">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="w-full sm:w-auto bg-emerald-600 text-white px-8 py-3 rounded font-medium hover:bg-emerald-700 transition-colors"
+            >
+              Przejdź do Dashboardu
+            </button>
+            <button
+              onClick={() => navigate("/results")}
+              className="w-full sm:w-auto bg-white text-emerald-700 border border-emerald-600 px-8 py-3 rounded font-medium hover:bg-emerald-50 transition-colors"
+            >
+              Porównaj taryfy
+            </button>
+          </div>
+          <ImportReportSummary
+            report={importResult?.import_report}
+            fileName={importResult?.file_name}
+            statistics={importResult?.summary?.statistics}
+          />
         </div>
       ) : (
         <>

@@ -545,3 +545,45 @@ def test_devices_file_without_devices_is_rejected():
         "device_name": None,
         "action_id": None,
     }]
+
+
+def test_repeated_hour_at_winter_time_change_is_summed_not_rejected():
+    # 25.10.2026: godzina 02:00–03:00 występuje dwa razy; licznik podaje oba odczyty, tu z tą samą wartością.
+    parsed = _parse([TAURON_HEADER, *_day("25.10.2026", hours=[1, 2, 3, 3, 4])])
+
+    assert parsed.report.skipped_count == 0
+    assert parsed.report.rows_imported == 5
+    repeated = parsed.data[parsed.data[TIMESTAMP_START] == datetime(2026, 10, 25, 2, 0)]
+    assert repeated[KWH].sum() == pytest.approx(1.0)
+
+
+def test_third_reading_of_repeated_hour_is_a_duplicate():
+    parsed = _parse([TAURON_HEADER, *_day("25.10.2026", hours=[3, 3, 3])])
+
+    assert parsed.report.skipped_count == 1
+    assert parsed.report.skipped_examples[0].reason == "powtórzony odczyt (taki sam jak w wierszu 2)"
+
+
+def test_interval_with_rejected_consumption_is_missing_not_zero():
+    parsed = _parse([
+        TAURON_HEADER,
+        _row("01.01.2025 01:00"),
+        _row("01.01.2025 01:00", kwh="0,100", kind="energia czynna oddana"),
+        _row("01.01.2025 02:00", kwh="abc"),
+        _row("01.01.2025 02:00", kwh="0,200", kind="energia czynna oddana"),
+        _row("01.01.2025 03:00"),
+    ])
+
+    assert [item.reason for item in parsed.report.skipped_examples] == ["nieprawidłowa wartość zużycia: „abc”"]
+    assert list(parsed.data[TIMESTAMP_START]) == [datetime(2025, 1, 1, 0, 0), datetime(2025, 1, 1, 2, 0)]
+
+
+def test_day_without_any_reading_inside_file_is_incomplete():
+    parsed = _parse([TAURON_HEADER, *_day("01.01.2025"), *_day("03.01.2025")])
+
+    usage = CalculationService._build_usage_series(CalculationService._quarter_hours(parsed))
+    statistics = CalculationService.summarize_usage(usage, {}, parsed.resolution_minutes)["statistics"]
+
+    assert usage["2025-01-02"] == [None] * 96
+    assert statistics["incomplete_days"] == ["2025-01-02"]
+    assert statistics["days_analyzed"] == 2

@@ -1,5 +1,6 @@
 import pandas as pd
 
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.parsers.base import EXPORTED_KWH, KWH, TIMESTAMP_START, EnergyFileParser, FileImportError, ImportReport, ParsedEnergyFile
 from app.parsers.reading import ROW_ERRORS, YEAR_FIRST_DATE, detect_resolution_minutes, parse_reading_ends
 
@@ -7,6 +8,9 @@ from app.parsers.reading import ROW_ERRORS, YEAR_FIRST_DATE, detect_resolution_m
 CONSUMPTION_KINDS = 'pobór|pobor|pobrana'
 EXPORT_KINDS = 'oddanie|oddana|wprowadz'
 DATE_SAMPLE_SIZE = 20
+# Odczyt kończący się minutę później od początku interwału: końce 02:15–03:00 (i 03:00 w pliku godzinowym)
+# leżą w godzinie, która przy zmianie czasu na zimowy występuje dwa razy.
+INSIDE_INTERVAL = pd.Timedelta(minutes=1)
 
 NO_ROWS = "Plik nie zawiera żadnych odczytów."
 NO_CONSUMPTION_ROWS = "Plik zawiera tylko dane o oddaniu energii (brak poboru) lub dane są puste."
@@ -94,7 +98,12 @@ class MeterReadingsParser(EnergyFileParser):
         })
         first_line = readings.reset_index().groupby(["end", KWH, "exported"])["index"].transform("first")
         first_line.index = readings.index
-        duplicate = readings.duplicated(keep="first")
+        # Przy zmianie czasu na zimowy godzina 02:00–03:00 występuje dwa razy i licznik podaje oba odczyty,
+        # także z tą samą wartością. Drugi nie jest powtórzeniem: sumujemy go z pierwszym w tym samym kwadransie.
+        second_of_repeated_hour = self._repeated_hour(readings["end"]) & (
+            readings.groupby(["end", "exported"]).cumcount() == 1
+        )
+        duplicate = readings.duplicated(keep="first") & ~second_of_repeated_hour
         reasons[readings.index[duplicate]] = "powtórzony odczyt (taki sam jak w wierszu " + first_line[duplicate].astype(str) + ")"
         readings = readings[~duplicate]
 
@@ -105,12 +114,28 @@ class MeterReadingsParser(EnergyFileParser):
             KWH: readings[KWH].where(~readings["exported"], 0.0),
             EXPORTED_KWH: readings[KWH].where(readings["exported"], 0.0),
         }).groupby(TIMESTAMP_START, as_index=False, sort=False).sum()
+        # Interwał, w którym odrzuciliśmy wiersz poboru i został tylko wiersz oddania, nie ma pomiaru zużycia:
+        # pomijamy go, żeby był brakiem w danych (niepełny dzień), a nie zerowym zużyciem.
+        step = pd.Timedelta(minutes=resolution)
+        rejected_ends = parse_reading_ends(dates[consumption & (invalid_value | negative_value)]).dropna()
+        consumption_ends = readings.loc[~readings["exported"], "end"]
+        without_consumption = set(rejected_ends) - set(consumption_ends)
+        if without_consumption:
+            data = data[~(data[TIMESTAMP_START] + step).isin(without_consumption)].reset_index(drop=True)
 
         report.rows_imported = len(readings)
         report.resolution_minutes = resolution
         report.add_energy_totals(data)
         report.add_skipped(reasons.dropna())
         return ParsedEnergyFile(data=data, resolution_minutes=resolution, report=report)
+
+    @staticmethod
+    def _repeated_hour(ends: pd.Series) -> pd.Series:
+        """Czy odczyt dotyczy godziny powtarzanej przy zmianie czasu na zimowy (czas lokalny, bez strefy)."""
+        inside = ends - INSIDE_INTERVAL
+        summer = inside.dt.tz_localize(LOCAL_TIMEZONE, ambiguous=True, nonexistent="NaT")
+        winter = inside.dt.tz_localize(LOCAL_TIMEZONE, ambiguous=False, nonexistent="NaT")
+        return (summer != winter) & summer.notna()
 
 
 class TauronParser(MeterReadingsParser):

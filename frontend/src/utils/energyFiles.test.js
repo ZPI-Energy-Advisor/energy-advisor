@@ -4,12 +4,26 @@ import {
   ALL_FILES_ID,
   aggregateIdForSourceType,
   dropRejectionMessage,
+  formatChartLabel,
   formatDataResolution,
   formatRecordsCount,
   isAggregateSource,
 } from "./energyFiles";
 
 const rejection = (...codes) => ({ file: {}, errors: codes.map((code) => ({ code })) });
+
+describe("formatChartLabel", () => {
+  it("w widoku 15 min pokazuje przedział kwadransa", () => {
+    expect(formatChartLabel("10:15", "15m")).toBe("10:15–10:30");
+    expect(formatChartLabel("10:45", "15m")).toBe("10:45–11:00");
+    expect(formatChartLabel("23:45", "15m")).toBe("23:45–00:00");
+  });
+
+  it("w pozostałych widokach opisuje godzinę albo dzień", () => {
+    expect(formatChartLabel("10:00", "1h")).toBe("Godzina: 10:00");
+    expect(formatChartLabel("2026-03-01", "1d")).toBe("Dzień: 01.03.2026");
+  });
+});
 
 describe("źródła danych plików", () => {
   it("rozpoznaje oba źródła zbiorcze", () => {

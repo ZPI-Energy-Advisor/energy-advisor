@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Mapping
 
 import numpy as np
@@ -18,6 +18,7 @@ from app.parsers import (
 )
 from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.devices import LOCAL_TIMEZONE
+from app.providers.prices.base import expected_intervals
 from app.repositories.tariff_repository import TariffRepository
 from app.services.pricing_strategies import (
     SLOT_MINUTES,
@@ -308,6 +309,12 @@ class CalculationService:
         usage = {}
         for (day, slot), kwh in grouped.items():
             usage.setdefault(day, [None] * SLOTS_PER_DAY)[int(slot)] = round(float(kwh), 6)
+        # Dzień w środku pliku bez żadnego pomiaru też jest brakiem danych: zapisujemy go z samymi None,
+        # żeby statystyki pokazały go jako niepełny.
+        if usage:
+            first, last = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
+            for offset in range((last - first).days + 1):
+                usage.setdefault((first + timedelta(days=offset)).isoformat(), [None] * SLOTS_PER_DAY)
         return dict(sorted(usage.items()))
 
     @classmethod
@@ -380,8 +387,14 @@ class CalculationService:
         first_date = df_15min['date'].min()
         last_date = df_15min['date'].max()
         
-        daily_counts = df_15min.groupby('date').size()
-        incomplete_days = daily_counts[daily_counts < SLOTS_PER_DAY].index.tolist()
+        # Doba ze zmianą czasu na letni ma 92 kwadranse; 25-godzinna mieści się w 96 slotach.
+        # Dzień bez żadnego pomiaru (same None) też jest niepełny.
+        incomplete_days = [
+            day
+            for day, day_slots in usage.items()
+            if sum(kwh is not None for kwh in day_slots)
+            < min(expected_intervals(date.fromisoformat(day), SLOT_MINUTES), SLOTS_PER_DAY)
+        ]
 
         if actions_per_day is not None:
             records_count = sum(actions_per_day.get(day, 0) for day in usage)

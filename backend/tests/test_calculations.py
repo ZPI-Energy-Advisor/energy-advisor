@@ -385,10 +385,11 @@ SIMPLE_HEADER = "Data;Wartość kWh;Rodzaj"
 
 
 def _import_dates(header, dates):
-    """Importuje plik z odczytem 1 kWh dla każdej podanej daty i zwraca dni w danych."""
+    """Importuje plik z odczytem 1 kWh dla każdej podanej daty i zwraca dni z pomiarami."""
     rows = "\n".join(f"{value};1,0;pobór" for value in dates)
     results = CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(f"{header}\n{rows}".encode("utf-8")))
-    return list(results["usage_15min"]), results["statistics"]
+    days = [day for day, slots in results["usage_15min"].items() if any(kwh is not None for kwh in slots)]
+    return days, results["statistics"]
 
 
 @pytest.mark.parametrize("header", [METER_HEADER, SIMPLE_HEADER], ids=["kolumny-licznika", "kolumny-proste"])
@@ -637,3 +638,22 @@ def test_device_usage_series_has_zero_in_covered_slots_without_devices():
     assert usage["2026-01-05"][:48] == [None] * 48
     assert usage["2026-01-05"][48] == 0.0
     assert usage["2026-01-05"][60] == 1.5
+
+
+def test_incomplete_days_respect_daylight_saving_change():
+    full_day = [0.1] * 96
+    spring_change = [None if 8 <= slot < 12 else 0.1 for slot in range(96)]
+    gap = [None if slot == 40 else 0.1 for slot in range(96)]
+    spring_change_with_gap = [None if slot == 40 else value for slot, value in enumerate(spring_change)]
+
+    usage = {
+        "2026-03-28": full_day,
+        "2026-03-29": spring_change,
+        "2026-03-30": gap,
+        "2026-10-25": full_day,
+        "2027-03-28": spring_change_with_gap,
+    }
+    statistics = CalculationService.summarize_usage(usage, {})["statistics"]
+
+    assert statistics["incomplete_days"] == ["2026-03-30", "2027-03-28"]
+    assert statistics["has_missing_data"] is True
