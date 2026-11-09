@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +10,7 @@ from app.schemas.other import TariffTypeEnum
 from app.services.calculation_service import CalculationService
 from app.services.new_calculations_service import CalculationsService
 from calculations_seed import SCENARIOS
+from tariff_helpers import definition, period
 
 
 TEST_DATA = Path(__file__).resolve().parents[1] / "test_data"
@@ -44,34 +45,7 @@ def _uploaded_readings(file_name) -> list[tuple[datetime, float, float]]:
 
 
 def _g12_definition():
-    rates = [(1, Decimal("0.86"), Decimal("0.34")), (2, Decimal("0.46"), Decimal("0.18"))]
-    return SimpleNamespace(
-        tariff_code=TariffTypeEnum.G12,
-        number_of_zones=2,
-        valid_from=date(2026, 1, 1),
-        valid_to=date(2026, 12, 31),
-        fixed_network_fee_1phase_monthly=Decimal("8.50"),
-        fixed_network_fee_3phase_monthly=Decimal("16.50"),
-        supplier_ure_rates=[SimpleNamespace(zone_index=zone, energy_price_per_kwh_net_pln=energy)
-                            for zone, energy, _ in rates],
-        variable_network_rates=[SimpleNamespace(zone_index=zone, rate_per_kwh_net_pln=network)
-                                for zone, _, network in rates],
-        subscription_fees=[SimpleNamespace(billing_cycle_months=1, monthly_fee_net_pln=Decimal("3.00"))],
-    )
-
-
-def _regulatory_period():
-    thresholds = [SimpleNamespace(min_kwh_annual=Decimal("0"), max_kwh_annual=None, monthly_fee_net_pln=Decimal("0"))]
-    return SimpleNamespace(
-        valid_from=date(2026, 1, 1),
-        valid_to=date(2026, 12, 31),
-        quality_fee_per_kwh=Decimal("0"),
-        renewable_energy_fee_per_kwh=Decimal("0"),
-        cogeneration_fee_per_kwh=Decimal("0"),
-        vat_rate=Decimal("0.23"),
-        capacity_thresholds=thresholds,
-        transition_thresholds=thresholds,
-    )
+    return definition(TariffTypeEnum.G12, ["0.86", "0.46"], ["0.34", "0.18"], fixed="8.50", subscription="3.00")
 
 
 class _Repository:
@@ -81,11 +55,14 @@ class _Repository:
 
 
 class _Prices:
-    def get_prices_between(self, source, start_utc, end_utc):
-        return {start_utc: Decimal("420")}
+    """Ta sama cena RCE dla każdego kwadransa żądanego zakresu [start, koniec)."""
 
-    def get_rcem_price(self, source, day):
-        return Decimal("551.96")
+    def get_prices_between(self, source, start_utc, end_utc):
+        prices, moment = {}, start_utc
+        while moment < end_utc:
+            prices[moment] = Decimal("420")
+            moment += timedelta(minutes=15)
+        return prices
 
 
 def _calculate(scenario, readings):
@@ -103,7 +80,12 @@ def _calculate(scenario, readings):
         _Repository(get_profile=profile),
         _Repository(get_by_id_for_user=energy_file),
         _Repository(list_for_file=rows),
-        _Repository(list_for_period=[_g12_definition()], list_regulatory_periods=[_regulatory_period()]),
+        _Repository(
+            list_for_period=[_g12_definition()],
+            list_regulatory_periods=[period()],
+            first_valid_from=None,
+            list_unsupported=[],
+        ),
         market_price_repository=_Prices(),
     )
     return service.perform_tariff_calculations(user_id=None, file_id=None)

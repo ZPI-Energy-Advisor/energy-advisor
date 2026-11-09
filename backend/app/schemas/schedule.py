@@ -27,8 +27,15 @@ class SchedulePriceOut(BaseModel):
 class ScheduleResponse(BaseModel):
     date_from: date
     date_to: date
+    # Taryfa, według której liczone są ceny kwadransów (operator, grupa, umowa dynamiczna).
+    pricing: str = ""
     cost_before: float
     cost_after: float
+    # Pełny rachunek taryfy z profilu (do zapłaty brutto) dla okresu: przed = jak w Wynikach kalkulacji,
+    # po = to samo zużycie z akcjami przesuniętymi na nowe godziny.
+    bill_before: float | None = None
+    bill_after: float | None = None
+    bill_note: str | None = None
     missing_price_actions: int = 0
     missing_price_days: list[date] = []
     actions: list[ScheduledActionOut]

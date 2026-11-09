@@ -1,0 +1,292 @@
+{
+  "operator": "STOEN",
+  "year": 2024,
+  "covers": {
+    "from": "2024-08-24",
+    "to": "2024-12-31"
+  },
+  "documents": {
+    "osd-2024": {
+      "title": "Taryfa dla energii elektrycznej w zakresie dystrybucji energii elektrycznej Stoen Operator Sp. z o.o. obowiązująca od 1 stycznia 2024 r. – tekst ujednolicony (opracowanie Stoen Operator na podstawie taryfy zatwierdzonej decyzją Prezesa URE DRE.WPR.4211.11.5.2023.AMi1 z 15 grudnia 2023 r., Biuletyn Branżowy URE – Energia Elektryczna nr 413 (4230) z 15 grudnia 2023 r., oraz zmiany zatwierdzonej decyzją DRE.WPR.4211.2.2.2024.AMi1 z 30 stycznia 2024 r., Biuletyn Branżowy URE – Energia Elektryczna nr 18 (4262) z 30 stycznia 2024 r.)",
+      "url": "https://www.stoen.pl/files/2024-02/stoen-taryfa-dystrybucji-calosc-2024-02.06.pdf"
+    },
+    "eon-2023": {
+      "title": "Taryfa dla energii elektrycznej E.ON Polska S.A. dla odbiorców w grupie taryfowej G przyłączonych do sieci dystrybucyjnej Stoen Operator Sp. z o.o. – ceny i stawki opłat zatwierdzone przez Zarząd Sprzedawcy uchwałą z dnia 2 grudnia 2022 r., obowiązuje od 1 stycznia 2023 r. (wersja z dnia 20221212nr1)",
+      "url": "https://eon.pl/-/media/Eon/Dokumenty/Dla-domu/1Taryfa-dla-energii-G.ashx"
+    },
+    "osd-2024-zmiana": {
+      "title": "Decyzja Prezesa URE z dnia 30 stycznia 2024 r. DRE.WPR.4211.2.2.2024.AMi1 zatwierdzająca zmianę taryfy dla usług dystrybucji energii elektrycznej Stoen Operator Sp. z o.o. (Biuletyn Branżowy URE – Energia elektryczna Nr 18 (4262) z 30 stycznia 2024 r.)",
+      "url": "https://bip.ure.gov.pl/download/3/17974/StoenOperator.pdf"
+    },
+    "ure-eon-odmowa-2024-01": {
+      "title": "Informacja o decyzji Prezesa URE z dnia 23 września 2024 r. DRE.WPR.4211.1.24.2024.AMi1 odmawiającej E.ON Polska S.A. zatwierdzenia taryfy dla energii elektrycznej dla odbiorców z grup taryfowych G na okres od 1 stycznia 2024 r. do 31 grudnia 2024 r. stosowanej w rozliczeniach w okresie od 1 stycznia 2024 r. do 30 czerwca 2024 r. (Biuletyn Branżowy URE – Energia elektryczna Nr 217 (4461) z 24 września 2024 r.)",
+      "url": "https://bip.ure.gov.pl/download/3/18815/EONPolska.pdf"
+    },
+    "ure-eon-odmowa-2024": {
+      "title": "Informacja o decyzji Prezesa URE z dnia 30 października 2024 r. DRE.WPR.4211.9.18.2024.AMi1 odmawiającej E.ON Polska S.A. zatwierdzenia taryfy dla energii elektrycznej dla odbiorców z grup taryfowych G na okres od 1 lipca 2024 r. do 31 grudnia 2025 r. (Biuletyn Branżowy URE – Energia elektryczna Nr 253 (4497) z 30 października 2024 r.)",
+      "url": "https://bip.ure.gov.pl/download/3/18938/EONPolska.pdf"
+    },
+    "ustawa-2022-2243": {
+      "title": "Ustawa z dnia 27 października 2022 r. o środkach nadzwyczajnych mających na celu ograniczenie wysokości cen energii elektrycznej oraz wsparciu niektórych odbiorców w 2023 roku oraz w 2024 roku (t.j. Dz.U. 2024 poz. 1622 z późn. zm.)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220002243"
+    },
+    "eon-dyn-regulamin-2025-01": {
+      "title": "Regulamin produktu „Domowa energia pod kontrolą” E.ON Polska S.A., wersja z dnia 2.01.2025 (nr 1316) — kopia archiwalna web.archive.org z 21.05.2025 dokumentu z eon.pl (oryginał: …/Produkty/1316HH_Regulamin-produktu-cena-dynamiczna-2025_01_02.ashx, dziś 404)",
+      "url": "https://web.archive.org/web/20250521011216/https://eon.pl/-/media/Eon/Dokumenty/Dla-domu/Produkty/1316HH_Regulamin-produktu-cena-dynamiczna-2025_01_02.ashx"
+    },
+    "eon-dyn-strona-2024-10": {
+      "title": "Strona produktu „Domowa energia pod kontrolą” na eon.pl — kopia archiwalna web.archive.org z 6.10.2024",
+      "url": "https://web.archive.org/web/20241006132334/https://eon.pl/dla-domu/oferta/energia-elektryczna/domowa-energia-pod-kontrola"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "subscription": {
+        "1": "2.88",
+        "6": "0.48",
+        "12": "0.24"
+      },
+      "subscription_source": {
+        "doc": "osd-2024",
+        "page": "pkt 7.4, s. 49 (PDF 49); okresy rozliczeniowe 1, 6 lub 12 mies. – pkt 2.3.1 lit. b, s. 15 (PDF 15)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2260"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "10.95",
+            "3f": "17.71"
+          },
+          "rates_source": {
+            "doc": "osd-2024",
+            "page": "pkt 7.4, s. 49 (PDF 49)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2024",
+            "page": "pkt 2.1.2 (G11 – rozliczenie jednostrefowe), s. 10 (PDF 10)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2456"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0535"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "10.95",
+            "3f": "17.71"
+          },
+          "rates_source": {
+            "doc": "osd-2024",
+            "page": "pkt 7.4, s. 49 (PDF 49)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2024",
+            "page": "pkt 2.2.5, s. 14 (PDF 14)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2481"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.1042"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "10.95",
+            "3f": "17.71"
+          },
+          "rates_source": {
+            "doc": "osd-2024",
+            "page": "pkt 7.4, s. 49 (PDF 49)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2024",
+            "page": "pkt 2.2.6, s. 15 (PDF 15)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "seller": "E.ON Polska S.A.",
+      "prices_include_excise": true,
+      "excise_source": {
+        "doc": "eon-2023",
+        "page": "pkt 1.7, s. 1 (PDF 1)"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. c"
+      },
+      "trade_fee_monthly": "0.00",
+      "trade_fee_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 3 ust. 8"
+      },
+      "source": {
+        "doc": "eon-2023",
+        "page": "pkt 3.6, tabela „Okres obowiązywania: od 1.01.2023”, ceny netto w nawiasach, s. 3 (PDF 3)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "1.4467"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "1.5819",
+            "2": "1.2066"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "1.5407",
+            "2": "1.1248"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "seller": "E.ON Polska S.A.",
+      "name": "Domowa energia pod kontrolą",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.1400",
+      "trade_fee_monthly": "27.63",
+      "prices_include_excise": false,
+      "source": {
+        "text": "wersja Regulaminu z 7.08.2024, obowiązująca od startu oferty 24.08.2024, jest niedostępna (eon.pl zwraca 404, kopii archiwalnej nie udało się pobrać); wzór CR = SPOT_RDN + Kt + A, 1-miesięczny okres rozliczeniowy i opłatę handlową 33,98 zł brutto/mies. (27,63 zł netto) przyjęto z najbliższej dostępnej wersji z 2.01.2025; te same Kt 0,14 zł/kWh i 33,98 zł brutto pokazuje strona produktu z 6.10.2024, linkująca wersję z 7.08.2024.",
+        "doc": "eon-dyn-regulamin-2025-01",
+        "page": "§ 1 ust. 3, § 2 ust. 1 lit. c, § 3 ust. 1 (tabela opłaty handlowej), PDF 1; § 3 ust. 2–3 (wzór CR, Kt, A, VAT), PDF 2"
+      },
+      "field_sources": {
+        "margin": {
+          "doc": "eon-dyn-strona-2024-10",
+          "page": "przypis * pod kafelkiem „Twoja cena dynamiczna”: koszty transakcyjne 0,14 zł za 1 kWh, akcyza 0,005 zł za 1 kWh, do sumy 23% VAT"
+        },
+        "trade_fee_monthly": {
+          "doc": "eon-dyn-strona-2024-10",
+          "page": "kafelek „Opłata handlowa (brutto)”: 33,98 zł/mies."
+        }
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "Taryfa antysmogowa (E.ON: „Bezpieczne ogrzewanie”)",
+      "valid_from": "2024-08-24",
+      "valid_to": "2024-12-31",
+      "reason": "Tańsza stawka nocna (0,0653 zł/kWh) dotyczy tylko zużycia ponad zużycie z analogicznego okresu rozliczeniowego roku poprzedzającego zakwalifikowanie do G12as; do tej ilości stosuje się 0,2260 zł/kWh. Tej wielkości nie ma w pliku z odczytami.",
+      "source": {
+        "doc": "osd-2024",
+        "page": "pkt 2.1.10–2.1.13, s. 12 (PDF 12); pkt 7.4, s. 49 (PDF 49)"
+      }
+    }
+  ],
+  "notes": [
+    "Grupy G w taryfie Stoen 2024: G11, G12, G12w, G12as (pkt 2.1.2, s. 10). Odbiorcy przedpłatowi nie mają osobnej grupy (pkt 2.1.9, s. 12), więc nie ma G11p/G12p. Liczymy G11, G12 i G12w, G12as jest na liście nieliczonych. Numer strony w taryfie = numer strony PDF.",
+    "Taryfa Stoen 2024 obowiązuje od 1.01 do 31.12.2024 (decyzja DRE.WPR.4211.11.5.2023.AMi1). Zmiana z 30.01.2024 (DRE.WPR.4211.2.2.2024.AMi1, BB URE nr 18 (4262)) dodała tylko zasady mrożenia z I półrocza 2024 (pkt 3.1.44–3.1.58 i rozdział 8: stawki z 2022 r. dla odbiorców uprawnionych od 1.01 do 30.06.2024). Od 24.08.2024 ich nie stosujemy. W archiwum taryf Stoen jest z 2024 r. tylko tekst ujednolicony z 6.02.2024, innej zmiany stawek w II półroczu 2024 nie znaleziono.",
+    "E.ON Polska nie miał w 2024 r. taryfy G zatwierdzonej przez URE. Prezes URE odmówił zatwierdzenia taryfy na okres 1.01–31.12.2024, stosowanej w rozliczeniach od 1.01 do 30.06.2024 (decyzja z 23.09.2024 DRE.WPR.4211.1.24.2024.AMi1, BB URE nr 217 (4461) z 24.09.2024), oraz taryfy na okres 1.07.2024–31.12.2025 (decyzja z 30.10.2024 DRE.WPR.4211.9.18.2024.AMi1, BB URE nr 253 (4497)). Przyjęto, że od 24.08 do 31.12.2024 obowiązywała taryfa ustalona przez Zarząd E.ON (uchwała z 2.12.2022, od 1.01.2023, bez daty końcowej). Na stronach eon.pl nie znaleziono taryfy G dla obszaru Stoen z 2024 r.",
+    "Druga tabela w taryfie E.ON 2023 („Okres obowiązywania do 31.12.2022”, s. 3) to ceny z 2022 r. (brutto z VAT 5%, np. G11 0,4748 brutto / 0,4522 netto). Nie dotyczy okresu tego pliku.",
+    "Ceny taryfy E.ON (1,1248–1,5819 zł/kWh netto) są dużo wyższe od ceny maksymalnej 0,50 zł/kWh netto bez akcyzy (art. 3 ust. 1 pkt 1 lit. c: 500 zł/MWh od 1.07 do 31.12.2024), więc gospodarstwo domowe płaci w każdej strefie 0,50 zł/kWh plus akcyzę.",
+    "prices_include_excise = true: według pkt 1.7 taryfy E.ON 2023 ceny są cenami brutto z VAT (23% od 1.01.2023), a w nawiasach podano ceny netto (netto = brutto / 1,23). Taryfa nie ma osobnej pozycji akcyzy, więc przyjęto, że cena netto zawiera akcyzę. Taryfa E.ON 2026 mówi to wprost. Przy cenie maksymalnej nie zmienia to rachunku.",
+    "Opłata handlowa 0 przy cenie maksymalnej to interpretacja art. 3 ust. 8 ustawy z 27.10.2022: cena maksymalna jest jedyną składową opłat w obrocie. Bez ceny maksymalnej taryfa E.ON 2023 (pkt 3.5 i 3.6, s. 3) przewiduje netto 25,47 / 8,38 / 6,23 zł/mies. dla G11 oraz 27,62 / 8,97 / 6,88 zł/mies. dla G12, G12w i G12as, przy okresie 1 / 6 / 12 mies.",
+    "Strefy w taryfie E.ON 2023 (pkt 3.2.1–3.2.3, s. 2) są takie same jak w taryfie OSD, z jednym wyjątkiem: w G12w E.ON wymienia jako całe nocne tylko soboty i niedziele, a OSD także dni ustawowo wolne od pracy. Według pkt 3.2.4 E.ON, gdy strefy grupy dystrybucyjnej różnią się od stref E.ON, Sprzedawca kwalifikuje Klienta do G12 i rozlicza go w strefach usługi dystrybucji. Przy cenie maksymalnej każda strefa G12 i G12w kosztuje tyle samo (0,50 zł/kWh), więc przyjęto godziny i ceny G12w bez zmian.",
+    "Opłaty krajowe w taryfie Stoen 2024 (dane do regulatory.json): stawka jakościowa 0,0314 zł/kWh i opłata przejściowa 0,02 / 0,10 / 0,33 zł/mies. (poniżej 500 / 500–1200 / powyżej 1200 kWh rocznie), pkt 7.4, s. 49; OZE 0,00 zł/MWh (pkt 7.8, s. 51); kogeneracyjna 6,18 zł/MWh (pkt 7.9, s. 51); mocowa dla gospodarstw domowych 2,66 / 6,39 / 10,64 / 14,90 zł/mies. (pkt 7.10, s. 51). Tekst taryfy z 6.02.2024 nie uwzględnia zwolnienia: od 1.07 do 31.12.2024 opłata mocowa gospodarstw domowych wynosi 0 zł/mies. (art. 28 ust. 1 ustawy z 23.05.2024, Dz.U. 2024 poz. 859).",
+    "Zegary liczników: pkt 2.2.8 (s. 15) mówi, że zegary ustawia się według czasu zimowego i nie przestawia ich latem, chyba że urządzenia same utrzymują godziny stref w czasie letnim i zimowym. Godziny stref stosujemy w czasie lokalnym (założenie z docs/tariff-data-format.md).",
+    "W G12w cały dzień ustawowo wolny od pracy, także w dzień roboczy, jest w strefie nocnej (pkt 2.2.6, s. 15). W okresie pliku są to 1.11 (piątek), 11.11 (poniedziałek), 25.12 (środa) i 26.12.2024 (czwartek). Wigilia 2024 nie była jeszcze dniem wolnym.",
+    "E.ON Polska S.A., produkt „Domowa energia pod kontrolą” (cena dynamiczna) dla konsumentów w grupach G11, G12, G12w, G12as przyłączonych do sieci Stoen Operator, z licznikiem zdalnego odczytu i 1-miesięcznym okresem rozliczeniowym (Regulamin § 2 ust. 1). Oferowany od 24.08.2024 r. do odwołania (Regulamin § 1 ust. 3, obie dostępne wersje).",
+    "Wzór (Regulamin § 3 ust. 2): CR = SPOT_RDN + Kt + A [PLN/MWh netto], SPOT_RDN = Σ(RDN_NJR × V_NJR) / Σ V_NJR — średnia cen RDN Fixing I ważona zużyciem w okresie rozliczeniowym. Należność CR × ΣV = Σ(RDN_NJR × V_NJR) + (Kt + A) × ΣV, czyli tyle samo, co wycena każdej NJR po RDN_NJR + Kt + A — model aplikacji (cena kwadransa + marża) odtwarza wzór. margin = Kt; A = akcyza (5 PLN/MWh netto) → prices_include_excise = false, akcyzę dolicza silnik z regulatory.json. Wzór nie ma ograniczeń ceny → brak market_price_floor i market_price_cap (ujemne ceny przechodzą do średniej).",
+    "Kt nie ma w Regulaminie liczby (odsyła do Aneksu, Część B ust. 2 lit. b; wzór Aneksu z 30.04.2025 ma tam puste pole wypełniane przy umowie). Wartość z oficjalnej strony produktu (przypis „koszty transakcyjne … zł za każdą 1 kWh”, kwoty netto, VAT doliczany): 0,14 zł/kWh w kopiach archiwalnych z 6.10.2024, 24.04.2025, 9.07.2025, 12.12.2025 i 7.02.2026; 0,09 zł/kWh w kopii z 7.04.2026 i na stronie 7.11.2026. Kt jest stały przez okres Aneksu — wpisy odpowiadają warunkom dla umowy zawieranej w danym dniu.",
+    "Opłata handlowa (Regulamin § 3 ust. 1): 33,98 zł brutto/mies., jedna kwota dla G11, G12, G12w i G12as; netto 33,98 / 1,23 = 27,626… ≈ 27,63 zł (27,63 × 1,23 = 33,98). Ta sama kwota na stronie produktu od 6.10.2024 do 7.11.2026.",
+    "Prosument: Regulamin nie podaje innego Kt ani innej opłaty (V_NJR prosumenta = energia zbilansowana godzinowo wg ustawy OZE) — pola prosumer_* pominięte, silnik użyje wartości ogólnych.",
+    "Dystrybucja liczona wg G11 Stoen (format danych); produkt dostępny też dla G12, G12w i G12as. Cena giełdowa w aplikacji to RCE (PSE), a w umowie RDN Fixing I TGE (gdy brak — Fixing II, potem cena niezbilansowania) — przybliżenie.",
+    "Granice wpisów: wersje Regulaminu (2.01.2025, 30.04.2025 — niedostępna, 2.10.2025) i zmiana Kt (0,14 → 0,09 zł/kWh między 8.02 a 7.04.2026, przyjęto od 1.04.2026).",
+    "Oferta E.ON „Domowa energia pod kontrolą”: oświadczenia o akceptacji ryzyka (1318HH, wersje 7.08.2024 i 30.04.2025) liczą przykład z Kt = 123 zł/MWh brutto (ok. 0,10 zł/kWh netto), a strona produktu podaje koszty transakcyjne 0,14 zł/kWh netto — przyjęto wartość ze strony produktu (wyższą, ostrożniej)."
+  ]
+}

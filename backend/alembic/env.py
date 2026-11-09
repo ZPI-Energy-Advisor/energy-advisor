@@ -18,7 +18,6 @@ from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401
 from app.models.Simulation import Simulation  # noqa: F401
 from app.models.Tariff import Tariff  # noqa: F401
 from app.models.TariffRate import TariffRate  # noqa: F401
-from app.models.DynamicPriceObservation import DynamicPriceObservation  # noqa: F401
 from app.models.RcePriceObservation import RcePriceObservation  # noqa: F401
 from app.models.RcEmPriceObservation import RcEmPriceObservation  # noqa: F401
 from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
@@ -32,6 +31,8 @@ from app.models.NewModels import (
     OsdVariableNetworkRate,  # noqa: F401
     OsdSubscriptionFee,  # noqa: F401
     SupplierUreRate,  # noqa: F401
+    TariffZoneHour,  # noqa: F401
+    UnsupportedTariff,  # noqa: F401
 )
 from app.models.DeviceCategory import DeviceCategory  # noqa: F401
 from app.models.DeviceType import DeviceType  # noqa: F401

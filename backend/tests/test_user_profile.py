@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.repositories.user_repository import UserRepository
+from app.schemas.other import BillingCycleEnum, TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.user_service import UserService
 
@@ -108,6 +109,56 @@ def test_service_creates_profile_when_it_does_not_exist():
     assert result == profile_data
 
 
+def _definition(code, cycles=(1, 2, 6)):
+    return MagicMock(
+        tariff_code=TariffTypeEnum(code),
+        subscription_fees=[MagicMock(billing_cycle_months=cycle) for cycle in cycles],
+    )
+
+
+def _service_with_rates(definitions):
+    repository = MagicMock()
+    repository.get_profile.return_value = None
+    definition_repository = MagicMock()
+    definition_repository.list_for_operator.return_value = definitions
+    return UserService(repository, MagicMock(), definition_repository), repository
+
+
+def test_service_rejects_tariff_missing_in_rates():
+    service, repository = _service_with_rates([_definition("G11"), _definition("G12")])
+
+    with pytest.raises(HTTPException) as error:
+        service.save_profile(MagicMock(id=uuid4()), valid_profile(consumption_and_tariff={"tariff_type": "G13"}))
+
+    assert error.value.status_code == 422
+    assert "G13" in error.value.detail
+    assert "G11, G12" in error.value.detail
+    repository.create_profile.assert_not_called()
+
+
+def test_service_rejects_billing_cycle_missing_in_rates():
+    service, repository = _service_with_rates([_definition("G12")])
+    profile = valid_profile()
+    profile.base_info.billing_cycle = BillingCycleEnum.TWELVE_MONTHS
+
+    with pytest.raises(HTTPException) as error:
+        service.save_profile(MagicMock(id=uuid4()), profile)
+
+    assert error.value.status_code == 422
+    assert "12" in error.value.detail
+    repository.create_profile.assert_not_called()
+
+
+def test_service_saves_profile_for_operator_without_rates():
+    service, repository = _service_with_rates([])
+    profile_data = valid_profile(consumption_and_tariff={"tariff_type": "G13"})
+    repository.create_profile.return_value = MagicMock(user_id=uuid4(), **profile_data.model_dump(mode="json"))
+
+    service.save_profile(MagicMock(id=uuid4()), profile_data)
+
+    repository.create_profile.assert_called_once()
+
+
 def test_service_get_profile_returns_404_when_missing():
     repository = MagicMock()
     repository.get_profile.return_value = None
@@ -116,3 +167,25 @@ def test_service_get_profile_returns_404_when_missing():
         _service(repository).get_profile(MagicMock(id=uuid4()))
 
     assert error.value.status_code == 404
+
+
+def test_legacy_dynamic_tariff_becomes_g11_with_dynamic_price():
+    profile = valid_profile(consumption_and_tariff={"tariff_type": "dynamic"}, pv_config={"mode": "none"})
+
+    assert profile.consumption_and_tariff.tariff_type.value == "G11"
+    assert profile.consumption_and_tariff.dynamic_price is True
+
+
+def test_dynamic_price_is_separate_from_tariff_group():
+    profile = valid_profile(consumption_and_tariff={"tariff_type": "G13", "dynamic_price": True}, pv_config={"mode": "none"})
+
+    assert (profile.consumption_and_tariff.tariff_type.value, profile.consumption_and_tariff.dynamic_price) == ("G13", True)
+
+
+def test_net_billing_profile_keeps_rcem_choice_and_defaults_to_rce():
+    chosen = valid_profile(pv_config={"mode": "net_billing", "type_of_price": "RCEm"})
+    default = valid_profile(pv_config={"mode": "net_billing"})
+
+    assert chosen.model_dump(mode="json")["pv_config"]["type_of_price"] == "RCEm"
+    assert default.pv_config.type_of_price.value == "RCE"
+

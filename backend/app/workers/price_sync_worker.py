@@ -13,6 +13,8 @@ from app.core.price_sync_factory import build_http_client, build_price_sync_serv
 from app.database import SessionLocal, engine
 from app.models.PriceSyncRun import PriceSyncTrigger
 from app.providers.prices.base import MARKET_TIMEZONE
+from app.providers.prices.pse_rcem_provider import PseRcemProvider
+from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.services.price_sync_service import SyncAlreadyRunningError
 
 
@@ -48,6 +50,7 @@ def wait_for_database(timeout_seconds: float = 300, interval_seconds: float = 5,
 def run_startup_sync() -> None:
     if wait_for_database():
         run_sync_missing()
+        run_rcem_sync()
     else:
         logger.error("Pomijam synchronizację startową - nadrobi ją najbliższe zaplanowane uruchomienie")
 
@@ -95,12 +98,35 @@ def run_backfill(date_from: date, date_to: date) -> None:
         db.close()
 
 
+def run_rcem_sync() -> None:
+    """Ceny RCEm ze strony PSE: cała tabela z korektami (PSE publikuje je ok. 11. dnia miesiąca)."""
+    db = SessionLocal()
+    http_client = build_http_client()
+    try:
+        months = DynamicPriceRepository(db).upsert_rcem_many(PseRcemProvider(http_client).fetch())
+        logger.info("Synchronizacja RCEm zakończona: miesiące=%d", months)
+    except Exception:
+        # Jak przy cenach RCE: błąd nie zatrzymuje schedulera.
+        logger.exception("Synchronizacja RCEm zakończona błędem")
+    finally:
+        http_client.close()
+        db.close()
+
+
 def run_scheduler() -> None:
     scheduler = BlockingScheduler(timezone=MARKET_TIMEZONE)
     scheduler.add_job(
         run_sync_missing,
         CronTrigger(hour=SYNC_HOUR, minute=SYNC_MINUTE, timezone=MARKET_TIMEZONE),
         id="price_sync_daily",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        run_rcem_sync,
+        CronTrigger(hour=SYNC_HOUR, minute=SYNC_MINUTE + 30, timezone=MARKET_TIMEZONE),
+        id="rcem_sync_daily",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,
@@ -128,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("run", help="uruchom harmonogram (domyślne)")
     subparsers.add_parser("once", help="jednorazowo uzupełnij brakujące doby")
+    subparsers.add_parser("rcem", help="pobierz ceny RCEm ze strony PSE")
     backfill = subparsers.add_parser("backfill", help="pobierz ponownie zakres dat")
     backfill.add_argument("date_from", type=date.fromisoformat)
     backfill.add_argument("date_to", type=date.fromisoformat)
@@ -135,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "once":
         run_sync_missing(trigger=PriceSyncTrigger.CLI)
+    elif args.command == "rcem":
+        run_rcem_sync()
     elif args.command == "backfill":
         if args.date_from > args.date_to:
             parser.error("date_from nie może być późniejsza niż date_to")

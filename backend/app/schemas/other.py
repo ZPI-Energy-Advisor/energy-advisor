@@ -72,7 +72,23 @@ class TariffTypeEnum(str, Enum):
     G11 = "G11"
     G12 = "G12"
     G12W = "G12w"
+    # G12n (PGE): noc 1–5 w dni robocze i soboty, niedziele i święta w całości w strefie nocnej.
+    G12N = "G12n"
+    # G12r (Energa): strefa szczytowa 7–13 i 16–22.
+    G12R = "G12r"
     G13 = "G13"
     G13S = "G13s"
     G14D = "G14d"
     DYNAMIC = "dynamic"
+
+    @classmethod
+    def from_code(cls, code: str) -> "TariffTypeEnum":
+        """Kod z taryfy („G12W”, „g12w”, „G14dynamic”) → wartość enuma; ValueError, gdy kodu nie znamy."""
+        normalized = code.strip().casefold()
+        aliases = {"g14dynamic": cls.G14D, "dynamiczna": cls.DYNAMIC}
+        if normalized in aliases:
+            return aliases[normalized]
+        for member in cls:
+            if member.value.casefold() == normalized:
+                return member
+        raise ValueError(f"Nieznany kod taryfy: {code}.")

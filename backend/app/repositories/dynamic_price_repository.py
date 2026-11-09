@@ -5,9 +5,8 @@ from sqlalchemy import func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models.RcePriceObservation import RcePriceObservation
 from app.models.RcEmPriceObservation import RcEmPriceObservation
-from app.models.DynamicPriceObservation import DynamicPriceObservation
+from app.models.RcePriceObservation import RcePriceObservation
 from app.providers.prices.base import PricePoint
 
 
@@ -42,19 +41,8 @@ class DynamicPriceRepository:
                 "updated_at": func.now(),
             },
         )
-        legacy_stmt = insert(DynamicPriceObservation).values(rows)
-        legacy_stmt = legacy_stmt.on_conflict_do_update(
-            constraint="uq_dynamic_price_source_interval",
-            set_={
-                "interval_minutes": legacy_stmt.excluded.interval_minutes,
-                "business_date": legacy_stmt.excluded.business_date,
-                "price_pln_mwh": legacy_stmt.excluded.price_pln_mwh,
-                "updated_at": func.now(),
-            },
-        )
         try:
             self.db.execute(rce_stmt)
-            self.db.execute(legacy_stmt)
             self.db.commit()
         except Exception:
             self.db.rollback()
@@ -171,9 +159,10 @@ class DynamicPriceRepository:
         )
 
     def upsert_rcem_many(self, rows: Sequence[dict]) -> int:
+        """Ceny RCEm miesięcy (korekta PSE nadpisuje wcześniejszą cenę), bez duplikatów."""
         if not rows:
             return 0
-        stmt = insert(RcEmPriceObservation).values(rows)
+        stmt = insert(RcEmPriceObservation).values(list(rows))
         stmt = stmt.on_conflict_do_update(
             constraint="uq_rcem_price_source_month",
             set_={
@@ -182,8 +171,12 @@ class DynamicPriceRepository:
                 "updated_at": func.now(),
             },
         )
-        self.db.execute(stmt)
-        self.db.commit()
+        try:
+            self.db.execute(stmt)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         return len(rows)
 
     def get_rcem_price(self, source: str, price_month: date) -> Decimal | None:
@@ -195,3 +188,4 @@ class DynamicPriceRepository:
             )
             .scalar()
         )
+

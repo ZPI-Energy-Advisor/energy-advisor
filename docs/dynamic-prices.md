@@ -39,6 +39,28 @@ Mapowanie w adapterze `PseRcePriceProvider`:
 - `business_date` to doba handlowa w strefie Europe/Warsaw.
 - `rce_pln` jest zapisywane bez zmian, w PLN/MWh.
 
+## Źródło danych: PSE – miesięczna cena RCEm
+
+RCEm to średnia ważona RCE z miesiąca, bez VAT i akcyzy, w zł/MWh. PSE nie udostępnia jej przez API,
+tylko jako tabelę na stronie
+[RCEm](https://www.pse.pl/oire/rcem-rynkowa-miesieczna-cena-energii-elektrycznej). Publikacja jest
+ok. 11. dnia następnego miesiąca, a korekty pojawiają się w wierszu „skorygowana RCEm”.
+`PseRcemProvider` (`app/providers/prices/pse_rcem_provider.py`) czyta całą tabelę, a korekta
+nadpisuje pierwszą publikację.
+
+### Wycena energii oddanej w net-billingu
+
+Według nowelizacji ustawy o OZE z 27.11.2024 (Dz.U. 2024 poz. 1847)
+`PVBalancingEngine.get_price_for_pv_energy` wycenia energię oddaną tak:
+
+| okres | cena | współczynnik depozytu |
+|---|---|---|
+| do 31.01.2025 | RCE z kwadransa (dla wszystkich) | 1,00 |
+| od 1.02.2025 | RCEm albo RCE, według `pv_config.type_of_price` w profilu | 1,23 |
+
+Ujemna cena daje 0. Ta sama wycena jest stosowana w Optymalizacji dla kwadransów z nadwyżką PV.
+Zwrotu niewykorzystanej nadpłaty (20% przy RCEm, 30% przy RCE) nie modelujemy.
+
 ## Architektura
 
 ```
@@ -67,7 +89,7 @@ Serwis, repozytoria, worker i endpointy pozostają bez zmian.
 
 ## Tabele
 
-**`dynamic_price_observations`**: jedna obserwacja ceny.
+**`rce_price_observations`**: jedna obserwacja ceny.
 
 | kolumna | opis |
 |---|---|
@@ -80,6 +102,9 @@ Serwis, repozytoria, worker i endpointy pozostają bez zmian.
 
 Ograniczenie `UNIQUE(source, interval_start)` w połączeniu z `INSERT ... ON CONFLICT DO UPDATE`
 zapewnia idempotencję. Ponowny import tego samego okresu aktualizuje ceny i nie tworzy duplikatów.
+
+**`rcem_price_observations`**: cena RCEm miesiąca. Kolumny: `source` (`pse_rcem`), `price_month`
+(pierwszy dzień miesiąca), `price_pln_mwh`, `published_at`. Unikalność `(source, price_month)`.
 
 **`price_sync_runs`**: historia uruchomień. Zawiera trigger (`scheduled`/`manual`/`cli`),
 zakres dat, status, liczbę dób i rekordów oraz `error_message`.
@@ -100,11 +125,14 @@ Worker działa jako osobny kontener `price-worker` w `docker-compose.yml`.
   uzupełnia brakujące lub niepełne doby z ostatnich `CATCHUP_DAYS` (7) dni oraz jutro.
 - Przy starcie robi to samo, więc nadrabia przestój.
 - Jeśli PSE jeszcze nie opublikowało jutra, kolejne uruchomienie dociągnie tę dobę w ramach okna catch-up.
+- Przy starcie i codziennie o 15:30 pobiera całą tabelę RCEm. Błąd tej synchronizacji jest logowany
+  i nie zatrzymuje harmonogramu.
 
 ```bash
 python -m app.workers.price_sync_worker run                            # harmonogram
 python -m app.workers.price_sync_worker once                           # jednorazowo uzupełnij braki
 python -m app.workers.price_sync_worker backfill 2024-06-14 2025-12-31 # historia (paczki po 31 dni)
+python -m app.workers.price_sync_worker rcem                          # ceny RCEm ze strony PSE
 ```
 
 Bez Dockera ten sam efekt da cron: `0 15 * * * cd backend && python -m app.workers.price_sync_worker once`.

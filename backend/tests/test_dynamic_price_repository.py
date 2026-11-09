@@ -6,14 +6,14 @@ import pytest
 from sqlalchemy import text
 
 from app.database import SessionLocal, engine
-from app.models.DynamicPriceObservation import DynamicPriceObservation
+from app.models.RcePriceObservation import RcePriceObservation
 from app.providers.prices.base import PricePoint
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 
 
 try:
     with engine.connect() as connection:
-        connection.execute(text("SELECT 1 FROM dynamic_price_observations LIMIT 1"))
+        connection.execute(text("SELECT 1 FROM rce_price_observations LIMIT 1"))
 except Exception as exc:  # brak bazy lub niewykonane migracje
     pytest.skip(f"Baza danych niedostępna: {exc}", allow_module_level=True)
 
@@ -27,7 +27,7 @@ def db():
     session.test_source = f"test_{uuid.uuid4().hex[:12]}"
     yield session
     session.rollback()
-    session.query(DynamicPriceObservation).filter(DynamicPriceObservation.source == session.test_source).delete()
+    session.query(RcePriceObservation).filter(RcePriceObservation.source == session.test_source).delete()
     session.commit()
     session.close()
 

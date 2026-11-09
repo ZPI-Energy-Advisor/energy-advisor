@@ -55,8 +55,16 @@ bazę od zera albo z kopii.
 
 ### 4. Dane początkowe (taryfy)
 
-Taryfy G11, G12 i dynamiczna są wymagane do obliczania kosztów. Skrypt jest idempotentny:
-nie wprowadza zmian, jeśli taryfy istnieją już w bazie.
+Cennik (stawki dystrybucyjne i sprzedaży, opłaty regulacyjne) jest w plikach JSON w `backend/data/tariffs`
+(format: [docs/tariff-data-format.md](docs/tariff-data-format.md)). Ładuje się go skryptem, który waliduje
+pliki i zapisuje wszystko w jednej transakcji; ponowne uruchomienie nie tworzy duplikatów:
+
+```bash
+docker compose exec backend python scripts/load_tariffs.py data/tariffs
+docker compose exec backend python scripts/load_tariffs.py --check data/tariffs   # tylko walidacja, bez bazy
+```
+
+`seed.py` jest nadal potrzebny dla tabeli taryf używanej przez Dashboard:
 
 ```bash
 docker compose exec backend python seed.py
@@ -64,7 +72,7 @@ docker compose exec backend python seed.py
 
 ### 5. Ceny dynamiczne
 
-Ceny RCE zapisywane są w tabeli `dynamic_price_observations` i są niezależne od taryf z kroku 4
+Ceny RCE zapisywane są w tabeli `rce_price_observations` i są niezależne od taryf z kroku 4
 (taryfa dynamiczna przechowuje jedynie narzut i stawkę VAT doliczane do ceny rynkowej).
 
 **Synchronizacja bieżąca.** Kontener `price-worker` uruchamia się w kroku 2 i czeka do 5 minut na
@@ -95,6 +103,20 @@ przypadku należy poczekać na wpis w logach i uruchomić polecenie ponownie.
 Dane PSE są dostępne od 2024-06-14. Backfill pobiera je w paczkach po 31 dni; ponowne uruchomienie
 dla tego samego zakresu aktualizuje istniejące rekordy i nie tworzy duplikatów.
 Szczegóły: [docs/dynamic-prices.md](docs/dynamic-prices.md).
+
+Net-billing (nowelizacja ustawy o OZE, Dz.U. 2024 poz. 1847):
+
+- do 31.01.2025 energię oddaną do sieci wyceniamy po RCE z każdego kwadransa;
+- od 1.02.2025 według wyboru w profilu: RCEm (miesięczna; domyślna dla instalacji, które pierwszy raz
+  oddały energię przed 1.07.2024) albo RCE (nowsze instalacje i ci, którzy złożyli oświadczenie);
+- od 1.02.2025 wartość energii w depozycie powiększa się o współczynnik 1,23;
+- ujemna cena rynkowa daje wartość 0.
+
+Ceny RCEm worker pobiera ze strony PSE (tabela `rcem_price_observations`) przy starcie i codziennie
+o 15:30. Ręcznie: `docker compose exec price-worker python -m app.workers.price_sync_worker rcem`.
+
+Nie modelujemy zwrotu niewykorzystanej nadpłaty (do 20% przy RCEm, 30% przy RCE) — depozyt pokrywa
+tylko energię czynną.
 
 ### 6. Frontend
 

@@ -1,0 +1,402 @@
+{
+  "operator": "ENERGA",
+  "year": 2025,
+  "covers": {
+    "from": "2025-01-01",
+    "to": "2025-12-31"
+  },
+  "documents": {
+    "osd-2025": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej Energa-Operator S.A. z siedzibą w Gdańsku na 2025 rok (obowiązująca od 1 stycznia do 30 czerwca 2025 r.), zatwierdzona decyzją Prezesa URE DRE.WPR.4211.12.8.2024.JSz z 16.12.2024 (Biuletyn Branżowy URE – Energia elektryczna Nr 277 (4521) z 17.12.2024)",
+      "url": "https://cdn-netpr.pl/file/mediakit/2765320/c0/taryfa_2025_20241216.pdf"
+    },
+    "osd-2025-tj": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej Energa-Operator S.A. na 2025 rok – tekst jednolity obowiązujący od 1 lipca do 31 grudnia 2025 r., uwzględniający zmianę zatwierdzoną decyzją Prezesa URE DRE.WPR.4211.2.2.2025.JSz z 30.05.2025 (Biuletyn Branżowy URE – Energia elektryczna Nr 120 (4650) z 2.06.2025)",
+      "url": "https://cdn-netpr.pl/file/mediakit/2857872/a9/20250602_taryfa_2025_tekst_jednolity.pdf"
+    },
+    "ure-osd-2025": {
+      "title": "Biuletyn Branżowy URE – Energia elektryczna Nr 277 (4521) z 17.12.2024: decyzja Prezesa URE DRE.WPR.4211.12.8.2024.JSz z 16.12.2024 zatwierdzająca taryfę Energa-Operator S.A. na 2025 r. wraz z taryfą (skan)",
+      "url": "https://bip.ure.gov.pl/download/3/19083/ENERGAOPERATOR.pdf"
+    },
+    "ure-osd-2025-zmiana": {
+      "title": "Biuletyn Branżowy URE – Energia elektryczna Nr 120 (4650) z 2.06.2025: decyzja Prezesa URE DRE.WPR.4211.2.2.2025.JSz z 30.05.2025 zatwierdzająca zmianę taryfy Energa-Operator S.A. na 2025 r. (grupy C11f i G11f)",
+      "url": "https://bip.ure.gov.pl/download/3/19670/ENERGETYKAOPERATOR.pdf"
+    },
+    "obrot-2024-2025": {
+      "title": "Taryfa ENERGA-OBRÓT S.A. dla energii elektrycznej dla Odbiorców z grup taryfowych G obowiązująca od 1 stycznia 2024 roku do 31 grudnia 2025 roku (zatwierdzona decyzją Prezesa URE DRE.WPR.4211.12.14.2023.JSz z 15.12.2023, zmieniona decyzjami DRE.WPR.4211.4.2.2024.JSz z 30.01.2024, DRE.WPR.4211.8.10.2024.JSz z 28.06.2024 i DRE.WPR.4211.3.15.2025.JSz z 30.09.2025)",
+      "url": "https://www.energa.pl/dam/jcr:38348edb-d43b-4d4e-92ed-54e7cf637b21/Taryfa%20ENERGA-OBR%C3%93T%20SA%20dla%20energii%20elektrycznej%20dla%20odbiorc%C3%B3w%20z%20grup%20taryfowych%20G%20obowi%C4%85zuj%C4%85ca%20od%201%20stycznia%202024%20roku%20do%2031%20grudnia%202025%20roku.pdf"
+    },
+    "ure-obrot-2025-09": {
+      "title": "Biuletyn Branżowy URE – Energia elektryczna Nr 220 (4750) z 30.09.2025: decyzja Prezesa URE DRE.WPR.4211.3.15.2025.JSz z 30.09.2025 zatwierdzająca zmianę taryfy ENERGA-OBRÓT S.A. dla grup G (ceny od 1.10.2025)",
+      "url": "https://bip.ure.gov.pl/download/3/20035/ENERGAOBROTSA.pdf"
+    },
+    "obrot-zasady-2025-q4": {
+      "title": "ENERGA-OBRÓT S.A.: Szczególne zasady rozliczeń energii elektrycznej od 1 października do 31 grudnia 2025 roku (ceny stosowane w rozliczeniach z uwzględnieniem ceny maksymalnej)",
+      "url": "https://www.energa.pl/dam/jcr:d0e2d316-a383-4990-81cf-c1a58f7b8455/Szczeg%C3%B3lne%20zasady%20rozlicze%C5%84%20energii%20elektrycznej%20od%201%20pa%C5%BAdziernika%20do%2031%20grudnia%202025%20roku.pdf"
+    },
+    "ustawa-2022-2243": {
+      "title": "Ustawa z dnia 27 października 2022 r. o środkach nadzwyczajnych mających na celu ograniczenie wysokości cen energii elektrycznej oraz wsparciu niektórych odbiorców w 2023 roku oraz w 2024 roku (t.j. Dz.U. 2024 poz. 1622 z późn. zm.)",
+      "url": "https://isap.sejm.gov.pl/isap.nsf/DocDetails.xsp?id=WDU20220002243"
+    },
+    "energa-dyn2-r4": {
+      "title": "Regulamin naszej oferty Oferta dynamiczna II (dla domu), wersja R4, obowiązujący od 1 listopada 2026 r. (ENERGA-OBRÓT S.A.)",
+      "url": "https://www.energa.pl/dam/jcr:2971d640-ec36-434b-ab84-e310a8b1ea07/Regulamin%20naszej%20oferty%20Oferta%20dynamiczna%20II%20dla%20domu%20obowi%C4%85zuj%C4%85cy%20od%201%20listopada%202026%20roku.pdf"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "subscription": {
+        "1": "0.74",
+        "2": "0.70"
+      },
+      "subscription_source": {
+        "doc": "osd-2025",
+        "page": "pkt 8, s. 35 (PDF 35), kolumny „okres 1-miesięczny / 2-miesięczny dla zdalnego odczytu”; okresy rozliczeniowe pkt 3.3.2 lit. c, s. 10 (PDF 10); bez zmian w tekście jednolitym od 1.07.2025, s. 35 (PDF 35)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.3437"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.68",
+            "3f": "11.54"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 9.2, s. 37 (PDF 37); bez zmian w tekście jednolitym od 1.07.2025, s. 37 (PDF 37)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 3.1.2, s. 7 (PDF 7)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.3791"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0816"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.07",
+            "3f": "19.77"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 9.2, s. 37 (PDF 37); bez zmian w tekście jednolitym od 1.07.2025, s. 37 (PDF 37)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 3.2.5, s. 9 (PDF 9); w tekście jednolitym od 1.07.2025 bez zmian, s. 10 (PDF 10)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.3960"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0838"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.07",
+            "3f": "19.77"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 9.2, s. 37 (PDF 37); bez zmian w tekście jednolitym od 1.07.2025, s. 37 (PDF 37)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 3.2.6, s. 10 (PDF 10); bez zmian w tekście jednolitym od 1.07.2025, s. 10 (PDF 10)"
+          }
+        },
+        "G12r": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.3590"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0870"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "14.07",
+            "3f": "19.77"
+          },
+          "rates_source": {
+            "doc": "osd-2025",
+            "page": "pkt 9.2, s. 37 (PDF 37); bez zmian w tekście jednolitym od 1.07.2025, s. 37 (PDF 37)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["07:00", "13:00"],
+                ["16:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "07:00"],
+                ["13:00", "16:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2025",
+            "page": "pkt 3.2.8, s. 10 (PDF 10); bez zmian w tekście jednolitym od 1.07.2025, s. 10 (PDF 10)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-09-30",
+      "seller": "ENERGA-OBRÓT S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "obrot-2024-2025",
+        "page": "pkt 5.8, s. 4 (PDF 4)"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. d (dodana ustawą z 27.11.2024, Dz.U. 2024 poz. 1831, art. 1 pkt 3)"
+      },
+      "source": {
+        "doc": "obrot-2024-2025",
+        "page": "pkt 5.2, s. 3 (PDF 3)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.6249"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.7283",
+            "2": "0.4721"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.7620",
+            "2": "0.4957"
+          }
+        },
+        "G12r": {
+          "zones": {
+            "1": "0.8388",
+            "2": "0.3796"
+          }
+        }
+      }
+    },
+    {
+      "valid_from": "2025-10-01",
+      "valid_to": "2025-12-31",
+      "seller": "ENERGA-OBRÓT S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "obrot-2024-2025",
+        "page": "pkt 5.8, s. 4 (PDF 4)"
+      },
+      "price_cap": "0.5000",
+      "price_cap_source": {
+        "doc": "ustawa-2022-2243",
+        "page": "art. 2 pkt 1 lit. a, art. 3 ust. 1 pkt 1 lit. e (dodana ustawą z 12.09.2025, Dz.U. 2025 poz. 1302, art. 15 pkt 2)"
+      },
+      "source": {
+        "doc": "obrot-2024-2025",
+        "page": "pkt 5.2.a, s. 3 (PDF 3)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.5746"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.6695",
+            "2": "0.4340"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.7004",
+            "2": "0.4556"
+          }
+        },
+        "G12r": {
+          "zones": {
+            "1": "0.7711",
+            "2": "0.3489"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "seller": "ENERGA-OBRÓT S.A.",
+      "name": "Oferta dynamiczna II dla domu",
+      "distribution_tariffs": ["G11", "G12", "G12w", "G12r"],
+      "billing_cycle_months": 1,
+      "margin": "0.0878",
+      "prosumer_margin": "0.0878",
+      "trade_fee_monthly": "12.19",
+      "prosumer_trade_fee_monthly": "12.19",
+      "prices_include_excise": true,
+      "source": {
+        "text": "warunki wersji R4 regulaminu (obowiązującej od 1.11.2026) przyjęte dla okresu przed jej wejściem w życie; wcześniejsze wersje R1–R3 nie są publicznie dostępne; data startu oferty 24.08.2024 = początek obowiązku art. 5ag Prawa energetycznego, brak dokumentu Energi z datą wprowadzenia",
+        "doc": "energa-dyn2-r4",
+        "page": "Tabela nr 1, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "margin": {
+          "text": "WK 0,0878 zł/kWh netto z R4",
+          "doc": "energa-dyn2-r4",
+          "page": "Tabela nr 1, s. 1 (PDF 1)"
+        },
+        "prosumer_margin": {
+          "text": "brak odrębnego wariantu dla prosumentów, jak margin (pkt 23 zmienia tylko sposób liczenia zużycia)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 23, s. 2 (PDF 2)"
+        },
+        "trade_fee_monthly": {
+          "text": "warunki Regulaminu R4 (od 1.11.2026) przyjęte dla wcześniejszego okresu; opłata handlowa w wariancie podstawowym (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto (14,99 / 1,23); wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto — przyjęto droższy wariant (ostrożniej)",
+          "doc": "energa-dyn2-r4",
+          "page": "Tabela nr 1 i przypis „Opłata handlowa zawiera VAT”, s. 1 (PDF 1)"
+        },
+        "prosumer_trade_fee_monthly": {
+          "text": "warunki Regulaminu R4 (od 1.11.2026) przyjęte dla wcześniejszego okresu; opłata handlowa w wariancie podstawowym (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto (14,99 / 1,23); wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto — przyjęto droższy wariant (ostrożniej)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 5 i 23, s. 1–2 (PDF 1–2)"
+        },
+        "prices_include_excise": {
+          "text": "WK zawiera akcyzę (pkt 9)",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 9, s. 2 (PDF 2)"
+        },
+        "billing_cycle_months": {
+          "text": "okres rozliczeniowy nie jest w regulaminie wyrażony liczbą miesięcy; opłata handlowa za każdy rozpoczęty miesiąc (pkt 5) – przyjęto 1",
+          "doc": "energa-dyn2-r4",
+          "page": "pkt 5 i 17, s. 1–2 (PDF 1–2)"
+        }
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "G12as – dzień/noc z obniżoną stawką nocną",
+      "valid_from": "2025-01-01",
+      "valid_to": "2025-12-31",
+      "reason": "Niższa stawka nocna (0,0332 zł/kWh zamiast 0,3437 zł/kWh) dotyczy tylko zużycia ponad zużycie z analogicznego okresu roku poprzedzającego zakwalifikowanie do G12as, a tej wielkości nie ma w pliku z odczytami. Taryfa ENERGA-OBRÓT nie podaje też ceny energii dla G12as.",
+      "source": {
+        "doc": "osd-2025",
+        "page": "pkt 4.1.30–4.1.33, s. 17 (PDF 17); przypisy 5) i 6) do tabeli 9.2, s. 37 (PDF 37)"
+      }
+    },
+    {
+      "code": "G11f",
+      "name": "G11f – jednostrefowa dla umów z ceną dynamiczną",
+      "valid_from": "2025-07-01",
+      "valid_to": "2025-12-31",
+      "reason": "Grupę G11f (od 1.07.2025) można wybrać tylko przy umowie ze sprzedawcą z ceną dynamiczną energii elektrycznej (po jej zakończeniu odbiorca przechodzi do G11). Taryfa sprzedawcy z urzędu ENERGA-OBRÓT nie ma ceny energii dla G11f.",
+      "source": {
+        "doc": "osd-2025-tj",
+        "page": "pkt 3.1.2, s. 7–8 (PDF 7–8); pkt 3.1.12, s. 9 (PDF 9)"
+      }
+    }
+  ],
+  "notes": ["Abonament: taryfa (pkt 8, s. 35) podaje dla G11, G12, G12w, G12r i G12as 4,56 zł/mies. przy okresie 1-miesięcznym i 2,28 zł/mies. przy 2-miesięcznym oraz 0,74 i 0,70 zł/mies. dla okresów 1- i 2-miesięcznego „dla zdalnego odczytu” (pkt 3.3.2 lit. c, s. 10: odbiorcy, u których Operator zainstalował licznik ze zdalną transmisją danych). Pliki 15-minutowe pochodzą z liczników zdalnego odczytu, więc wpisano stawki dla zdalnego odczytu (jak w pliku 2026). Odbiorca bez takiego licznika płaciłby 4,56 / 2,28 zł/mies.", "Okresy rozliczeniowe w grupach G: tylko 1- i 2-miesięczny (pkt 3.3.2, s. 10). Okresów 6- i 12-miesięcznych Energa-Operator nie ma.", "Zmiana taryfy od 1.07.2025 (decyzja DRE.WPR.4211.2.2.2025.JSz z 30.05.2025, tekst jednolity od 1.07.2025) dodaje tylko grupy C11f i G11f (G11f: 0,0516 zł/kWh, składnik stały 38,69 / 54,37 zł/mies., abonament wyłącznie dla zdalnego odczytu 0,74 / 0,70 zł/mies.). Stawki, składniki stałe, abonament i godziny stref G11, G12, G12w i G12r są w tekście jednolitym takie same (porównane s. 7–10 i 35–38), dlatego dystrybucja ma jeden wpis na cały 2025 r.", "Stawki grup G z taryfy Energa-Operator (s. 37) zgadzają się z kopią taryfy w Biuletynie Branżowym URE Nr 277 (4521) (skan, PDF 39). Wniosek Energa-Operator z 20.08.2025 o kolejną zmianę taryfy 2025 umorzono decyzją DRE.WPR.4211.5.3.2025.JSz z 15.01.2026 (Biuletyn Branżowy URE Nr 8 (4822) z 21.01.2026), więc do końca 2025 r. stawki się nie zmieniły.", "Godziny stref w czasie lokalnym. Taryfa OSD (pkt 3.2.10, s. 10) i taryfa sprzedawcy (pkt 3.2.2, s. 2): zegary liczników strefowych ustawia się według czasu zimowego i nie zmienia w czasie letnim, chyba że urządzenia automatycznie utrzymują godziny stref w czasie letnim i zimowym.", "G12w: do strefy nocnej należą wszystkie godziny sobót, niedziel i innych dni ustawowo wolnych od pracy (pkt 3.2.6, s. 10). G12r: strefy szczytowa i pozaszczytowa (pkt 3.1.2, s. 7; pkt 3.2.8, s. 10). Strefy G12, G12w, G12r są całoroczne (bez sezonów).", "Ceny ENERGA-OBRÓT nie zawierają VAT ani akcyzy (pkt 5.8, s. 4); ceny brutto w nawiasach (pkt 5.2 i 5.2.a) to (netto + 0,005 zł/kWh akcyzy) × 1,23 – sprawdzone dla wszystkich stref. Taryfa nie ma opłaty handlowej (przy cenie maksymalnej i tak jest ona jedyną składową opłat w obrocie, art. 3 ust. 8 ustawy).", "Cena maksymalna: taryfa sprzedawcy (pkt 5.5, s. 3–4) – 0,5000 zł/kWh w rozliczeniach z odbiorcami uprawnionymi od 1.07.2024 do 31.12.2025; gdy cena z taryfy jest niższa, stosuje się niższą. „Szczególne zasady rozliczeń energii elektrycznej od 1 października do 31 grudnia 2025 roku” potwierdzają ceny rozliczane w IV kw. 2025: G11 i strefa 1 G12/G12w/G12r 0,5000 zł/kWh (brutto 0,6212 = (0,5000 + 0,005) × 1,23, czyli cena maksymalna bez akcyzy), strefa 2 według taryfy: G12 0,4340, G12w 0,4556, G12r 0,3489 zł/kWh (podstawa: ustawa z 12.09.2025, Dz.U. 2025 poz. 1302).", "Ceny ENERGA-OBRÓT od 1.10.2025 (pkt 5.2.a) zatwierdzono decyzją DRE.WPR.4211.3.15.2025.JSz z 30.09.2025 (Biuletyn Branżowy URE Nr 220 (4750)); ceny do 30.09.2025 (pkt 5.2) obowiązują od 1.07.2024 (decyzja DRE.WPR.4211.8.10.2024.JSz z 28.06.2024).", "Oferta dynamiczna ENERGA-OBRÓT: cena kwadransa = CTGE (TGE RDN Fixing I; cena godzinowa dla wszystkich czterech kwadransów) + WK 0,0878 zł/kWh netto; WK zawiera akcyzę. Ujemne CTGE dozwolone (brak progu dolnego i górnego).", "Jedyne źródło wartości to regulamin wersji R4 (od 1.11.2026). Dla 24.08.2024–31.10.2026 przyjęto te same warunki; wersje R1–R3 nie są publicznie dostępne.", "Data startu oferty 24.08.2024 to początek obowiązku oferowania umów z ceną dynamiczną (art. 5ag Prawa energetycznego; strona Energi: „nowy rodzaj umowy, zdefiniowany od 24 sierpnia 2024 r.”). Dokument Energi z datą wprowadzenia oferty nie został znaleziony – start przyjęto od 24.08.2024.", "Opłata handlowa oferty dynamicznej: przyjęto wariant podstawowy (faktura papierowa) 14,99 zł/mies. brutto = 12,19 zł netto; wariant z e-fakturą 9,99 zł brutto = 8,12 zł netto (wybrano wyższą opłatę — ostrożniej).", "Brak odrębnych warunków dla prosumentów – marża i opłata prosumenta równe zwykłym; pkt 23 dotyczy wyłącznie ustalania zużycia (pobór z sieci po bilansowaniu godzinowym).", "Rozliczenie dystrybucji według G11 (Energa-Operator ma też G11f dla umów dynamicznych od 1.07.2025, nie stosujemy)."]
+}

@@ -5,7 +5,9 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,8 +15,9 @@ import httpx
 
 from device.driver import EDITABLE_FIELDS
 from device.models import DeviceConfig
+from hub.clock import SimClock
 from hub.config import HubSettings
-from hub.models import DeviceCommand
+from hub.models import ClockUpdate, DeviceCommand
 from hub.state import StateFile
 
 
@@ -25,6 +28,7 @@ HUB_DIR = Path(__file__).resolve().parents[1]
 DEVICE_REQUEST_TIMEOUT_SECONDS = 3.0
 HEALTH_POLL_SECONDS = 0.05
 STOP_TIMEOUT_SECONDS = 5.0
+EVENT_BUFFER_SIZE = 1000
 
 UNREACHABLE = "unreachable"
 ERROR = "error"
@@ -53,6 +57,13 @@ class ManagedDevice:
         return f"http://127.0.0.1:{self.port}"
 
 
+@dataclass
+class ScheduledCommand:
+    device_id: str
+    command_id: str
+    command: DeviceCommand
+
+
 class DeviceSupervisor:
     """Stawia, restartuje i zatrzymuje mikroserwisy urządzeń. Kontrakt: docs/smart-home-api.md."""
 
@@ -62,6 +73,11 @@ class DeviceSupervisor:
         self._state = StateFile(settings.state_dir / "state.json")
         self._lock = asyncio.Lock()  # Rekoncyliacja i health-check nie mogą restartować naraz.
         self._client: httpx.AsyncClient | None = None
+        self.clock = SimClock()
+        # Osobna blokada: tick nie może czekać na restart niedziałającego urządzenia.
+        self._clock_lock = asyncio.Lock()
+        self._scheduled: list[ScheduledCommand] = []
+        self.events: deque[dict] = deque(maxlen=EVENT_BUFFER_SIZE)  # Czekają na webhook do backendu.
 
     async def start(self) -> None:
         self._client = httpx.AsyncClient(timeout=DEVICE_REQUEST_TIMEOUT_SECONDS, trust_env=False)
@@ -85,6 +101,7 @@ class DeviceSupervisor:
             await asyncio.gather(*(self._stop_process(device) for device in removed))
             for device in removed:
                 del self.devices[device.config.device_id]
+            self._scheduled = [item for item in self._scheduled if item.device_id in self.devices]
 
             tasks = [
                 self._apply_change(self.devices[device_id], config)
@@ -118,16 +135,51 @@ class DeviceSupervisor:
         device = self.devices.get(device_id)
         if device is None:
             raise HubError(404, "device_not_found", f"Nie ma urządzenia {device_id!r} w rejestrze")
-        if command.start_at is not None:
-            raise HubError(422, "start_at_not_supported", "Hub nie ma jeszcze zegara symulacji")
+        command_id = f"cmd_{uuid.uuid4().hex[:12]}"
+        # Pod blokadą zegara: tick w trakcie przesuwa urządzeniom czas na kolejny kwadrans, więc komenda „teraz”
+        # wysłana w jego trakcie zaczęłaby się kwadrans później, a decyzja „teraz czy później” opierałaby się na
+        # czasie, który zaraz się zmieni.
+        async with self._clock_lock:
+            if command.start_at is not None and command.start_at < self.clock.sim_time:
+                raise HubError(422, "start_at_in_past", "start_at jest wcześniejszy niż czas symulacji")
+            if command.start_at is not None and command.start_at > self.clock.sim_time:
+                self._require_program(device, command.program_id)
+                self._scheduled.append(ScheduledCommand(device_id, command_id, command))
+                status = None
+            else:
+                status = await self._forward(device, self._command_path(command))
+        if status is None:
+            status = await self._read_status(device)
+            result = "scheduled"
+        else:
+            result = "accepted"
+        return {"command_id": command_id, "device_id": device_id, "status": result, "state": status["state"]}
 
-        status = await self._forward(device, self._command_path(command))
-        return {
-            "command_id": f"cmd_{uuid.uuid4().hex[:12]}",
-            "device_id": device_id,
-            "status": "accepted",
-            "state": status["state"],
-        }
+    async def update_clock(self, update: ClockUpdate) -> dict:
+        async with self._clock_lock:
+            # Ponowiony PUT z tym samym czasem niczego nie zmienia, a HubClient ponawia PUT-y.
+            if update.sim_time is not None and not self.clock.is_at(update.sim_time):
+                if self.clock.running:
+                    raise HubError(409, "clock_running", "Czas można ustawić tylko przy zatrzymanym zegarze")
+                await self._start_new_simulation(update.sim_time)
+            self.clock.configure(update.running, update.speed)
+            return self.clock.state()
+
+    async def tick(self) -> None:
+        async with self._clock_lock:
+            await self._tick()
+
+    async def run_clock_loop(self) -> None:
+        while True:
+            await self.clock.wait_for_step()
+            async with self._clock_lock:
+                if self.clock.running:  # Zegar mógł stanąć w trakcie czekania na blokadę.
+                    started = time.monotonic()
+                    try:
+                        await self._tick()
+                    except Exception:
+                        logger.exception("Tick nie powiódł się, zegar ponowi ten kwadrans")
+                    self.clock.spend(time.monotonic() - started)
 
     async def check_health(self) -> None:
         async with self._lock:
@@ -138,6 +190,67 @@ class DeviceSupervisor:
         while True:
             await asyncio.sleep(self.settings.health_interval_seconds)
             await self.check_health()
+
+    async def _tick(self) -> None:
+        sim_time = self.clock.next_time
+        devices = [device for device in self.devices.values() if not device.failed]
+        await asyncio.gather(*(self._tick_device(device, sim_time) for device in devices))
+        self.clock.advance()
+
+        # Po ticku, bo akcja zaczyna się w czasie ostatniego ticka urządzenia.
+        due = [item for item in self._scheduled if item.command.start_at <= sim_time]
+        self._scheduled = [item for item in self._scheduled if item.command.start_at > sim_time]
+        await asyncio.gather(*(
+            self._run_scheduled(self.devices[item.device_id], item, sim_time) for item in due
+        ))
+
+    async def _tick_device(self, device: ManagedDevice, sim_time: datetime) -> None:
+        try:
+            result = await self._forward(device, "/tick", payload={"sim_time": sim_time.isoformat()})
+        except HubError as e:
+            self._record_device_error(device, sim_time, e)
+            return
+        self.events.extend({**event, "device_id": device.config.device_id} for event in result.get("events", []))
+
+    async def _run_scheduled(self, device: ManagedDevice, item: ScheduledCommand, sim_time: datetime) -> None:
+        try:
+            await self._forward(device, self._command_path(item.command))
+        except HubError as e:
+            self._record_device_error(device, sim_time, e)
+
+    def _record_device_error(self, device: ManagedDevice, sim_time: datetime, error: HubError) -> None:
+        logger.warning("Błąd urządzenia %s: %s", device.config.device_id, error.detail)
+        self.events.append({
+            "type": "device_error",
+            "device_id": device.config.device_id,
+            "sim_time": sim_time.isoformat(),
+            "data": {"code": error.code, "message": error.detail},
+        })
+
+    async def _start_new_simulation(self, sim_time: datetime) -> None:
+        devices = [device for device in self.devices.values() if not device.failed]
+        results = await asyncio.gather(*(self._reset_device(device) for device in devices))
+        not_reset = [device.config.device_id for device, reset in zip(devices, results) if not reset]
+        if not_reset:
+            raise HubError(502, "device_unreachable", f"Urządzenia bez resetu: {', '.join(not_reset)}")
+        self.clock.set_time(sim_time)
+        self._scheduled.clear()
+        await asyncio.gather(*(self._sync_time(device) for device in devices))
+
+    async def _reset_device(self, device: ManagedDevice) -> bool:
+        try:
+            await self._forward(device, "/reset")
+        except HubError as e:
+            logger.warning("Urządzenie %s bez resetu: %s", device.config.device_id, e.detail)
+            return False
+        return True
+
+    async def _sync_time(self, device: ManagedDevice) -> None:
+        """Tick z bieżącym czasem: dzięki niemu komenda zacznie się teraz, a nie przy kolejnym kroku."""
+        try:
+            await self._forward(device, "/tick", payload={"sim_time": self.clock.sim_time.isoformat()})
+        except HubError as e:
+            logger.warning("Urządzenie %s bez czasu symulacji: %s", device.config.device_id, e.detail)
 
     def _allocate_ports(self, count: int, used_ports: set[int]) -> list[int]:
         pool = range(self.settings.first_port, self.settings.last_port + 1)
@@ -189,6 +302,8 @@ class DeviceSupervisor:
         )
         if not await self._wait_until_healthy(device):
             logger.warning("Urządzenie %s nie odpowiada po starcie", device.config.device_id)
+            return
+        await self._sync_time(device)
 
     async def _stop_process(self, device: ManagedDevice) -> None:
         process, device.process = device.process, None
@@ -238,18 +353,30 @@ class DeviceSupervisor:
         except HubError:
             return self._status_without_readings(device, UNREACHABLE)
 
-    async def _forward(self, device: ManagedDevice, path: str, method: str = "POST") -> dict:
+    async def _forward(
+        self, device: ManagedDevice, path: str, method: str = "POST", payload: dict | None = None,
+    ) -> dict:
         try:
-            response = await self._client.request(method, f"{device.url}{path}")
+            response = await self._client.request(method, f"{device.url}{path}", json=payload)
         except httpx.HTTPError as e:
             raise HubError(502, "device_unreachable", f"Brak odpowiedzi urządzenia: {e}") from e
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise HubError(502, "device_unreachable", f"Urządzenie zwróciło HTTP {response.status_code} bez obiektu JSON")
         if response.is_success:
-            return response.json()
-        body = response.json()
+            return body
         raise HubError(response.status_code, body.get("code"), body.get("detail"))
 
     def _save_state(self) -> None:
         self._state.save({device.port: device.config for device in self.devices.values()})
+
+    @staticmethod
+    def _require_program(device: ManagedDevice, program_id: str) -> None:
+        if not any(program.program_id == program_id for program in device.config.programs):
+            raise HubError(404, "program_not_found", f"Urządzenie nie ma programu {program_id!r}")
 
     @staticmethod
     def _command_path(command: DeviceCommand) -> str:

@@ -1,0 +1,497 @@
+{
+  "operator": "ENEA",
+  "year": 2026,
+  "covers": {
+    "from": "2026-01-01",
+    "to": "2026-12-31"
+  },
+  "documents": {
+    "osd-2026-wyciag-01-09": {
+      "title": "Wyciąg z Taryfy dla usług dystrybucji energii elektrycznej ENEA Operator sp. z o.o. (obowiązuje od 1 stycznia 2026 r. do 30 września 2026 r.; taryfa zatwierdzona decyzją Prezesa URE DRE.WRE.4211.52.11.2025.TG z 17.12.2025)",
+      "url": "https://www.operator.enea.pl/media/3988/enea-operatorwyciag-z-taryfy21102026pdf.pdf"
+    },
+    "osd-2026-wyciag-10-12": {
+      "title": "Wyciąg z Taryfy dla usług dystrybucji energii elektrycznej ENEA Operator sp. z o.o. (obowiązuje od 1 października 2026 r. do 31 grudnia 2026 r.; taryfa zatwierdzona decyzją Prezesa URE DRE.WRE.4211.52.11.2025.TG z 17.12.2025)",
+      "url": "https://www.operator.enea.pl/media/5191/enea-operatorwyciag-z-taryfy01102026-31122026pdf.pdf"
+    },
+    "osd-2026": {
+      "title": "Taryfa dla usług dystrybucji energii elektrycznej ENEA Operator Sp. z o.o. na 2026 r., decyzja Prezesa URE DRE.WRE.4211.52.11.2025.TG z 17.12.2025 (Biuletyn Branżowy URE – Energia elektryczna Nr 272 (4802) z 17.12.2025)",
+      "url": "https://bip.ure.gov.pl/download/3/20348/ENEAOperator.pdf"
+    },
+    "enea-sa-2026": {
+      "title": "Taryfa dla energii elektrycznej dla odbiorców z grup taryfowych G – ENEA S.A., zatwierdzona decyzją Prezesa URE DRE.WRE.4211.51.8.2025.TG z 17.12.2025, obowiązuje od 1 stycznia 2026 r.",
+      "url": "https://www.enea.pl/media/6583/taryfa-energii-elektrycznej-dla-odbiorcow-w-grupie-taryfowej-g-od-01012026-r.pdf"
+    },
+    "enea-sa-2026-decyzja": {
+      "title": "Decyzja Prezesa URE DRE.WRE.4211.51.8.2025.TG z 17.12.2025 zatwierdzająca taryfę ENEA S.A. dla grup G na okres 1.01–31.12.2026 (Biuletyn Branżowy URE – Energia elektryczna Nr 266 (4796) z 17.12.2025)",
+      "url": "https://bip.ure.gov.pl/download/3/20341/Enea.pdf"
+    },
+    "enea-strefy-www": {
+      "title": "ENEA S.A. – strona „Możliwe grupy taryfowe i strefy godzinowe” (stan z 7.11.2026)",
+      "url": "https://www.enea.pl/dla-domu/oferta/mozliwe-grupy-taryfowe-i-strefy-godzinowe"
+    },
+    "rozp-me-2026-1182": {
+      "title": "Rozporządzenie Ministra Energii z dnia 3 września 2026 r. w sprawie sposobu kształtowania i kalkulacji taryf oraz sposobu rozliczeń w obrocie energią elektryczną (Dz.U. 2026 poz. 1182)",
+      "url": "https://eli.gov.pl/eli/DU/2026/1182"
+    },
+    "enea-dyn-cennik-2026": {
+      "title": "Cennik nr DI12010328_G – Oferta Ceny Dynamiczne (ważny od 01.10.2026 do 31.12.2026), Załącznik nr 1 do Regulaminu Oferty Ceny Dynamiczne z 01.10.2026",
+      "url": "https://www.enea.pl/media/10114/cennik-oferty-ceny-dynamicznedi12010328god-01102026-do-31122026pdf.pdf"
+    }
+  },
+  "distribution": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-09-30",
+      "subscription": {
+        "1": "3.84",
+        "2": "1.92",
+        "6": "0.64",
+        "12": "0.32"
+      },
+      "subscription_source": {
+        "doc": "osd-2026-wyciag-01-09",
+        "page": "pkt 7.3, s. 7 (PDF 7)"
+      },
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2456"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.45",
+            "3f": "10.41"
+          },
+          "rates_source": {
+            "doc": "osd-2026-wyciag-01-09",
+            "page": "pkt 7.2, s. 6 (PDF 6)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026-wyciag-01-09",
+            "page": "pkt 7.2 (G11: składnik zmienny „cała doba”), s. 6 (PDF 6)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2779"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0913"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "9.59",
+            "3f": "14.56"
+          },
+          "rates_source": {
+            "doc": "osd-2026-wyciag-01-09",
+            "page": "pkt 7.2, s. 6 (PDF 6)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "enea-strefy-www",
+            "page": "sekcja „Strefa godzinowa w taryfie G12” (godziny zegarowe; zasada w taryfie OSD pkt 2.2.7: godziny określa Operator)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.2702"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0813"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "16.85",
+            "3f": "26.23"
+          },
+          "rates_source": {
+            "doc": "osd-2026-wyciag-01-09",
+            "page": "pkt 7.2, s. 6 (PDF 6)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "21:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["21:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026-wyciag-01-09",
+            "page": "pkt 2.2.5, s. 2 (PDF 2)"
+          }
+        }
+      }
+    },
+    {
+      "valid_from": "2026-10-01",
+      "valid_to": "2026-12-31",
+      "subscription": {
+        "1": "0.00",
+        "2": "0.00",
+        "6": "0.00",
+        "12": "0.00"
+      },
+      "subscription_source": {
+        "doc": "osd-2026-wyciag-10-12",
+        "page": "pkt 7.3 z przypisem ** (s. 7–8, PDF 7–8): od 1.10.2026 opłata abonamentowa nie jest naliczana, na podstawie § 56 ust. 3 rozporządzenia Dz.U. 2026 poz. 1182"
+      },
+      "note": "Od 1.10.2026 ENEA Operator nie nalicza opłaty abonamentowej (§ 56 ust. 3 rozporządzenia Ministra Energii z 3.09.2026, Dz.U. 2026 poz. 1182, PDF 33; wyciąg od 1.10.2026, przypis **). Pozostałe stawki bez zmian (ta sama taryfa DRE.WRE.4211.52.11.2025.TG). Umowy zawarte od 5.09.2026 mają tylko okres 1- lub 2-miesięczny (§ 39 ust. 3, § 56 ust. 9; wyciąg, przypis * przy pkt 2.3.1, s. 3); umowy wcześniejsze mogą zachować okres 6- lub 12-miesięczny najpóźniej do 31.12.2028 (§ 56 ust. 8), dlatego zostają klucze 6 i 12.",
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": {
+              "name": "całodobowa",
+              "rate": "0.2456"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "7.45",
+            "3f": "10.41"
+          },
+          "rates_source": {
+            "doc": "osd-2026-wyciag-10-12",
+            "page": "pkt 7.2, s. 6 (PDF 6)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026-wyciag-10-12",
+            "page": "pkt 7.2 (G11: składnik zmienny „cała doba”), s. 6 (PDF 6)"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": {
+              "name": "dzienna",
+              "rate": "0.2779"
+            },
+            "2": {
+              "name": "nocna",
+              "rate": "0.0913"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "9.59",
+            "3f": "14.56"
+          },
+          "rates_source": {
+            "doc": "osd-2026-wyciag-10-12",
+            "page": "pkt 7.2, s. 6 (PDF 6)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["06:00", "13:00"],
+                ["15:00", "22:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": "all",
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["13:00", "15:00"],
+                ["22:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "enea-strefy-www",
+            "page": "sekcja „Strefa godzinowa w taryfie G12” (godziny zegarowe; zasada w taryfie OSD pkt 2.2.7: godziny określa Operator)"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": {
+              "name": "szczytowa",
+              "rate": "0.2702"
+            },
+            "2": {
+              "name": "pozaszczytowa",
+              "rate": "0.0813"
+            }
+          },
+          "fixed_monthly": {
+            "1f": "16.85",
+            "3f": "26.23"
+          },
+          "rates_source": {
+            "doc": "osd-2026-wyciag-10-12",
+            "page": "pkt 7.2, s. 6 (PDF 6)"
+          },
+          "hours": [
+            {
+              "zone": "1",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["06:00", "21:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["workday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "06:00"],
+                ["21:00", "24:00"]
+              ]
+            },
+            {
+              "zone": "2",
+              "days": ["saturday", "sunday_holiday"],
+              "season": "all",
+              "intervals": [
+                ["00:00", "24:00"]
+              ]
+            }
+          ],
+          "hours_source": {
+            "doc": "osd-2026-wyciag-10-12",
+            "page": "pkt 2.2.5, s. 2 (PDF 2)"
+          }
+        }
+      }
+    }
+  ],
+  "energy": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "seller": "ENEA S.A.",
+      "prices_include_excise": false,
+      "excise_source": {
+        "doc": "enea-sa-2026",
+        "page": "pkt 1.6, s. 3 (PDF 3); nagłówek tabeli pkt 5 „bez podatku od towarów i usług oraz podatku akcyzowego”, s. 7 (PDF 7)"
+      },
+      "source": {
+        "doc": "enea-sa-2026",
+        "page": "pkt 5, s. 7 (PDF 7)"
+      },
+      "note": "Taryfa zatwierdzona na okres 1.01–31.12.2026 (decyzja DRE.WRE.4211.51.8.2025.TG, PDF 1; ceny zgodne z załącznikiem w Biuletynie, s. 7 (PDF 9)). Bez opłaty handlowej (pkt 5 zawiera tylko ceny energii). Rozporządzenie Dz.U. 2026 poz. 1182 § 56 ust. 4–5: ENEA S.A. ma złożyć wniosek o zmianę taryfy i do czasu jej wejścia w życie stosuje dotychczasową; strona enea.pl (stan 7.11.2026) pokazuje tylko taryfę od 1.01.2026.",
+      "tariffs": {
+        "G11": {
+          "zones": {
+            "1": "0.4980"
+          }
+        },
+        "G12": {
+          "zones": {
+            "1": "0.5779",
+            "2": "0.3369"
+          }
+        },
+        "G12w": {
+          "zones": {
+            "1": "0.6518",
+            "2": "0.3465"
+          }
+        }
+      }
+    }
+  ],
+  "dynamic_offers": [
+    {
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-09-30",
+      "seller": "ENEA S.A.",
+      "name": "Ceny Dynamiczne",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.0820",
+      "trade_fee_monthly": "18.12",
+      "prices_include_excise": false,
+      "source": {
+        "text": "brak cennika sprzedawcy dla tego okresu; przyjęto warunki z Cennika nr DI12010328_G obowiązującego od 01.10.2026 (B = 0,0820 zł/kWh, opłata handlowa 22,29 zł brutto = 18,12 zł netto). Początek oferty = ustawowy obowiązek od 24.08.2024 (art. 5ag Prawa energetycznego); nie znaleziono dokumentu ENEA z datą uruchomienia oferty dla gospodarstw domowych.",
+        "doc": "enea-dyn-cennik-2026",
+        "page": "pkt 1.1–1.3, 1.7, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "margin": {
+          "text": "jak w cenniku od 01.10.2026",
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1–1.3, 1.7, s. 1 (PDF 1)"
+        },
+        "trade_fee_monthly": {
+          "text": "jak w cenniku od 01.10.2026, 22,29/1,23 = 18,12",
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1–1.3, 1.7, s. 1 (PDF 1)"
+        },
+        "prices_include_excise": {
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1 i 1.3, s. 1 (PDF 1)"
+        }
+      }
+    },
+    {
+      "valid_from": "2026-10-01",
+      "valid_to": "2026-12-31",
+      "seller": "ENEA Sprzedaż Sp. z o.o.",
+      "name": "Ceny Dynamiczne",
+      "distribution_tariffs": ["G11", "G12", "G12w"],
+      "billing_cycle_months": 1,
+      "margin": "0.0820",
+      "trade_fee_monthly": "18.12",
+      "prices_include_excise": false,
+      "source": {
+        "doc": "enea-dyn-cennik-2026",
+        "page": "pkt 1.1–1.3, s. 1 (PDF 1)"
+      },
+      "field_sources": {
+        "margin": {
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.3 (symbol B), s. 1 (PDF 1)"
+        },
+        "trade_fee_monthly": {
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.7, s. 1 (PDF 1); 22,29 zł brutto / 1,23 = 18,12 zł netto"
+        },
+        "prices_include_excise": {
+          "doc": "enea-dyn-cennik-2026",
+          "page": "pkt 1.1 i 1.3 (symbol A – akcyza doliczana osobno), s. 1 (PDF 1)"
+        }
+      }
+    }
+  ],
+  "unsupported": [
+    {
+      "code": "G12as",
+      "name": "G12as – taryfa antysmogowa",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Niższa stawka sieciowa w strefie nocnej (0,0246 zamiast 0,2456 zł/kWh) dotyczy tylko zużycia ponad zużycie z analogicznego okresu rozliczeniowego roku poprzedniego, a tej wielkości nie ma w pliku z odczytami. Taryfa sprzedawcy z urzędu ENEA S.A. nie ma też ceny energii dla G12as.",
+      "source": {
+        "doc": "osd-2026-wyciag-01-09",
+        "page": "pkt 2.1.10–2.1.13, s. 1 (PDF 1); pkt 7.2, s. 6 (PDF 6)"
+      }
+    },
+    {
+      "code": "G12sezON",
+      "name": "G12sezON – sezonowa strefa zalecanego poboru",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Taryfa sprzedawcy z urzędu ENEA S.A. nie ma ceny energii dla G12sezON (obejmuje tylko G11, G12, G12w, G11p i G12p), więc nie mamy ceny energii z taryfy zatwierdzonej przez URE.",
+      "source": {
+        "doc": "enea-sa-2026",
+        "page": "pkt 3.1.1, s. 4 (PDF 4); pkt 5, s. 7 (PDF 7)"
+      }
+    },
+    {
+      "code": "G13active",
+      "name": "G13active – trzy strefy zmieniane co miesiąc",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Taryfa sprzedawcy z urzędu ENEA S.A. nie ma ceny energii dla G13active (obejmuje tylko G11, G12, G12w, G11p i G12p); ponadto godziny trzech stref zmieniają się co miesiąc (taryfa OSD pkt 2.2.11).",
+      "source": {
+        "doc": "enea-sa-2026",
+        "page": "pkt 3.1.1, s. 4 (PDF 4); pkt 5, s. 7 (PDF 7)"
+      }
+    },
+    {
+      "code": "G11pewna",
+      "name": "G11pewna – niższa stawka do 250 kWh w okresie rozliczeniowym",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Stawka sieciowa zależy od ilości energii w miesięcznym okresie rozliczeniowym (0,0100 zł/kWh do 250 kWh, 0,2456 zł/kWh powyżej), a taryfa sprzedawcy z urzędu ENEA S.A. nie ma ceny energii dla G11pewna.",
+      "source": {
+        "doc": "osd-2026-wyciag-01-09",
+        "page": "pkt 7.2 z przypisami 3) i 4), s. 6 (PDF 6); pkt 2.3.1 lit. a, s. 3 (PDF 3)"
+      }
+    },
+    {
+      "code": "G11p",
+      "name": "G11p – A KONTO DZIEŃ I NOC (licznik przedpłatowy)",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Rozliczenie w systemie przedpłatowym: opłaty pobiera się z góry przy zakupie energii, bez okresów rozliczeniowych. Stawki dystrybucji i cena energii są takie same jak w G11; różni się abonament (0,16 zł/mies. do 30.09.2026).",
+      "source": {
+        "doc": "osd-2026-wyciag-01-09",
+        "page": "pkt 2.3.1 (ostatni akapit), s. 3 (PDF 3); pkt 3.1.14–3.1.15, s. 5 (PDF 5); pkt 7.2–7.3, s. 6–7 (PDF 6–7)"
+      }
+    },
+    {
+      "code": "G12p",
+      "name": "G12p – A KONTO CIEPŁY DOM (licznik przedpłatowy)",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-12-31",
+      "reason": "Rozliczenie w systemie przedpłatowym: opłaty pobiera się z góry przy zakupie energii, bez okresów rozliczeniowych. Stawki dystrybucji, godziny stref i ceny energii są takie same jak w G12; różni się abonament (0,16 zł/mies. do 30.09.2026).",
+      "source": {
+        "doc": "osd-2026-wyciag-01-09",
+        "page": "pkt 2.3.1 (ostatni akapit), s. 3 (PDF 3); pkt 3.1.14–3.1.15, s. 5 (PDF 5); pkt 7.2–7.3, s. 6–7 (PDF 6–7)"
+      }
+    }
+  ],
+  "notes": ["Stawki OSD z wyciągów ENEA Operator (1.01–30.09.2026 i 1.10–31.12.2026, te same stawki) sprawdzone z pełną taryfą (osd-2026: pkt 7.2 s. 63 (PDF 65), pkt 7.3 s. 64 (PDF 66), pkt 2.2.5 i 2.2.7 s. 16 (PDF 18)) i z informacjami o stawkach brutto (3991, 3994, 5194) — zgodne.", "G12: taryfa OSD (pkt 2.2.7) podaje tylko zasadę (8 kolejnych godzin z 22–7 i 2 kolejne z 13–17), a godziny zegarowe określa Operator. Przyjęto godziny ze strony ENEA S.A.: noc 22–6 i 13–15, dzień 6–13 i 15–22, wszystkie dni roku (strona pobrana 7.11.2026; zakładamy te same godziny przez cały 2026 r.).", "Zegar liczników: taryfa OSD pkt 2.2.12 i taryfa ENEA S.A. pkt 3.2.2 — zegary strefowe ustawia się według czasu zimowego i nie zmienia w okresie czasu letniego, chyba że urządzenie samo utrzymuje godziny stref; godziny stosujemy w czasie lokalnym (założenie projektu).", "Ceny ENEA S.A. bez akcyzy i VAT (pkt 1.6) — akcyzę dolicza silnik z regulatory.json. Brak ceny maksymalnej w 2026 r. Brak opłaty handlowej w taryfie.", "G11p i G12p (liczniki przedpłatowe) mają stawki jak G11 i G12, ale nie ma ich w TariffTypeEnum, a rozliczenie przedpłatowe nie ma okresów rozliczeniowych — wpisane do „unsupported”.", "Opłaty krajowe w taryfie OSD 2026 (wyciąg s. 8): jakościowa 0,0331 zł/kWh, od 1.02.2026 0,0332 zł/kWh; OZE 7,30 zł/MWh; kogeneracyjna 3,00 zł/MWh; mocowa dla gospodarstw domowych 4,29 / 10,31 / 17,18 / 24,05 zł/mies.; opłaty przejściowej brak. Taryfa (pkt 3.1.29) zalicza dokładnie 1200 kWh do przedziału 500–1200 kWh i 2800 kWh do 1200–2800 kWh (górne granice włącznie).", "Oferta „Ceny Dynamiczne” ENEA: Ch = CTGEh (RDN Fixing I) + A (akcyza 0,005 zł/kWh) + B (0,0820 zł/kWh); marża B nie zawiera akcyzy (A doliczana osobno) -> prices_include_excise = false.", "Jedyny dostępny cennik obowiązuje od 01.10.2026 do 31.12.2026. Wartości przed 01.10.2026 przyjęto z tego cennika (te same warunki).", "Początek oferty (24.08.2024) wynika z art. 5ag Prawa energetycznego, nie z dokumentu ENEA.", "Brak odrębnego wariantu prosumenta: cennik pkt 1.6 zmienia tylko sposób ważenia (energia zbilansowana godzinowo), stawki B i opłaty handlowej są te same.", "Opłata handlowa 22,29 zł brutto/mies. = 18,12 zł netto; wariant e-faktura 9,99 zł brutto = 8,12 zł netto; z oświadczeniem o magazynie energii 0,00 zł. Przyjęto stawkę podstawową.", "Okres rozliczeniowy oferty: 1 lub 2 miesiące (regulamin § 1 ust. 4 lit. c); przyjęto 1. Brak dolnego i górnego limitu ceny rynkowej w cenniku.", "Sprzedawca w regulaminie: ENEA Sprzedaż Sp. z o.o.; produkt „Ceny Dynamiczne Max” (osobny, tylko odnotowany) nie jest modelowany.", "Oferta „Ceny Dynamiczne”: regulamin z 01.10.2026 wskazuje sprzedawcę ENEA Sprzedaż Sp. z o.o.; dla okresów przed 1.10.2026 wpisano ENEA S.A. (sprzedawca z urzędu z taryfy G). Nazwa nie wpływa na rachunek."]
+}

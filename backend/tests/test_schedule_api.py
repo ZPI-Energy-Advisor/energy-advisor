@@ -2,10 +2,11 @@ import datetime
 from datetime import timezone
 from zoneinfo import ZoneInfo
 
-from app.api.v1.deps import get_dynamic_price_service
+from app.api.v1.deps import get_schedule_price_service
 from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.repositories.device_repository import DeviceRepository
+from app.services.schedule_prices import SchedulePrices
 from app.services.scheduling import SLOT
 from main import app
 
@@ -19,29 +20,32 @@ def at(day: int, hour: int) -> datetime.datetime:
 
 
 class _Prices:
-    """Drogo przez całą dobę, tanio 13:00-15:00 każdego dnia."""
+    """Ceny kwadransów taryfy z profilu: drogo przez całą dobę, tanio 13:00-15:00 każdego dnia."""
 
-    def consumer_prices(self, start, end):
+    def prices(self, start, end):
         prices, slot = {}, start
         while slot < end:
             prices[slot] = 0.2 if 13 <= slot.astimezone(WARSAW).hour < 15 else 1.0
             slot += SLOT
         return prices
 
+    def for_user(self, user_id, start, end, exports=None):
+        return SchedulePrices(prices=self.prices(start, end), description="PGE, G11")
+
 
 class _NoPricesOn20th(_Prices):
-    def consumer_prices(self, start, end):
-        return {slot: price for slot, price in super().consumer_prices(start, end).items()
+    def prices(self, start, end):
+        return {slot: price for slot, price in super().prices(start, end).items()
                 if slot.astimezone(WARSAW).day != 20}
 
 
-class _NoPrices:
-    def consumer_prices(self, start, end):
+class _NoPrices(_Prices):
+    def prices(self, start, end):
         return {}
 
 
 def override_prices(prices=_Prices):
-    app.dependency_overrides[get_dynamic_price_service] = prices
+    app.dependency_overrides[get_schedule_price_service] = prices
 
 
 def get_schedule(client, energy_file, prices=_Prices, **params):
@@ -49,7 +53,7 @@ def get_schedule(client, energy_file, prices=_Prices, **params):
     try:
         return client.get(f"/api/v1/energy-files/{energy_file.id}/schedule", params=params)
     finally:
-        app.dependency_overrides.pop(get_dynamic_price_service, None)
+        app.dependency_overrides.pop(get_schedule_price_service, None)
 
 
 def create_devices_file(db, user) -> EnergyDataFile:
@@ -83,7 +87,7 @@ def test_schedule_moves_action_to_cheap_hours_and_keeps_fixed(db, user_a, client
     try:
         response = client_a.get(f"/api/v1/energy-files/{energy_file.id}/schedule", params={"from": "2026-10-19", "to": "2026-10-19"})
     finally:
-        app.dependency_overrides.pop(get_dynamic_price_service, None)
+        app.dependency_overrides.pop(get_schedule_price_service, None)
 
     assert response.status_code == 200
     body = response.json()
@@ -105,7 +109,7 @@ def test_schedule_uses_whole_file_period_without_range(db, user_a, client_a):
     try:
         body = client_a.get(f"/api/v1/energy-files/{energy_file.id}/schedule").json()
     finally:
-        app.dependency_overrides.pop(get_dynamic_price_service, None)
+        app.dependency_overrides.pop(get_schedule_price_service, None)
 
     assert {item["action_id"] for item in body["actions"]} == {"act_1", "act_2", "act_3"}
     assert len(body["prices"]) == 192
@@ -126,7 +130,7 @@ def test_prices_cover_the_day_on_which_the_last_action_ends(db, user_a, client_a
             f"/api/v1/energy-files/{energy_file.id}/schedule", params={"from": "2026-10-19", "to": "2026-10-19"}
         ).json()
     finally:
-        app.dependency_overrides.pop(get_dynamic_price_service, None)
+        app.dependency_overrides.pop(get_schedule_price_service, None)
 
     assert len(body["prices"]) == 192
     assert body["actions"][-1]["end"].startswith("2026-10-20T01:00")

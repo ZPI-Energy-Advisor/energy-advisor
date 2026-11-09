@@ -78,6 +78,31 @@ const renderSingleFile = () =>
   );
 
 describe("CalculationResultsPage", () => {
+  it("pokazuje każdą grupę ze zwykłą umową i z ceną dynamiczną oraz zaznacza wybór z profilu", async () => {
+    const result = (payable) => ({ gross_total: payable, deposit_amount: 0, payable_gross: payable, active_energy_gross: 300 });
+    vi.spyOn(apiClient, "get").mockResolvedValue({
+      data: {
+        ...calculation,
+        tariff_data: { tariff_type: "G13", dynamic_price: true, distribution_operator: "TAURON" },
+        tariff_calculations: { G11: result(760.91), G13: result(617.95), G12as: result(700) },
+        dynamic_calculations: {
+          G11: { ...result(749.07), name: "Prąd z Ceną Dynamiczną" },
+          G13: { ...result(606.1), name: "Prąd z Ceną Dynamiczną" },
+        },
+      },
+    });
+
+    renderSingleFile();
+
+    expect(await screen.findByRole("columnheader", { name: "Cena dynamiczna" })).toBeTruthy();
+    const g13 = screen.getByRole("row", { name: /^G13/ });
+    expect(g13.textContent).toContain("617,95");
+    expect(g13.textContent).toContain("606,10");
+    expect(g13.textContent).toContain("Z profilu");
+    // Grupa bez oferty dynamicznej: „—” w kolumnie ceny dynamicznej.
+    expect(screen.getByRole("row", { name: /^G12as/ }).textContent).toContain("—");
+  });
+
   it("pokazuje każdą opłatę osobno i rozliczenie części okresu", async () => {
     vi.spyOn(apiClient, "get").mockResolvedValue({ data: calculation });
 

@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import apiClient from "../api/client";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 
-const tariffTypes = ["G11", "G12", "G12w", "G13", "G13s", "G14d", "dynamic"];
+// Grupy taryfowe, gdy nie ma listy z API (operator bez cennika).
+const tariffTypes = ["G11", "G12", "G12w", "G12n", "G12r", "G13"];
+
+const billingCycles = [1, 2, 6, 12];
 
 const createEmptyProfile = () => ({
   base_info: {
@@ -20,6 +23,7 @@ const createEmptyProfile = () => ({
   },
   consumption_and_tariff: {
     tariff_type: "G11",
+    dynamic_price: false,
   },
   pv_config: { mode: "none" },
 });
@@ -43,6 +47,22 @@ function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [options, setOptions] = useState(null);
+
+  const operator = profile.base_info.distribution_operator;
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get("/tariffs/options", { params: { operator } })
+      .then(({ data }) => {
+        if (!cancelled) setOptions(data?.has_rates ? data : null);
+      })
+      .catch(() => {
+        if (!cancelled) setOptions(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [operator]);
 
   useEffect(() => {
     apiClient.get("/users/me/profile")
@@ -68,12 +88,26 @@ function ProfilePage() {
 
   const handleTariffChange = (event) => {
     const tariffType = event.target.value;
+    const dynamicGroups = options?.dynamic_offer?.distribution_groups ?? [];
     setProfile((current) => ({
       ...current,
       consumption_and_tariff: {
         ...current.consumption_and_tariff,
         tariff_type: tariffType,
+        // Oferta dynamiczna nie dla każdej grupy: przy grupie spoza oferty zostaje zwykła umowa.
+        dynamic_price: Boolean(current.consumption_and_tariff.dynamic_price) && dynamicGroups.includes(tariffType),
       },
+    }));
+  };
+
+  const handleDynamicPriceChange = (event) => {
+    const dynamicPrice = event.target.checked;
+    // Umowa z ceną dynamiczną ma okres rozliczeniowy narzucony przez ofertę (zwykle 1 miesiąc).
+    const offerCycle = options?.dynamic_offer?.billing_cycle_months;
+    setProfile((current) => ({
+      ...current,
+      base_info: dynamicPrice && offerCycle ? { ...current.base_info, billing_cycle: offerCycle } : current.base_info,
+      consumption_and_tariff: { ...current.consumption_and_tariff, dynamic_price: dynamicPrice },
     }));
   };
 
@@ -84,7 +118,7 @@ function ProfilePage() {
       pv_config: mode === "none"
         ? { mode }
         : mode === "net_billing"
-          ? { mode, type_of_price: "RCEm" }
+          ? { mode, type_of_price: "RCE" }
           : { mode, power_of_pv_kwp: "" },
     }));
   };
@@ -109,7 +143,7 @@ function ProfilePage() {
       pv_config: pv_config.mode === "none"
         ? { mode: "none" }
         : pv_config.mode === "net_billing"
-          ? { mode: "net_billing", type_of_price: pv_config.type_of_price }
+          ? { mode: "net_billing", type_of_price: pv_config.type_of_price ?? "RCE" }
           : {
               mode: "net_metering",
               power_of_pv_kwp: Number(pv_config.power_of_pv_kwp),
@@ -126,6 +160,14 @@ function ProfilePage() {
       setIsSaving(false);
     }
   };
+
+  const offeredTariffs = options ? options.tariffs.map((item) => item.code) : tariffTypes;
+  const offeredCycles = options ? options.billing_cycles : billingCycles;
+  const currentTariff = profile.consumption_and_tariff.tariff_type;
+  const currentCycle = profile.base_info.billing_cycle;
+  const dynamicOffer = options?.dynamic_offer ?? null;
+  const dynamicAllowed = Boolean(dynamicOffer?.distribution_groups.includes(currentTariff));
+  const cycleFixedByOffer = Boolean(profile.consumption_and_tariff.dynamic_price && dynamicOffer?.billing_cycle_months);
 
   if (isLoading) return <div className="mx-auto max-w-5xl text-gray-500">Ładowanie profilu...</div>;
   const { base_info, consumption_and_tariff, pv_config } = profile;
@@ -155,15 +197,40 @@ function ProfilePage() {
           </Field>
           <Field label="Faza"><select className={inputClass} value={base_info.phase_type} onChange={(e) => updateSection("base_info", "phase_type", e.target.value)}><option value="1_phase">1 faza</option><option value="3_phase">3 fazy</option></select></Field>
           <Field label="Moc umowna (kW)"><input className={inputClass} type="number" min="0.01" max="10000" step="0.01" value={base_info.contracted_power_kw} onChange={(e) => updateSection("base_info", "contracted_power_kw", e.target.value)} required /></Field>
-          <Field label="Cykl rozliczeniowy"><select className={inputClass} value={base_info.billing_cycle} onChange={(e) => updateSection("base_info", "billing_cycle", Number(e.target.value))}>{[1, 2, 6, 12].map((value) => <option key={value} value={value}>{value} {value === 1 ? "miesiąc" : "miesięcy"}</option>)}</select></Field>
+          <Field label="Cykl rozliczeniowy"><select className={inputClass} value={base_info.billing_cycle} disabled={cycleFixedByOffer} onChange={(e) => updateSection("base_info", "billing_cycle", Number(e.target.value))}>{[...offeredCycles, ...(offeredCycles.includes(currentCycle) ? [] : [currentCycle])].map((value) => <option key={value} value={value}>{value} {value === 1 ? "miesiąc" : "miesięcy"}</option>)}</select>{cycleFixedByOffer && <p className="mt-2 text-xs font-normal text-gray-500">Umowa z ceną dynamiczną rozlicza się co {dynamicOffer.billing_cycle_months} mies. (warunek oferty).</p>}{options && !cycleFixedByOffer && !offeredCycles.includes(currentCycle) && <p className="mt-2 text-xs font-normal text-amber-700">Ten operator nie oferuje cyklu {currentCycle} mies. Dostępne: {offeredCycles.join(", ")}.</p>}</Field>
           <Field label="Początek okresu rozliczeniowego"><input className={inputClass} type="date" value={base_info.billing_period_start_date} onChange={(e) => updateSection("base_info", "billing_period_start_date", e.target.value)} required /></Field>
         </section>
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <Field label="Taryfa"><select className={inputClass} value={consumption_and_tariff.tariff_type} onChange={handleTariffChange}>{tariffTypes.map((value) => <option key={value} value={value}>{value === "dynamic" ? "Dynamiczna" : value}</option>)}</select></Field>
+          <Field label="Grupa taryfowa"><select className={inputClass} value={consumption_and_tariff.tariff_type} onChange={handleTariffChange}>{[...offeredTariffs, ...(offeredTariffs.includes(currentTariff) ? [] : [currentTariff])].map((value) => <option key={value} value={value}>{value}</option>)}</select></Field>
+          {dynamicOffer && (
+            <div className="mt-4">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input type="checkbox" checked={Boolean(consumption_and_tariff.dynamic_price)} onChange={handleDynamicPriceChange} disabled={!dynamicAllowed && !consumption_and_tariff.dynamic_price} />
+                Umowa z ceną dynamiczną ({dynamicOffer.name})
+              </label>
+              {consumption_and_tariff.dynamic_price && dynamicAllowed && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Energia po cenie z każdego kwadransa (cena rynkowa + marża sprzedawcy), dystrybucja według grupy {currentTariff}.
+                  {dynamicOffer.billing_cycle_months && ` Oferta rozlicza się co ${dynamicOffer.billing_cycle_months} mies.`}
+                </p>
+              )}
+              {!dynamicAllowed && (
+                <p className={`mt-2 text-xs ${consumption_and_tariff.dynamic_price ? "text-amber-700" : "text-gray-500"}`}>
+                  Oferta z ceną dynamiczną obejmuje grupy: {dynamicOffer.distribution_groups.join(", ")}.
+                </p>
+              )}
+            </div>
+          )}
+          {options && !offeredTariffs.includes(currentTariff) && <p className="mt-2 text-xs text-amber-700">Wybranej taryfy ({currentTariff}) ten operator nie jest przez nas liczony. Wybierz jedną z dostępnych: {offeredTariffs.join(", ")}.</p>}
+          {options?.unsupported?.length > 0 && <p className="mt-2 text-xs text-gray-500">U tego operatora są też: {options.unsupported.map((item, index) => <span key={item.code}>{index > 0 && ", "}<span title={item.reason} className="cursor-help underline decoration-dotted">{item.code}</span></span>)}. Jeszcze ich nie liczymy.</p>}
         </section>
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <Field label="Fotowoltaika"><select className={inputClass} value={pv_config.mode} onChange={handlePvModeChange}><option value="none">Brak</option><option value="net_billing">Net-billing</option><option value="net_metering">Net-metering</option></select></Field>
-          {pv_config.mode === "net_billing" && <Field label="Typ ceny energii"><select className={inputClass} value={pv_config.type_of_price} onChange={(e) => updateSection("pv_config", "type_of_price", e.target.value)}><option value="RCE">RCE</option><option value="RCEm">RCEm</option></select></Field>}
+          {pv_config.mode === "net_billing" && (
+            <div className="mt-5">
+              <Field label="Wycena energii oddanej"><select className={inputClass} value={pv_config.type_of_price ?? "RCE"} onChange={(e) => updateSection("pv_config", "type_of_price", e.target.value)}><option value="RCE">RCE – cena z każdego kwadransa</option><option value="RCEm">RCEm – cena miesięczna</option></select></Field>
+            </div>
+          )}
           {pv_config.mode === "net_metering" && <div className="mt-5"><Field label="Moc instalacji (kWp)"><input className={inputClass} type="number" min="0.01" max="50" step="0.01" value={pv_config.power_of_pv_kwp} onChange={(e) => updateSection("pv_config", "power_of_pv_kwp", e.target.value)} required /></Field></div>}
         </section>
         <button className="rounded-md bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50" disabled={isSaving}>{isSaving ? "Zapisywanie..." : "Zapisz profil"}</button>

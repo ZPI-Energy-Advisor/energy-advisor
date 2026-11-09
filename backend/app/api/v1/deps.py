@@ -26,8 +26,11 @@ from app.services.energy_file_service import EnergyFileService
 from app.services.price_sync_service import PriceSyncService
 from app.services.pricing_strategies import build_pricing_strategies
 from app.services.simulation_service import SimulationService
+from app.services.tariff_catalog_service import TariffCatalogService
 from app.services.upload_service import UploadService
 from app.services.user_service import UserService
+from app.services.pv_service import DynamicMarketPriceResolver
+from app.services.schedule_prices import SchedulePriceService
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.config import PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
@@ -46,11 +49,22 @@ def get_auth_service(repository: UserRepository = Depends(get_user_repository)) 
     return AuthService(repository)
 
 
+def get_tariff_definition_repository(db: Session = Depends(get_db)) -> TariffDefinitionRepository:
+    return TariffDefinitionRepository(db)
+
+
 def get_user_service(
     repository: UserRepository = Depends(get_user_repository),
     tariff_repository: TariffRepository = Depends(get_tariff_repository),
+    definition_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
 ) -> UserService:
-    return UserService(repository, tariff_repository)
+    return UserService(repository, tariff_repository, definition_repository)
+
+
+def get_tariff_catalog_service(
+    repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
+) -> TariffCatalogService:
+    return TariffCatalogService(repository)
 
 
 def get_simulation_repository(db: Session = Depends(get_db)) -> SimulationRepository:
@@ -71,10 +85,6 @@ def get_calculation_service(
 ) -> CalculationService:
     strategies = build_pricing_strategies(tariff_repository, dynamic_price_repository)
     return CalculationService(tariff_repository, pricing_strategies=strategies)
-
-
-def get_tariff_definition_repository(db: Session = Depends(get_db)) -> TariffDefinitionRepository:
-    return TariffDefinitionRepository(db)
 
 
 def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:
@@ -140,13 +150,26 @@ def get_device_repository(db: Session = Depends(get_db)) -> DeviceRepository:
     return DeviceRepository(db)
 
 
+def get_schedule_price_service(
+    user_repository: UserRepository = Depends(get_user_repository),
+    tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> SchedulePriceService:
+    return SchedulePriceService(
+        user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository)
+    )
+
+
 def get_energy_file_service(
     file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
     device_repository: DeviceRepository = Depends(get_device_repository),
-    price_service: DynamicPriceService = Depends(get_dynamic_price_service),
+    schedule_prices: SchedulePriceService = Depends(get_schedule_price_service),
+    calculations_service: CalculationsService = Depends(get_new_calculations_service),
 ) -> EnergyFileService:
-    return EnergyFileService(file_repository, simulation_repository, device_repository, price_service)
+    return EnergyFileService(
+        file_repository, simulation_repository, device_repository, schedule_prices, calculations_service
+    )
 
 
 def get_device_usage_service(
