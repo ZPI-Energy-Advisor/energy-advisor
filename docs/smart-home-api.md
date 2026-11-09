@@ -19,7 +19,7 @@ stronie backendu: `backend/app/clients/hub_client.py`, modele: `backend/app/sche
 
 Hub obsługuje **jeden dom** i nie zna użytkowników: `PUT /home/devices` nie ma `user_id`, a nowy
 rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backendu
-(`HUB_HOME_USER_EMAIL`).
+(`HUB_HOME_USER_EMAIL`, [sekcja 4](#4-frontend--backend-dom-właściciela)).
 
 ### Zakres w czasie
 
@@ -28,6 +28,7 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | Rejestr, stan i komendy (`/home/devices`) | ZP-83, `start_at` ZP-94 |
 | API urządzenia, w tym `POST /tick` | ZP-84 |
 | `HubClient` i kontrakt webhooka | ZP-54 |
+| Dom właściciela, `/api/v1/home`, wysyłka rejestru | ZP-93 |
 | Zegar `/home/clock` | ZP-94 |
 | Webhook `/api/v1/home/events` | do zrobienia w ZP-95 |
 
@@ -441,6 +442,57 @@ Odpowiedź backendu: `202 {"accepted": 4}`. `event_id` jest unikalny w obrębie 
 ignoruje zdarzenia, które już zapisał, więc hub przy błędzie (timeout, 5xx) ponawia całą partię.
 Na `401` hub nie ponawia i loguje błąd konfiguracji.
 
+## 4. Frontend → backend: dom właściciela
+
+Dom należy do konta z `HUB_HOME_USER_EMAIL` (porównanie bez wielkości liter). Tylko to konto ma
+`home_owner: true` w `GET /api/v1/users/me` i widzi „Podłącz dom” na stronie importu. Endpointy domu
+wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_URL` wszyscy dostają `503`.
+
+| Metoda i ścieżka | Opis |
+|---|---|
+| `GET /api/v1/home` | Stan domu |
+| `POST /api/v1/home/connect` | Podłącza dom i wysyła rejestr. Wysyła go zawsze, także niezmieniony, więc ponowne wywołanie naprawia hub (np. po utracie wolumenu `hub_data`) |
+| `DELETE /api/v1/home` | Odłącza dom: hub dostaje pusty rejestr i zatrzymuje mikroserwisy urządzeń |
+
+Każdy z nich odpowiada `200` ze stanem domu:
+
+```json
+{
+  "connected": true,
+  "connected_at": "2026-11-08T20:00:00Z",
+  "devices_count": 24,
+  "sync": { "status": "pending", "synced_at": "2026-11-08T20:00:00Z", "error": "Hub Smart Home jest niedostępny. Urządzenia zostaną wysłane przy kolejnej operacji." }
+}
+```
+
+| Pole | Opis |
+|---|---|
+| `devices_count` | Urządzenia, które hub ma mieć: rejestr właściciela, a po odłączeniu `0` |
+| `sync.status` | `synced` – hub przyjął aktualny rejestr; `pending` – rejestr czeka na wysyłkę |
+| `sync.synced_at` | Ostatnia udana wysyłka |
+| `sync.error` | Powód zaległej wysyłki: hub niedostępny, błędny klucz albo odrzucony rejestr (np. `port_pool_exhausted`) |
+
+### Rejestr i jego wysyłka
+
+- Rejestr to urządzenia domu właściciela z bazy (`device_instances` z programami), czyli scalony
+  stan wszystkich jego plików urządzeń, w kształcie `PUT /home/devices`, posortowany po `device_id`
+  i `program_id`.
+- Backend zapisuje skrót SHA-256 rejestru, który hub ostatnio przyjął (`home_connection`). Import
+  i usunięcie pliku przez właściciela wysyłają rejestr tylko wtedy, gdy jego skrót się zmienił,
+  więc plik z licznika ani ponowny import tych samych urządzeń nie dotykają huba.
+- Wysyłka następuje po zatwierdzeniu importu w bazie. Niedostępny hub nie cofa importu: odpowiedź
+  `POST /api/v1/upload` ma `home_sync` ze `status: "pending"` i powodem w `error`, a rejestr wysyła
+  kolejna operacja właściciela (import, usunięcie pliku, podłączenie). Ponowienie jest bezpieczne, bo
+  rejestr zawsze odpowiada bieżącemu stanowi bazy, a hub nie restartuje niezmienionych urządzeń.
+- `home_sync` w odpowiedzi uploadu ma wartość `null`, gdy plik wgrał ktoś inny albo dom jest
+  odłączony. Pliki innych użytkowników nigdy nie trafiają do huba.
+- Wysyłki są szeregowane blokadą wiersza `home_connection` (`SELECT … FOR UPDATE`), więc starszy
+  rejestr nie nadpisze nowszego, także przy kilku workerach backendu.
+- Dopóki backend niczego do huba nie wysłał, stan huba jest nieznany i import właściciela przed
+  pierwszym podłączeniem nie dotyka huba.
+- Zmiana `HUB_HOME_USER_EMAIL` odłącza dom poprzedniego właściciela: pierwsza operacja nowego
+  właściciela wysyła pusty rejestr albo, po podłączeniu, jego urządzenia.
+
 ## Konfiguracja
 
 | Zmienna | Strona | Opis |
@@ -448,7 +500,7 @@ Na `401` hub nie ponawia i loguje błąd konfiguracji.
 | `HUB_URL` | backend | Adres huba, w docker-compose `http://hub:9100`; pusty = Smart Home wyłączony |
 | `HUB_API_KEY` | backend, hub | Wspólny klucz `X-Hub-Api-Key` |
 | `HUB_TIMEOUT_SECONDS` | backend | Timeout żądań do huba, domyślnie 5 s |
-| `HUB_HOME_USER_EMAIL` | backend | Użytkownik, do którego należy dom huba; wchodzi razem z webhookiem |
+| `HUB_HOME_USER_EMAIL` | backend | E-mail konta, do którego należy dom huba; pusty = nikt nie może podłączyć domu |
 | `BACKEND_URL` | hub | Adres backendu dla webhooka, np. `http://backend:8000` |
 | `DEVICE_BIND_HOST` | hub | Adres nasłuchu urządzeń: `127.0.0.1` domyślnie, `0.0.0.0` w trybie demo |
 | `HUB_STATE_DIR` | hub | Katalog pliku stanu i konfiguracji urządzeń, domyślnie `/data` |

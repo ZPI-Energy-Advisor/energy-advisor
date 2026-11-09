@@ -2,7 +2,7 @@ import secrets
 from typing import Iterator
 from uuid import UUID
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
 
@@ -13,6 +13,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
+from app.repositories.home_repository import HomeRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
@@ -23,6 +24,7 @@ from app.services.new_calculations_service import CalculationsService
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
+from app.services.home_service import HomeService
 from app.services.price_sync_service import PriceSyncService
 from app.services.pricing_strategies import build_pricing_strategies
 from app.services.simulation_service import SimulationService
@@ -33,7 +35,8 @@ from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
-from app.config import PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
+from app.clients.hub_client import HubClient
+from app.config import HUB_HOME_USER_EMAIL, PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
 
 
 
@@ -150,6 +153,23 @@ def get_device_repository(db: Session = Depends(get_db)) -> DeviceRepository:
     return DeviceRepository(db)
 
 
+def get_hub_client(request: Request) -> HubClient | None:
+    """Klient huba utworzony w lifespanie aplikacji; None = Smart Home wyłączony."""
+    return request.app.state.hub_client
+
+
+def get_home_owner_email() -> str | None:
+    return HUB_HOME_USER_EMAIL
+
+
+def get_home_service(
+    db: Session = Depends(get_db),
+    hub_client: HubClient | None = Depends(get_hub_client),
+    owner_email: str | None = Depends(get_home_owner_email),
+) -> HomeService:
+    return HomeService(HomeRepository(db), hub_client, owner_email)
+
+
 def get_schedule_price_service(
     user_repository: UserRepository = Depends(get_user_repository),
     tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
@@ -166,9 +186,11 @@ def get_energy_file_service(
     device_repository: DeviceRepository = Depends(get_device_repository),
     schedule_prices: SchedulePriceService = Depends(get_schedule_price_service),
     calculations_service: CalculationsService = Depends(get_new_calculations_service),
+    home_service: HomeService = Depends(get_home_service),
 ) -> EnergyFileService:
     return EnergyFileService(
-        file_repository, simulation_repository, device_repository, schedule_prices, calculations_service
+        file_repository, simulation_repository, device_repository, schedule_prices, calculations_service,
+        home_service=home_service,
     )
 
 
@@ -195,6 +217,7 @@ def get_upload_service(
     energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
     device_repository: DeviceRepository = Depends(get_device_repository),
+    home_service: HomeService = Depends(get_home_service),
 ) -> UploadService:
     return UploadService(
         calculation_service=calculation_service,
@@ -202,6 +225,7 @@ def get_upload_service(
         energy_file_repository=energy_file_repository,
         energy_reading_repository=energy_reading_repository,
         device_repository=device_repository,
+        home_service=home_service,
     )
 
 
@@ -237,4 +261,13 @@ def get_authenticated_user(token: str = Depends(oauth2_scheme), user_repository:
     if user is None:
         raise credentials_exception
 
+    return user
+
+
+def get_home_owner(
+    user: User = Depends(get_authenticated_user),
+    service: HomeService = Depends(get_home_service),
+) -> User:
+    """Zalogowany właściciel domu Smart Home; inne konta dostają 403, a przy wyłączonym hubie 503."""
+    service.require_owner(user)
     return user

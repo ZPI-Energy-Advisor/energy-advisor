@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.clients.hub_client import (
@@ -17,6 +18,7 @@ from app.clients.hub_client import (
 from app import config
 from app.core import smart_home_factory
 from app.schemas.smart_home import CommandType, DeviceCommand, DeviceState, HubDevice
+import main
 
 
 HUB_URL = "http://hub.test"
@@ -335,3 +337,23 @@ def test_invalid_json_raises_hub_error():
 def test_device_command_validation(data):
     with pytest.raises(ValidationError):
         DeviceCommand.model_validate(data)
+
+
+
+def test_app_hub_client_without_api_key_disables_smart_home(monkeypatch):
+    monkeypatch.setattr(smart_home_factory, "HUB_URL", HUB_URL)
+    monkeypatch.setattr(smart_home_factory, "HUB_API_KEY", None)
+
+    assert smart_home_factory.build_app_hub_client() is None
+
+
+def test_lifespan_creates_hub_client_and_closes_it_on_shutdown(monkeypatch):
+    hub_client = _client(lambda request: httpx.Response(200, json={}))
+    monkeypatch.setattr(main, "build_app_hub_client", lambda: hub_client)
+
+    with TestClient(main.app):
+        assert main.app.state.hub_client is hub_client
+        assert not hub_client.client.is_closed
+
+    assert hub_client.client.is_closed
+    assert main.app.state.hub_client is None

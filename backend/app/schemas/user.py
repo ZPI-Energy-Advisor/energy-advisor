@@ -18,3 +18,4 @@ class CurrentUserResponse(BaseModel):
     # Taryfa z tabeli tariffs odpowiadająca taryfie z profilu; None bez profilu lub bez odpowiednika.
     current_tariff: TariffOut | None = None
     profile: ProfileTariffSummary
+    home_owner: bool = False

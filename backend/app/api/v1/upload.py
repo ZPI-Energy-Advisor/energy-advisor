@@ -27,7 +27,7 @@ def upload_energy_data(
     user: User = Depends(get_authenticated_user),
     service: UploadService = Depends(get_upload_service),
 ):
-    return service.process_upload(file=file, user_id=user.id)
+    return service.process_upload(file=file, user=user)
 
 
 @router.get("/calculation-details/{file_id}", response_model=CalculationDetails)

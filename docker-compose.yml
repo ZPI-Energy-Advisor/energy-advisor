@@ -41,6 +41,7 @@ services:
       - HUB_URL=${HUB_URL:-}
       - HUB_API_KEY=${HUB_API_KEY:-}
       - HUB_TIMEOUT_SECONDS=${HUB_TIMEOUT_SECONDS:-5}
+      - HUB_HOME_USER_EMAIL=${HUB_HOME_USER_EMAIL:-}
     depends_on:
       db:
         condition: service_healthy

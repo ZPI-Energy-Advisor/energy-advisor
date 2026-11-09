@@ -81,6 +81,7 @@ def test_me_without_profile_has_no_tariff(client_a, user_a):
         "provider": "local",
         "current_tariff": None,
         "profile": {"exists": False, "needs_update": False, "tariff_type": None},
+        "home_owner": False,
     }
 
 

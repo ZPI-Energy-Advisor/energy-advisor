@@ -128,3 +128,21 @@ class HubEvent(BaseModel):
 
 class HubEventBatch(BaseModel):
     events: list[HubEvent]
+
+
+class HomeSyncStatus(str, Enum):
+    SYNCED = "synced"  # Hub ma rejestr zgodny z urządzeniami w bazie.
+    PENDING = "pending"  # Rejestr czeka na wysyłkę; ponowi ją kolejna operacja właściciela.
+
+
+class HomeSync(BaseModel):
+    status: HomeSyncStatus
+    synced_at: datetime | None = None
+    error: str | None = None
+
+
+class HomeStatus(BaseModel):
+    connected: bool
+    connected_at: datetime | None = None
+    devices_count: int
+    sync: HomeSync
