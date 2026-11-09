@@ -118,7 +118,7 @@ function ProfilePage() {
       pv_config: mode === "none"
         ? { mode }
         : mode === "net_billing"
-          ? { mode }
+          ? { mode, type_of_price: "RCE" }
           : { mode, power_of_pv_kwp: "" },
     }));
   };
@@ -143,7 +143,7 @@ function ProfilePage() {
       pv_config: pv_config.mode === "none"
         ? { mode: "none" }
         : pv_config.mode === "net_billing"
-          ? { mode: "net_billing" }
+          ? { mode: "net_billing", type_of_price: pv_config.type_of_price ?? "RCE" }
           : {
               mode: "net_metering",
               power_of_pv_kwp: Number(pv_config.power_of_pv_kwp),
@@ -226,7 +226,11 @@ function ProfilePage() {
         </section>
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <Field label="Fotowoltaika"><select className={inputClass} value={pv_config.mode} onChange={handlePvModeChange}><option value="none">Brak</option><option value="net_billing">Net-billing</option><option value="net_metering">Net-metering</option></select></Field>
-          {pv_config.mode === "net_billing" && <p className="mt-2 text-xs text-gray-500">Energię oddaną do sieci wyceniamy po cenie RCE z każdego kwadransa (zasada net-billingu od 1.07.2024).</p>}
+          {pv_config.mode === "net_billing" && (
+            <div className="mt-5">
+              <Field label="Wycena energii oddanej"><select className={inputClass} value={pv_config.type_of_price ?? "RCE"} onChange={(e) => updateSection("pv_config", "type_of_price", e.target.value)}><option value="RCE">RCE – cena z każdego kwadransa</option><option value="RCEm">RCEm – cena miesięczna</option></select></Field>
+            </div>
+          )}
           {pv_config.mode === "net_metering" && <div className="mt-5"><Field label="Moc instalacji (kWp)"><input className={inputClass} type="number" min="0.01" max="50" step="0.01" value={pv_config.power_of_pv_kwp} onChange={(e) => updateSection("pv_config", "power_of_pv_kwp", e.target.value)} required /></Field></div>}
         </section>
         <button className="rounded-md bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50" disabled={isSaving}>{isSaving ? "Zapisywanie..." : "Zapisz profil"}</button>

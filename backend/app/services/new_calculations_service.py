@@ -375,7 +375,11 @@ class CalculationsService:
                 else pv_config.power_of_pv_kwp
             )
         else:
-            details["type_of_market_energy"] = TypeOfMarketEnergyEnum.RCE
+            details["type_of_market_energy"] = (
+                pv_config.get("type_of_price", TypeOfMarketEnergyEnum.RCE)
+                if isinstance(pv_config, dict)
+                else pv_config.type_of_price
+            )
         return PVDetails.model_validate(details)
 
 

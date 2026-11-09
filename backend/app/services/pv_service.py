@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from dateutil.relativedelta import relativedelta
 from collections import deque
 from typing import Callable
@@ -11,6 +11,13 @@ from app.services.tariff_zones import ZoneSchedule
 
 
 PV_ENERGY_VALIDITY_DAYS = 365
+RCEM_SOURCE = "pse_rcem"
+# Nowelizacja ustawy o OZE z 27.11.2024 (Dz.U. 2024 poz. 1847), stosowana przez sprzedawców od 1.02.2025:
+# depozyt prosumenta powiększa się o współczynnik 1,23, a prosumenci, którzy pierwszy raz oddali energię przed
+# 1.07.2024, wracają do miesięcznej RCEm (chyba że złożyli oświadczenie o RCE). Od 1.07.2024 do 31.01.2025
+# wszyscy byli rozliczani po RCE z każdego okresu.
+NET_BILLING_REFORM_FROM = date(2025, 2, 1)
+DEPOSIT_COEFFICIENT = 1.23
 
 def get_deadline_date(start_date: datetime, billing_cycle: BillingCycleEnum, additional_days: int) -> datetime:
     next_cycle_start_date = start_date + relativedelta(months=billing_cycle.value)
@@ -22,10 +29,7 @@ def get_deadline_date(start_date: datetime, billing_cycle: BillingCycleEnum, add
 
 
 class DynamicMarketPriceResolver:
-    """Ceny RCE (kwadrans) z zapisanych obserwacji.
-
-    Net-billing od 1.07.2024 rozlicza energię oddaną według RCE z okresu rozliczeniowego (art. 4b ust. 2
-    ustawy o OZE), a cennik zaczyna się 24.08.2024, więc miesięcznej ceny RCEm nie używamy.
+    """Ceny RCE (kwadrans) i RCEm (miesiąc) z zapisanych obserwacji.
 
     Ceny RCE wczytujemy z bazy całymi miesiącami (doba lokalna, zapis w UTC), a nie zapytaniem na każdy kwadrans —
     roczny plik to 35 tys. kwadransów. Odczyty są w czasie lokalnym bez strefy; powtórzoną godzinę doby zmiany
@@ -35,12 +39,15 @@ class DynamicMarketPriceResolver:
     def __init__(self, price_repository):
         self.price_repository = price_repository
         self._rce_months: dict[tuple[int, int], dict[datetime, float]] = {}
+        self._rcem_months: dict[date, float | None] = {}
 
     def __call__(
         self,
         timestamp: datetime,
         type_of_market_energy: TypeOfMarketEnergyEnum,
     ) -> float:
+        if type_of_market_energy == TypeOfMarketEnergyEnum.RCEm:
+            return self.rcem(timestamp.date())
         return self.rce(timestamp)
 
     def rce(self, timestamp: datetime) -> float:
@@ -61,6 +68,16 @@ class DynamicMarketPriceResolver:
         price = self._rce_months[key].get(local.astimezone(timezone.utc))
         if price is None:
             raise ValueError(f"Brak ceny RCE dla interwału {timestamp.isoformat()}.")
+        return price
+
+    def rcem(self, day: date) -> float:
+        month = day.replace(day=1)
+        if month not in self._rcem_months:
+            price = self.price_repository.get_rcem_price(RCEM_SOURCE, month)
+            self._rcem_months[month] = None if price is None else float(price) / 1000.0
+        price = self._rcem_months[month]
+        if price is None:
+            raise ValueError(f"Brak ceny RCEm dla miesiąca {month.isoformat()}.")
         return price
 
 
@@ -102,10 +119,13 @@ class PVBalancingEngine:
                 "Brak źródła cen rynkowych dla net-billingu. "
                 "Skonfiguruj resolver cen RCE."
             )
-        price = self.market_price_resolver(timestamp, type_of_market_energy)
-        # Przy ujemnej cenie rynkowej energię wprowadzoną do sieci w tym okresie wycenia się na zero
-        # (zasady net-billingu sprzedawców na podstawie art. 4b ustawy o OZE).
-        return max(price, 0.0)
+        after_reform = timestamp.date() >= NET_BILLING_REFORM_FROM
+        # RCEm tylko po reformie; wcześniej (od 1.07.2024) wszyscy po RCE z okresu.
+        price_type = type_of_market_energy if after_reform else TypeOfMarketEnergyEnum.RCE
+        price = self.market_price_resolver(timestamp, price_type)
+        # Przy ujemnej cenie rynkowej energię wprowadzoną do sieci w tym okresie wycenia się na zero.
+        price = max(price, 0.0)
+        return price * DEPOSIT_COEFFICIENT if after_reform else price
 
     def _remove_expired_energy(self, past_accumulated_pv_energy: deque, current_cycle_date: datetime, billing_cycle: BillingCycleEnum, pv_validity_days: int) -> None:
             while past_accumulated_pv_energy:

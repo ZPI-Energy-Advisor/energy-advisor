@@ -156,7 +156,7 @@ def get_schedule_price_service(
     dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
 ) -> SchedulePriceService:
     return SchedulePriceService(
-        user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository).rce
+        user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository)
     )
 
 

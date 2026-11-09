@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.schemas.other import (
+    TypeOfMarketEnergyEnum,
     BillingCycleEnum,
     DistributionOperatorEnum,
     PhaseTypeEnum,
@@ -47,9 +48,10 @@ class NoPV(BaseModel):
 
 
 class NetBillingPV(BaseModel):
-    # Energię oddaną od 1.07.2024 wycenia się według RCE z okresu rozliczeniowego; dawne pole type_of_price
-    # (RCE / RCEm) w zapisanych profilach jest pomijane.
     mode: Literal["net_billing"] = "net_billing"
+    # Wycena energii oddanej od 1.02.2025: RCEm (miesięczna) dla prosumentów, którzy pierwszy raz oddali energię
+    # przed 1.07.2024, chyba że złożyli oświadczenie o przejściu na RCE; RCE (z każdego okresu) dla pozostałych.
+    type_of_price: TypeOfMarketEnergyEnum = TypeOfMarketEnergyEnum.RCE
 
 
 class NetMeteringPV(BaseModel):

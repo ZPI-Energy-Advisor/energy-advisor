@@ -62,6 +62,7 @@ class BillingCycleEnum(int, Enum):
 
 class TypeOfMarketEnergyEnum(str, Enum):
     RCE = "RCE"
+    RCEm = "RCEm"
 
 class PVTypeEnum(str, Enum):
     NET_METERING = "net_metering"
