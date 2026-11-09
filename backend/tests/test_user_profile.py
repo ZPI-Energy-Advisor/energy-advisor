@@ -182,9 +182,10 @@ def test_dynamic_price_is_separate_from_tariff_group():
     assert (profile.consumption_and_tariff.tariff_type.value, profile.consumption_and_tariff.dynamic_price) == ("G13", True)
 
 
-def test_old_profile_with_rcem_choice_still_loads():
-    profile = valid_profile(pv_config={"mode": "net_billing", "type_of_price": "RCEm"})
+def test_net_billing_profile_keeps_rcem_choice_and_defaults_to_rce():
+    chosen = valid_profile(pv_config={"mode": "net_billing", "type_of_price": "RCEm"})
+    default = valid_profile(pv_config={"mode": "net_billing"})
 
-    assert profile.pv_config.mode == "net_billing"
-    assert "type_of_price" not in profile.model_dump()["pv_config"]
+    assert chosen.model_dump(mode="json")["pv_config"]["type_of_price"] == "RCEm"
+    assert default.pv_config.type_of_price.value == "RCE"
 

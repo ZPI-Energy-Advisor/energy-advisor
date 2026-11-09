@@ -225,7 +225,8 @@ def test_net_billing_values_export_at_negative_rce_as_zero():
         type_of_market_energy=TypeOfMarketEnergyEnum.RCE,
     )
 
-    assert overpayment == [{"2026-11": pytest.approx(0.50)}]  # 2 kWh × 0 zł + 1 kWh × 0,50 zł
+    # 2 kWh × 0 zł + 1 kWh × 0,50 zł, depozyt od 02.2025 powiększony o współczynnik 1,23
+    assert overpayment == [{"2026-11": pytest.approx(0.50 * 1.23)}]
 
 
 def test_tariff_definition_for_stoen_can_be_saved(db):

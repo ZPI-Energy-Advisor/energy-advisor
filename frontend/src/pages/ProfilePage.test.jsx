@@ -69,4 +69,18 @@ describe("ProfilePage", () => {
     expect(checkbox.disabled).toBe(true);
     expect(screen.getByText("Oferta z ceną dynamiczną obejmuje grupy: G11, G13.")).toBeTruthy();
   });
+
+  it("w net-billingu zapisuje wybór wyceny RCEm", async () => {
+    renderPage();
+    const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: profile });
+    fireEvent.change(await screen.findByRole("combobox", { name: "Fotowoltaika" }), { target: { value: "net_billing" } });
+
+    const pricing = screen.getByRole("combobox", { name: "Wycena energii oddanej" });
+    expect(pricing.value).toBe("RCE");
+    fireEvent.change(pricing, { target: { value: "RCEm" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz profil" }));
+
+    await vi.waitFor(() => expect(put).toHaveBeenCalled());
+    expect(put.mock.calls[0][1].pv_config).toEqual({ mode: "net_billing", type_of_price: "RCEm" });
+  });
 });

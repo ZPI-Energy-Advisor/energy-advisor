@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -16,9 +16,15 @@ class _PriceRepository:
     """Ceny RCE dla każdego kwadransa żądanego zakresu [start, koniec), różne w każdym kwadransie:
     cena w zł/MWh to godzina i minuta UTC (HHMM), np. 11:15 UTC → 1115 zł/MWh."""
 
-    def __init__(self, prices=True):
+    def __init__(self, prices=True, rcem=None):
         self.prices = prices
         self.requested = []
+        self.rcem = rcem or {}
+        self.rcem_requested = []
+
+    def get_rcem_price(self, source, price_month):
+        self.rcem_requested.append((source, price_month))
+        return self.rcem.get(price_month)
 
     def get_prices_between(self, source, start_utc, end_utc):
         self.requested.append((start_utc, end_utc))
@@ -85,3 +91,23 @@ def test_missing_rce_price_names_the_interval():
     with pytest.raises(ValueError, match="Brak ceny RCE dla interwału 2026-01-15T12:00:00"):
         resolver.rce(datetime(2026, 1, 15, 12, 0))
 
+
+
+def test_rcem_price_is_monthly_and_loaded_once():
+    repository = _PriceRepository(rcem={date(2026, 1, 1): Decimal("551.96")})
+    resolver = DynamicMarketPriceResolver(repository)
+
+    prices = [
+        resolver(moment, TypeOfMarketEnergyEnum.RCEm)
+        for moment in (datetime(2026, 1, 1, 0, 0), datetime(2026, 1, 31, 23, 45))
+    ]
+
+    assert prices == [pytest.approx(0.55196), pytest.approx(0.55196)]
+    assert repository.rcem_requested == [("pse_rcem", date(2026, 1, 1))]
+
+
+def test_missing_rcem_price_names_the_month():
+    resolver = DynamicMarketPriceResolver(_PriceRepository())
+
+    with pytest.raises(ValueError, match="Brak ceny RCEm dla miesiąca 2026-03-01"):
+        resolver(datetime(2026, 3, 15, 12, 0), TypeOfMarketEnergyEnum.RCEm)

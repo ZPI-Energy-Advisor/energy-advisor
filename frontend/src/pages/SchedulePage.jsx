@@ -138,7 +138,7 @@ function SchedulePage() {
                   ? "Pełny rachunek do zapłaty za wybrany okres (jak w Wynikach kalkulacji: opłaty, fotowoltaika i depozyt) przed i po przesunięciu urządzeń, "
                   : `${shown.bill_note ?? ""} Koszt akcji urządzeń (energia, dystrybucja zmienna, opłaty za kWh, VAT), `}
                 według taryfy z profilu{shown.pricing ? `: ${shown.pricing}` : ""}. Godziny dobieramy po cenach kwadransów;
-                gdy panele oddają nadwyżkę do sieci, zużycie liczymy po wartości tej energii (RCE w net-billingu), więc
+                gdy panele oddają nadwyżkę do sieci, zużycie liczymy po wartości tej energii (w net-billingu RCE albo RCEm z profilu, od 02.2025 × 1,23), więc
                 urządzenia chętnie trafiają na godziny produkcji. Przy zwykłej taryfie bez PV zysk daje tylko przejście do
                 tańszej strefy. Wynik zakłada, że rano wiadomo,
                 jakie akcje będą danego dnia, więc pokazuje potencjał oszczędności. Ładowanie EV nie jest jeszcze

@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.schemas.other import TariffTypeEnum as T
+from app.schemas.other import TypeOfMarketEnergyEnum
 from app.services.schedule_prices import SchedulePriceService
 from tariff_helpers import HOURS, definition, period
 
@@ -24,16 +25,29 @@ DYNAMIC_G12 = definition(T.DYNAMIC, ["0.10", "0.10"], ["0.40", "0.05"], hours=HO
 PERIOD = period(quality="0.03", renewable="0.007", cogeneration="0.003", excise="0.005")
 
 
-def _service(dynamic=False, definitions=(G12, DYNAMIC_G12), market=lambda slot: 0.30, pv_mode="none"):
+class _Market:
+    """Jak DynamicMarketPriceResolver: `rce(kwadrans)` i wywołanie (moment, RCE/RCEm) dla wyceny net-billingu."""
+
+    def __init__(self, price, rcem=None):
+        self.price, self.rcem_price = price, rcem
+
+    def rce(self, slot):
+        return self.price(slot)
+
+    def __call__(self, moment, type_of_market_energy):
+        return self.rcem_price if type_of_market_energy == TypeOfMarketEnergyEnum.RCEm else self.price(moment)
+
+
+def _service(dynamic=False, definitions=(G12, DYNAMIC_G12), market=lambda slot: 0.30, pv_mode="none", rcem=None):
     profile = SimpleNamespace(
         base_info=BASE_INFO,
         consumption_and_tariff={"tariff_type": "G12", "dynamic_price": dynamic},
-        pv_config={"mode": pv_mode},
+        pv_config={"mode": pv_mode} | ({"type_of_price": "RCEm"} if rcem is not None else {}),
     )
     return SchedulePriceService(
         SimpleNamespace(get_profile=lambda user_id: profile),
         SimpleNamespace(list_for_period=lambda **kwargs: list(definitions), list_regulatory_periods=lambda **kwargs: [PERIOD]),
-        market,
+        _Market(market, rcem),
     )
 
 
@@ -91,9 +105,17 @@ def test_slot_with_pv_surplus_costs_value_of_lost_export_in_net_billing():
 
     result = service.for_user(None, _local(0), _local(0) + timedelta(days=1), surplus)
 
-    # Kwadrans z nadwyżką: RCE 0,35 zł/kWh (tyle traci depozyt), pozostałe po cenie z sieci.
-    assert result.prices[_local(12)] == pytest.approx(0.35)
+    # Kwadrans z nadwyżką: RCE 0,35 zł/kWh × 1,23 (tyle traci depozyt od 02.2025), pozostałe po cenie z sieci.
+    assert result.prices[_local(12)] == pytest.approx(0.35 * 1.23)
     assert result.prices[_local(10)] == pytest.approx((0.60 + 0.40 + 0.045) * 1.23)
+
+
+def test_slot_with_pv_surplus_uses_rcem_when_chosen_in_profile():
+    service = _service(market=lambda slot: 0.35, pv_mode="net_billing", rcem=0.20)
+
+    result = service.for_user(None, _local(0), _local(0) + timedelta(days=1), {_local(12): 0.8})
+
+    assert result.prices[_local(12)] == pytest.approx(0.20 * 1.23)
 
 
 def test_slot_with_pv_surplus_in_net_metering_costs_share_not_returned():

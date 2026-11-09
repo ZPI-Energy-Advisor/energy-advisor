@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
+from app.services.pv_service import PVBalancingEngine
 from app.services.tariff_engine import decimal, dynamic_energy_price, zone_energy_price
 from app.services.tariff_zones import ZoneSchedule, covers
 
@@ -35,7 +36,7 @@ class SchedulePriceService:
     def __init__(self, user_repository, tariff_repository, market_prices):
         self.user_repository = user_repository
         self.tariff_repository = tariff_repository
-        # Wywoływany jak DynamicMarketPriceResolver.rce: cena RCE kwadransa w zł/kWh albo ValueError, gdy jej brak.
+        # DynamicMarketPriceResolver: cena RCE kwadransa (zł/kWh) i wycena energii oddanej w net-billingu.
         self.market_prices = market_prices
 
     def for_user(
@@ -86,7 +87,10 @@ class SchedulePriceService:
         if profile.pv_config.mode == "net_metering":
             return round(grid_price * (1 - profile.pv_config.effective_k_factor), 5)
         try:
-            return round(max(float(self.market_prices(slot)), 0.0), 5)
+            value = PVBalancingEngine(self.market_prices).get_price_for_pv_energy(
+                slot.astimezone(LOCAL_TIMEZONE).replace(tzinfo=None), profile.pv_config.type_of_price
+            )
+            return round(value, 5)
         except ValueError:
             return grid_price
 
@@ -115,7 +119,7 @@ class SchedulePriceService:
         excise = decimal(getattr(period, "excise_per_kwh", 0) or 0)
         if dynamic:
             try:
-                market = self.market_prices(slot.astimezone(timezone.utc))
+                market = self.market_prices.rce(slot.astimezone(timezone.utc))
             except ValueError:
                 return None
             energy = dynamic_energy_price(definition, market, energy_rates[1], prosumer, excise)

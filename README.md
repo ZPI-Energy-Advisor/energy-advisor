@@ -104,9 +104,19 @@ Dane PSE są dostępne od 2024-06-14. Backfill pobiera je w paczkach po 31 dni; 
 dla tego samego zakresu aktualizuje istniejące rekordy i nie tworzy duplikatów.
 Szczegóły: [docs/dynamic-prices.md](docs/dynamic-prices.md).
 
-Net-billing: energia oddana do sieci jest rozliczana po RCE w cyklu 15-minutowym (art. 4b ust. 2 ustawy
-o OZE, ujemna cena liczona jako 0). Cennik zaczyna się 24.08.2024, więc RCEm (dla energii oddanej do
-30.06.2024) nie jest potrzebna.
+Net-billing (nowelizacja ustawy o OZE, Dz.U. 2024 poz. 1847):
+
+- do 31.01.2025 energię oddaną do sieci wyceniamy po RCE z każdego kwadransa;
+- od 1.02.2025 według wyboru w profilu: RCEm (miesięczna; domyślna dla instalacji, które pierwszy raz
+  oddały energię przed 1.07.2024) albo RCE (nowsze instalacje i ci, którzy złożyli oświadczenie);
+- od 1.02.2025 wartość energii w depozycie powiększa się o współczynnik 1,23;
+- ujemna cena rynkowa daje wartość 0.
+
+Ceny RCEm worker pobiera ze strony PSE (tabela `rcem_price_observations`) przy starcie i codziennie
+o 15:30. Ręcznie: `docker compose exec price-worker python -m app.workers.price_sync_worker rcem`.
+
+Nie modelujemy zwrotu niewykorzystanej nadpłaty (do 20% przy RCEm, 30% przy RCE) — depozyt pokrywa
+tylko energię czynną.
 
 ### 6. Frontend
 
