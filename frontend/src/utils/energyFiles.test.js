@@ -21,7 +21,7 @@ describe("formatChartLabel", () => {
 
   it("w pozostałych widokach opisuje godzinę albo dzień", () => {
     expect(formatChartLabel("10:00", "1h")).toBe("Godzina: 10:00");
-    expect(formatChartLabel("2026-03-01", "1d")).toBe("Dzień: 2026-03-01");
+    expect(formatChartLabel("2026-03-01", "1d")).toBe("Dzień: 01.03.2026");
   });
 });
 

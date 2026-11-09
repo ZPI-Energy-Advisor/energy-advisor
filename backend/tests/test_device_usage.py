@@ -242,7 +242,8 @@ def test_groups_sum_to_file_usage_and_dashboard_cost_without_pv(db):
     assert body["production"] is None
     assert sum(per_quarter) == pytest.approx(sum(expected), abs=0.01)
     assert body["total_kwh"] == pytest.approx(dashboard["total_usage_kwh"], abs=0.01)
-    assert body["total_cost_pln"] == pytest.approx(dashboard["estimated_cost_pln"], abs=0.01)
+    # Suma kosztów grup zaokrąglonych do groszy (7 kategorii) może odbiegać od kosztu Dashboardu o kilka groszy.
+    assert body["total_cost_pln"] == pytest.approx(dashboard["estimated_cost_pln"], abs=0.05)
     assert body["tariff"] == {
         "name": "G11", "source": "default", "note": "Profil nie wskazuje taryfy, więc koszty są w taryfie G11.",
     }

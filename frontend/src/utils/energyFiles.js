@@ -153,7 +153,8 @@ const quarterHourEnd = (label) => {
 // Opis punktu wykresu; etykieta widoku 15 min to początek kwadransu.
 export const formatChartLabel = (label, resolution) => {
   if (resolution === "15m") return `${label}–${quarterHourEnd(label)}`;
-  return `${resolution === "1d" ? "Dzień" : "Godzina"}: ${label}`;
+  if (resolution === "1d") return `Dzień: ${formatDate(label)}`;
+  return `Godzina: ${label}`;
 };
 
 export const formatDataResolution = (statistics) => {

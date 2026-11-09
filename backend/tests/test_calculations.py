@@ -385,10 +385,11 @@ SIMPLE_HEADER = "Data;Wartość kWh;Rodzaj"
 
 
 def _import_dates(header, dates):
-    """Importuje plik z odczytem 1 kWh dla każdej podanej daty i zwraca dni w danych."""
+    """Importuje plik z odczytem 1 kWh dla każdej podanej daty i zwraca dni z pomiarami."""
     rows = "\n".join(f"{value};1,0;pobór" for value in dates)
     results = CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(f"{header}\n{rows}".encode("utf-8")))
-    return list(results["usage_15min"]), results["statistics"]
+    days = [day for day, slots in results["usage_15min"].items() if any(kwh is not None for kwh in slots)]
+    return days, results["statistics"]
 
 
 @pytest.mark.parametrize("header", [METER_HEADER, SIMPLE_HEADER], ids=["kolumny-licznika", "kolumny-proste"])
