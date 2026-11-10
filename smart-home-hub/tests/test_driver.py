@@ -373,3 +373,37 @@ def test_program_profile_must_match_duration():
             "flexibility": {"mode": "shiftable"},
             "programs": [{"program_id": "p", "program_name": "p", "duration_min": 30, "profile_kwh": [0.1]}],
         })
+
+
+def test_tick_reports_start_of_its_step():
+    driver = _plain_device()
+
+    assert driver.tick(START)["interval_start"] is None
+    assert driver.tick(_hours(0.5))["interval_start"] == "2026-10-19T13:00:00+02:00"
+    repeated = driver.tick(_hours(0.5))
+    assert (repeated["interval_start"], repeated["energy_kwh"]) == ("2026-10-19T13:30:00+02:00", 0.0)
+
+
+def test_sum_of_tick_energy_equals_device_total():
+    driver = _washing_machine()
+    driver.tick(START)
+    driver.start_program("cotton_60")
+
+    steps = [driver.tick(_hours(quarter / 4))["energy_kwh"] for quarter in range(1, 11)]
+
+    assert sum(steps) == pytest.approx(driver.energy()["total_kwh"])
+    assert sum(steps) == pytest.approx(sum(COTTON_PROFILE))
+
+
+def test_started_event_carries_command_id():
+    driver = _washing_machine()
+    driver.tick(START)
+    driver.start_program("cotton_60", command_id="cmd_1")
+    lamp = _plain_device()
+    lamp.turn_on()
+
+    started, = driver.tick(_hours(0.25))["events"]
+    lamp_started, = lamp.tick(START)["events"]
+
+    assert started["data"] == {"program_id": "cotton_60", "command_id": "cmd_1"}
+    assert lamp_started["data"] == {"program_id": None, "command_id": None}

@@ -29,10 +29,8 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | API urządzenia, w tym `POST /tick` | ZP-84 |
 | `HubClient` i kontrakt webhooka | ZP-54 |
 | Dom właściciela, `/api/v1/home`, wysyłka rejestru | ZP-93 |
-| Zegar `/home/clock` | ZP-94 |
-| Webhook `/api/v1/home/events` | do zrobienia w ZP-95 |
-
-Do czasu wdrożenia webhooka hub zbiera zdarzenia z ticków w buforze w pamięci.
+| Zegar `/home/clock` | ZP-94, `simulation_id` ZP-95 |
+| Webhook `/api/v1/home/events`, stan domu `/api/v1/home/state` | ZP-95 |
 
 ## Zasady ogólne
 
@@ -195,8 +193,8 @@ Odpowiedź `200`:
 Stan `error` oznacza, że hub wyczerpał limit restartów urządzenia.
 
 `energy_kwh` służy tylko do podglądu: restart mikroserwisu (np. po zmianie programów w rejestrze)
-zeruje licznik. Zużycie do obliczeń backend bierze ze zdarzeń `energy_report` i `device_finished`
-z webhooka.
+zeruje licznik. Zużycie do obliczeń backend bierze ze zdarzeń `energy_report` z webhooka
+([sekcja 3](#3-hub--backend-webhook-zdarzeń)).
 
 ### `POST /home/devices/{device_id}/commands` – polecenie dla urządzenia
 
@@ -235,16 +233,17 @@ ponawia komendy. Usunięcie urządzenia z rejestru kasuje jego zaplanowane komen
 ### `GET /home/clock`, `PUT /home/clock` – zegar symulacji
 
 ```json
-{ "sim_time": "2026-10-19T09:45:00+02:00", "running": true, "speed": 288.0 }
+{ "sim_time": "2026-10-19T09:45:00+02:00", "running": true, "speed": 288.0, "simulation_id": "sim_4f1c…" }
 ```
 
-`PUT` przyjmuje dowolny podzbiór pól. Odpowiedź `200` z pełnym stanem zegara.
+`PUT` przyjmuje dowolny podzbiór pól `sim_time`, `running`, `speed`. Odpowiedź `200` z pełnym stanem zegara.
 
 | Pole | Opis |
 |---|---|
 | `sim_time` | Bieżący czas symulacji w strefie domu (`Europe/Warsaw`), pełny kwadrans z lat 1970–2100. W `PUT` dowolna strefa, tylko gdy zegar stoi; inaczej `409 clock_running` |
 | `running` | `true` start, `false` pauza. Pauza zatrzymuje ticki, więc energia przestaje rosnąć |
 | `speed` | Ile sekund symulacji na sekundę rzeczywistą, `> 0`. Doba w 5 minut to `288` (domyślnie) |
+| `simulation_id` | Tylko do odczytu. Identyfikator przebiegu symulacji: nowy po każdym ustawieniu `sim_time` i po restarcie huba. Niosą go zdarzenia webhooka, więc dwa przebiegi tej samej doby się nie sumują |
 
 Hub startuje z zatrzymanym zegarem ustawionym na północ bieżącego dnia. Zegar i zaplanowane komendy
 są tylko w pamięci, więc restart huba ustawia je od nowa.
@@ -295,6 +294,10 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 | `POST /reset` | Powrót do stanu po uruchomieniu: `off`, zerowe liczniki, brak czasu symulacji i zdarzeń | `200` – stan |
 | `GET /energy` | Zużycie energii | `200` – patrz niżej |
 | `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick`; `422 validation_error` dla czasu bez strefy |
+
+`POST /on` i `POST /programs/{program_id}/start` przyjmują opcjonalną treść `{"command_id": "cmd_7f3a2c"}`.
+Hub podaje w niej identyfikator polecenia, a urządzenie zwraca go w `data.command_id` zdarzenia
+`device_started` tej akcji (`null`, gdy akcję zaczęto bez `command_id`).
 
 ### Zachowanie urządzenia
 
@@ -369,13 +372,21 @@ poprzedniego ticka, także tymi z komend wykonanych między tickami:
   "state": "running",
   "power_kw": 1.8,
   "energy_kwh": 0.45,
+  "interval_start": "2026-10-19T09:30:00+02:00",
   "events": [
-    { "type": "device_started", "sim_time": "2026-10-19T09:30:00+02:00", "data": { "program_id": "cotton_60" } }
+    {
+      "type": "device_started",
+      "sim_time": "2026-10-19T09:30:00+02:00",
+      "data": { "program_id": "cotton_60", "command_id": "cmd_7f3a2c" }
+    }
   ]
 }
 ```
 
 `energy_kwh` w odpowiedzi ticka to energia **tego kroku**, a w `GET /status` wartość narastająca.
+`interval_start` to początek kroku, czyli czas poprzedniego ticka urządzenia (`null` przy pierwszym ticku).
+Zwykle to kwadrans przed `sim_time`, ale urządzenie, które nie dostało ticka, liczy dłuższy krok.
+Suma `energy_kwh` z ticków równa się `total_kwh`.
 
 - Tick ze `sim_time` równym ostatniemu niczego nie zmienia (`200`, zerowa energia, puste `events`),
   dzięki czemu hub może go bezpiecznie ponowić.
@@ -384,10 +395,10 @@ poprzedniego ticka, także tymi z komend wykonanych między tickami:
 
 ## 3. Hub → backend: webhook zdarzeń
 
-Wdrożenie: ZP-95. Urządzenia nie wysyłają niczego same: hub zbiera
-zdarzenia z odpowiedzi na `POST /tick` i wysyła je partiami, co najmniej raz na tick, w którym coś
-zaszło. Urządzenie zwraca `device_started` i `device_finished`, a `energy_report` i `device_error`
-tworzy hub, odpowiednio z `energy_kwh` ticka i z własnego health-checku.
+Urządzenia nie wysyłają niczego same: hub zbiera zdarzenia z odpowiedzi na `POST /tick` i wysyła je
+do backendu jedną partią na tick, w którym coś zaszło. Urządzenie zwraca `device_started` i
+`device_finished`, a `energy_report` i `device_error` tworzy hub: pierwsze z `energy_kwh` i
+`interval_start` ticka, drugie z nieudanego ticka, nieudanej zaplanowanej komendy albo health-checku.
 
 `POST {BACKEND_URL}/api/v1/home/events` z `X-Hub-Api-Key`:
 
@@ -395,14 +406,16 @@ tworzy hub, odpowiednio z `energy_kwh` ticka i z własnego health-checku.
 {
   "events": [
     {
-      "event_id": "evt_000123",
+      "event_id": "evt_6a1f0c9e4b2d4c7e8f3a5b1c2d3e4f50",
+      "simulation_id": "sim_4f1c2b7a9d8e4f6a8b0c1d2e3f405162",
       "type": "device_started",
       "device_id": "dev_wm_01",
       "sim_time": "2026-10-19T09:30:00+02:00",
       "data": { "program_id": "cotton_60", "command_id": "cmd_7f3a2c" }
     },
     {
-      "event_id": "evt_000124",
+      "event_id": "evt_…",
+      "simulation_id": "sim_4f1c…",
       "type": "device_finished",
       "device_id": "dev_wm_01",
       "sim_time": "2026-10-19T11:30:00+02:00",
@@ -414,33 +427,67 @@ tworzy hub, odpowiednio z `energy_kwh` ticka i z własnego health-checku.
       }
     },
     {
-      "event_id": "evt_000125",
+      "event_id": "evt_…",
+      "simulation_id": "sim_4f1c…",
       "type": "energy_report",
       "device_id": "dev_fr_01",
       "sim_time": "2026-10-19T09:45:00+02:00",
       "data": { "interval_start": "2026-10-19T09:30:00+02:00", "energy_kwh": 0.03 }
     },
     {
-      "event_id": "evt_000126",
+      "event_id": "evt_…",
+      "simulation_id": "sim_4f1c…",
       "type": "device_error",
       "device_id": "dev_dw_01",
       "sim_time": "2026-10-19T09:45:00+02:00",
-      "data": { "code": "device_unreachable", "message": "Brak odpowiedzi na /tick" }
+      "data": { "code": "device_unreachable", "message": "Brak odpowiedzi urządzenia: …" }
     }
   ]
 }
 ```
 
+| Pole | Opis |
+|---|---|
+| `event_id` | `evt_` i losowy UUID: unikalny także między restartami huba. Hub nadaje go przy dodaniu do kolejki, więc ponowiona partia ma te same identyfikatory |
+| `simulation_id` | Przebieg symulacji z `GET /home/clock`, w którym zdarzenie zaszło |
+
 | `type` | Kiedy | `data` |
 |---|---|---|
-| `device_started` | Urządzenie zaczęło pracę / program | `program_id` (albo `null`), `command_id` (gdy start z polecenia) |
+| `device_started` | Urządzenie zaczęło pracę / program | `program_id` (`null` dla urządzeń bez programów), `command_id` (`null`, gdy start bez polecenia huba) |
 | `device_finished` | Koniec programu albo wyłączenie w trakcie | `program_id`, `started_at`, `energy_kwh` cyklu, `interrupted` |
-| `energy_report` | Co kwadrans dla każdego pracującego urządzenia | `interval_start`, `energy_kwh` |
-| `device_error` | Urządzenie nie odpowiada albo wyczerpano limit restartów | `code`, `message` |
+| `energy_report` | Po każdym ticku z niezerową energią urządzenia (zwykle co kwadrans) | `interval_start`, `energy_kwh` kroku `[interval_start, sim_time)`, ujemna dla PV |
+| `device_error` | Urządzenie nie odpowiada na tick, nie wykonało zaplanowanej komendy albo wyczerpało limit restartów (`code: restart_limit_exceeded`) | `code`, `message` |
 
-Odpowiedź backendu: `202 {"accepted": 4}`. `event_id` jest unikalny w obrębie huba; backend
-ignoruje zdarzenia, które już zapisał, więc hub przy błędzie (timeout, 5xx) ponawia całą partię.
-Na `401` hub nie ponawia i loguje błąd konfiguracji.
+**Energia.** Zużycie to suma `energy_report`; jest ich tyle, ile ticków z energią, a ich suma dla
+urządzenia równa się energii urządzenia (`total_kwh`, suma `energy_kwh` jego cykli `device_finished`).
+`energy_kwh` w `device_finished` opisuje cykl i nie wchodzi do sumy drugi raz.
+
+### Dostawa
+
+| Odpowiedź backendu | Hub |
+|---|---|
+| `202 {"accepted": 3, "duplicates": 1}` | Usuwa partię z kolejki. `accepted` – zapisane teraz, `duplicates` – pominięte, bo już były |
+| Timeout, brak połączenia, `5xx`, `408`, `429` | Ponawia tę samą partię z rosnącą przerwą (0,5 s, 1 s, … do 30 s) |
+| `401`, `403` | Nie ponawia: loguje błąd konfiguracji `HUB_API_KEY` i odrzuca partię |
+| Inne `4xx` (np. `422` za niepoprawne zdarzenie) | Nie ponawia: loguje odpowiedź i odrzuca partię |
+
+- Partie idą po kolei, jedna naraz, do 500 zdarzeń. Backend przyjmuje najwyżej 1000.
+- Kolejka jest w pamięci i mieści `HUB_EVENT_BUFFER_SIZE` zdarzeń (domyślnie 50 000, kilkanaście minut
+  niedostępności backendu przy dobie w 5 minut). Po przepełnieniu hub odrzuca najstarsze i loguje błąd.
+- Przy zamykaniu hub raz próbuje wysłać resztę kolejki (do 5 s); czego nie wyśle, to traci. Restart huba
+  i tak zaczyna nowy przebieg symulacji, więc utracone zdarzenia dotyczą tylko zakończonego przebiegu.
+- Bez `BACKEND_URL` hub nie zbiera zdarzeń i loguje to przy starcie.
+
+### Backend
+
+- Uwierzytelnienie tym samym `X-Hub-Api-Key` co żądania backendu do huba, bez tokenu użytkownika. Brak
+  albo błędny klucz, a także brak `HUB_API_KEY` w backendzie: `401 {"code": "invalid_api_key"}`.
+- Zdarzenia trafiają do `home_events` z właścicielem podłączonego domu (`NULL`, gdy dom jest odłączony).
+  Unikalny `event_id` i `INSERT … ON CONFLICT DO NOTHING`: ta sama partia wysłana dwa razy, także
+  równolegle, niczego nie dubluje.
+- Partia z niepoprawnym zdarzeniem (np. `energy_report` bez `energy_kwh`, czas bez strefy,
+  `interval_start` nie wcześniejszy niż `sim_time`) jest odrzucana w całości: `422`.
+- Nieznany `type` jest zapisywany bez interpretacji, żeby nowszy hub nie tracił całych partii.
 
 ## 4. Frontend → backend: dom właściciela
 
@@ -450,11 +497,12 @@ wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_UR
 
 | Metoda i ścieżka | Opis |
 |---|---|
-| `GET /api/v1/home` | Stan domu |
+| `GET /api/v1/home` | Podłączenie domu i stan wysyłki rejestru |
+| `GET /api/v1/home/state` | Zegar, urządzenia, moc, zużycie i koszt doby ([niżej](#get-apiv1homestate--stan-podłączonego-domu)) |
 | `POST /api/v1/home/connect` | Podłącza dom i wysyła rejestr. Wysyła go zawsze, także niezmieniony, więc ponowne wywołanie naprawia hub (np. po utracie wolumenu `hub_data`) |
 | `DELETE /api/v1/home` | Odłącza dom: hub dostaje pusty rejestr i zatrzymuje mikroserwisy urządzeń |
 
-Każdy z nich odpowiada `200` ze stanem domu:
+`GET /api/v1/home`, `POST /api/v1/home/connect` i `DELETE /api/v1/home` odpowiadają `200` ze stanem podłączenia:
 
 ```json
 {
@@ -493,6 +541,54 @@ Każdy z nich odpowiada `200` ze stanem domu:
 - Zmiana `HUB_HOME_USER_EMAIL` odłącza dom poprzedniego właściciela: pierwsza operacja nowego
   właściciela wysyła pusty rejestr albo, po podłączeniu, jego urządzenia.
 
+### `GET /api/v1/home/state` – stan podłączonego domu
+
+Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i moc urządzeń backend czyta z huba
+(`GET /home/clock`, `GET /home/devices`), a zużycie i koszt doby liczy ze zdarzeń `energy_report` w bazie.
+
+```json
+{
+  "hub_available": true,
+  "simulation_id": "sim_4f1c…",
+  "clock": { "sim_time": "2026-10-19T12:00:00+02:00", "running": true, "speed": 288.0 },
+  "power": { "consumption_kw": 1.86, "production_kw": 3.0, "net_kw": -1.14 },
+  "devices": [
+    {
+      "device_id": "dev_wm_01",
+      "device_name": "Pralka Bosch",
+      "state": "running",
+      "program_id": "cotton_60",
+      "program_started_at": "2026-10-19T11:30:00+02:00",
+      "program_ends_at": "2026-10-19T13:30:00+02:00",
+      "power_kw": 1.8,
+      "energy_today_kwh": 0.9
+    }
+  ],
+  "today": {
+    "day_start": "2026-10-19T00:00:00+02:00",
+    "until": "2026-10-19T12:00:00+02:00",
+    "consumption_kwh": 6.42,
+    "production_kwh": 9.0,
+    "net_kwh": -2.58,
+    "grid_import_kwh": 4.1,
+    "cost_pln": 3.7215,
+    "cost_error": null
+  }
+}
+```
+
+| Pole | Opis |
+|---|---|
+| `hub_available` | `false`, gdy hub nie odpowiedział: wtedy `clock` i `power` mają `null`, `devices` jest puste, a `today` dotyczy ostatniego przebiegu ze zdarzeń w bazie (do czasu jego ostatniego zdarzenia) |
+| `power` | Suma bieżącej mocy urządzeń: pobór, produkcja PV i bilans (ujemny = oddawanie do sieci) |
+| `devices[].energy_today_kwh` | Energia urządzenia od początku doby ze zdarzeń, odporna na restart mikroserwisu |
+| `today` | Od północy doby symulacji (strefa domu, doba ze zmianą czasu ma 23 albo 25 h) do `clock.sim_time`, tylko bieżący przebieg (`simulation_id`) |
+| `today.grid_import_kwh` | Suma dodatnich bilansów kwadransów: produkcja PV w tym samym kwadransie pokrywa zużycie domu |
+| `today.cost_pln` | `grid_import_kwh` kwadransów razy ceny kwadransów taryfy z profilu właściciela (energia, dystrybucja zmienna, opłaty za kWh, VAT; te same ceny co optymalizacja harmonogramu). Bez opłat stałych i bez wartości energii oddanej do sieci, które rozlicza rachunek okresu |
+| `today.cost_error` | Powód braku kosztu (`cost_pln: null`), np. niepełny profil albo brak cen RCE dla taryfy dynamicznej |
+
+Zdarzenia dochodzą partią po każdym ticku, więc `today` może nie obejmować jeszcze ostatniego kwadransu.
+
 ## Konfiguracja
 
 | Zmienna | Strona | Opis |
@@ -501,7 +597,8 @@ Każdy z nich odpowiada `200` ze stanem domu:
 | `HUB_API_KEY` | backend, hub | Wspólny klucz `X-Hub-Api-Key` |
 | `HUB_TIMEOUT_SECONDS` | backend | Timeout żądań do huba, domyślnie 5 s |
 | `HUB_HOME_USER_EMAIL` | backend | E-mail konta, do którego należy dom huba; pusty = nikt nie może podłączyć domu |
-| `BACKEND_URL` | hub | Adres backendu dla webhooka, np. `http://backend:8000` |
+| `BACKEND_URL` | hub | Adres backendu dla webhooka, w docker-compose `http://backend:8000`; pusty = zdarzenia nie są wysyłane |
+| `HUB_EVENT_BUFFER_SIZE` | hub | Ile zdarzeń czeka najwyżej na wysyłkę do backendu, domyślnie 50 000 |
 | `DEVICE_BIND_HOST` | hub | Adres nasłuchu urządzeń: `127.0.0.1` domyślnie, `0.0.0.0` w trybie demo |
 | `HUB_STATE_DIR` | hub | Katalog pliku stanu i konfiguracji urządzeń, domyślnie `/data` |
 | `HUB_HEALTH_INTERVAL_SECONDS` | hub | Co ile sekund hub sprawdza urządzenia, domyślnie 5 |

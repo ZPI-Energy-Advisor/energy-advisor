@@ -14,6 +14,12 @@ class HubSettings:
     health_interval_seconds: float = 5.0
     device_start_timeout_seconds: float = 30.0
     max_restarts: int = 3
+    backend_url: str | None = None
+    event_buffer_size: int = 50_000
+    webhook_batch_size: int = 500
+    webhook_timeout_seconds: float = 10.0
+    webhook_retry_min_seconds: float = 0.5
+    webhook_retry_max_seconds: float = 30.0
 
     @classmethod
     def from_env(cls) -> "HubSettings":
@@ -25,4 +31,6 @@ class HubSettings:
             state_dir=Path(os.getenv("HUB_STATE_DIR", "/data")),
             device_bind_host=os.getenv("DEVICE_BIND_HOST", "127.0.0.1"),
             health_interval_seconds=float(os.getenv("HUB_HEALTH_INTERVAL_SECONDS", "5")),
+            backend_url=(os.getenv("BACKEND_URL") or "").strip().rstrip("/") or None,
+            event_buffer_size=int(os.getenv("HUB_EVENT_BUFFER_SIZE", "50000")),
         )

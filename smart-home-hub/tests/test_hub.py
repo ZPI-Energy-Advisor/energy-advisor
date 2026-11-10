@@ -21,6 +21,7 @@ from device.models import DeviceConfig
 API_KEY = "test-hub-key"
 HEADERS = {"X-Hub-Api-Key": API_KEY}
 FIRST_PORT = 19101
+BACKEND_URL = "http://backend.test"
 SAMPLE_FILE = Path(__file__).resolve().parents[2] / "frontend" / "public" / "samples" / "devices-example.json"
 
 
@@ -62,9 +63,34 @@ def settings(tmp_path) -> HubSettings:
     )
 
 
+class FakeBackend:
+    """Backend z kontraktu webhooka: zapisuje partie zdarzeń i odpowiada 202."""
+
+    def __init__(self):
+        self.batches: list[list[dict]] = []
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        assert (request.method, request.url.path) == ("POST", "/api/v1/home/events")
+        assert request.headers["X-Hub-Api-Key"] == API_KEY
+        events = json.loads(request.content)["events"]
+        self.batches.append(events)
+        return httpx.Response(202, json={"accepted": len(events), "duplicates": 0})
+
+    @property
+    def events(self) -> list[dict]:
+        return [event for batch in self.batches for event in batch]
+
+
 @pytest.fixture
-def client(settings):
-    with TestClient(create_app(settings), headers=HEADERS) as test_client:
+def backend() -> FakeBackend:
+    return FakeBackend()
+
+
+@pytest.fixture
+def client(settings, backend):
+    app = create_app(replace(settings, backend_url=BACKEND_URL), webhook_transport=httpx.MockTransport(backend.handle))
+    with TestClient(app, headers=HEADERS) as test_client:
+        test_client.backend = backend
         yield test_client
 
 
@@ -209,9 +235,11 @@ def test_health_loop_restarts_device_on_its_own(settings):
         _wait_for_state(client, "dev_lt_01", "off")
 
 
-def test_device_that_keeps_failing_gets_error_after_restart_limit(settings):
-    limited = replace(settings, max_restarts=2, device_start_timeout_seconds=0.01)
-    with TestClient(create_app(limited), headers=HEADERS) as client:
+def test_device_that_keeps_failing_gets_error_after_restart_limit(settings, backend):
+    limited = replace(settings, max_restarts=2, device_start_timeout_seconds=0.01, backend_url=BACKEND_URL)
+    app = create_app(limited, webhook_transport=httpx.MockTransport(backend.handle))
+    with TestClient(app, headers=HEADERS) as client:
+        client.backend = backend
         _put(client, [_lamp()])
         supervisor = client.app.state.supervisor
         device = supervisor.devices["dev_lt_01"]
@@ -225,6 +253,8 @@ def test_device_that_keeps_failing_gets_error_after_restart_limit(settings):
         assert status["state"] == "error"
         assert status["energy_kwh"] is None
         assert device.process is None
+        error, = _events(client, "dev_lt_01", "device_error")
+        assert error["data"]["code"] == "restart_limit_exceeded"
 
 
 def test_stopping_hub_stops_all_devices(settings):
@@ -365,9 +395,17 @@ def _start_program(client: TestClient, start_at: str | None = None, program_id: 
     return client.post("/home/devices/dev_wm_01/commands", json=body)
 
 
+def _delivered(client: TestClient) -> list[dict]:
+    """Zdarzenia, które dotarły do backendu, po opróżnieniu kolejki webhooka."""
+    _wait_until(lambda: not client.app.state.supervisor.publisher.pending)
+    return client.backend.events
+
+
 def _events(client: TestClient, device_id: str, event_type: str) -> list[dict]:
-    events = client.app.state.supervisor.events
-    return [event for event in events if event["device_id"] == device_id and event["type"] == event_type]
+    return [
+        event for event in _delivered(client)
+        if event["device_id"] == device_id and event["type"] == event_type
+    ]
 
 
 def _wait_until(condition) -> None:
@@ -392,7 +430,10 @@ def test_put_clock_changes_only_given_fields(client):
     response = client.put("/home/clock", json={"speed": 60})
 
     assert response.status_code == 200
-    assert response.json() == {"sim_time": "2026-10-19T12:00:00+02:00", "running": False, "speed": 60}
+    assert response.json() == {
+        "sim_time": "2026-10-19T12:00:00+02:00", "running": False, "speed": 60,
+        "simulation_id": client.app.state.supervisor.clock.simulation_id,
+    }
     assert client.get("/home/clock").json() == response.json()
 
 
@@ -873,3 +914,138 @@ def test_command_sent_during_tick_waits_for_it_and_starts_at_new_time(settings):
         assert calls[1] == ("/programs/cotton_60/start", before + TICK_STEP)
 
     asyncio.run(scenario())
+
+
+# Webhook zdarzeń do backendu
+
+
+def _energy_reports(client: TestClient, device_id: str) -> list[dict]:
+    return _events(client, device_id, "energy_report")
+
+
+def test_energy_reports_sum_to_device_energy(client):
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+    _start_program(client)
+    client.post("/home/devices/dev_lt_01/commands", json={"command": "on"})
+
+    _tick(client, 10)
+
+    washer_reports = _energy_reports(client, "dev_wm_01")
+    finished, = _events(client, "dev_wm_01", "device_finished")
+    assert len(washer_reports) == 8
+    assert sum(report["data"]["energy_kwh"] for report in washer_reports) == pytest.approx(finished["data"]["energy_kwh"])
+    assert sum(report["data"]["energy_kwh"] for report in washer_reports) == pytest.approx(
+        _device_status(client, "dev_wm_01")["energy_kwh"]
+    )
+    lamp_reports = _energy_reports(client, "dev_lt_01")
+    assert len(lamp_reports) == 10
+    assert sum(report["data"]["energy_kwh"] for report in lamp_reports) == pytest.approx(
+        _device_status(client, "dev_lt_01")["energy_kwh"]
+    )
+
+
+def test_energy_report_covers_one_quarter_of_device_time(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+    client.post("/home/devices/dev_lt_01/commands", json={"command": "on"})
+
+    _tick(client, 2)
+
+    first, second = _energy_reports(client, "dev_lt_01")
+    assert first["data"] == {"interval_start": "2026-10-19T12:00:00+02:00", "energy_kwh": pytest.approx(0.015)}
+    assert first["sim_time"] == "2026-10-19T12:15:00+02:00"
+    assert second["data"]["interval_start"] == first["sim_time"]
+
+
+def test_idle_device_sends_no_energy_reports(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+
+    _tick(client, 3)
+
+    assert _delivered(client) == []
+
+
+def test_tick_sends_events_of_all_devices_in_one_batch(client):
+    _put(client, [_lamp("dev_a"), _lamp("dev_b")])
+    _set_clock(client)
+    client.post("/home/devices/dev_a/commands", json={"command": "on"})
+    client.post("/home/devices/dev_b/commands", json={"command": "on"})
+    _tick(client)
+    batches_before = len(client.backend.batches)
+
+    _tick(client)
+
+    _delivered(client)
+    last, = client.backend.batches[batches_before:]
+    assert sorted(event["device_id"] for event in last) == ["dev_a", "dev_b"]
+    assert {event["type"] for event in last} == {"energy_report"}
+
+
+def test_device_started_carries_command_id(client):
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+    now = _start_program(client).json()["command_id"]
+    later = client.post("/home/devices/dev_wm_01/commands", json={
+        "command": "start_program", "program_id": "cotton_60", "start_at": "2026-10-19T15:00:00+02:00",
+    }).json()["command_id"]
+    lamp = client.post("/home/devices/dev_lt_01/commands", json={"command": "on"}).json()["command_id"]
+
+    _tick(client, 13)
+
+    first, second = _events(client, "dev_wm_01", "device_started")
+    assert first["data"] == {"program_id": "cotton_60", "command_id": now}
+    assert second["data"] == {"program_id": "cotton_60", "command_id": later}
+    assert second["sim_time"] == "2026-10-19T15:00:00+02:00"
+    started_lamp, = _events(client, "dev_lt_01", "device_started")
+    assert started_lamp["data"] == {"program_id": None, "command_id": lamp}
+
+
+def test_events_have_unique_ids_and_simulation_of_their_run(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+    first_run = client.get("/home/clock").json()["simulation_id"]
+    client.post("/home/devices/dev_lt_01/commands", json={"command": "on"})
+    _tick(client, 2)
+
+    _set_clock(client, "2026-10-19T08:00:00+02:00")
+    second_run = client.get("/home/clock").json()["simulation_id"]
+    client.post("/home/devices/dev_lt_01/commands", json={"command": "on"})
+    _tick(client, 2)
+
+    events = _delivered(client)
+    assert second_run != first_run
+    assert len({event["event_id"] for event in events}) == len(events)
+    assert [event["simulation_id"] for event in _energy_reports(client, "dev_lt_01")] == [first_run] * 2 + [second_run] * 2
+
+
+def test_same_sim_time_keeps_simulation(client):
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+
+    _set_clock(client)
+
+    assert client.get("/home/clock").json()["simulation_id"] == simulation_id
+
+
+def test_stopping_hub_sends_waiting_events(settings, backend):
+    unavailable = {"down": True}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if unavailable["down"]:
+            return httpx.Response(503, json={"detail": "Chwilowo niedostępny"})
+        return backend.handle(request)
+
+    # Długa przerwa przed ponowieniem: zdarzenia może dowieźć tylko wysyłka przy zamykaniu.
+    slow_retry = replace(settings, backend_url=BACKEND_URL, webhook_retry_min_seconds=3600)
+    app = create_app(slow_retry, webhook_transport=httpx.MockTransport(handle))
+    with TestClient(app, headers=HEADERS) as client:
+        _put(client, [_lamp()])
+        _set_clock(client)
+        client.post("/home/devices/dev_lt_01/commands", json={"command": "on"})
+        _tick(client)
+        assert client.app.state.supervisor.publisher.pending
+        unavailable["down"] = False
+
+    assert [event["type"] for event in backend.events] == ["device_started", "energy_report"]

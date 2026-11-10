@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
+import logging
 import secrets
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -10,13 +12,21 @@ from fastapi.responses import JSONResponse
 from hub.config import HubSettings
 from hub.models import ClockUpdate, DeviceCommand, RegistryRequest
 from hub.supervisor import DeviceSupervisor, HubError
+from hub.webhook import EventPublisher
 
 
+logger = logging.getLogger(__name__)
 
-def create_app(settings: HubSettings | None = None) -> FastAPI:
-    """API huba dla backendu. Kontrakt: docs/smart-home-api.md, część „Backend → hub”."""
+
+def create_app(
+    settings: HubSettings | None = None, webhook_transport: httpx.AsyncBaseTransport | None = None,
+) -> FastAPI:
+    """API huba dla backendu. Kontrakt: docs/smart-home-api.md, część „Backend → hub”.
+
+    `webhook_transport` podmienia transport HTTP webhooka do backendu (testy).
+    """
     settings = settings or HubSettings.from_env()
-    supervisor = DeviceSupervisor(settings)
+    supervisor = DeviceSupervisor(settings, EventPublisher(settings, webhook_transport))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -25,6 +35,10 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
             asyncio.create_task(supervisor.run_health_loop()),
             asyncio.create_task(supervisor.run_clock_loop()),
         ]
+        if supervisor.publisher.enabled:
+            loops.append(asyncio.create_task(supervisor.run_webhook_loop()))
+        else:
+            logger.warning("BACKEND_URL nie jest ustawiony: zdarzenia urządzeń nie trafią do backendu")
         yield
         for loop in loops:
             loop.cancel()
