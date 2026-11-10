@@ -5,10 +5,12 @@ from uuid import UUID
 from fastapi import HTTPException, status
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.models.User import User
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
+from app.services.home_service import HomeService
 from app.services.calculation_service import (
     ACTIONS_PER_DAY_KEY,
     IMPORT_REPORT_KEY,
@@ -54,12 +56,14 @@ class EnergyFileService:
         device_repository: DeviceRepository,
         schedule_prices: SchedulePriceService,
         calculations_service=None,
+        home_service: HomeService | None = None,
     ):
         self.file_repository = file_repository
         self.simulation_repository = simulation_repository
         self.device_repository = device_repository
         self.schedule_prices = schedule_prices
         self.calculations_service = calculations_service
+        self.home_service = home_service
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:
         items, total = self.file_repository.list_by_user_id(
@@ -343,7 +347,8 @@ class EnergyFileService:
         )
         return usage, actions_per_day, contributions
 
-    def delete_file(self, file_id: UUID, user_id: UUID) -> None:
+    def delete_file(self, file_id: UUID, user: User) -> None:
+        user_id = user.id
         energy_file = self._get_own_file(file_id, user_id)
         device_ids = list(self.device_repository.device_ids_by_file([energy_file.id]).get(energy_file.id, ()))
         # Plik sprzed zapisywania okresu: przeliczamy flagi jego urządzeń w całym czasie.
@@ -354,6 +359,9 @@ class EnergyFileService:
         self.file_repository.delete_without_commit(energy_file)
         self.device_repository.refresh_superseded(user_id, device_ids, *period)
         self.file_repository.commit()
+        if self.home_service:
+            # Urządzenia obecne tylko w tym pliku zniknęły z domu, więc hub zatrzymuje ich mikroserwisy.
+            self.home_service.sync_after_change(user)
 
     def _get_own_file(self, file_id: UUID, user_id: UUID) -> EnergyDataFile:
         # Cudzy plik zwraca 404 tak samo jak nieistniejący - nie zdradzamy, że istnieje.

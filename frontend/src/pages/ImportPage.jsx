@@ -3,6 +3,7 @@ import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import EnergyFilesTable from "../components/EnergyFilesTable";
+import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import ImportErrorDetails from "../components/ImportErrorDetails";
 import ImportReportSummary from "../components/ImportReportSummary";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
@@ -108,6 +109,9 @@ function ImportPage() {
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
         Prześlij plik
       </h2>
+
+      {/* Stan wysyłki do huba pokazuje tylko panel: pobiera go na żywo, także po imporcie. */}
+      <HomeConnectionPanel />
 
       {successMsg ? (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-6 md:p-10 text-center shadow-sm">

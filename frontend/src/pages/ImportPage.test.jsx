@@ -14,6 +14,8 @@ vi.mock("react-router-dom", async (importOriginal) => ({
 }));
 vi.mock("../api/client", () => ({ default: { post: vi.fn() } }));
 vi.mock("../components/EnergyFilesTable", () => ({ default: () => null }));
+// Panel domu ma własne testy i potrzebuje CurrentUserProvider.
+vi.mock("../components/HomeConnectionPanel", () => ({ default: () => null }));
 vi.mock("../hooks/useEnergyFiles", () => ({
   useEnergyFiles: () => ({ refreshFiles, selectFile }),
 }));

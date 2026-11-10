@@ -1,15 +1,16 @@
 from datetime import date, datetime, timedelta, timezone
-from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
 
 from app.models.EnergyDataFile import EnergyDataFile
+from app.models.User import User
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationService, public_results
+from app.services.home_service import HomeService
 
 
 MAX_UPLOAD_SIZE_MB = 10
@@ -29,14 +30,17 @@ class UploadService:
         energy_file_repository: EnergyDataFileRepository,
         energy_reading_repository: EnergyReadingRepository,
         device_repository: DeviceRepository,
+        home_service: HomeService | None = None,
     ):
         self.calculation_service = calculation_service
         self.simulation_repository = simulation_repository
         self.energy_file_repository = energy_file_repository
         self.energy_reading_repository = energy_reading_repository
         self.device_repository = device_repository
+        self.home_service = home_service
 
-    def process_upload(self, file: UploadFile, user_id: UUID):
+    def process_upload(self, file: UploadFile, user: User):
+        user_id = user.id
 
         if not file.filename or not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
             raise HTTPException(
@@ -86,6 +90,8 @@ class UploadService:
             energy_data_file_id=energy_file.id,
             results=simulation_results,
         )
+        # Po zatwierdzeniu importu: niedostępny hub nie cofa go, a w odpowiedzi jest ostrzeżenie.
+        home_sync = self.home_service.sync_after_change(user) if self.home_service else None
 
         return {
             "status": "success",
@@ -94,6 +100,7 @@ class UploadService:
             "file_name": file.filename,
             "summary": public_results(simulation_results),
             "import_report": simulation_results.get(IMPORT_REPORT_KEY),
+            "home_sync": home_sync,
             "message": "Symulacja zakończona i zapisana na Twoim koncie!",
         }
 

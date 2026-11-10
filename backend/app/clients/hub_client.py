@@ -68,8 +68,13 @@ class HubClient:
     def close(self) -> None:
         self.client.close()
 
+    @staticmethod
+    def registry_payload(devices: list[HubDevice]) -> dict:
+        """Treść PUT /home/devices dla rejestru `devices`."""
+        return {"devices": [device.model_dump(mode="json", by_alias=True) for device in devices]}
+
     def put_devices(self, devices: list[HubDevice]) -> list[RegisteredDevice]:
-        payload = {"devices": [device.model_dump(mode="json", by_alias=True) for device in devices]}
+        payload = self.registry_payload(devices)
         data = self._request("PUT", "/home/devices", json=payload, timeout=REGISTRY_TIMEOUT_SECONDS)
         return [self._parse(RegisteredDevice, item) for item in self._field(data, "devices")]
 

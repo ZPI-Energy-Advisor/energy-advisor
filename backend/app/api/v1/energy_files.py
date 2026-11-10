@@ -125,4 +125,4 @@ def delete_energy_file(
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
-    service.delete_file(file_id, user.id)
+    service.delete_file(file_id, user)
