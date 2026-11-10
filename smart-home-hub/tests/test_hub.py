@@ -973,6 +973,8 @@ def test_tick_sends_events_of_all_devices_in_one_batch(client):
     client.post("/home/devices/dev_a/commands", json={"command": "on"})
     client.post("/home/devices/dev_b/commands", json={"command": "on"})
     _tick(client)
+    # Najpierw doręczenie zdarzeń z komend i pierwszego ticka, inaczej mogą dojść już po zliczeniu partii.
+    _delivered(client)
     batches_before = len(client.backend.batches)
 
     _tick(client)
