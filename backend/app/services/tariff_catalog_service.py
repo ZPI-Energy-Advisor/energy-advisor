@@ -20,6 +20,7 @@ from app.schemas.tariff_catalog import (
     ZoneHourOut,
     ZoneOut,
 )
+from app.services.tariff_zone_text import describe_zones
 
 
 def _float(value) -> float | None:
@@ -177,6 +178,7 @@ class TariffCatalogService:
                 TariffOptionOut(
                     code=code,
                     name=next((row.name for row in reversed(rows) if row.name), code),
+                    zones_description=describe_zones(max(rows, key=lambda row: row.valid_from)),
                     billing_cycles=sorted(cycles),
                     available_from=min(row.valid_from for row in rows),
                     available_to=max(row.valid_to for row in rows),

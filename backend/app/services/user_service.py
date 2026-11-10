@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.models.Tariff import Tariff
 from app.models.User import User
@@ -9,6 +10,11 @@ from app.schemas.other import TariffTypeEnum
 from app.schemas.user import CurrentUserResponse, ProfileTariffSummary
 from app.schemas.user_profile import UserProfile
 from app.services.tariff_service import tariff_out
+
+
+def _field_error(field: tuple[str, str], message: str) -> HTTPException:
+    """Błąd 422 w formacie walidacji FastAPI (lista z położeniem pola), żeby formularz pokazał go przy polu."""
+    return HTTPException(status_code=422, detail=[{"loc": ["body", *field], "msg": message, "type": "value_error"}])
 
 
 class UserService:
@@ -62,10 +68,22 @@ class UserService:
         profile = self.repository.get_profile(user.id)
         if profile is None:
             raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
-        validated = self._validated(profile)
-        if validated is None:
-            raise HTTPException(status_code=409, detail="Profil użytkownika wymaga ponownego uzupełnienia.")
-        return validated
+        try:
+            return UserProfile.model_validate(profile)
+        except ValidationError as error:
+            # Profil zapisany w starszym formacie: oddajemy zapisane dane i pola do uzupełnienia, żeby formularz je oznaczył.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Profil użytkownika wymaga ponownego uzupełnienia.",
+                    "profile": {
+                        "base_info": profile.base_info,
+                        "consumption_and_tariff": profile.consumption_and_tariff,
+                        "pv_config": profile.pv_config,
+                    },
+                    "fields": sorted({".".join(str(part) for part in item["loc"][:2]) for item in error.errors()}),
+                },
+            ) from error
 
     @staticmethod
     def _validated(profile) -> UserProfile | None:
@@ -93,17 +111,15 @@ class UserService:
                 {d.distribution_group.value for d in definitions if d.tariff_code == TariffTypeEnum.DYNAMIC}
             )
             if tariff_type not in groups:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"Oferty z ceną dynamiczną u operatora {operator.value} nie liczymy z grupą {tariff_type}. "
-                        f"Dostępne grupy: {', '.join(groups) or 'brak'}."
-                    ),
+                raise _field_error(
+                    ("consumption_and_tariff", "dynamic_price"),
+                    f"Oferty z ceną dynamiczną u operatora {operator.value} nie liczymy z grupą {tariff_type}. "
+                    f"Dostępne grupy: {', '.join(groups) or 'brak'}.",
                 )
         if tariff_type not in tariffs:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Operator {operator.value} nie ma w cenniku taryfy {tariff_type}. Dostępne taryfy: {', '.join(tariffs)}.",
+            raise _field_error(
+                ("consumption_and_tariff", "tariff_type"),
+                f"Operator {operator.value} nie ma w cenniku taryfy {tariff_type}. Dostępne taryfy: {', '.join(tariffs)}.",
             )
 
         cycles = sorted(
@@ -116,12 +132,10 @@ class UserService:
         )
         billing_cycle = profile_data.base_info.billing_cycle.value
         if cycles and billing_cycle not in cycles:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Operator {operator.value} nie ma w cenniku okresu rozliczeniowego {billing_cycle} mies. "
-                    f"Dostępne okresy (w miesiącach): {', '.join(str(cycle) for cycle in cycles)}."
-                ),
+            raise _field_error(
+                ("base_info", "billing_cycle"),
+                f"Operator {operator.value} nie ma w cenniku okresu rozliczeniowego {billing_cycle} mies. "
+                f"Dostępne okresy (w miesiącach): {', '.join(str(cycle) for cycle in cycles)}.",
             )
 
     def save_profile(self, user: User, profile_data: UserProfile) -> UserProfile:
