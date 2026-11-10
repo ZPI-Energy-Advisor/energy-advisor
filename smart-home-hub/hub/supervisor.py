@@ -5,7 +5,6 @@ import subprocess
 import sys
 import time
 import uuid
-from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +18,7 @@ from hub.clock import SimClock
 from hub.config import HubSettings
 from hub.models import ClockUpdate, DeviceCommand
 from hub.state import StateFile
+from hub.webhook import EventPublisher
 
 
 
@@ -28,10 +28,12 @@ HUB_DIR = Path(__file__).resolve().parents[1]
 DEVICE_REQUEST_TIMEOUT_SECONDS = 3.0
 HEALTH_POLL_SECONDS = 0.05
 STOP_TIMEOUT_SECONDS = 5.0
-EVENT_BUFFER_SIZE = 1000
+# Ile czasu przy zamykaniu huba dostaje ostatnia wysyłka zdarzeń do backendu.
+FLUSH_TIMEOUT_SECONDS = 5.0
 
 UNREACHABLE = "unreachable"
 ERROR = "error"
+RESTART_LIMIT_CODE = "restart_limit_exceeded"
 
 
 class HubError(Exception):
@@ -67,8 +69,10 @@ class ScheduledCommand:
 class DeviceSupervisor:
     """Stawia, restartuje i zatrzymuje mikroserwisy urządzeń. Kontrakt: docs/smart-home-api.md."""
 
-    def __init__(self, settings: HubSettings):
+    def __init__(self, settings: HubSettings, publisher: EventPublisher | None = None):
         self.settings = settings
+        # Zdarzenia z ticków i health-checku czekają tu na webhook do backendu.
+        self.publisher = publisher or EventPublisher(settings)
         self.devices: dict[str, ManagedDevice] = {}
         self._state = StateFile(settings.state_dir / "state.json")
         self._lock = asyncio.Lock()  # Rekoncyliacja i health-check nie mogą restartować naraz.
@@ -77,7 +81,6 @@ class DeviceSupervisor:
         # Osobna blokada: tick nie może czekać na restart niedziałającego urządzenia.
         self._clock_lock = asyncio.Lock()
         self._scheduled: list[ScheduledCommand] = []
-        self.events: deque[dict] = deque(maxlen=EVENT_BUFFER_SIZE)  # Czekają na webhook do backendu.
 
     async def start(self) -> None:
         self._client = httpx.AsyncClient(timeout=DEVICE_REQUEST_TIMEOUT_SECONDS, trust_env=False)
@@ -88,6 +91,15 @@ class DeviceSupervisor:
     async def stop(self) -> None:
         await asyncio.gather(*(self._stop_process(device) for device in self.devices.values()))
         await self._client.aclose()
+        # Zegar już stoi, więc nowych zdarzeń nie będzie; reszta kolejki ma jedną szansę dotrzeć do backendu.
+        try:
+            await asyncio.wait_for(self.publisher.flush(), FLUSH_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning("Przy zamykaniu huba nie wysłano %d zdarzeń", len(self.publisher.pending))
+        await self.publisher.close()
+
+    async def run_webhook_loop(self) -> None:
+        await self.publisher.run()
 
     async def apply_registry(self, configs: list[DeviceConfig]) -> list[dict]:
         async with self._lock:
@@ -147,7 +159,7 @@ class DeviceSupervisor:
                 self._scheduled.append(ScheduledCommand(device_id, command_id, command))
                 status = None
             else:
-                status = await self._forward(device, self._command_path(command))
+                status = await self._forward(device, self._command_path(command), payload={"command_id": command_id})
         if status is None:
             status = await self._read_status(device)
             result = "scheduled"
@@ -194,38 +206,60 @@ class DeviceSupervisor:
     async def _tick(self) -> None:
         sim_time = self.clock.next_time
         devices = [device for device in self.devices.values() if not device.failed]
-        await asyncio.gather(*(self._tick_device(device, sim_time) for device in devices))
+        tick_events = await asyncio.gather(*(self._tick_device(device, sim_time) for device in devices))
         self.clock.advance()
 
         # Po ticku, bo akcja zaczyna się w czasie ostatniego ticka urządzenia.
         due = [item for item in self._scheduled if item.command.start_at <= sim_time]
         self._scheduled = [item for item in self._scheduled if item.command.start_at > sim_time]
-        await asyncio.gather(*(
+        command_events = await asyncio.gather(*(
             self._run_scheduled(self.devices[item.device_id], item, sim_time) for item in due
         ))
+        # Jedna partia na tick: backend dostaje kwadrans w całości, a nie po jednym urządzeniu.
+        self._publish([event for events in (*tick_events, *command_events) for event in events])
 
-    async def _tick_device(self, device: ManagedDevice, sim_time: datetime) -> None:
+    async def _tick_device(self, device: ManagedDevice, sim_time: datetime) -> list[dict]:
         try:
             result = await self._forward(device, "/tick", payload={"sim_time": sim_time.isoformat()})
         except HubError as e:
-            self._record_device_error(device, sim_time, e)
-            return
-        self.events.extend({**event, "device_id": device.config.device_id} for event in result.get("events", []))
+            return [self._device_error(device, sim_time, e.code, e.detail)]
+        return self._tick_events(device, sim_time, result)
 
-    async def _run_scheduled(self, device: ManagedDevice, item: ScheduledCommand, sim_time: datetime) -> None:
+    async def _run_scheduled(self, device: ManagedDevice, item: ScheduledCommand, sim_time: datetime) -> list[dict]:
         try:
-            await self._forward(device, self._command_path(item.command))
+            await self._forward(device, self._command_path(item.command), payload={"command_id": item.command_id})
         except HubError as e:
-            self._record_device_error(device, sim_time, e)
+            return [self._device_error(device, sim_time, e.code, e.detail)]
+        return []
 
-    def _record_device_error(self, device: ManagedDevice, sim_time: datetime, error: HubError) -> None:
-        logger.warning("Błąd urządzenia %s: %s", device.config.device_id, error.detail)
-        self.events.append({
+    @staticmethod
+    def _tick_events(device: ManagedDevice, sim_time: datetime, result: dict) -> list[dict]:
+        """Zdarzenia urządzenia z odpowiedzi ticka i energy_report z energii kroku."""
+        device_id = device.config.device_id
+        events = [{**event, "device_id": device_id} for event in result.get("events", [])]
+        energy_kwh = result.get("energy_kwh") or 0.0
+        # Przedział od urządzenia, a nie od zegara: po pominiętym ticku krok urządzenia jest dłuższy niż kwadrans.
+        if energy_kwh and result.get("interval_start"):
+            events.append({
+                "type": "energy_report",
+                "device_id": device_id,
+                "sim_time": sim_time.isoformat(),
+                "data": {"interval_start": result["interval_start"], "energy_kwh": energy_kwh},
+            })
+        return events
+
+    @staticmethod
+    def _device_error(device: ManagedDevice, sim_time: datetime, code: str, message: str) -> dict:
+        logger.warning("Błąd urządzenia %s: %s", device.config.device_id, message)
+        return {
             "type": "device_error",
             "device_id": device.config.device_id,
             "sim_time": sim_time.isoformat(),
-            "data": {"code": error.code, "message": error.detail},
-        })
+            "data": {"code": code, "message": message},
+        }
+
+    def _publish(self, events: list[dict]) -> None:
+        self.publisher.publish(self.clock.simulation_id, events)
 
     async def _start_new_simulation(self, sim_time: datetime) -> None:
         devices = [device for device in self.devices.values() if not device.failed]
@@ -247,10 +281,13 @@ class DeviceSupervisor:
 
     async def _sync_time(self, device: ManagedDevice) -> None:
         """Tick z bieżącym czasem: dzięki niemu komenda zacznie się teraz, a nie przy kolejnym kroku."""
+        sim_time = self.clock.sim_time
         try:
-            await self._forward(device, "/tick", payload={"sim_time": self.clock.sim_time.isoformat()})
+            result = await self._forward(device, "/tick", payload={"sim_time": sim_time.isoformat()})
         except HubError as e:
             logger.warning("Urządzenie %s bez czasu symulacji: %s", device.config.device_id, e.detail)
+            return
+        self._publish(self._tick_events(device, sim_time, result))
 
     def _allocate_ports(self, count: int, used_ports: set[int]) -> list[int]:
         pool = range(self.settings.first_port, self.settings.last_port + 1)
@@ -288,6 +325,10 @@ class DeviceSupervisor:
             logger.error("Urządzenie %s nie wstało po %d restartach", device.config.device_id, device.restarts)
             device.failed = True
             await self._stop_process(device)
+            self._publish([self._device_error(
+                device, self.clock.sim_time, RESTART_LIMIT_CODE,
+                f"Urządzenie nie wstało po {device.restarts} restartach",
+            )])
             return
         device.restarts += 1
         logger.warning("Restart urządzenia %s (próba %d)", device.config.device_id, device.restarts)

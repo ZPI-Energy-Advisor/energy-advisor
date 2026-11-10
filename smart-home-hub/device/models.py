@@ -53,3 +53,9 @@ class StartupConfig(BaseModel):
 
 class TickRequest(BaseModel):
     sim_time: datetime
+
+
+class CommandContext(BaseModel):
+    """Opcjonalna treść poleceń startu: hub podaje command_id, które wraca w zdarzeniu device_started."""
+
+    command_id: str | None = None
