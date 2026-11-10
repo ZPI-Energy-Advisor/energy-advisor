@@ -76,7 +76,7 @@ export function Stepper({ field, value, onChange, min = 1, max = 20 }) {
 // Karty jednokrotnego wyboru z opisem (radio). Opcja może mieć oznaczenie `warning`.
 export function ChoiceCards({ field, name, options, value, onChange, columns = "sm:grid-cols-2" }) {
   return (
-    <div role="radiogroup" aria-labelledby={`${field.id}-label`} aria-describedby={field.describedBy} className={`grid gap-2 ${columns}`}>
+    <div id={field.id} role="radiogroup" aria-labelledby={`${field.id}-label`} aria-describedby={field.describedBy} className={`grid gap-2 ${columns}`}>
       {options.map((option) => {
         const checked = value === option.value;
         const tone = option.warning

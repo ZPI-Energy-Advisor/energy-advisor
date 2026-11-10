@@ -137,6 +137,10 @@ describe("ProfilePage", () => {
     expect(summary.textContent).toContain("Moc umowna: Moc umowna musi być większa niż 0 kW.");
     expect(summary.textContent).toContain("Cykl rozliczeniowy: Operator TAURON nie ma w cenniku");
     expect(screen.queryByText(/greater_than|Input should/)).toBeNull();
+    // Każdy link z listy prowadzi do istniejącego pola, także do pól z kilku przycisków (cykl).
+    for (const link of summary.querySelectorAll("a")) {
+      expect(document.getElementById(link.getAttribute("href").slice(1))).not.toBeNull();
+    }
   });
 
   it("zapisuje profil z liczbami wpisanymi z przecinkiem", async () => {

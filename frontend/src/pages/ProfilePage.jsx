@@ -314,13 +314,15 @@ function ProfilePage() {
             )}
           </Field>
           <Field {...field("base_info.phase_type", { group: true, hint: "Podana na fakturze lub na liczniku." })}>
-            {() => (
-              <SegmentedControl
-                label={FIELD_LABELS["base_info.phase_type"]}
-                options={[{ value: "1_phase", label: "1 faza" }, { value: "3_phase", label: "3 fazy" }]}
-                value={base.phase_type}
-                onChange={(value) => update("base_info", "phase_type", value)}
-              />
+            {(f) => (
+              <div id={f.id}>
+                <SegmentedControl
+                  label={FIELD_LABELS["base_info.phase_type"]}
+                  options={[{ value: "1_phase", label: "1 faza" }, { value: "3_phase", label: "3 fazy" }]}
+                  value={base.phase_type}
+                  onChange={(value) => update("base_info", "phase_type", value)}
+                />
+              </div>
             )}
           </Field>
           <Field {...field("base_info.contracted_power_kw", { hint: "Faktura, dane punktu poboru: „Moc umowna”." })}>
@@ -337,13 +339,15 @@ function ProfilePage() {
               ? `Ten operator nie oferuje cyklu ${currentCycle} mies. Dostępne: ${offeredCycles.join(", ")}.`
               : undefined)}
           >
-            {() => (
-              <SegmentedControl
-                label={FIELD_LABELS["base_info.billing_cycle"]}
-                options={cycleOptions}
-                value={currentCycle}
-                onChange={(value) => update("base_info", "billing_cycle", value)}
-              />
+            {(f) => (
+              <div id={f.id}>
+                <SegmentedControl
+                  label={FIELD_LABELS["base_info.billing_cycle"]}
+                  options={cycleOptions}
+                  value={currentCycle}
+                  onChange={(value) => update("base_info", "billing_cycle", value)}
+                />
+              </div>
             )}
           </Field>
           <Field {...field("base_info.billing_period_start_date", { hint: "Data „od” okresu rozliczeniowego z ostatniej faktury." })}>
@@ -376,10 +380,10 @@ function ProfilePage() {
           )}
           {dynamicOffer && (
             <Field {...field("consumption_and_tariff.dynamic_price", { wide: true, group: true, label: "Rodzaj umowy na energię" })}>
-              {() => (
+              {(f) => (
                 <>
                   <label className="flex items-start gap-2 font-medium text-gray-700">
-                    <input type="checkbox" className="mt-0.5 accent-emerald-600" checked={Boolean(tariff.dynamic_price)} onChange={handleDynamicPriceChange} disabled={!dynamicAllowed && !tariff.dynamic_price} />
+                    <input id={f.id} type="checkbox" className="mt-0.5 accent-emerald-600" checked={Boolean(tariff.dynamic_price)} onChange={handleDynamicPriceChange} disabled={!dynamicAllowed && !tariff.dynamic_price} />
                     Umowa z ceną dynamiczną ({dynamicOffer.name})
                   </label>
                   {tariff.dynamic_price && dynamicAllowed && (
