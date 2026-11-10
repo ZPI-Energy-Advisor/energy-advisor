@@ -1,9 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
-from app.api.v1.deps import get_home_owner, get_home_service
+from app.api.v1.deps import (
+    get_home_event_service,
+    get_home_owner,
+    get_home_service,
+    get_home_state_service,
+    require_hub_api_key,
+)
 from app.models.User import User
-from app.schemas.smart_home import HomeStatus
+from app.schemas.smart_home import HomeState, HomeStatus, HubEventBatch, HubEventsAccepted
+from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
+from app.services.home_state_service import HomeStateService
 
 
 
@@ -41,3 +49,26 @@ def disconnect_home(
 ):
     """Odłącza dom: hub dostaje pusty rejestr i zatrzymuje urządzenia."""
     return service.disconnect(owner)
+
+
+@router.get("/state", response_model=HomeState)
+def get_home_state(
+    owner: User = Depends(get_home_owner),
+    service: HomeStateService = Depends(get_home_state_service),
+):
+    """Zegar, stany i moc urządzeń z huba oraz zużycie i koszt od początku doby symulacji."""
+    return service.state(owner)
+
+
+@router.post(
+    "/events",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=HubEventsAccepted,
+    dependencies=[Depends(require_hub_api_key)],
+)
+def receive_hub_events(
+    batch: HubEventBatch,
+    service: HomeEventService = Depends(get_home_event_service),
+):
+    """Webhook huba: partia zdarzeń urządzeń. """
+    return service.ingest(batch)

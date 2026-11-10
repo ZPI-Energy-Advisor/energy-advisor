@@ -12,6 +12,7 @@ from app.api.v1.tariffs import router as tariffs_router
 from app.api.v1.users import router as users_router
 from app.api.v1.home import router as home_router
 from app.config import CORS_ORIGINS
+from app.core.errors import register_error_handlers
 from app.core.smart_home_factory import build_app_hub_client
 
 
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Energy Advisor API", lifespan=lifespan)
+register_error_handlers(app)
 # Stan bez lifespanu (np. TestClient użyty bez `with`): Smart Home wyłączony.
 app.state.hub_client = None
 

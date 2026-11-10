@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,7 @@ class SimClock:
     def __init__(self):
         midnight = datetime.now(SIM_TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0)
         self._now = midnight.astimezone(timezone.utc)
+        self.simulation_id = self._new_simulation_id()
         self.running = False
         self.speed = DEFAULT_SPEED
         self._step_left = TICK_STEP.total_seconds()
@@ -39,10 +41,17 @@ class SimClock:
         return moment.astimezone(timezone.utc) == self._now
 
     def state(self) -> dict:
-        return {"sim_time": self.sim_time.isoformat(), "running": self.running, "speed": self.speed}
+        return {
+            "sim_time": self.sim_time.isoformat(),
+            "running": self.running,
+            "speed": self.speed,
+            "simulation_id": self.simulation_id,
+        }
 
     def set_time(self, sim_time: datetime) -> None:
+        """Zaczyna nowy przebieg symulacji od `sim_time`."""
         self._now = sim_time.astimezone(timezone.utc)
+        self.simulation_id = self._new_simulation_id()
         self._step_left = TICK_STEP.total_seconds()
         self._changed.set()
 
@@ -76,3 +85,7 @@ class SimClock:
             self._step_left -= (time.monotonic() - started) * speed
         self._step_left = TICK_STEP.total_seconds()
         await asyncio.sleep(0)  # Przy kroku krótszym niż tick pętla nie może zagłodzić serwera.
+
+    @staticmethod
+    def _new_simulation_id() -> str:
+        return f"sim_{uuid.uuid4().hex}"

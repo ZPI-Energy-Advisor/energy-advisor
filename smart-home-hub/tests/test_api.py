@@ -171,3 +171,12 @@ def test_reset_returns_device_to_initial_state(client):
     assert client.get("/energy").json()["last_action"] is None
     assert _tick(client, "2026-10-19T08:00:00+02:00").status_code == 200
     assert _tick(client, "2026-10-19T08:15:00+02:00").json()["events"] == []
+
+
+def test_start_command_accepts_command_id(client):
+    _tick(client, "2026-10-19T13:00:00+02:00")
+
+    assert client.post("/programs/cotton_60/start", json={"command_id": "cmd_7f3a2c"}).status_code == 200
+
+    started, = _tick(client, "2026-10-19T13:15:00+02:00").json()["events"]
+    assert started["data"]["command_id"] == "cmd_7f3a2c"

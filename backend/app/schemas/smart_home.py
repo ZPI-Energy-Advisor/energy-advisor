@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 
@@ -109,6 +109,8 @@ class HubClock(BaseModel):
     sim_time: datetime
     running: bool
     speed: float
+    # Przebieg symulacji: zmienia go ustawienie czasu i restart huba.
+    simulation_id: str | None = None
 
 
 class HubEventType(str, Enum):
@@ -118,16 +120,94 @@ class HubEventType(str, Enum):
     DEVICE_ERROR = "device_error"
 
 
+# Hub wysyła partie po 500 zdarzeń; limit chroni backend przed jednym ogromnym żądaniem.
+MAX_EVENTS_PER_BATCH = 1000
+
+
+class EnergyReport(BaseModel):
+    """`data` zdarzenia energy_report: energia urządzenia w kroku [interval_start, sim_time)."""
+
+    interval_start: AwareDatetime
+    energy_kwh: float = Field(allow_inf_nan=False)
+
+
 class HubEvent(BaseModel):
-    event_id: str
-    type: HubEventType
-    device_id: str
-    sim_time: datetime
+    """Zdarzenie z webhooka huba. Typ spoza HubEventType jest przyjmowany i zapisywany bez interpretacji,
+    żeby nowszy hub nie tracił całej partii, w tym energii."""
+
+    event_id: str = Field(min_length=1, max_length=64)
+    simulation_id: str = Field(min_length=1, max_length=64)
+    type: str = Field(min_length=1, max_length=32)
+    device_id: str = Field(min_length=1, max_length=100)
+    sim_time: AwareDatetime
     data: dict[str, Any] = {}
+
+    @model_validator(mode="after")
+    def validate_energy_report(self):
+        report = self.energy_report
+        if report is not None and report.interval_start >= self.sim_time:
+            raise ValueError("interval_start musi być wcześniejszy niż sim_time")
+        return self
+
+    @property
+    def energy_report(self) -> EnergyReport | None:
+        if self.type != HubEventType.ENERGY_REPORT.value:
+            return None
+        return EnergyReport.model_validate(self.data)
 
 
 class HubEventBatch(BaseModel):
-    events: list[HubEvent]
+    events: list[HubEvent] = Field(max_length=MAX_EVENTS_PER_BATCH)
+
+
+class HubEventsAccepted(BaseModel):
+    accepted: int  # Zapisane teraz.
+    duplicates: int  # Zapisane już wcześniej (ponowiona partia), pominięte.
+
+
+class HomeClockState(BaseModel):
+    sim_time: datetime
+    running: bool
+    speed: float
+
+
+class HomeDeviceState(BaseModel):
+    device_id: str
+    device_name: str
+    state: DeviceState
+    program_id: str | None = None
+    program_started_at: datetime | None = None
+    program_ends_at: datetime | None = None
+    power_kw: float | None = None
+    # Z zdarzeń energy_report bieżącej doby symulacji, a nie z licznika huba, który zeruje restart urządzenia.
+    energy_today_kwh: float
+
+
+class HomePower(BaseModel):
+    consumption_kw: float
+    production_kw: float
+    net_kw: float  # Pobór z sieci (dodatni) albo oddawanie do sieci (ujemny).
+
+
+class HomeEnergyToday(BaseModel):
+    day_start: datetime
+    until: datetime
+    consumption_kwh: float
+    production_kwh: float
+    net_kwh: float
+    # Energia pobrana z sieci (dodatni bilans kwadransu) w cenach kwadransów taryfy z profilu, bez opłat stałych.
+    grid_import_kwh: float
+    cost_pln: float | None = None
+    cost_error: str | None = None
+
+
+class HomeState(BaseModel):
+    hub_available: bool
+    simulation_id: str | None = None
+    clock: HomeClockState | None = None
+    power: HomePower | None = None
+    devices: list[HomeDeviceState] = []
+    today: HomeEnergyToday | None = None
 
 
 class HomeSyncStatus(str, Enum):

@@ -70,6 +70,7 @@ services:
     restart: always
     environment:
       - HUB_API_KEY=${HUB_API_KEY:-}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
     volumes:
       - hub_data:/data
 

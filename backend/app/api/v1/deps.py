@@ -13,6 +13,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
+from app.repositories.home_event_repository import HomeEventRepository
 from app.repositories.home_repository import HomeRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.tariff_repository import TariffRepository
@@ -24,7 +25,9 @@ from app.services.new_calculations_service import CalculationsService
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
+from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
+from app.services.home_state_service import HomeStateService
 from app.services.price_sync_service import PriceSyncService
 from app.services.pricing_strategies import build_pricing_strategies
 from app.services.simulation_service import SimulationService
@@ -35,8 +38,9 @@ from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
-from app.clients.hub_client import HubClient
-from app.config import HUB_HOME_USER_EMAIL, PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
+from app.clients.hub_client import API_KEY_HEADER, HubClient
+from app.config import HUB_API_KEY, HUB_HOME_USER_EMAIL, PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
+from app.core.errors import ContractError
 
 
 
@@ -170,6 +174,23 @@ def get_home_service(
     return HomeService(HomeRepository(db), hub_client, owner_email)
 
 
+def get_hub_api_key() -> str | None:
+    return HUB_API_KEY
+
+
+def require_hub_api_key(
+    x_hub_api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    api_key: str | None = Depends(get_hub_api_key),
+) -> None:
+    provided = (x_hub_api_key or "").encode()
+    if not api_key or not secrets.compare_digest(provided, api_key.encode()):
+        raise ContractError(status.HTTP_401_UNAUTHORIZED, "invalid_api_key", "Brak albo błędny X-Hub-Api-Key")
+
+
+def get_home_event_service(db: Session = Depends(get_db)) -> HomeEventService:
+    return HomeEventService(HomeEventRepository(db), HomeRepository(db))
+
+
 def get_schedule_price_service(
     user_repository: UserRepository = Depends(get_user_repository),
     tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
@@ -178,6 +199,14 @@ def get_schedule_price_service(
     return SchedulePriceService(
         user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository)
     )
+
+
+def get_home_state_service(
+    db: Session = Depends(get_db),
+    hub_client: HubClient | None = Depends(get_hub_client),
+    price_service: SchedulePriceService = Depends(get_schedule_price_service),
+) -> HomeStateService:
+    return HomeStateService(HomeRepository(db), HomeEventRepository(db), hub_client, price_service)
 
 
 def get_energy_file_service(

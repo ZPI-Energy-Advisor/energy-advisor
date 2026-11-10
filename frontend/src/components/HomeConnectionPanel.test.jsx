@@ -42,6 +42,24 @@ describe("HomeConnectionPanel", () => {
     expect(screen.queryByRole("button", { name: "Wyślij urządzenia ponownie" })).toBeNull();
   });
 
+  it("w trakcie podłączania pokazuje kręcące się kółko i blokuje przycisk", async () => {
+    vi.spyOn(apiClient, "get").mockResolvedValue({ data: DISCONNECTED });
+    let finish;
+    vi.spyOn(apiClient, "post").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Podłącz dom" }));
+
+    const busy = screen.getByRole("button", { name: "Podłączanie..." });
+    expect(busy.disabled).toBe(true);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.querySelector(".animate-spin")).toBeTruthy();
+
+    finish({ data: CONNECTED });
+    expect(await screen.findByRole("button", { name: "Odłącz dom" })).toBeTruthy();
+    expect(document.querySelector(".animate-spin")).toBeNull();
+  });
+
   it("przy zaległej wysyłce pokazuje powód i pozwala ją ponowić", async () => {
     const pending = { ...CONNECTED, sync: { status: "pending", synced_at: null, error: UNAVAILABLE } };
     vi.spyOn(apiClient, "get").mockResolvedValue({ data: pending });

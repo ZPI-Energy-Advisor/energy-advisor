@@ -3,7 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from device.driver import DeviceDriver, DeviceError
-from device.models import TickRequest
+from device.models import CommandContext, TickRequest
 
 
 
@@ -42,8 +42,8 @@ def create_app(driver: DeviceDriver) -> FastAPI:
         return driver.status()
 
     @app.post("/on")
-    async def turn_on():
-        driver.turn_on()
+    async def turn_on(context: CommandContext | None = None):
+        driver.turn_on(context.command_id if context else None)
         return driver.status()
 
     @app.post("/off")
@@ -52,8 +52,8 @@ def create_app(driver: DeviceDriver) -> FastAPI:
         return driver.status()
 
     @app.post("/programs/{program_id}/start")
-    async def start_program(program_id: str):
-        driver.start_program(program_id)
+    async def start_program(program_id: str, context: CommandContext | None = None):
+        driver.start_program(program_id, context.command_id if context else None)
         return driver.status()
 
     @app.get("/energy")

@@ -34,6 +34,8 @@ class Action:
     # None: akcja rozpoczęta przed pierwszym tickiem, zacznie się w czasie pierwszego ticka.
     started_at: datetime | None
     energy_kwh: float = 0.0
+    # Polecenie huba, które zaczęło akcję; wraca w zdarzeniu device_started.
+    command_id: str | None = None
 
 
 class DeviceDriver:
@@ -57,7 +59,7 @@ class DeviceDriver:
         self._action: Action | None = None
         self._events: list[dict] = []
 
-    def turn_on(self) -> None:
+    def turn_on(self, command_id: str | None = None) -> None:
         if self._program_running():
             raise DeviceError(409, "invalid_state", "Trwa program urządzenia")
         if self.state == RUNNING:
@@ -66,7 +68,7 @@ class DeviceDriver:
             self.state = IDLE
         else:
             self.state = RUNNING
-            self._begin_action(None)
+            self._begin_action(None, command_id)
 
     def turn_off(self) -> None:
         if self._action is not None:
@@ -74,14 +76,14 @@ class DeviceDriver:
             self._finish_action(ended_at, interrupted=self._program_running())
         self.state = OFF
 
-    def start_program(self, program_id: str) -> None:
+    def start_program(self, program_id: str, command_id: str | None = None) -> None:
         program = next((p for p in self.config.programs if p.program_id == program_id), None)
         if program is None:
             raise DeviceError(404, "program_not_found", f"Urządzenie nie ma programu {program_id!r}")
         if self._program_running():
             raise DeviceError(409, "invalid_state", "Trwa inny program urządzenia")
         self.state = RUNNING
-        self._begin_action(program)
+        self._begin_action(program, command_id)
 
     def tick(self, sim_time: datetime) -> dict:
         if sim_time.tzinfo is None:
@@ -91,11 +93,12 @@ class DeviceDriver:
             raise DeviceError(409, "stale_tick", "sim_time jest wcześniejszy niż ostatni tick")
         if now == self._sim_time:
             # Ponowiony tick. Zdarzenia z komend czekają na następny krok czasu.
-            return self._tick_result(0.0, [])
+            return self._tick_result(0.0, [], interval_start=now)
 
         self._display_tz = sim_time.tzinfo
         energy_kwh = 0.0
-        if self._sim_time is None:
+        previous = self._sim_time
+        if previous is None:
             self._sim_time = now
             if self._action is not None:
                 self._action.started_at = now
@@ -105,7 +108,7 @@ class DeviceDriver:
             self._sim_time = now
 
         events, self._events = self._events, []
-        return self._tick_result(energy_kwh, events)
+        return self._tick_result(energy_kwh, events, interval_start=previous)
 
     def status(self) -> dict:
         action = self._action
@@ -143,8 +146,8 @@ class DeviceDriver:
     def _program_running(self) -> bool:
         return self._action is not None and self._action.program is not None
 
-    def _begin_action(self, program: Program | None) -> None:
-        self._action = Action(program=program, started_at=self._sim_time)
+    def _begin_action(self, program: Program | None, command_id: str | None) -> None:
+        self._action = Action(program=program, started_at=self._sim_time, command_id=command_id)
         if self._sim_time is not None:
             self._emit_started(self._action)
 
@@ -199,17 +202,19 @@ class DeviceDriver:
 
     def _emit_started(self, action: Action) -> None:
         program_id = action.program.program_id if action.program else None
-        self._emit("device_started", action.started_at, {"program_id": program_id})
+        self._emit("device_started", action.started_at, {"program_id": program_id, "command_id": action.command_id})
 
     def _emit(self, event_type: str, sim_time: datetime, data: dict) -> None:
         self._events.append({"type": event_type, "sim_time": self._format(sim_time), "data": data})
 
-    def _tick_result(self, energy_kwh: float, events: list[dict]) -> dict:
+    def _tick_result(self, energy_kwh: float, events: list[dict], interval_start: datetime | None) -> dict:
+        """`interval_start`: początek kroku, za który jest `energy_kwh`; None przy pierwszym ticku."""
         return {
             "device_id": self.config.device_id,
             "state": self.state,
             "power_kw": self._rounded(self._power_kw()),
             "energy_kwh": self._rounded(energy_kwh),
+            "interval_start": self._format(interval_start),
             "events": events,
         }
 
