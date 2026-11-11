@@ -133,7 +133,8 @@ describe("HomePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Odłącz dom" }));
 
     expect(await screen.findByRole("button", { name: "Podłącz dom" })).toBeTruthy();
-    expect(screen.queryByTestId("sim-time")).toBeNull();
+    // Strona dowiaduje się o odłączeniu z efektu panelu, więc widok znika po kolejnym renderze.
+    await waitFor(() => expect(screen.queryByTestId("sim-time")).toBeNull());
     expect(screen.queryByRole("region", { name: "Urządzenia" })).toBeNull();
     expect(get.mock.calls.filter(([url]) => url === "/home/state")).toHaveLength(1);
   });

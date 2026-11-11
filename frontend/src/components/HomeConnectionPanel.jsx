@@ -16,6 +16,20 @@ const devicesLabel = (count) => {
   return `${count} ${few ? "urządzenia" : "urządzeń"}`;
 };
 
+// Kręcące się kółko na przycisku w trakcie akcji: podłączenie czeka, aż hub uruchomi urządzenia (kilka sekund).
+function Spinner() {
+  return <span aria-hidden="true" className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />;
+}
+
+function ActionButton({ className, onClick, disabled, busy, busyLabel, children }) {
+  return (
+    <button type="button" className={`${className} inline-flex items-center justify-center gap-2`} onClick={onClick} disabled={disabled} aria-busy={busy}>
+      {busy && <Spinner />}
+      {busy ? busyLabel : children}
+    </button>
+  );
+}
+
 // Dom symulowany przez hub Smart Home. Widzi go tylko właściciel (HUB_HOME_USER_EMAIL).
 // Stan jest pobierany ponownie po każdej zmianie listy plików, bo import i usunięcie pliku
 // właściciela wysyłają rejestr urządzeń do huba. `onStatusChange` dostaje każdy nowy stan podłączenia.
@@ -25,7 +39,8 @@ function HomeConnectionPanel({ onStatusChange }) {
   const isOwner = Boolean(me?.home_owner);
   const [home, setHome] = useState(null);
   const [error, setError] = useState(null);
-  const [isBusy, setIsBusy] = useState(false);
+  // Akcja w toku: "connect", "resend" albo "disconnect"; blokuje wszystkie przyciski.
+  const [busyAction, setBusyAction] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
@@ -52,8 +67,8 @@ function HomeConnectionPanel({ onStatusChange }) {
     };
   }, [isOwner, files, reloadKey]);
 
-  const run = async (request, fallback) => {
-    setIsBusy(true);
+  const run = async (action, request, fallback) => {
+    setBusyAction(action);
     try {
       const { data } = await request();
       setHome(data);
@@ -61,12 +76,13 @@ function HomeConnectionPanel({ onStatusChange }) {
     } catch (err) {
       setError(getApiErrorMessage(err, fallback));
     } finally {
-      setIsBusy(false);
+      setBusyAction(null);
     }
   };
 
-  const connect = () => run(() => apiClient.post("/home/connect"), "Nie udało się podłączyć domu.");
-  const disconnect = () => run(() => apiClient.delete("/home"), "Nie udało się odłączyć domu.");
+  const connect = (action = "connect") => run(action, () => apiClient.post("/home/connect"), "Nie udało się podłączyć domu.");
+  const disconnect = () => run("disconnect", () => apiClient.delete("/home"), "Nie udało się odłączyć domu.");
+  const isBusy = busyAction !== null;
 
   if (!isOwner) return null;
 
@@ -90,18 +106,18 @@ function HomeConnectionPanel({ onStatusChange }) {
             {home.connected ? (
               <>
                 {pending && (
-                  <button type="button" className={PRIMARY} onClick={connect} disabled={isBusy}>
+                  <ActionButton className={PRIMARY} onClick={() => connect("resend")} disabled={isBusy} busy={busyAction === "resend"} busyLabel="Wysyłanie...">
                     Wyślij urządzenia ponownie
-                  </button>
+                  </ActionButton>
                 )}
-                <button type="button" className={SECONDARY} onClick={disconnect} disabled={isBusy}>
+                <ActionButton className={SECONDARY} onClick={disconnect} disabled={isBusy} busy={busyAction === "disconnect"} busyLabel="Odłączanie...">
                   Odłącz dom
-                </button>
+                </ActionButton>
               </>
             ) : (
-              <button type="button" className={PRIMARY} onClick={connect} disabled={isBusy}>
+              <ActionButton className={PRIMARY} onClick={() => connect()} disabled={isBusy} busy={busyAction === "connect"} busyLabel="Podłączanie...">
                 Podłącz dom
-              </button>
+              </ActionButton>
             )}
           </div>
         )}

@@ -203,6 +203,9 @@ def test_options_list_tariffs_and_cycles(client_a, pge_rates):
     assert "G13" not in codes
     assert codes["G12"]["name"] == "G12"
     assert codes["G12"]["billing_cycles"] == [1, 2, 6]
+    assert codes["G11"]["zones_description"] == "jedna cena przez całą dobę"
+    assert codes["G12"]["zones_description"] == "tańsza energia zimą (X–III) 13–15 i 22–6, latem (IV–IX) 15–17 i 22–6"
+    assert codes["G12w"]["zones_description"] == "tańsza energia 13–15 i 22–6 oraz cały weekend i święta"
     assert codes["G12"]["available_from"] <= "2031-01-01"
     assert codes["G12"]["available_to"] >= "2031-12-31"
     offer = data["dynamic_offer"]
@@ -229,16 +232,20 @@ def test_profile_rejects_tariff_operator_does_not_compute(client_a, pge_rates):
     response = client_a.put("/api/v1/users/me/profile", json=profile_payload(tariff_type="G13"))
 
     assert response.status_code == 422
-    assert "G13" in response.json()["detail"]
-    assert "G12w" in response.json()["detail"]
+    [error] = response.json()["detail"]
+    assert error["loc"] == ["body", "consumption_and_tariff", "tariff_type"]
+    assert "G13" in error["msg"]
+    assert "G12w" in error["msg"]
 
 
 def test_profile_rejects_billing_cycle_operator_does_not_offer(client_a, pge_rates):
     response = client_a.put("/api/v1/users/me/profile", json=profile_payload(billing_cycle=12))
 
     assert response.status_code == 422
-    assert "12" in response.json()["detail"]
-    assert "1, 2, 6" in response.json()["detail"]
+    [error] = response.json()["detail"]
+    assert error["loc"] == ["body", "base_info", "billing_cycle"]
+    assert "12" in error["msg"]
+    assert "1, 2, 6" in error["msg"]
 
 
 def test_profile_accepts_offered_tariff_and_cycle(client_a, pge_rates):
@@ -266,4 +273,6 @@ def test_profile_accepts_dynamic_price_only_with_group_allowed_by_offer(client_a
     assert client_a.put("/api/v1/users/me/profile", json=allowed).status_code == 200
     response = client_a.put("/api/v1/users/me/profile", json=not_allowed)
     assert response.status_code == 422
-    assert "Dostępne grupy: G11, G12" in response.json()["detail"]
+    [error] = response.json()["detail"]
+    assert error["loc"] == ["body", "consumption_and_tariff", "dynamic_price"]
+    assert "Dostępne grupy: G11, G12" in error["msg"]

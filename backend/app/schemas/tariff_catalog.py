@@ -104,6 +104,8 @@ class TariffCatalogResponse(BaseModel):
 class TariffOptionOut(BaseModel):
     code: str
     name: str
+    # Krótki opis stref z najnowszego cennika, np. „tańsza energia 13–15 i 22–6”.
+    zones_description: str | None = None
     billing_cycles: list[int]
     available_from: date
     available_to: date

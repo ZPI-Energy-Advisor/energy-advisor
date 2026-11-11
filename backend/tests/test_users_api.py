@@ -132,7 +132,12 @@ def test_outdated_profile_needs_update(client_a, user_a, db, tariffs):
     me = client_a.get("/api/v1/users/me").json()
 
     assert me["profile"] == {"exists": True, "needs_update": True, "tariff_type": "G12"}
-    assert client_a.get("/api/v1/users/me/profile").status_code == 409
+    response = client_a.get("/api/v1/users/me/profile")
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["message"] == "Profil użytkownika wymaga ponownego uzupełnienia."
+    assert detail["fields"] == ["base_info.billing_period_start_date"]
+    assert detail["profile"]["base_info"]["postal_code"] == outdated["base_info"]["postal_code"]
 
 
 def test_dynamic_profile_tariff_points_to_dynamic_tariff(client_a, tariffs):

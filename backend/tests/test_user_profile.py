@@ -131,8 +131,10 @@ def test_service_rejects_tariff_missing_in_rates():
         service.save_profile(MagicMock(id=uuid4()), valid_profile(consumption_and_tariff={"tariff_type": "G13"}))
 
     assert error.value.status_code == 422
-    assert "G13" in error.value.detail
-    assert "G11, G12" in error.value.detail
+    [field_error] = error.value.detail
+    assert field_error["loc"] == ["body", "consumption_and_tariff", "tariff_type"]
+    assert "G13" in field_error["msg"]
+    assert "G11, G12" in field_error["msg"]
     repository.create_profile.assert_not_called()
 
 
@@ -145,7 +147,9 @@ def test_service_rejects_billing_cycle_missing_in_rates():
         service.save_profile(MagicMock(id=uuid4()), profile)
 
     assert error.value.status_code == 422
-    assert "12" in error.value.detail
+    [field_error] = error.value.detail
+    assert field_error["loc"] == ["body", "base_info", "billing_cycle"]
+    assert "12" in field_error["msg"]
     repository.create_profile.assert_not_called()
 
 
