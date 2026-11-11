@@ -8,6 +8,7 @@ import SchedulePage from "./pages/SchedulePage";
 import DynamicPricesPage from "./pages/DynamicPricesPage";
 import ProfilePage from "./pages/ProfilePage";
 import CalculationResultsPage from "./pages/CalculationResultsPage";
+import HomePage from "./pages/HomePage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -30,6 +31,7 @@ function App() {
             <Route path="/calculations" element={<CalculationResultsPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/prices" element={<DynamicPricesPage />} />
+            <Route path="/home" element={<HomePage />} />
           </Route>
         </Route>
       </Routes>

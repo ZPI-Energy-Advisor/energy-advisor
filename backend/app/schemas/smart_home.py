@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
@@ -171,9 +171,39 @@ class HomeClockState(BaseModel):
     speed: float
 
 
+class HomeClockUpdate(BaseModel):
+    """Zmiana zegara z ekranu domu; pominięte pola zostają bez zmian.
+
+    `day` ustawia czas symulacji na północ tej doby w strefie domu i zaczyna nowy przebieg.
+    Backend liczy północ sam, bo doba ze zmianą czasu ma inne przesunięcie strefy niż dzień dzisiejszy.
+    """
+
+    day: date | None = None
+    running: bool | None = None
+    speed: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_not_empty(self):
+        if self.day is None and self.running is None and self.speed is None:
+            raise ValueError("Podaj co najmniej jedno z pól: day, running, speed")
+        return self
+
+
+class HomeDeviceProgram(BaseModel):
+    program_id: str
+    program_name: str
+    duration_min: int
+
+
 class HomeDeviceState(BaseModel):
     device_id: str
     device_name: str
+    # Z rejestru w bazie; None, gdy hub ma urządzenie, którego rejestr jeszcze nie odzwierciedla
+    # (np. zaległa wysyłka po usunięciu pliku).
+    device_type: str | None = None
+    device_category: str | None = None
+    flexibility_mode: str | None = None
+    programs: list[HomeDeviceProgram] = []
     state: DeviceState
     program_id: str | None = None
     program_started_at: datetime | None = None

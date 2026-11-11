@@ -11,12 +11,20 @@ import {
   FiUser,
   FiDollarSign,
   FiClock,
+  FiZap,
 } from "react-icons/fi";
 import apiClient, { clearAuth } from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
 import { CurrentUserProvider } from "../context/CurrentUserProvider";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 
-function Layout() {
+const HOME_NAV_ITEM = {
+  path: "/home",
+  label: "Mój dom",
+  icon: <FiZap className="mr-3 text-lg" />,
+};
+
+function LayoutShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -39,6 +47,8 @@ function Layout() {
   };
 
   const isActive = (path) => location.pathname === path;
+  // Dom Smart Home ma jednego właściciela (HUB_HOME_USER_EMAIL); pozostali nie widzą tej pozycji.
+  const { me } = useCurrentUser();
 
   const navItems = [
     {
@@ -76,6 +86,7 @@ function Layout() {
       label: "Optymalizacja",
       icon: <FiClock className="mr-3 text-lg" />,
     },
+    ...(me?.home_owner ? [HOME_NAV_ITEM] : []),
   ];
 
   const closeSidebar = () => setIsSidebarOpen(false);
@@ -141,15 +152,21 @@ function Layout() {
       </div>
 
       <div className="flex-1 p-4 md:p-10 overflow-y-auto h-full w-full">
-        {/* Provider w Layoucie przeżywa przejścia między stronami, więc wybrany
-            plik, jego dane i konto użytkownika zostają przy nawigacji Dashboard <-> wyniki. */}
-        <CurrentUserProvider>
-          <EnergyFileProvider>
-            <Outlet />
-          </EnergyFileProvider>
-        </CurrentUserProvider>
+        <Outlet />
       </div>
     </div>
+  );
+}
+
+// Providery w Layoucie przeżywają przejścia między stronami, więc wybrany plik, jego dane i konto
+// użytkownika zostają przy nawigacji. Obejmują też menu, które zależy od konta (pozycja „Mój dom”).
+function Layout() {
+  return (
+    <CurrentUserProvider>
+      <EnergyFileProvider>
+        <LayoutShell />
+      </EnergyFileProvider>
+    </CurrentUserProvider>
   );
 }
 

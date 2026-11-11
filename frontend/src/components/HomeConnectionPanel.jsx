@@ -18,8 +18,8 @@ const devicesLabel = (count) => {
 
 // Dom symulowany przez hub Smart Home. Widzi go tylko właściciel (HUB_HOME_USER_EMAIL).
 // Stan jest pobierany ponownie po każdej zmianie listy plików, bo import i usunięcie pliku
-// właściciela wysyłają rejestr urządzeń do huba.
-function HomeConnectionPanel() {
+// właściciela wysyłają rejestr urządzeń do huba. `onStatusChange` dostaje każdy nowy stan podłączenia.
+function HomeConnectionPanel({ onStatusChange }) {
   const { me } = useCurrentUser();
   const { files } = useEnergyFiles();
   const isOwner = Boolean(me?.home_owner);
@@ -28,6 +28,10 @@ function HomeConnectionPanel() {
   const [isBusy, setIsBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
+
+  useEffect(() => {
+    if (home) onStatusChange?.(home);
+  }, [home, onStatusChange]);
 
   useEffect(() => {
     if (!isOwner) return undefined;
