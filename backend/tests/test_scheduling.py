@@ -13,6 +13,7 @@ from app.services.scheduling import (
     CONFLICT,
     FIXED,
     GRID_LIMIT,
+    INTERRUPTIBLE,
     MISSING_PRICES,
     MOVED,
     OUTSIDE_WINDOW,
@@ -341,28 +342,37 @@ def test_dst_day_has_100_quarters_and_action_can_use_the_repeated_hour():
 def test_energy_of_each_action_is_preserved():
     with DEMO_FILE.open("rb") as handle:
         devices = parse_energy_file(handle).devices
-    actions = actions_from_devices(devices)
+    all_actions = actions_from_devices(devices)
+    # Produkcja PV jest tylko obciążeniem domu: nie ma jej w wyniku.
+    actions = [item for item in all_actions if not item.load_only]
     start = min(item.start for item in actions)
     all_prices = {start + index * SLOT: 1.0 + (index % 96) / 96 for index in range(96 * 33)}
 
-    result = schedule(actions, all_prices)
+    result = schedule(all_actions, all_prices)
 
     moved = by_id(result)
     assert sum(sum(item.profile_kwh) for item in result.actions) == pytest.approx(sum(sum(a.profile_kwh) for a in actions))
-    assert all(moved[item.action_id].profile_kwh == item.profile_kwh for item in actions)
+    # Przesunięcie nie zmienia profilu; ładowanie EV może go poszatkować, ale z tą samą energią.
+    assert all(moved[item.action_id].profile_kwh == item.profile_kwh for item in actions if item.mode != INTERRUPTIBLE)
+    assert all(
+        sum(moved[item.action_id].profile_kwh) == pytest.approx(sum(item.profile_kwh))
+        for item in actions if item.mode == INTERRUPTIBLE
+    )
     assert all(
         item.start == moved[item.action_id].original_start for item in actions if item.mode == FIXED
     )
     assert result.cost_after < result.cost_before
 
 
-def test_actions_from_devices_links_dryer_and_skips_pv():
+def test_actions_from_devices_links_dryer_and_keeps_pv_only_as_load():
     with DEMO_FILE.open("rb") as handle:
         devices = parse_energy_file(handle).devices
 
     actions = actions_from_devices(devices)
 
-    assert not any(item.device_id == "dev_pv_01" for item in actions)
+    pv = [item for item in actions if item.device_id == "dev_pv_01"]
+    assert pv and all(item.load_only for item in pv)
+    assert not any(item.device_id == "dev_pv_01" for item in schedule(actions, {}).actions)
     dryers = [item for item in actions if item.device_id == "dev_td_01"]
     assert dryers and all(item.after_action_id for item in dryers)
 

@@ -10,10 +10,37 @@ schedule(actions, prices, max_grid_kw=None) -> ScheduleResult
 
 - `actions`: lista `ScheduleAction`; z pliku urządzeń buduje ją `actions_from_devices`.
 - `prices`: słownik początek kwadransa (UTC) → cena za kWh. Dziś ceny taryfy dynamicznej.
-- `max_grid_kw`: limit przyłącza; `None` go wyłącza.
+- `max_grid_kw`: limit przyłącza; `None` go wyłącza. Ekran Optymalizacja podaje moc umowną z profilu.
 
-Na razie obsługiwane są tryby `fixed` i `shiftable`. `interruptible` (EV) zostaje jako `fixed`.
+Obsługiwane są tryby `fixed`, `shiftable` i `interruptible` (ładowanie EV).
 Produkcja PV nie trafia na wejście, bo w wycenie nie pomniejsza zużycia.
+
+## Ładowanie EV (`interruptible`)
+
+Sesja ładowania ma energię i okno: od `plugged_in` do `deadline` z pliku, także po końcu
+analizowanego okresu, bo energia sesji należy do doby, w której się zaczęła. `allowed_window`
+ładowarki nie ogranicza sesji: okno sesji to faktyczny czas podłączenia auta.
+
+Energię sesji dzielimy na najtańsze kwadranse okna (przy równej cenie na wcześniejsze). Kwadrans
+przyjmuje najwyżej `max_power_kw × 0,25 h` (bez mocy urządzenia: najmocniejszy kwadrans sesji)
+i tyle, ile zostało pod `max_grid_kw`. Plan może mieć przerwy; wynik zwraca go jako profil od
+pierwszego kwadransu ładowania z zerami w przerwach, a oryginał w `original_profile_kwh`.
+Plan, który nie jest tańszy od oryginału (np. przy płaskiej cenie), zostaje jak w pliku.
+
+## Obciążenie domu i limit przyłącza
+
+Limit liczymy jak licznik: pobór z sieci to zużycie pracujących urządzeń minus bieżąca produkcja PV.
+Akcje `load_only` tylko obciążają dom: produkcja PV z pliku (ujemna) oraz akcje z doby przed i po
+okresie (urządzenia pracujące, gdy akcja z poprzedniej doby trwa po północy albo ładowanie EV sięga
+za koniec okresu). Nie przesuwają się, nie mają kosztu i nie trafiają do wyniku. Ekran Optymalizacja
+podaje jako limit moc umowną z profilu.
+
+Rachunek „przed” i „po” liczy te same kwadranse: okres i jego ogon do końca najpóźniejszej akcji,
+z zerami tam, gdzie brakuje odczytów, żeby żaden nie dostał dodatkowej doby opłat stałych.
+
+Sesje układamy po wszystkich grupach, bo są najbardziej elastyczne i dopasowują się do reszty
+domu. Sesja, której energia nie mieści się w oknie pod limitem, zostaje w oryginalnym kształcie
+jako konflikt `grid_limit`; sesja bez cen oryginału zostaje bez zmian (`missing_prices`).
 
 ## Reguły
 
