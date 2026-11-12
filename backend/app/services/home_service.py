@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 UNAVAILABLE_MESSAGE = "Hub Smart Home jest niedostępny. Urządzenia zostaną wysłane przy kolejnej operacji."
 AUTH_MESSAGE = "Hub Smart Home odrzucił klucz HUB_API_KEY. Sprawdź konfigurację backendu i huba."
+DISABLED_MESSAGE = "Symulacja Smart Home jest wyłączona."
+NOT_CONNECTED_MESSAGE = "Dom nie jest podłączony. Podłącz dom, żeby zobaczyć jego stan."
+
+
+def require_connected(home: HomeConnection, owner: User) -> None:
+    """Stan domu i sterowanie nim mają sens tylko dla domu podłączonego przez właściciela."""
+    if home.user_id != owner.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=NOT_CONNECTED_MESSAGE)
 
 
 
@@ -48,7 +56,7 @@ class HomeService:
 
     def require_owner(self, user: User) -> None:
         if not self.enabled:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Symulacja Smart Home jest wyłączona.")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DISABLED_MESSAGE)
         if not self.is_owner(user):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dom Smart Home należy do innego konta.")
 

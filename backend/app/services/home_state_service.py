@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.clients.hub_client import HubClient, HubError
 from app.models.User import User
@@ -26,6 +26,7 @@ from app.schemas.smart_home import (
     HubClock,
     HubDevicesStatus,
 )
+from app.services.home_service import require_connected
 from app.services.schedule_prices import SchedulePriceService
 
 
@@ -33,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 SLOT = timedelta(minutes=15)
 SLOT_SECONDS = SLOT.total_seconds()
-NOT_CONNECTED_MESSAGE = "Dom nie jest podłączony. Podłącz dom, żeby zobaczyć jego stan."
 
 
 
@@ -101,8 +101,7 @@ class HomeStateService:
         self.price_service = price_service
 
     def state(self, owner: User) -> HomeState:
-        if self.home_repository.get().user_id != owner.id:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=NOT_CONNECTED_MESSAGE)
+        require_connected(self.home_repository.get(), owner)
 
         clock, devices = self._read_hub()
         simulation_id = clock.simulation_id if clock else None
@@ -127,7 +126,7 @@ class HomeStateService:
             simulation_id=simulation_id,
             clock=HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed) if clock else None,
             power=self._power(devices) if devices else None,
-            devices=self._devices(devices, energy) if devices else [],
+            devices=self._devices(devices, self._descriptions(owner, devices), energy) if devices else [],
             today=today,
         )
 
@@ -184,12 +183,19 @@ class HomeStateService:
             net_kw=_kwh(sum(readings)),
         )
 
+    def _descriptions(self, owner: User, devices: HubDevicesStatus) -> dict[str, dict]:
+        """Opis urządzeń z bazy (typ, kategoria, tryb, programy), którego hub nie zwraca w stanie."""
+        return self.home_repository.device_descriptions(owner.id) if devices.devices else {}
+
     @staticmethod
-    def _devices(devices: HubDevicesStatus, energy: DayEnergy | None) -> list[HomeDeviceState]:
+    def _devices(
+        devices: HubDevicesStatus, descriptions: dict[str, dict], energy: DayEnergy | None
+    ) -> list[HomeDeviceState]:
         return [
             HomeDeviceState(
                 device_id=device.device_id,
                 device_name=device.device_name,
+                **descriptions.get(device.device_id, {}),
                 state=device.state,
                 program_id=device.program_id,
                 program_started_at=device.program_started_at,

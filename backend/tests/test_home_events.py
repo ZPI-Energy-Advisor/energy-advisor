@@ -16,7 +16,8 @@ from app.models.HomeConnection import HomeConnection
 from app.models.HomeEvent import HomeEvent
 from app.models.User import User
 from app.repositories.home_event_repository import EnergyStep
-from app.services.home_state_service import NOT_CONNECTED_MESSAGE, day_energy
+from app.services.home_service import NOT_CONNECTED_MESSAGE
+from app.services.home_state_service import day_energy
 from app.services.schedule_prices import SchedulePrices
 from main import app
 from test_energy_files import _create_user, _headers, client

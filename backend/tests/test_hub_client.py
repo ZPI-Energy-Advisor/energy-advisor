@@ -227,6 +227,17 @@ def test_command_timeout_is_not_retryable():
     assert exc_info.value.retryable is False
 
 
+@pytest.mark.parametrize("error", [httpx.ConnectError, httpx.ConnectTimeout])
+def test_command_without_connection_is_retryable(error):
+    # Połączenie nie powstało, więc komenda nie dotarła do huba.
+    def handler(request: httpx.Request):
+        raise error("refused", request=request)
+
+    with pytest.raises(HubUnavailableError) as exc_info:
+        _client(handler).send_command("dev_wm_01", DeviceCommand(command=CommandType.OFF))
+    assert exc_info.value.retryable is True
+
+
 def test_connection_error_raises_unavailable_error():
     def handler(request: httpx.Request):
         raise httpx.ConnectError("connection refused", request=request)
@@ -277,14 +288,15 @@ def test_create_sets_api_key_and_timeout():
 
 
 @pytest.mark.parametrize("status_code, code", [(404, "device_not_found"), (409, "invalid_state")])
-def test_client_errors_keep_hub_error_code(status_code, code):
-    client = _client(lambda request: httpx.Response(status_code, json={"detail": "x", "code": code}))
+def test_client_errors_keep_hub_error_code_and_detail(status_code, code):
+    client = _client(lambda request: httpx.Response(status_code, json={"detail": "Trwa program", "code": code}))
 
     with pytest.raises(HubError) as exc_info:
         client.send_command("dev_x", DeviceCommand(command=CommandType.OFF))
     assert not isinstance(exc_info.value, HubUnavailableError)
     assert exc_info.value.status_code == status_code
     assert exc_info.value.code == code
+    assert exc_info.value.detail == "Trwa program"
     assert exc_info.value.retryable is False
 
 

@@ -28,13 +28,24 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class HubError(Exception):
-    """Błąd komunikacji z hubem Smart Home. `code` pochodzi z odpowiedzi huba, gdy ją podał."""
+    """Błąd komunikacji z hubem Smart Home.
 
-    def __init__(self, message: str, status_code: int | None = None, code: str | None = None, retryable: bool = False):
+    `code` i `detail` (opis dla człowieka) pochodzą z odpowiedzi huba, gdy je podał.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        code: str | None = None,
+        retryable: bool = False,
+        detail: str | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.retryable = retryable
+        self.detail = detail
 
 
 class HubUnavailableError(HubError):
@@ -43,8 +54,15 @@ class HubUnavailableError(HubError):
     `retryable` mówi, czy żądanie można bezpiecznie ponowić (tylko GET i PUT).
     """
 
-    def __init__(self, message: str, status_code: int | None = None, code: str | None = None, retryable: bool = True):
-        super().__init__(message, status_code=status_code, code=code, retryable=retryable)
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        code: str | None = None,
+        retryable: bool = True,
+        detail: str | None = None,
+    ):
+        super().__init__(message, status_code=status_code, code=code, retryable=retryable, detail=detail)
 
 
 class HubAuthError(HubError):
@@ -102,6 +120,9 @@ class HubClient:
         retryable = method in RETRYABLE_METHODS
         try:
             response = self.client.request(method, path, json=json, timeout=timeout)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            # Połączenie nie powstało, więc żądanie nie dotarło do huba i ponowienie jest bezpieczne.
+            raise HubUnavailableError(f"Brak połączenia z hubem ({method} {path}): {e}", retryable=True) from e
         except httpx.TimeoutException as e:
             raise HubUnavailableError(f"Hub nie odpowiedział w czasie ({method} {path})", retryable=retryable) from e
         except httpx.HTTPError as e:
@@ -118,11 +139,12 @@ class HubClient:
 
         detail, code = self._error_detail(response)
         message = f"Hub zwrócił HTTP {response.status_code} ({method} {path}): {detail}"
+        error = {"status_code": response.status_code, "code": code, "detail": detail}
         if response.status_code in (401, 403):
-            raise HubAuthError(message, status_code=response.status_code, code=code)
+            raise HubAuthError(message, **error)
         if response.status_code >= 500:
-            raise HubUnavailableError(message, status_code=response.status_code, code=code, retryable=retryable)
-        raise HubError(message, status_code=response.status_code, code=code)
+            raise HubUnavailableError(message, retryable=retryable, **error)
+        raise HubError(message, **error)
 
     @staticmethod
     def _error_detail(response: httpx.Response) -> tuple[str, str | None]:

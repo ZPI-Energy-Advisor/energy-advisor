@@ -31,6 +31,7 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | Dom właściciela, `/api/v1/home`, wysyłka rejestru | ZP-93 |
 | Zegar `/home/clock` | ZP-94, `simulation_id` ZP-95 |
 | Webhook `/api/v1/home/events`, stan domu `/api/v1/home/state` | ZP-95 |
+| Ekran „Mój dom”, sterowanie urządzeniami i zegarem przez backend, opis urządzeń w stanie | ZP-97 |
 
 ## Zasady ogólne
 
@@ -492,7 +493,8 @@ urządzenia równa się energii urządzenia (`total_kwh`, suma `energy_kwh` jego
 ## 4. Frontend → backend: dom właściciela
 
 Dom należy do konta z `HUB_HOME_USER_EMAIL` (porównanie bez wielkości liter). Tylko to konto ma
-`home_owner: true` w `GET /api/v1/users/me` i widzi „Podłącz dom” na stronie importu. Endpointy domu
+`home_owner: true` w `GET /api/v1/users/me`, widzi ekran „Mój dom” (`/home` w menu) i „Podłącz dom”
+na nim oraz na stronie importu. Endpointy domu
 wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_URL` wszyscy dostają `503`.
 
 | Metoda i ścieżka | Opis |
@@ -501,6 +503,8 @@ wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_UR
 | `GET /api/v1/home/state` | Zegar, urządzenia, moc, zużycie i koszt doby ([niżej](#get-apiv1homestate--stan-podłączonego-domu)) |
 | `POST /api/v1/home/connect` | Podłącza dom i wysyła rejestr. Wysyła go zawsze, także niezmieniony, więc ponowne wywołanie naprawia hub (np. po utracie wolumenu `hub_data`) |
 | `DELETE /api/v1/home` | Odłącza dom: hub dostaje pusty rejestr i zatrzymuje mikroserwisy urządzeń |
+| `POST /api/v1/home/devices/{device_id}/commands` | Polecenie dla urządzenia ([niżej](#sterowanie-domem)) |
+| `PUT /api/v1/home/clock` | Start, pauza, tempo i doba zegara symulacji ([niżej](#sterowanie-domem)) |
 
 `GET /api/v1/home`, `POST /api/v1/home/connect` i `DELETE /api/v1/home` odpowiadają `200` ze stanem podłączenia:
 
@@ -556,6 +560,10 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
     {
       "device_id": "dev_wm_01",
       "device_name": "Pralka Bosch",
+      "device_type": "washing_machine",
+      "device_category": "AGD",
+      "flexibility_mode": "shiftable",
+      "programs": [{ "program_id": "cotton_60", "program_name": "Bawełna 60°C", "duration_min": 120 }],
       "state": "running",
       "program_id": "cotton_60",
       "program_started_at": "2026-10-19T11:30:00+02:00",
@@ -581,6 +589,7 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
 |---|---|
 | `hub_available` | `false`, gdy hub nie odpowiedział: wtedy `clock` i `power` mają `null`, `devices` jest puste, a `today` dotyczy ostatniego przebiegu ze zdarzeń w bazie (do czasu jego ostatniego zdarzenia) |
 | `power` | Suma bieżącej mocy urządzeń: pobór, produkcja PV i bilans (ujemny = oddawanie do sieci) |
+| `devices[].device_type`, `device_category`, `flexibility_mode`, `programs` | Opis urządzenia z rejestru w bazie (programy bez profilu). `null` i pusta lista, gdy hub ma urządzenie spoza rejestru, np. przy zaległej wysyłce |
 | `devices[].energy_today_kwh` | Energia urządzenia od początku doby ze zdarzeń, odporna na restart mikroserwisu |
 | `today` | Od północy doby symulacji (strefa domu, doba ze zmianą czasu ma 23 albo 25 h) do `clock.sim_time`, tylko bieżący przebieg (`simulation_id`) |
 | `today.grid_import_kwh` | Suma dodatnich bilansów kwadransów: produkcja PV w tym samym kwadransie pokrywa zużycie domu |
@@ -588,6 +597,41 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
 | `today.cost_error` | Powód braku kosztu (`cost_pln: null`), np. niepełny profil albo brak cen RCE dla taryfy dynamicznej |
 
 Zdarzenia dochodzą partią po każdym ticku, więc `today` może nie obejmować jeszcze ostatniego kwadransu.
+
+### Sterowanie domem
+
+Oba endpointy działają tylko dla podłączonego domu (odłączony: `409`) i przekazują polecenie do huba
+(`POST /home/devices/{device_id}/commands`, `PUT /home/clock`), który jest jedynym źródłem stanu.
+
+`POST /api/v1/home/devices/{device_id}/commands` przyjmuje treść jak komenda huba (`on`, `off`,
+`start_program` z `program_id`, opcjonalnie `start_at`) i odpowiada `202` z wynikiem huba.
+
+`PUT /api/v1/home/clock` przyjmuje dowolny niepusty podzbiór pól i odpowiada `200` ze stanem zegara
+(`sim_time`, `running`, `speed`):
+
+```json
+{ "day": "2026-10-25", "running": false, "speed": 288 }
+```
+
+| Pole | Opis |
+|---|---|
+| `day` | Doba `RRRR-MM-DD`: backend ustawia `sim_time` na północ tej doby w strefie domu, co zaczyna nową symulację. Tylko przy zatrzymanym zegarze (inaczej `409` z huba). Backend liczy przesunięcie strefy, bo zależy ono od daty |
+| `running` | `true` start, `false` pauza |
+| `speed` | Tempo `> 0`, sekundy symulacji na sekundę rzeczywistą |
+
+Błędy huba:
+
+| Sytuacja | Odpowiedź |
+|---|---|
+| Hub odrzucił polecenie z kodem kontraktu (np. `409 invalid_state`, `404 program_not_found`) | Ten sam status, opis huba w `detail` |
+| Brak połączenia z hubem albo `5xx` huba | `503`, można ponowić |
+| Hub nie odpowiedział na komendę w czasie (mógł ją wykonać) | `504`: przed ponowieniem trzeba sprawdzić stan urządzenia |
+| Urządzenie bez odpowiedzi, nieudany reset urządzeń przy zmianie doby | `502` z opisem |
+| Błędny `HUB_API_KEY` albo odpowiedź spoza kontraktu (np. `4xx` bez `code`) | `502` z opisem |
+
+Ekran „Mój dom” odpytuje `GET /api/v1/home/state` co 2 s przy działającym zegarze i co 10 s przy
+pauzie, a po każdym poleceniu od razu. Kolejne żądanie wychodzi po odpowiedzi poprzedniego, a ukryta
+karta przeglądarki nie odpytuje backendu.
 
 ## Konfiguracja
 

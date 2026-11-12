@@ -25,6 +25,7 @@ from app.services.new_calculations_service import CalculationsService
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
+from app.services.home_control_service import HomeControlService
 from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
 from app.services.home_state_service import HomeStateService
@@ -185,6 +186,13 @@ def require_hub_api_key(
     provided = (x_hub_api_key or "").encode()
     if not api_key or not secrets.compare_digest(provided, api_key.encode()):
         raise ContractError(status.HTTP_401_UNAUTHORIZED, "invalid_api_key", "Brak albo błędny X-Hub-Api-Key")
+
+
+def get_home_control_service(
+    db: Session = Depends(get_db),
+    hub_client: HubClient | None = Depends(get_hub_client),
+) -> HomeControlService:
+    return HomeControlService(HomeRepository(db), hub_client)
 
 
 def get_home_event_service(db: Session = Depends(get_db)) -> HomeEventService:
