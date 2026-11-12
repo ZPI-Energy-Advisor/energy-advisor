@@ -100,3 +100,33 @@ komunikat zamiast formularza. Brak cen opisuje jedną notką z listą dni, a nie
 - Wynik dla historii zakłada, że z góry wiadomo, jakie akcje będą danego dnia. Ceny na dany dzień są
   znane z wyprzedzeniem, bo PSE publikuje je dzień wcześniej.
 - Czas jest liczony w UTC, a okna i doby w czasie lokalnym (`Europe/Warsaw`).
+
+## Wymagania na jutro (ZP-111)
+
+Wejście do planu na jutro podaje każdy zalogowany użytkownik dla urządzeń ze swoich plików
+(bez huba Smart Home): `GET` i `PUT /api/v1/planning/preferences`. Planować można urządzenia
+`shiftable` i `interruptible` z programami oraz ładowarkę EV; elastyczne urządzenie bez programów
+(np. pompa ciepła) jest pomijane, bo samo „pracuje jutro” nie mówi, ile ma pracować.
+Ustawienia (tabela `planning_templates`, jeden zestaw na konto) zostają do kolejnego zapisu, który
+je nadpisuje. Plan zawsze szuka najtańszego miejsca w przedziałach.
+
+`GET` zwraca urządzenia z programami, domyślnymi przedziałami (`allowed_window` z pliku, bez okna
+cała doba) i preferencją: zapisaną albo domyślną (`enabled: false`). `PUT` przyjmuje `{devices: [...]}`
+i odpowiada tym samym kształtem co `GET`.
+
+| Pole preferencji | Opis |
+|---|---|
+| `enabled` | Czy urządzenie pracuje jutro; wyłączone zachowuje ustawienia bez sprawdzania |
+| `program_id` | Program z programów urządzenia (wymagany, gdy urządzenie ma programy) |
+| `windows` | 1–4 przedziały `{start, end}` co kwadrans (`HH:MM`); koniec nie później niż start przechodzi przez północ, `00:00–00:00` to cała doba. Urządzenie kończy pracę przed końcem swojego przedziału |
+| `after_device_id` | „Wykonaj po”: urządzenie z programem rusza po końcu programu innego włączonego urządzenia z programem (np. suszarka po pralce), najwyżej 60 min później (`DRYER_AFTER_WASH`); plan przesuwa je razem jak suszarkę z pralką w pliku. Start wyznacza poprzednik, więc `windows` takiego urządzenia nie są sprawdzane ani używane (zostają zapisane na wypadek usunięcia „Wykonaj po”) |
+| `finish_by` | Tylko z `after_device_id`, opcjonalne: program kończy się najpóźniej o tej godzinie (`HH:MM` co kwadrans). Godzina nie późniejsza niż początek najwcześniejszego przedziału pierwszego urządzenia w łańcuchu oznacza rano następnego dnia |
+| `energy_input`, `energy_kwh` | Ładowarka EV: energia wprost w kWh |
+| `battery_kwh`, `current_percent`, `target_percent` | Ładowarka EV: energia z poziomu baterii; z sieci `(docelowy − obecny) × pojemność / 0,9` (straty ładowania). Pojemność zostaje w ustawieniach |
+
+Błędy (`422`, lista z `loc: ["body", "devices", indeks, pole]`): przedziały nachodzące na siebie,
+najdłuższy przedział krótszy niż program, brak programu, brak energii auta, docelowy poziom baterii
+nie wyższy niż obecny i energia auta większa niż moc ładowarki × długość przedziałów. Dla „Wykonaj po”:
+poprzednik nie pracuje jutro, pętla (urządzenia czekają na siebie nawzajem), urządzenie bez programu
+oraz program, który nie zdąży przed `finish_by` nawet przy najwcześniejszym końcu poprzednika
+(sprawdzane po całym łańcuchu, np. pralka → suszarka → trzecie urządzenie).
