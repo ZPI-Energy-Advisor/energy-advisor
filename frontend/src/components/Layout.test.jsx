@@ -34,5 +34,7 @@ describe("Layout", () => {
 
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Mój dom" })).toBeNull();
+    // Plan na jutro jest dla każdego: dotyczy urządzeń z plików, nie domu Smart Home.
+    expect(screen.getByRole("link", { name: "Plan na jutro" }).getAttribute("href")).toBe("/plan");
   });
 });

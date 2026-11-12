@@ -12,17 +12,14 @@ import {
   FiDollarSign,
   FiClock,
   FiZap,
+  FiCalendar,
 } from "react-icons/fi";
 import apiClient, { clearAuth } from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
 import { CurrentUserProvider } from "../context/CurrentUserProvider";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 
-const HOME_NAV_ITEM = {
-  path: "/home",
-  label: "Mój dom",
-  icon: <FiZap className="mr-3 text-lg" />,
-};
+const HOME_NAV_ITEM = { path: "/home", label: "Mój dom", icon: <FiZap className="mr-3 text-lg" /> };
 
 function LayoutShell() {
   const location = useLocation();
@@ -85,6 +82,11 @@ function LayoutShell() {
       path: "/schedule",
       label: "Optymalizacja",
       icon: <FiClock className="mr-3 text-lg" />,
+    },
+    {
+      path: "/plan",
+      label: "Plan na jutro",
+      icon: <FiCalendar className="mr-3 text-lg" />,
     },
     ...(me?.home_owner ? [HOME_NAV_ITEM] : []),
   ];

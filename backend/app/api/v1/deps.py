@@ -26,6 +26,8 @@ from app.repositories.tariff_definition_repository import TariffDefinitionReposi
 from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
 from app.services.home_control_service import HomeControlService
+from app.services.planning_service import PlanningService
+from app.repositories.planning_repository import PlanningRepository
 from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
 from app.services.home_state_service import HomeStateService
@@ -193,6 +195,10 @@ def get_home_control_service(
     hub_client: HubClient | None = Depends(get_hub_client),
 ) -> HomeControlService:
     return HomeControlService(HomeRepository(db), hub_client)
+
+
+def get_planning_service(db: Session = Depends(get_db)) -> PlanningService:
+    return PlanningService(PlanningRepository(db))
 
 
 def get_home_event_service(db: Session = Depends(get_db)) -> HomeEventService:
