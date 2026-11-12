@@ -30,6 +30,10 @@ SLOT = timedelta(minutes=15)
 class SchedulePrices:
     prices: dict[datetime, float]
     description: str
+    # Moc umowna z profilu: limit poboru domu w kwadransie dla harmonogramu.
+    max_grid_kw: float | None = None
+    # Plik ma nadwyżkę PV, a profil nie ma instalacji: godziny produkcji nie są tańsze.
+    pv_note: str | None = None
 
 
 class SchedulePriceService:
@@ -77,7 +81,18 @@ class SchedulePriceService:
             slot += SLOT
         name = next((definition.name for definition in definitions if definition.name), None)
         description = f"{operator.value}, {label}" + (f" ({name})" if dynamic and name else "")
-        return SchedulePrices(prices=prices, description=description)
+        pv_note = None
+        surplus_kwh = sum(kwh for kwh in (exports or {}).values() if kwh > 0)
+        if not prosumer and surplus_kwh > 0:
+            surplus_text = f"{surplus_kwh:.2f}".replace(".", ",")
+            pv_note = (
+                f"Plik ma {surplus_text} kWh nadwyżki z fotowoltaiki oddanej do sieci, ale profil nie ma instalacji PV, "
+                "więc godziny produkcji nie są tańsze i nie przenosimy na nie urządzeń. Uzupełnij fotowoltaikę w profilu."
+            )
+        return SchedulePrices(
+            prices=prices, description=description,
+            max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note,
+        )
 
     def _surplus_price(self, slot: datetime, grid_price: float, profile: UserProfile) -> float:
         """Kwadrans z nadwyżką PV: dodatkowe zużycie zmniejsza oddanie do sieci, więc kosztuje utraconą wartość

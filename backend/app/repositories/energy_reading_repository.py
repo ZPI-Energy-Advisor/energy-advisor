@@ -68,3 +68,16 @@ class EnergyReadingRepository:
             .order_by(EnergyReading.measured_at.asc())
             .all()
         )
+
+    def list_for_file_between(self, energy_data_file_id: UUID, start: datetime, end: datetime) -> list[EnergyReading]:
+        """Odczyty pliku z [start, end) w czasie lokalnym, jak `measured_at`; zakres filtruje baza (indeks pliku i czasu)."""
+        return (
+            self.db.query(EnergyReading)
+            .filter(
+                EnergyReading.energy_data_file_id == energy_data_file_id,
+                EnergyReading.measured_at >= start,
+                EnergyReading.measured_at < end,
+            )
+            .order_by(EnergyReading.measured_at.asc())
+            .all()
+        )

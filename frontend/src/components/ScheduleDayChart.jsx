@@ -1,5 +1,5 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { clockOf, dayPrices, dayRows, formatDayMonth, formatPln } from "../utils/schedule";
+import { actionSummary, dayPrices, dayRows, formatDayMonth, formatPln } from "../utils/schedule";
 
 const PRICE_COLOR = "#10b981";
 const HOURS = [0, 6, 12, 18, 24];
@@ -16,21 +16,13 @@ function PriceTooltip({ active, payload }) {
   );
 }
 
-function actionTitle({ action }) {
-  const program = action.program_name ? ` (${action.program_name})` : "";
-  return (
-    `${action.device_name}${program}: ${clockOf(action.original_start)} → ${clockOf(action.start)}, ` +
-    `${formatPln(action.cost_before)} → ${formatPln(action.cost_after)}`
-  );
-}
-
 function Lane({ segments, className, label }) {
   return (
     <div className="relative h-3" aria-label={label}>
       {segments.map((segment) => (
         <div
-          key={segment.action.action_id}
-          title={actionTitle(segment)}
+          key={`${segment.action.action_id}-${segment.left}`}
+          title={actionSummary(segment.action)}
           className={`absolute inset-y-0 rounded-sm ${className(segment.action)}`}
           style={{ left: `${segment.left}%`, width: `${segment.width}%` }}
         />

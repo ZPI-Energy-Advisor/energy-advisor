@@ -46,16 +46,46 @@ export const dayRows = (actions, day) => {
   const rows = new Map();
   for (const action of actions) {
     const before = daySegment(action.original_start, action.original_end, day);
-    const after = daySegment(action.start, action.end, day);
-    if (!before && !after) continue;
+    // Ładowanie EV po optymalizacji może mieć przerwy: każdy okres ładowania to osobny fragment.
+    const after = (action.charging ?? [{ start: action.start, end: action.end }])
+      .map((period) => daySegment(period.start, period.end, day))
+      .filter(Boolean);
+    if (!before && !after.length) continue;
     if (!rows.has(action.device_id)) {
       rows.set(action.device_id, { deviceId: action.device_id, name: action.device_name, before: [], after: [] });
     }
     const row = rows.get(action.device_id);
     if (before) row.before.push({ ...before, action });
-    if (after) row.after.push({ ...after, action });
+    row.after.push(...after.map((segment) => ({ ...segment, action })));
   }
   return [...rows.values()].sort((first, second) => first.name.localeCompare(second.name, "pl"));
+};
+
+export const clockRange = (start, end) => `${clockOf(start)}–${clockOf(end)}`;
+
+// Data i godzina, np. 20.10 01:00.
+export const formatMoment = (isoTime) => `${formatDayMonth(dayOf(isoTime))} ${clockOf(isoTime)}`;
+
+// Godziny akcji po optymalizacji; ładowanie EV z przerwami jako lista okresów. Okres, który zaczyna się
+// innej doby niż poprzedni (np. po północy), dostaje datę; `withDay` dodaje ją też przed pierwszym.
+export const afterRanges = (action, { withDay = false } = {}) => {
+  const periods = action.charging ?? [{ start: action.start, end: action.end }];
+  return periods
+    .map((period, index) => {
+      const day = dayOf(period.start);
+      const showDay = index === 0 ? withDay : day !== dayOf(periods[index - 1].start);
+      return `${showDay ? `${formatDayMonth(day)} ` : ""}${clockRange(period.start, period.end)}`;
+    })
+    .join(", ");
+};
+
+// Opis akcji w dymku: godziny przed → po i koszt.
+export const actionSummary = (action) => {
+  const program = action.program_name ? ` (${action.program_name})` : "";
+  return (
+    `${action.device_name}${program}: ${clockRange(action.original_start, action.original_end)} → ${afterRanges(action)}, ` +
+    `${formatPln(action.cost_before)} → ${formatPln(action.cost_after)}`
+  );
 };
 
 export const dayPrices = (prices, day) =>
@@ -70,6 +100,12 @@ const CONFLICT_REASONS = {
 };
 
 export const describeReason = (reason) => CONFLICT_REASONS[reason] ?? reason;
+
+// Powód konfliktu; przy limicie przyłącza z jego wartością z profilu.
+export const conflictText = (action, maxGridKw) =>
+  action.reason === "grid_limit" && maxGridKw
+    ? `${describeReason(action.reason)} (${String(maxGridKw).replace(".", ",")} kW, moc umowna z profilu)`
+    : describeReason(action.reason);
 
 export const isConflict = (action) => action.status === "conflict" && action.reason !== "missing_prices";
 
