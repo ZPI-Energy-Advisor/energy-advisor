@@ -63,11 +63,21 @@ export const dayRows = (actions, day) => {
 
 export const clockRange = (start, end) => `${clockOf(start)}–${clockOf(end)}`;
 
-// Godziny akcji po optymalizacji; ładowanie EV z przerwami jako lista okresów.
-export const afterRanges = (action) =>
-  (action.charging ?? [{ start: action.start, end: action.end }])
-    .map((period) => clockRange(period.start, period.end))
+// Data i godzina, np. 20.10 01:00.
+export const formatMoment = (isoTime) => `${formatDayMonth(dayOf(isoTime))} ${clockOf(isoTime)}`;
+
+// Godziny akcji po optymalizacji; ładowanie EV z przerwami jako lista okresów. Okres, który zaczyna się
+// innej doby niż poprzedni (np. po północy), dostaje datę; `withDay` dodaje ją też przed pierwszym.
+export const afterRanges = (action, { withDay = false } = {}) => {
+  const periods = action.charging ?? [{ start: action.start, end: action.end }];
+  return periods
+    .map((period, index) => {
+      const day = dayOf(period.start);
+      const showDay = index === 0 ? withDay : day !== dayOf(periods[index - 1].start);
+      return `${showDay ? `${formatDayMonth(day)} ` : ""}${clockRange(period.start, period.end)}`;
+    })
     .join(", ");
+};
 
 // Opis akcji w dymku: godziny przed → po i koszt.
 export const actionSummary = (action) => {

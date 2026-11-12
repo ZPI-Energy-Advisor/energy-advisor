@@ -43,6 +43,8 @@ class ScheduleResponse(BaseModel):
     bill_before: float | None = None
     bill_after: float | None = None
     bill_note: str | None = None
+    # Rachunek obejmuje też ogon po okresie (akcja zaczęta w okresie kończy się później): do tej chwili.
+    bill_until: datetime | None = None
     # Nadwyżka PV w pliku przy profilu bez instalacji PV.
     pv_note: str | None = None
     # Limit poboru z sieci: moc umowna z profilu.

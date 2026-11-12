@@ -5,6 +5,7 @@ i do planu na przyszłość: różni je tylko to, skąd pochodzą akcje i ceny.
 """
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -237,6 +238,10 @@ class _Session:
             return self.action.max_slot_kwh
         return max(self.action.profile_kwh)
 
+    def slots(self):
+        """Kwadranse planu jak w `_Group.slots`: (urządzenie, kwadrans, kWh)."""
+        return ((self.action.device_id, slot, kwh) for slot, kwh in self.plan.items())
+
     def window_slots(self):
         slot, end = _slot_ceil(self.action.window_start), self.action.window_end
         while slot + SLOT <= end:
@@ -257,28 +262,33 @@ class _Plan:
         self.slot_limit_kwh = None if max_grid_kw is None else max_grid_kw * SLOT_HOURS
         self.busy = defaultdict(set)
         self.load = defaultdict(float)
+        # Grupy, które algorytm przesuwa; bez nich zostaje obciążenie, którego ułożenie nie zmieni.
+        self.movable: list[_Group] = []
 
-    def place(self, group: _Group) -> None:
-        group.placed = True
-        for device_id, slot, kwh in group.slots(group.offset):
+    def _occupy(self, slots: Iterable[tuple[str, datetime, float]]) -> None:
+        """Zajmuje kwadranse (urządzenie, kwadrans, kWh): urządzenie jest w nich zajęte, a dom obciążony."""
+        for device_id, slot, kwh in slots:
             self.busy[device_id].add(slot)
             self.load[slot] += kwh
 
-    def release(self, group: _Group) -> None:
-        group.placed = False
-        for device_id, slot, kwh in group.slots(group.offset):
+    def _free(self, slots: Iterable[tuple[str, datetime, float]]) -> None:
+        for device_id, slot, kwh in slots:
             self.busy[device_id].discard(slot)
             self.load[slot] -= kwh
 
+    def place(self, group: _Group) -> None:
+        group.placed = True
+        self._occupy(group.slots(group.offset))
+
+    def release(self, group: _Group) -> None:
+        group.placed = False
+        self._free(group.slots(group.offset))
+
     def place_session(self, session: _Session) -> None:
-        for slot, kwh in session.plan.items():
-            self.busy[session.action.device_id].add(slot)
-            self.load[slot] += kwh
+        self._occupy(session.slots())
 
     def release_session(self, session: _Session) -> None:
-        for slot, kwh in session.plan.items():
-            self.busy[session.action.device_id].discard(slot)
-            self.load[slot] -= kwh
+        self._free(session.slots())
 
     def _occupied(self, group: _Group) -> bool:
         return any(slot in self.busy[device_id] for device_id, slot, _ in group.slots(group.offset))
@@ -337,6 +347,30 @@ class _Plan:
         Gdy energia się nie mieści, sesja zostaje w oryginalnym kształcie z powodem konfliktu.
         """
         self.release_session(session)
+        plan, remaining, grid_bound = self._spread(session, self.load)
+        if remaining > ENERGY_TOLERANCE_KWH or not plan:
+            # Ułożenie od nowa z rezerwacją oryginałów pomaga tylko wtedy, gdy miejsce zabrały przesuwane grupy.
+            # Sesja, która nie mieści się nawet bez nich (np. moc umowna niższa niż samo ładowanie),
+            # zostaje konfliktem i nie psuje ułożenia reszty domu.
+            retry = self.retry_without_place and self._fits_without_movable(session)
+            session.plan = dict(session.original)
+            session.reason = GRID_LIMIT if grid_bound else MISSING_PRICES
+            self.place_session(session)
+            if retry:
+                raise _NoPlaceLeft
+            return
+        # Plan bez oszczędności (np. płaska cena) zostawia ładowanie jak w pliku, zamiast zmieniać samą moc,
+        # ale tylko gdy oryginał mieści się pod limitem: inne urządzenia mogły już zająć jego kwadranse.
+        keep_original = (
+            self._fits(session.original)
+            and self._cost_of(plan) >= self._cost_of(session.original) - COST_TOLERANCE
+        )
+        session.plan = dict(session.original) if keep_original else plan
+        session.reason = None
+        self.place_session(session)
+
+    def _spread(self, session: _Session, load: dict) -> tuple[dict[datetime, float], float, bool]:
+        """Zachłanny rozkład energii sesji przy danym obciążeniu domu: (plan, energia bez miejsca, czy brakło limitu)."""
         device_id = session.action.device_id
         candidates = sorted(
             (slot for slot in session.window_slots() if slot in self.prices and slot not in self.busy[device_id]),
@@ -348,7 +382,7 @@ class _Plan:
                 break
             room = session.max_slot_kwh
             if self.slot_limit_kwh is not None:
-                headroom = self.slot_limit_kwh - self.load[slot]
+                headroom = self.slot_limit_kwh - load[slot]
                 grid_bound = grid_bound or headroom < room
                 room = min(room, headroom)
             # Poniżej minimalnej mocy ładowarka nie ładuje; ostatnia porcja może być mniejsza (krótsze ładowanie).
@@ -358,27 +392,30 @@ class _Plan:
             if take > POWER_TOLERANCE_KWH:
                 plan[slot] = take
                 remaining -= take
-        if remaining > ENERGY_TOLERANCE_KWH or not plan:
-            session.plan = dict(session.original)
-            session.reason = GRID_LIMIT if grid_bound else MISSING_PRICES
-            self.place_session(session)
-            if self.retry_without_place:
-                raise _NoPlaceLeft
-            return
-        # Plan bez oszczędności (np. płaska cena) zostawia ładowanie jak w pliku, zamiast zmieniać samą moc.
-        session.plan = plan if self._cost_of(plan) < self._cost_of(session.original) - COST_TOLERANCE else dict(session.original)
-        session.reason = None
-        self.place_session(session)
+        return plan, remaining, grid_bound
+
+    def _fits_without_movable(self, session: _Session) -> bool:
+        """Czy sesja zmieściłaby się, gdyby przesuwane grupy nie zajmowały kwadransów (bez nich zostaje
+        to, czego żadne ułożenie nie zmieni: akcje fixed, obciążenie z sąsiednich dób i inne sesje)."""
+        load = defaultdict(float, self.load)
+        for group in self.movable:
+            if group.placed:
+                for _, slot, kwh in group.slots(group.offset):
+                    load[slot] -= kwh
+        plan, remaining, _ = self._spread(session, load)
+        return bool(plan) and remaining <= ENERGY_TOLERANCE_KWH
 
     def _cost_of(self, plan: dict[datetime, float]) -> float:
         return sum(self.prices[slot] * kwh for slot, kwh in plan.items())
 
+    def _fits(self, plan: dict[datetime, float]) -> bool:
+        """Plan sesji mieści się pod limitem przyłącza przy obecnym obciążeniu domu (bez tej sesji)."""
+        if self.slot_limit_kwh is None:
+            return True
+        return all(self.load[slot] + kwh <= self.slot_limit_kwh + POWER_TOLERANCE_KWH for slot, kwh in plan.items())
+
     def add_load(self, action: ScheduleAction) -> None:
-        for index, kwh in enumerate(action.profile_kwh):
-            slot = action.start + index * SLOT
-            self.load[slot] += kwh
-            if kwh > 0:
-                self.busy[action.device_id].add(slot)
+        self._occupy((action.device_id, action.start + index * SLOT, kwh) for index, kwh in enumerate(action.profile_kwh))
 
 
 def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | None,
@@ -391,6 +428,9 @@ def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
             plan.add_load(action)
     flexible_sessions = []
     for session in sessions:
+        if session.energy_kwh <= ENERGY_TOLERANCE_KWH:
+            # Auto podłączone już naładowane: nie ma czego rozkładać, sesja zostaje bez zmian.
+            continue
         if _cost(session.action.start, session.action.profile_kwh, prices) is None:
             # Bez cen oryginału nie ma z czym porównać planu: sesja zostaje bez zmian.
             session.reason = MISSING_PRICES
@@ -411,6 +451,7 @@ def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
         if reserve_originals or not group.movable or not priced:
             plan.place(group)
     movable.sort(key=lambda group: (-group.energy_kwh, group.actions[0].start, group.actions[0].action_id))
+    plan.movable = movable
 
     for _ in range(MAX_PASSES):
         changed = [plan.improve(group) for group in movable]
@@ -480,7 +521,10 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
             ))
     for session in sessions:
         action = session.action
-        start, profile = _profile_from(session.plan)
+        # Sesja bez zmian (także bez energii, gdy plan jest pusty) zostaje z profilem z pliku: odbudowa z planu
+        # gubiłaby zera na początku i końcu, a start różniłby się od oryginału.
+        changed = session.plan != session.original
+        start, profile = _profile_from(session.plan) if changed else (action.start, action.profile_kwh)
         scheduled.append(ScheduledAction(
             action_id=action.action_id,
             device_id=action.device_id,
@@ -492,7 +536,7 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
             original_profile_kwh=action.profile_kwh,
             cost_before=_cost(action.start, action.profile_kwh, utc_prices),
             cost_after=_cost(start, profile, utc_prices),
-            status=CONFLICT if session.reason else MOVED if session.plan != session.original else UNCHANGED,
+            status=CONFLICT if session.reason else MOVED if changed else UNCHANGED,
             reason=session.reason,
         ))
     scheduled.sort(key=lambda action: (action.original_start, action.action_id))
@@ -513,16 +557,17 @@ def ev_min_slot_kwh(max_power_kw: float | None) -> float:
     return min(min_kw, max_power_kw) * SLOT_HOURS
 
 
+def _load_only(device: DeviceRecord, action) -> ScheduleAction:
+    """Akcja urządzenia tylko jako obciążenie domu w limicie przyłącza: nie przesuwa się i nie ma kosztu."""
+    return ScheduleAction(
+        action_id=action.action_id, device_id=device.device_id, start=_utc(action.start),
+        profile_kwh=action.slots_kwh, load_only=True,
+    )
+
+
 def load_from_devices(devices: list[DeviceRecord]) -> list[ScheduleAction]:
     """Akcje urządzeń (także produkcja PV) tylko jako obciążenie domu, np. z doby przed albo po okresie."""
-    return [
-        ScheduleAction(
-            action_id=action.action_id, device_id=device.device_id, start=_utc(action.start),
-            profile_kwh=action.slots_kwh, load_only=True,
-        )
-        for device in devices
-        for action in device.actions
-    ]
+    return [_load_only(device, action) for device in devices for action in device.actions]
 
 
 def actions_from_devices(devices: list[DeviceRecord]) -> list[ScheduleAction]:
@@ -541,10 +586,7 @@ def actions_from_devices(devices: list[DeviceRecord]) -> list[ScheduleAction]:
         for action in device.actions:
             start = _utc(action.start)
             if action.energy_kwh < 0:
-                actions.append(ScheduleAction(
-                    action_id=action.action_id, device_id=device.device_id, start=start,
-                    profile_kwh=action.slots_kwh, load_only=True,
-                ))
+                actions.append(_load_only(device, action))
                 continue
             if device.flexibility_mode == INTERRUPTIBLE and action.deadline is not None:
                 original_end = start + len(action.slots_kwh) * SLOT

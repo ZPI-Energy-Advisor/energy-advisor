@@ -1,5 +1,6 @@
 """Ładowanie EV (interruptible): energia sesji na najtańszych kwadransach okna podłączenia."""
 
+from collections import defaultdict
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
@@ -131,6 +132,92 @@ def test_ev_is_placed_after_shiftable_devices():
     by_id = {item.action_id: item for item in result.actions}
     assert by_id["wash"].start == at(20, 2)
     assert at(20, 2) not in plan(by_id["ev"])
+
+
+def test_session_does_not_return_to_original_quarters_taken_by_shiftable_device():
+    # Tanie 02:00-03:00: EV ładuje tam w pliku, ale pralka przenosi się tam pierwsza. Plan EV obok jest
+    # droższy od oryginału, a mimo to oryginał nie wchodzi w grę, bo z pralką przekroczyłby limit 4 kW.
+    cheap = [(at(20, 2), at(20, 3), 0.1)]
+    ev = session(energy=4 * EV_SLOT_KWH, start=at(20, 2), window=(at(20, 1), at(20, 4)))
+    wash = ScheduleAction("wash", "dev_wm", at(20, 1), [0.5] * 4, mode=SHIFTABLE)
+
+    result = schedule([ev, wash], prices(cheap, first=(20, 0), last=(20, 6)), max_grid_kw=4.0)
+
+    by_id = {item.action_id: item for item in result.actions}
+    assert by_id["wash"].start == at(20, 2)
+    load = defaultdict(float)
+    for item in result.actions:
+        for slot, kwh in plan(item).items():
+            load[slot] += kwh
+    assert max(load.values()) <= 4.0 * 0.25 + 1e-9
+    assert sum(plan(by_id["ev"]).values()) == pytest.approx(4 * EV_SLOT_KWH)
+    assert by_id["ev"].status == MOVED
+
+
+def test_session_without_energy_stays_unchanged():
+    # Auto podłączone już naładowane: plik ma sesję z 0 kWh.
+    ev = ScheduleAction(
+        "ev", "dev_ev", at(19, 17), [0.0, 0.0], mode=INTERRUPTIBLE,
+        window_start=at(19, 17), window_end=at(20, 7), max_slot_kwh=EV_SLOT_KWH,
+    )
+
+    item, = schedule([ev], prices()).actions
+
+    assert item.status == UNCHANGED
+    assert item.reason is None
+    assert (item.start, item.profile_kwh) == (ev.start, ev.profile_kwh)
+    assert item.cost_before == item.cost_after == 0.0
+
+
+def test_unchanged_session_keeps_its_start_and_profile_with_zero_quarters():
+    # Profil z zerami na początku i końcu przy płaskiej cenie: nic się nie przesuwa, więc start i profil jak w pliku.
+    profile = [0.0, 0.0, EV_SLOT_KWH, EV_SLOT_KWH, 0.0]
+    ev = ScheduleAction(
+        "ev", "dev_ev", at(19, 22), profile, mode=INTERRUPTIBLE,
+        window_start=at(19, 22), window_end=at(19, 23, 15), max_slot_kwh=EV_SLOT_KWH,
+    )
+
+    item, = schedule([ev], prices(first=(19, 22), last=(20, 0))).actions
+
+    assert item.status == UNCHANGED
+    assert (item.start, item.end) == (at(19, 22), at(19, 23, 15))
+    assert item.profile_kwh == profile
+
+
+def test_session_too_big_for_grid_limit_does_not_spoil_other_devices():
+    # Dwie pralki rano: bez rezerwacji duża zajmuje najtańszą godzinę małej, a mała idzie na drugą tanią.
+    # EV stoi tylko godzinę (10:00-11:00) i potrzebuje 4,8 kWh: nawet ładując lżej, pełnym limitem 4 kW,
+    # zdąży pobrać 4 kWh. Nie zmieści się w żadnym ułożeniu, więc nie może przełączyć całego domu
+    # na gorsze ułożenie z rezerwacją oryginałów.
+    cheap = [(at(20, 2), at(20, 3), 0.1), (at(20, 3), at(20, 4), 0.2)]
+    small = ScheduleAction("small", "dev_small", at(20, 2), [0.3] * 4, mode=SHIFTABLE)
+    big = ScheduleAction("big", "dev_big", at(20, 0), [0.9] * 4, mode=SHIFTABLE)
+    ev = session(energy=4.8, window=(at(20, 10), at(20, 11)), max_slot_kwh=1.2)
+    day = prices(cheap, first=(20, 0), last=(20, 12))
+
+    def washers(result):
+        return {item.action_id: item.start for item in result.actions if item.action_id != "ev"}
+
+    with_ev = schedule([small, big, ev], day, max_grid_kw=4.0)
+
+    assert washers(with_ev) == washers(schedule([small, big], day, max_grid_kw=4.0))
+    assert washers(with_ev) == {"big": at(20, 2), "small": at(20, 3)}
+    item = next(item for item in with_ev.actions if item.action_id == "ev")
+    assert (item.status, item.reason) == (CONFLICT, GRID_LIMIT)
+
+
+def test_session_squeezed_out_by_shiftable_devices_gets_reserved_place():
+    # Pralka zajmuje cały zapas jedynej godziny, w której stoi auto; EV mieści się tylko wtedy,
+    # gdy pralka zostanie na swoim miejscu, więc ułożenie z rezerwacją oryginałów nadal pomaga.
+    cheap = [(at(20, 2), at(20, 3), 0.1)]
+    wash = ScheduleAction("wash", "dev_wm", at(20, 5), [0.5] * 4, mode=SHIFTABLE)
+    ev = session(energy=4 * EV_SLOT_KWH, window=(at(20, 2), at(20, 3)))
+
+    result = schedule([ev, wash], prices(cheap, first=(20, 0), last=(20, 12)), max_grid_kw=4.0)
+
+    by_id = {item.action_id: item for item in result.actions}
+    assert by_id["ev"].reason is None
+    assert by_id["wash"].start != at(20, 2)
 
 
 def test_session_that_cannot_fit_under_grid_limit_keeps_its_shape_as_conflict():

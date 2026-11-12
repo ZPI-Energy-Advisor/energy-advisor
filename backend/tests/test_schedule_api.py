@@ -6,6 +6,7 @@ from app.api.v1.deps import get_schedule_price_service
 from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.repositories.device_repository import DeviceRepository
+from app.services.energy_file_service import EnergyFileService
 from app.services.schedule_prices import SchedulePrices
 from app.services.scheduling import SLOT
 from main import app
@@ -250,3 +251,49 @@ def test_ev_session_keeps_original_end_and_returns_charging_periods(db, user_a, 
         {"start": "2026-10-19T13:00:00+02:00", "end": "2026-10-19T15:00:00+02:00"},
     ]
     assert ev["cost_after"] < ev["cost_before"]
+
+
+def _create_file_with(db, user, *devices) -> EnergyDataFile:
+    energy_file = EnergyDataFile(
+        user_id=user.id, file_name="dom.json", status=EnergyDataFile.STATUS_COMPLETED,
+        data_start=datetime.date(2026, 10, 19), data_end=datetime.date(2026, 10, 19),
+    )
+    db.add(energy_file)
+    db.commit()
+    DeviceRepository(db).save_for_file(user_id=user.id, energy_data_file_id=energy_file.id, devices=list(devices))
+    db.commit()
+    return energy_file
+
+
+def test_charging_periods_only_for_ev_sessions(db, user_a, client_a):
+    # Pralka z przerwą w programie (0 kWh w środku) nie jest ładowaniem z przerwami: jeden pasek start-end.
+    washer = DeviceRecord(
+        device_id="dev_wm_01", name="Pralka", device_type="washing_machine", device_category="AGD",
+        flexibility_mode="shiftable",
+        actions=[ActionRecord("act_1", at(19, 18), at(19, 18) + 3 * SLOT, 0.5, [0.3, 0.0, 0.2])],
+    )
+    energy_file = _create_file_with(db, user_a, washer)
+
+    action, = get_schedule(client_a, energy_file).json()["actions"]
+
+    assert action["status"] == "moved"
+    assert action["charging"] is None
+
+
+def test_bill_until_shows_tail_after_period(db, user_a, client_a, monkeypatch):
+    # Ładowanie EV zaczęte 19.10 o 23:00 kończy się 20.10 o 1:00: rachunek obejmuje ten ogon.
+    charger = DeviceRecord(
+        device_id="dev_ev_01", name="Ładowarka EV", device_type="ev_charger", device_category="Pojazd elektryczny",
+        flexibility_mode="interruptible", max_power_kw=3.0,
+        actions=[ActionRecord(
+            "ev_1", at(19, 23), at(20, 1), 6.0, [0.75] * 8, plugged_in=at(19, 23), deadline=at(20, 1),
+        )],
+    )
+    energy_file = _create_file_with(db, user_a, charger)
+
+    assert get_schedule(client_a, energy_file).json()["bill_until"] is None  # bez rachunku nie ma czego opisywać
+
+    monkeypatch.setattr(EnergyFileService, "_bills", lambda *args: {"bill_before": 10.0, "bill_after": 9.0})
+    body = get_schedule(client_a, energy_file).json()
+
+    assert body["bill_until"] == "2026-10-20T01:00:00+02:00"

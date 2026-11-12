@@ -10,6 +10,7 @@ import {
   clockRange,
   conflictText,
   formatDayMonth,
+  formatMoment,
   formatPln,
   isConflict,
   missingPricesNote,
@@ -137,7 +138,9 @@ function SchedulePage() {
 
               <div className="text-xs text-gray-500 space-y-1">
                 <p>
-                  {hasBills ? "Rachunek do zapłaty za wybrany okres" : `${shown.bill_note ?? ""} Koszt akcji urządzeń`}{" "}
+                  {hasBills
+                    ? `Rachunek do zapłaty za wybrany okres${shown.bill_until ? ` z dokończeniem akcji do ${formatMoment(shown.bill_until)}` : ""}`
+                    : `${shown.bill_note ?? ""} Koszt akcji urządzeń`}{" "}
                   przed i po przesunięciu urządzeń, według taryfy z profilu{shown.pricing ? `: ${shown.pricing}` : ""}.
                   {shown.max_grid_kw != null && (
                     <>
@@ -154,6 +157,13 @@ function SchedulePage() {
                         ? "Rachunek liczymy jak w Wynikach kalkulacji: z opłatami stałymi, fotowoltaiką i depozytem."
                         : "Koszt akcji obejmuje energię, dystrybucję zmienną, opłaty za kWh i VAT, bez opłat stałych."}
                     </li>
+                    {hasBills && shown.bill_until && (
+                      <li>
+                        Akcja zaczęta w okresie (np. nocne ładowanie auta) kończy się po jego końcu, więc rachunek obejmuje też
+                        zużycie domu do {formatMoment(shown.bill_until)} i opłaty stałe za tę dobę, przed i po optymalizacji tak
+                        samo. Dlatego może być wyższy niż w Wynikach kalkulacji za ten sam zakres.
+                      </li>
+                    )}
                     <li>Godziny dobieramy po cenach kwadransów; przy zwykłej taryfie bez PV zysk daje tylko przejście do tańszej strefy.</li>
                     <li>
                       Gdy panele oddają nadwyżkę do sieci, zużycie w tym kwadransie kosztuje wartość tej energii (w net-billingu RCE
@@ -223,7 +233,7 @@ function SchedulePage() {
                           <td className="p-3 whitespace-nowrap">
                             {dayOfAction(action.original_start)} {clockRange(action.original_start, action.original_end)}
                           </td>
-                          <td className="p-3">{dayOfAction(action.start)} {afterRanges(action)}</td>
+                          <td className="p-3">{afterRanges(action, { withDay: true })}</td>
                           <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_before)}</td>
                           <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_after)}</td>
                         </tr>

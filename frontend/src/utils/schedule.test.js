@@ -6,6 +6,7 @@ import {
   conflictText,
   dayRows,
   daySegment,
+  formatMoment,
   formatPln,
   isConflict,
   listDays,
@@ -124,10 +125,27 @@ describe("schedule", () => {
     expect(afterRanges(action({ start: "2026-10-19T13:00:00+02:00", end: "2026-10-19T15:00:00+02:00" }))).toBe("13:00–15:00");
     expect(afterRanges(action({
       charging: [
+        { start: "2026-10-19T13:00:00+02:00", end: "2026-10-19T14:00:00+02:00" },
+        { start: "2026-10-19T15:00:00+02:00", end: "2026-10-19T16:00:00+02:00" },
+      ],
+    }))).toBe("13:00–14:00, 15:00–16:00");
+  });
+
+  it("okres ładowania po północy dostaje swoją datę", () => {
+    const ev = action({
+      charging: [
         { start: "2026-10-19T22:00:00+02:00", end: "2026-10-19T23:00:00+02:00" },
         { start: "2026-10-20T02:00:00+02:00", end: "2026-10-20T03:00:00+02:00" },
+        { start: "2026-10-20T04:00:00+02:00", end: "2026-10-20T05:00:00+02:00" },
       ],
-    }))).toBe("22:00–23:00, 02:00–03:00");
+    });
+
+    expect(afterRanges(ev)).toBe("22:00–23:00, 20.10 02:00–03:00, 04:00–05:00");
+    expect(afterRanges(ev, { withDay: true })).toBe("19.10 22:00–23:00, 20.10 02:00–03:00, 04:00–05:00");
+  });
+
+  it("data z godziną", () => {
+    expect(formatMoment("2026-10-20T01:00:00+02:00")).toBe("20.10 01:00");
   });
 
   it("konflikt limitu przyłącza podaje moc umowną z profilu", () => {
