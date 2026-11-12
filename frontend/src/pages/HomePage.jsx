@@ -93,7 +93,13 @@ function HomePage() {
   const { me, isReady, loadError } = useCurrentUser();
   const [connection, setConnection] = useState(null);
 
-  if (!isReady) return null;
+  if (!isReady) {
+    return (
+      <p className="text-sm text-gray-500" role="status">
+        Ładowanie…
+      </p>
+    );
+  }
   if (!me) {
     return (
       <p className={ERROR_NOTICE} role="alert">

@@ -9,6 +9,7 @@ import {
   formatKwh,
   formatSimTime,
   groupDevicesByCategory,
+  hasControls,
   isControllable,
   programName,
 } from "../../utils/home";
@@ -57,6 +58,8 @@ function ProgramControls({ device, disabled, onCommand }) {
 }
 
 function DeviceControls({ device, disabled, onCommand }) {
+  // Produkcji PV nie włącza się ręcznie: o pracy instalacji decyduje słońce, nie przycisk.
+  if (!hasControls(device)) return null;
   const running = device.state === "running";
   const off = (label) => (
     <button

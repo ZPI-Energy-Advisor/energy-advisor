@@ -89,6 +89,20 @@ const renderPage = ({ me = { home_owner: true } } = {}) =>
 const deviceRow = async (name) => screen.findByRole("listitem", { name });
 
 describe("HomePage", () => {
+  it("przed wczytaniem konta pokazuje ładowanie", () => {
+    render(
+      <CurrentUserContext.Provider value={{ me: null, isReady: false, loadError: null }}>
+        <EnergyFileContext.Provider value={{ files: [] }}>
+          <MemoryRouter initialEntries={["/home"]}>
+            <HomePage />
+          </MemoryRouter>
+        </EnergyFileContext.Provider>
+      </CurrentUserContext.Provider>,
+    );
+
+    expect(screen.getByRole("status").textContent).toBe("Ładowanie…");
+  });
+
   it("innego użytkownika odsyła na dashboard bez pytania API domu", () => {
     const get = vi.spyOn(apiClient, "get");
 

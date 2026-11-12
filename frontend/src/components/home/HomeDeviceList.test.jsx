@@ -34,6 +34,16 @@ describe("HomeDeviceList", () => {
     });
   });
 
+  it("instalacja PV nie ma przycisków, a ładowarka EV ma", () => {
+    const pv = { ...washer([]), device_id: "dev_pv_01", device_name: "Instalacja PV", device_type: "pv_inverter", device_category: "OZE" };
+    const ev = { ...washer([]), device_id: "dev_ev_01", device_name: "Ładowarka EV", device_type: "ev_charger", device_category: "Pojazd elektryczny" };
+
+    render(<HomeDeviceList devices={[pv, ev]} onCommand={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: /Instalacja PV/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Włącz: Ładowarka EV" })).toBeTruthy();
+  });
+
   it("blokuje sterowanie urządzeniem bez połączenia", () => {
     render(<HomeDeviceList devices={[{ ...washer([]), state: "unreachable", power_kw: null }]} onCommand={vi.fn()} />);
 

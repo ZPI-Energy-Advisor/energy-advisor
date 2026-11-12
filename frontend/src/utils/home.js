@@ -75,6 +75,10 @@ export const deviceStateTone = (state) =>
 
 export const isControllable = (device) => device.state !== "error" && device.state !== "unreachable";
 
+// Urządzenia bez przycisków na ekranie: instalacja PV pracuje według słońca.
+const UNCONTROLLED_TYPES = new Set(["pv_inverter"]);
+export const hasControls = (device) => !UNCONTROLLED_TYPES.has(device.device_type);
+
 export const programName = (device, programId) =>
   device.programs?.find((program) => program.program_id === programId)?.program_name ?? programId;
 
