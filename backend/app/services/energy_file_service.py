@@ -19,11 +19,11 @@ from app.services.calculation_service import (
     public_results,
     source_resolution,
 )
-from app.schemas.schedule import ScheduledActionOut, SchedulePriceOut, ScheduleResponse
+from app.schemas.schedule import ChargingPeriodOut, ScheduledActionOut, SchedulePriceOut, ScheduleResponse
 from app.services.pricing_strategies import SLOT_MINUTES
-from app.services.scheduling import SLOT, actions_from_devices, schedule
+from app.services.scheduling import SLOT, actions_from_devices, load_from_devices, schedule
 from app.services.schedule_prices import SchedulePriceService
-from app.services.schedule_bill import shifted_readings
+from app.services.schedule_bill import grid_limit_note, padded_readings, shifted_readings
 from app.schemas.energy_file import (
     ALL_DEVICE_FILES_SOURCE_ID,
     ALL_DEVICE_FILES_SOURCE_NAME,
@@ -231,10 +231,23 @@ class EnergyFileService:
         readings = self.calculations_service.energy_reading_repository.list_for_file(file_id)
         return [reading for reading in readings if date_from <= reading.measured_at.date() <= date_to]
 
+    def _bill_readings(self, file_id: UUID, date_from: date, date_to: date, latest_end: datetime) -> list:
+        """Odczyty okresu i jego ogona do końca najpóźniejszej akcji (przed albo po optymalizacji).
+
+        Akcja zaczęta w okresie może skończyć się po północy ostatniej doby, a ładowanie EV może się tam przenieść:
+        jej energia należy do okresu, więc rachunek „przed” i „po” liczy te same kwadranse ogona.
+        """
+        tail_end = latest_end.astimezone(LOCAL_TIMEZONE).replace(tzinfo=None)
+        return [
+            reading for reading in self._readings_in_range(file_id, date_from, date_to + timedelta(days=1))
+            if reading.measured_at.date() <= date_to or reading.measured_at < tail_end
+        ]
+
     def _bills(self, user_id: UUID, file_id: UUID, readings: list, actions) -> dict:
         """Pełny rachunek taryfy z profilu przed i po przesunięciu akcji (ten sam silnik co Wyniki kalkulacji)."""
         if self.calculations_service is None or not readings:
             return {}
+        readings = padded_readings(readings, actions)
         try:
             before = self.calculations_service.perform_tariff_calculations(
                 user_id, file_id, readings, selected_only=True
@@ -262,7 +275,7 @@ class EnergyFileService:
 
         devices = self.device_repository.records_for_file(energy_file.id, user_id, start, end)
         actions = actions_from_devices(devices)
-        if not actions:
+        if all(action.load_only for action in actions):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Optymalizacja działa tylko dla plików urządzeń z akcjami poboru energii w wybranym okresie.",
@@ -276,7 +289,13 @@ class EnergyFileService:
         }
         pricing = self.schedule_prices.for_user(user_id, start, end + timedelta(days=1), exports)
         prices = pricing.prices
-        result = schedule(actions, prices)
+        # Doba przed i po okresie tylko jako obciążenie domu: akcje z poprzedniej doby trwające po północy
+        # i urządzenia pracujące wtedy, gdy ładowanie EV sięga za koniec okresu, liczą się do limitu przyłącza.
+        neighbours = [
+            *self.device_repository.records_for_file(energy_file.id, user_id, start - timedelta(days=1), start),
+            *self.device_repository.records_for_file(energy_file.id, user_id, end, end + timedelta(days=1)),
+        ]
+        result = schedule(actions + load_from_devices(neighbours), prices, max_grid_kw=pricing.max_grid_kw)
 
         missing_prices = [item for item in result.actions if item.cost_before is None]
         if len(missing_prices) == len(result.actions):
@@ -286,7 +305,7 @@ class EnergyFileService:
             )
 
         # Akcja, która kończy się po ostatniej dobie, ma na wykresie także dobę z dokończeniem.
-        latest_end = max(max(item.end, item.original_start + len(item.profile_kwh) * SLOT) for item in result.actions)
+        latest_end = max(max(item.end, item.original_start + len(item.original_profile_kwh) * SLOT) for item in result.actions)
         prices_end = end + timedelta(days=1) if latest_end > end else end
 
         names = {device.device_id: device.name for device in devices}
@@ -297,11 +316,28 @@ class EnergyFileService:
         def local(moment: datetime) -> datetime:
             return moment.astimezone(LOCAL_TIMEZONE)
 
+        def charging(item) -> list[ChargingPeriodOut] | None:
+            # Okresy ciągłego poboru; None dla profilu bez przerw (zwykła akcja albo sesja bez zmian kształtu).
+            if all(item.profile_kwh):
+                return None
+            periods, period_start = [], None
+            for index, kwh in enumerate([*item.profile_kwh, 0.0]):
+                slot = item.start + index * SLOT
+                if kwh and period_start is None:
+                    period_start = slot
+                elif not kwh and period_start is not None:
+                    periods.append(ChargingPeriodOut(start=local(period_start), end=local(slot)))
+                    period_start = None
+            return periods
+
         return ScheduleResponse(
             date_from=date_from,
             date_to=date_to,
             pricing=pricing.description,
-            **self._bills(user_id, energy_file.id, readings, result.actions),
+            pv_note=pricing.pv_note,
+            max_grid_kw=pricing.max_grid_kw,
+            grid_limit_note=grid_limit_note(readings, pricing.max_grid_kw),
+            **self._bills(user_id, energy_file.id, self._bill_readings(energy_file.id, date_from, date_to, latest_end), result.actions),
             cost_before=round(result.cost_before, 2),
             cost_after=round(result.cost_after, 2),
             missing_price_actions=len(missing_prices),
@@ -313,7 +349,7 @@ class EnergyFileService:
                     device_name=names[item.device_id],
                     program_name=programs.get((item.device_id, item.program_id)),
                     original_start=local(item.original_start),
-                    original_end=local(item.original_start + len(item.profile_kwh) * SLOT),
+                    original_end=local(item.original_start + len(item.original_profile_kwh) * SLOT),
                     start=local(item.start),
                     end=local(item.end),
                     energy_kwh=round(sum(item.profile_kwh), 2),
@@ -321,6 +357,7 @@ class EnergyFileService:
                     cost_after=None if item.cost_after is None else round(item.cost_after, 2),
                     status=item.status,
                     reason=item.reason,
+                    charging=charging(item),
                 )
                 for item in result.actions
             ],

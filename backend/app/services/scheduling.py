@@ -19,11 +19,22 @@ SLOT_MINUTES = 15
 MAX_SLOTS_IN_DAY = 100
 MAX_PASSES = 3
 POWER_TOLERANCE_KWH = 1e-9
+# Energia sesji EV po rozłożeniu może różnić się od oryginału tylko o błąd zaokrągleń.
+ENERGY_TOLERANCE_KWH = 1e-6
+# Plan EV musi być tańszy od oryginału co najmniej o tyle (zł), inaczej zostaje ładowanie z pliku.
+COST_TOLERANCE = 1e-6
+# Ładowarka nie ładuje poniżej 6 A na fazę: 1 faza ok. 1,4 kW, 3 fazy ok. 4,1 kW. Ładowarka do 7,4 kW (32 A
+# na jednej fazie) jest 1-fazowa, mocniejsza 3-fazowa; plik nie podaje liczby faz ładowania.
+EV_MIN_CURRENT_A = 6
+PHASE_VOLTAGE_V = 230
+SINGLE_PHASE_MAX_KW = 7.4
 # Suszarka startująca najwyżej tyle po końcu prania jest z nim powiązana.
 DRYER_AFTER_WASH = timedelta(minutes=60)
 
 FIXED = "fixed"
 SHIFTABLE = "shiftable"
+# Energia sesji (ładowanie EV) rozłożona na dowolne kwadranse okna sesji, z przerwami.
+INTERRUPTIBLE = "interruptible"
 
 MOVED = "moved"
 UNCHANGED = "unchanged"
@@ -63,6 +74,15 @@ class ScheduleAction:
     max_shift_min: int | None = None
     # Akcja przesuwa się razem ze wskazaną, o to samo przesunięcie (np. suszarka z praniem).
     after_action_id: str | None = None
+    # Tylko INTERRUPTIBLE: okno sesji [window_start, window_end) i najwięcej kWh w jednym kwadransie.
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    max_slot_kwh: float | None = None
+    # Najmniejsza moc ładowania × 0,25 h: kwadrans z mniejszym zapasem pod limitem nie nadaje się do ładowania.
+    min_slot_kwh: float = 0.0
+    # Tylko obciążenie domu do limitu przyłącza (produkcja PV, akcje z doby przed albo po okresie):
+    # nie przesuwa się, nie ma kosztu i nie trafia do wyniku.
+    load_only: bool = False
 
 
 @dataclass
@@ -73,11 +93,18 @@ class ScheduledAction:
     original_start: datetime
     start: datetime
     end: datetime
+    # Profil od `start`; dla INTERRUPTIBLE z zerami w przerwach ładowania.
     profile_kwh: list[float]
     cost_before: float | None
     cost_after: float | None
     status: str
     reason: str | None = None
+    # Profil od `original_start`; różni się od `profile_kwh` tylko dla INTERRUPTIBLE.
+    original_profile_kwh: list[float] | None = None
+
+    def __post_init__(self):
+        if self.original_profile_kwh is None:
+            self.original_profile_kwh = self.profile_kwh
 
 
 @dataclass
@@ -148,10 +175,28 @@ def _local_time(moment: datetime) -> time:
 
 
 def _cost(start: datetime, profile_kwh: list[float], prices: dict) -> float | None:
-    slot_prices = [prices.get(start + index * SLOT) for index in range(len(profile_kwh))]
-    if None in slot_prices:
-        return None
-    return sum(price * kwh for price, kwh in zip(slot_prices, profile_kwh))
+    """Koszt profilu; kwadrans bez energii (przerwa w ładowaniu) nie potrzebuje ceny."""
+    total = 0.0
+    for index, kwh in enumerate(profile_kwh):
+        if not kwh:
+            continue
+        price = prices.get(start + index * SLOT)
+        if price is None:
+            return None
+        total += price * kwh
+    return total
+
+
+def _slot_ceil(moment: datetime) -> datetime:
+    """Początek pierwszego pełnego kwadransa od `moment`."""
+    seconds = moment.timestamp() % SLOT.total_seconds()
+    return moment + timedelta(seconds=SLOT.total_seconds() - seconds) if seconds else moment
+
+
+def _profile_from(plan: dict[datetime, float]) -> tuple[datetime, list[float]]:
+    """Plan kwadransów jako start i profil z zerami w przerwach."""
+    start, last = min(plan), max(plan)
+    return start, [plan.get(start + index * SLOT, 0.0) for index in range(int((last - start) / SLOT) + 1)]
 
 
 def _groups(actions: list[ScheduleAction]) -> list[_Group]:
@@ -166,6 +211,37 @@ def _groups(actions: list[ScheduleAction]) -> list[_Group]:
     for action in actions:
         members[root(action)].append(action)
     return [_Group(group_actions) for group_actions in members.values()]
+
+
+@dataclass
+class _Session:
+    """Sesja INTERRUPTIBLE: energia rozkładana na najtańsze kwadranse okna, plan to kwadrans -> kWh."""
+
+    action: ScheduleAction
+    reason: str | None = None
+    original: dict[datetime, float] = field(init=False)
+    plan: dict[datetime, float] = field(init=False)
+    energy_kwh: float = field(init=False)
+
+    def __post_init__(self):
+        self.original = {
+            self.action.start + index * SLOT: kwh for index, kwh in enumerate(self.action.profile_kwh) if kwh
+        }
+        self.plan = dict(self.original)
+        self.energy_kwh = sum(self.action.profile_kwh)
+
+    @property
+    def max_slot_kwh(self) -> float:
+        # Bez mocy urządzenia: najwięcej tyle, ile sesja pobrała w swoim najmocniejszym kwadransie.
+        if self.action.max_slot_kwh is not None:
+            return self.action.max_slot_kwh
+        return max(self.action.profile_kwh)
+
+    def window_slots(self):
+        slot, end = _slot_ceil(self.action.window_start), self.action.window_end
+        while slot + SLOT <= end:
+            yield slot
+            slot += SLOT
 
 
 class _NoPlaceLeft(Exception):
@@ -192,6 +268,16 @@ class _Plan:
         group.placed = False
         for device_id, slot, kwh in group.slots(group.offset):
             self.busy[device_id].discard(slot)
+            self.load[slot] -= kwh
+
+    def place_session(self, session: _Session) -> None:
+        for slot, kwh in session.plan.items():
+            self.busy[session.action.device_id].add(slot)
+            self.load[slot] += kwh
+
+    def release_session(self, session: _Session) -> None:
+        for slot, kwh in session.plan.items():
+            self.busy[session.action.device_id].discard(slot)
             self.load[slot] -= kwh
 
     def _occupied(self, group: _Group) -> bool:
@@ -244,11 +330,76 @@ class _Plan:
         self.place(group)
         return group.offset != previous
 
+    def fill(self, session: _Session) -> None:
+        """Rozkłada energię sesji na najtańsze wolne kwadranse okna; przy równej cenie na wcześniejsze.
+
+        Kwadrans przyjmuje najwyżej moc urządzenia × 0,25 h i tyle, ile zostało pod limitem przyłącza.
+        Gdy energia się nie mieści, sesja zostaje w oryginalnym kształcie z powodem konfliktu.
+        """
+        self.release_session(session)
+        device_id = session.action.device_id
+        candidates = sorted(
+            (slot for slot in session.window_slots() if slot in self.prices and slot not in self.busy[device_id]),
+            key=lambda slot: (round(self.prices[slot], 6), slot),
+        )
+        remaining, plan, grid_bound = session.energy_kwh, {}, False
+        for slot in candidates:
+            if remaining <= ENERGY_TOLERANCE_KWH:
+                break
+            room = session.max_slot_kwh
+            if self.slot_limit_kwh is not None:
+                headroom = self.slot_limit_kwh - self.load[slot]
+                grid_bound = grid_bound or headroom < room
+                room = min(room, headroom)
+            # Poniżej minimalnej mocy ładowarka nie ładuje; ostatnia porcja może być mniejsza (krótsze ładowanie).
+            if room < session.action.min_slot_kwh - POWER_TOLERANCE_KWH:
+                continue
+            take = min(room, remaining)
+            if take > POWER_TOLERANCE_KWH:
+                plan[slot] = take
+                remaining -= take
+        if remaining > ENERGY_TOLERANCE_KWH or not plan:
+            session.plan = dict(session.original)
+            session.reason = GRID_LIMIT if grid_bound else MISSING_PRICES
+            self.place_session(session)
+            if self.retry_without_place:
+                raise _NoPlaceLeft
+            return
+        # Plan bez oszczędności (np. płaska cena) zostawia ładowanie jak w pliku, zamiast zmieniać samą moc.
+        session.plan = plan if self._cost_of(plan) < self._cost_of(session.original) - COST_TOLERANCE else dict(session.original)
+        session.reason = None
+        self.place_session(session)
+
+    def _cost_of(self, plan: dict[datetime, float]) -> float:
+        return sum(self.prices[slot] * kwh for slot, kwh in plan.items())
+
+    def add_load(self, action: ScheduleAction) -> None:
+        for index, kwh in enumerate(action.profile_kwh):
+            slot = action.start + index * SLOT
+            self.load[slot] += kwh
+            if kwh > 0:
+                self.busy[action.device_id].add(slot)
+
 
 def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | None,
-             reserve_originals: bool) -> list[_Group]:
-    groups = _groups(actions)
+             reserve_originals: bool) -> tuple[list[_Group], list[_Session]]:
+    sessions = [_Session(action) for action in actions if action.mode == INTERRUPTIBLE and not action.load_only]
+    groups = _groups([action for action in actions if action.mode != INTERRUPTIBLE and not action.load_only])
     plan = _Plan(prices, max_grid_kw, retry_without_place=not reserve_originals)
+    for action in actions:
+        if action.load_only:
+            plan.add_load(action)
+    flexible_sessions = []
+    for session in sessions:
+        if _cost(session.action.start, session.action.profile_kwh, prices) is None:
+            # Bez cen oryginału nie ma z czym porównać planu: sesja zostaje bez zmian.
+            session.reason = MISSING_PRICES
+            plan.place_session(session)
+            continue
+        flexible_sessions.append(session)
+        if reserve_originals:
+            plan.place_session(session)
+
     movable = []
     for group in groups:
         # Akcje bez cen na oryginalnym miejscu zostają: nie ma z czym porównać nowego miejsca.
@@ -265,11 +416,18 @@ def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
         changed = [plan.improve(group) for group in movable]
         if not any(changed):
             break
-    return groups
+
+    # Ładowanie EV na końcu: jest najbardziej elastyczne, więc dopasowuje się do reszty domu.
+    flexible_sessions.sort(key=lambda session: (session.action.window_start, session.action.action_id))
+    for session in flexible_sessions:
+        if not reserve_originals:
+            plan.place_session(session)
+        plan.fill(session)
+    return groups, sessions
 
 
 def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | None = None) -> ScheduleResult:
-    """Rozmieszcza akcje `shiftable` tak, żeby koszt był najmniejszy; akcje `fixed` zostają bez zmian.
+    """Rozmieszcza akcje `shiftable` i `interruptible` tak, żeby koszt był najmniejszy; `fixed` zostają bez zmian.
 
     `prices` to słownik: początek kwadransa w UTC -> cena za kWh. Start jest dozwolony, gdy wypada
     co 15 minut, tej samej doby lokalnej co oryginalny, w `max_shift_min`, a akcja mieści się
@@ -281,13 +439,25 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
     oryginalnemu. Układamy bez rezerwowania miejsc grup, które czekają na swoją kolej, bo duża akcja
     powinna móc zająć miejsce małej. Jeśli przez to jakaś grupa zostanie bez miejsca, układamy od nowa
     z rezerwacją: wtedy każda grupa ma przynajmniej swoje oryginalne miejsce.
+
+    Sesje `interruptible` (ładowanie EV) układamy po pozostałych akcjach: energię sesji dzielimy
+    na najtańsze kwadranse okna [window_start, window_end), najwyżej `max_slot_kwh` na kwadrans
+    i w zapasie pod `max_grid_kw`. Plan sesji może mieć przerwy; plan bez oszczędności zostaje jak w pliku.
+
+    Akcje `load_only` tylko obciążają dom w limicie przyłącza: produkcja PV (ujemna) zmniejsza pobór z sieci,
+    a akcje z sąsiednich dób pokazują obciążenie poza okresem. Nie ma ich w wyniku ani w kosztach.
     """
     utc_prices = {_utc(slot): price for slot, price in prices.items()}
-    utc_actions = [replace(action, start=_utc(action.start)) for action in actions]
+    utc_actions = [
+        replace(action, start=_utc(action.start), window_start=_utc(action.window_start), window_end=_utc(action.window_end))
+        if action.mode == INTERRUPTIBLE and not action.load_only
+        else replace(action, start=_utc(action.start))
+        for action in actions
+    ]
     try:
-        groups = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=False)
+        groups, sessions = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=False)
     except _NoPlaceLeft:
-        groups = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=True)
+        groups, sessions = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=True)
 
     scheduled = []
     for group in groups:
@@ -308,6 +478,23 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
                 status=status,
                 reason=group.reason,
             ))
+    for session in sessions:
+        action = session.action
+        start, profile = _profile_from(session.plan)
+        scheduled.append(ScheduledAction(
+            action_id=action.action_id,
+            device_id=action.device_id,
+            program_id=action.program_id,
+            original_start=action.start,
+            start=start,
+            end=start + len(profile) * SLOT,
+            profile_kwh=profile,
+            original_profile_kwh=action.profile_kwh,
+            cost_before=_cost(action.start, action.profile_kwh, utc_prices),
+            cost_after=_cost(start, profile, utc_prices),
+            status=CONFLICT if session.reason else MOVED if session.plan != session.original else UNCHANGED,
+            reason=session.reason,
+        ))
     scheduled.sort(key=lambda action: (action.original_start, action.action_id))
     priced_actions = [action for action in scheduled if action.cost_before is not None]
     return ScheduleResult(
@@ -317,20 +504,68 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
     )
 
 
+def ev_min_slot_kwh(max_power_kw: float | None) -> float:
+    """Najmniejsza energia kwadransu ładowania (6 A na fazę), nie większa niż moc ładowarki."""
+    if max_power_kw is None:
+        return 0.0
+    phases = 1 if max_power_kw <= SINGLE_PHASE_MAX_KW else 3
+    min_kw = phases * PHASE_VOLTAGE_V * EV_MIN_CURRENT_A / 1000
+    return min(min_kw, max_power_kw) * SLOT_HOURS
+
+
+def load_from_devices(devices: list[DeviceRecord]) -> list[ScheduleAction]:
+    """Akcje urządzeń (także produkcja PV) tylko jako obciążenie domu, np. z doby przed albo po okresie."""
+    return [
+        ScheduleAction(
+            action_id=action.action_id, device_id=device.device_id, start=_utc(action.start),
+            profile_kwh=action.slots_kwh, load_only=True,
+        )
+        for device in devices
+        for action in device.actions
+    ]
+
+
 def actions_from_devices(devices: list[DeviceRecord]) -> list[ScheduleAction]:
-    """Akcje urządzeń z pliku jako wejście `schedule`. Produkcji PV nie ma: nie obniża kosztu w wycenie."""
+    """Akcje urządzeń z pliku jako wejście `schedule`.
+
+    Produkcja PV (ujemna energia) wchodzi tylko jako obciążenie domu w limicie przyłącza: w kwadransie produkcji
+    pobór z sieci jest mniejszy. Kosztu nie obniża, bo cenę nadwyżki uwzględniają już ceny kwadransów.
+    Sesja ładowania EV (tryb interruptible z deadline) ma okno od podłączenia do deadline, także po końcu okresu
+    (energia sesji należy do doby, w której się zaczęła). `allowed_window` ładowarki nie ogranicza sesji.
+    """
     actions, washes, dryers = [], [], []
     for device in devices:
         window = None
         if device.allowed_window_from is not None and device.allowed_window_to is not None:
             window = TimeWindow(device.allowed_window_from, device.allowed_window_to)
         for action in device.actions:
+            start = _utc(action.start)
             if action.energy_kwh < 0:
+                actions.append(ScheduleAction(
+                    action_id=action.action_id, device_id=device.device_id, start=start,
+                    profile_kwh=action.slots_kwh, load_only=True,
+                ))
+                continue
+            if device.flexibility_mode == INTERRUPTIBLE and action.deadline is not None:
+                original_end = start + len(action.slots_kwh) * SLOT
+                window_end = _utc(action.deadline)
+                actions.append(ScheduleAction(
+                    action_id=action.action_id,
+                    device_id=device.device_id,
+                    start=start,
+                    profile_kwh=action.slots_kwh,
+                    mode=INTERRUPTIBLE,
+                    program_id=action.program_id,
+                    window_start=min(_utc(action.plugged_in or action.start), start),
+                    window_end=max(window_end, original_end),
+                    max_slot_kwh=None if device.max_power_kw is None else device.max_power_kw * SLOT_HOURS,
+                    min_slot_kwh=ev_min_slot_kwh(device.max_power_kw),
+                ))
                 continue
             item = ScheduleAction(
                 action_id=action.action_id,
                 device_id=device.device_id,
-                start=_utc(action.start),
+                start=start,
                 profile_kwh=action.slots_kwh,
                 mode=SHIFTABLE if device.flexibility_mode == SHIFTABLE else FIXED,
                 program_id=action.program_id,

@@ -3,6 +3,11 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 
+class ChargingPeriodOut(BaseModel):
+    start: datetime
+    end: datetime
+
+
 class ScheduledActionOut(BaseModel):
     action_id: str
     device_id: str
@@ -17,6 +22,8 @@ class ScheduledActionOut(BaseModel):
     cost_after: float | None = None
     status: str
     reason: str | None = None
+    # Ładowanie EV po optymalizacji, gdy ma przerwy: okresy ciągłego ładowania między start a end.
+    charging: list[ChargingPeriodOut] | None = None
 
 
 class SchedulePriceOut(BaseModel):
@@ -36,6 +43,12 @@ class ScheduleResponse(BaseModel):
     bill_before: float | None = None
     bill_after: float | None = None
     bill_note: str | None = None
+    # Nadwyżka PV w pliku przy profilu bez instalacji PV.
+    pv_note: str | None = None
+    # Limit poboru z sieci: moc umowna z profilu.
+    max_grid_kw: float | None = None
+    # Odczyty z pliku już przekraczają limit: moc umowna w profilu jest pewnie za niska.
+    grid_limit_note: str | None = None
     missing_price_actions: int = 0
     missing_price_days: list[date] = []
     actions: list[ScheduledActionOut]

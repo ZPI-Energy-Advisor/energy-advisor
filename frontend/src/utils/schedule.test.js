@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   dayPrices,
+  actionSummary,
+  afterRanges,
+  conflictText,
   dayRows,
   daySegment,
   formatPln,
@@ -79,6 +82,57 @@ describe("schedule", () => {
 
     expect(rows[0].before).toEqual([]);
     expect(rows[0].after).toHaveLength(1);
+  });
+
+  it("ładowanie EV z przerwami rysuje każdy okres ładowania osobno", () => {
+    const ev = action({
+      device_id: "dev_ev",
+      device_name: "Ładowarka EV",
+      start: "2026-10-20T01:00:00+02:00",
+      end: "2026-10-20T03:15:00+02:00",
+      charging: [
+        { start: "2026-10-20T01:00:00+02:00", end: "2026-10-20T02:00:00+02:00" },
+        { start: "2026-10-20T03:00:00+02:00", end: "2026-10-20T03:15:00+02:00" },
+      ],
+    });
+
+    const [row] = dayRows([ev], "2026-10-20");
+
+    expect(row.after).toHaveLength(2);
+    expect(row.after[1].left).toBeCloseTo((180 / 1440) * 100);
+  });
+
+  it("opis akcji pokazuje godziny przed i po, a dla EV każdy okres ładowania", () => {
+    const ev = action({
+      device_name: "Ładowarka EV",
+      original_start: "2026-04-04T08:00:00+02:00",
+      original_end: "2026-04-04T11:45:00+02:00",
+      start: "2026-04-04T08:00:00+02:00",
+      end: "2026-04-04T15:00:00+02:00",
+      cost_before: 14.05,
+      cost_after: 10.79,
+      charging: [
+        { start: "2026-04-04T08:00:00+02:00", end: "2026-04-04T09:45:00+02:00" },
+        { start: "2026-04-04T13:00:00+02:00", end: "2026-04-04T15:00:00+02:00" },
+      ],
+    });
+
+    expect(actionSummary(ev)).toMatch(/^Ładowarka EV: 08:00–11:45 → 08:00–09:45, 13:00–15:00, 14,05\sz/);
+  });
+
+  it("godziny po optymalizacji: zwykła akcja jako zakres, EV z przerwami jako lista okresów", () => {
+    expect(afterRanges(action({ start: "2026-10-19T13:00:00+02:00", end: "2026-10-19T15:00:00+02:00" }))).toBe("13:00–15:00");
+    expect(afterRanges(action({
+      charging: [
+        { start: "2026-10-19T22:00:00+02:00", end: "2026-10-19T23:00:00+02:00" },
+        { start: "2026-10-20T02:00:00+02:00", end: "2026-10-20T03:00:00+02:00" },
+      ],
+    }))).toBe("22:00–23:00, 02:00–03:00");
+  });
+
+  it("konflikt limitu przyłącza podaje moc umowną z profilu", () => {
+    expect(conflictText(action({ reason: "grid_limit" }), 12.5)).toBe("przekroczony limit przyłącza (12,5 kW, moc umowna z profilu)");
+    expect(conflictText(action({ reason: "outside_window" }), 12.5)).toBe("poza dozwolonym oknem godzin");
   });
 
   it("wybiera ceny doby", () => {

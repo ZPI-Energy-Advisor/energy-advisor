@@ -1,12 +1,14 @@
 import { useState } from "react";
 import apiClient from "../api/client";
+import { Link } from "react-router-dom";
 import ScheduleDayChart from "../components/ScheduleDayChart";
 import SelectedFileBar from "../components/SelectedFileBar";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { SOURCE_TYPE_DEVICES, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
 import {
-  clockOf,
-  describeReason,
+  afterRanges,
+  clockRange,
+  conflictText,
   formatDayMonth,
   formatPln,
   isConflict,
@@ -14,7 +16,7 @@ import {
   visibleDays,
 } from "../utils/schedule";
 
-const shortTime = (isoTime) => `${formatDayMonth(isoTime.slice(0, 10))} ${clockOf(isoTime)}`;
+const dayOfAction = (isoTime) => formatDayMonth(isoTime.slice(0, 10));
 
 function StatTile({ label, value, hint }) {
   return (
@@ -133,20 +135,54 @@ function SchedulePage() {
                 />
               </div>
 
-              <p className="text-xs text-gray-500">
-                {hasBills
-                  ? "Pełny rachunek do zapłaty za wybrany okres (jak w Wynikach kalkulacji: opłaty, fotowoltaika i depozyt) przed i po przesunięciu urządzeń, "
-                  : `${shown.bill_note ?? ""} Koszt akcji urządzeń (energia, dystrybucja zmienna, opłaty za kWh, VAT), `}
-                według taryfy z profilu{shown.pricing ? `: ${shown.pricing}` : ""}. Godziny dobieramy po cenach kwadransów;
-                gdy panele oddają nadwyżkę do sieci, zużycie liczymy po wartości tej energii (w net-billingu RCE albo RCEm z profilu, od 02.2025 × 1,23), więc
-                urządzenia chętnie trafiają na godziny produkcji. Przy zwykłej taryfie bez PV zysk daje tylko przejście do
-                tańszej strefy. Wynik zakłada, że rano wiadomo,
-                jakie akcje będą danego dnia, więc pokazuje potencjał oszczędności. Ładowanie EV nie jest jeszcze
-                optymalizowane.
-              </p>
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>
+                  {hasBills ? "Rachunek do zapłaty za wybrany okres" : `${shown.bill_note ?? ""} Koszt akcji urządzeń`}{" "}
+                  przed i po przesunięciu urządzeń, według taryfy z profilu{shown.pricing ? `: ${shown.pricing}` : ""}.
+                  {shown.max_grid_kw != null && (
+                    <>
+                      {" "}Limit poboru z sieci: {String(shown.max_grid_kw).replace(".", ",")} kW (moc umowna z{" "}
+                      <Link to="/profile" className="underline">profilu</Link>).
+                    </>
+                  )}
+                </p>
+                <details>
+                  <summary className="cursor-pointer text-gray-600 hover:text-gray-900">Jak liczymy?</summary>
+                  <ul className="mt-2 list-disc pl-5 space-y-1">
+                    <li>
+                      {hasBills
+                        ? "Rachunek liczymy jak w Wynikach kalkulacji: z opłatami stałymi, fotowoltaiką i depozytem."
+                        : "Koszt akcji obejmuje energię, dystrybucję zmienną, opłaty za kWh i VAT, bez opłat stałych."}
+                    </li>
+                    <li>Godziny dobieramy po cenach kwadransów; przy zwykłej taryfie bez PV zysk daje tylko przejście do tańszej strefy.</li>
+                    <li>
+                      Gdy panele oddają nadwyżkę do sieci, zużycie w tym kwadransie kosztuje wartość tej energii (w net-billingu RCE
+                      albo RCEm z profilu, od 02.2025 × 1,23), więc urządzenia chętnie trafiają na godziny produkcji.
+                    </li>
+                    <li>
+                      Ładowanie EV rozkładamy na najtańsze kwadranse między podłączeniem auta a wyjazdem, także z przerwami
+                      i po północy, jeśli auto stoi do rana.
+                    </li>
+                    <li>Limit poboru z sieci liczymy jak licznik: zużycie pracujących urządzeń minus bieżąca produkcja PV.</li>
+                    <li>Wynik zakłada, że rano wiadomo, jakie akcje będą danego dnia, więc pokazuje potencjał oszczędności.</li>
+                  </ul>
+                </details>
+              </div>
 
               {missingPrices && (
                 <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">{missingPrices}</p>
+              )}
+              {shown.grid_limit_note && (
+                <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">
+                  {shown.grid_limit_note}{" "}
+                  <Link to="/profile" className="font-semibold underline">Przejdź do profilu</Link>
+                </p>
+              )}
+              {shown.pv_note && (
+                <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">
+                  {shown.pv_note}{" "}
+                  <Link to="/profile" className="font-semibold underline">Przejdź do profilu</Link>
+                </p>
               )}
 
               <div className="flex flex-wrap gap-4 text-xs text-gray-600">
@@ -184,8 +220,10 @@ function SchedulePage() {
                             {action.device_name}
                             {action.program_name && <span className="text-gray-500"> · {action.program_name}</span>}
                           </td>
-                          <td className="p-3 whitespace-nowrap">{shortTime(action.original_start)}</td>
-                          <td className="p-3 whitespace-nowrap">{shortTime(action.start)}</td>
+                          <td className="p-3 whitespace-nowrap">
+                            {dayOfAction(action.original_start)} {clockRange(action.original_start, action.original_end)}
+                          </td>
+                          <td className="p-3">{dayOfAction(action.start)} {afterRanges(action)}</td>
                           <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_before)}</td>
                           <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_after)}</td>
                         </tr>
@@ -199,8 +237,10 @@ function SchedulePage() {
                 <ul className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-1">
                   {conflicts.map((action) => (
                     <li key={action.action_id}>
-                      <span className="font-medium">{action.device_name} ({shortTime(action.original_start)}):</span>{" "}
-                      {describeReason(action.reason)}
+                      <span className="font-medium">
+                        {action.device_name} ({dayOfAction(action.original_start)} {clockRange(action.original_start, action.original_end)}):
+                      </span>{" "}
+                      {conflictText(action, shown.max_grid_kw)}
                     </li>
                   ))}
                 </ul>
