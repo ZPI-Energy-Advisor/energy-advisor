@@ -312,14 +312,14 @@ describe("PlanningPage", () => {
     expect(within(boiler).getByText(/ciepłą wodę liczymy dla 3 osób z profilu/)).toBeTruthy();
     fireEvent.change(within(boiler).getByLabelText("Pojemność zbiornika"), { target: { value: "150" } });
     fireEvent.click(within(boiler).getByRole("button", { name: /Dodaj godzinę/ }));
-    expect(within(boiler).getByLabelText("Bojler: woda gotowa na (3)").value).toBe("00:00");
+    expect(within(boiler).getByLabelText("Bojler: woda gotowa na (3)").value).toBe("12:00");
 
     fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
 
     await screen.findByText("Plan na piątek 13.11");
     const [, pumpPayload, heaterPayload] = put.mock.calls[0][1].devices;
     expect(pumpPayload).toMatchObject({ device_id: "dev_hp_01", enabled: true, shift_hours: 2 });
-    expect(heaterPayload.ready_times).toEqual(["06:00", "18:00", "00:00"]);
+    expect(heaterPayload.ready_times).toEqual(["06:00", "18:00", "12:00"]);
     expect(heaterPayload.tank_liters).toBe(150);
   });
 

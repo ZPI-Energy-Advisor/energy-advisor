@@ -100,6 +100,17 @@ def _day_text(day: date) -> str:
     return f"{WEEKDAYS[day.weekday()]} {day.day} {MONTHS[day.month - 1]}"
 
 
+def _slot_ranges(starts: list[datetime]) -> str:
+    """Kwadranse jako godziny lokalne, sąsiednie połączone: „o 17:00–17:30 i 21:00–21:15”."""
+    ranges: list[list[datetime]] = []
+    for slot in sorted(starts):
+        if ranges and ranges[-1][1] == slot:
+            ranges[-1][1] = slot + SLOT
+        else:
+            ranges.append([slot, slot + SLOT])
+    return "o " + _list([f"{_local(start):%H:%M}–{_local(end):%H:%M}" for start, end in ranges])
+
+
 def _clock(clock: str) -> str:
     """06:00 -> 6:00, jak w mowie."""
     return clock[1:] if clock.startswith("0") else clock
@@ -214,6 +225,18 @@ class PlanService:
             slot += SLOT
         by_id = {device.device_id: device for device in enabled}
         built: dict[str, ScheduleAction | None] = {}
+        # Obciążenie, którego plan nie przesuwa (kWh w każdym kwadransie): rezerwa na resztę domu, a potem
+        # grzanie bojlera. Liczymy je przed urządzeniami, bo bojler układamy poza rdzeniem i musi sam
+        # zmieścić się w limicie przyłącza obok reszty domu.
+        load = None
+        if pricing.max_grid_kw:
+            # Odznaczona pompa ciepła albo bojler nie są w planie, ale dalej pracują na termostacie,
+            # więc ich zwykły pobór też musi zmieścić się w limicie (w przeciwieństwie do pralki, która jutro nie pierze).
+            unplanned = [
+                device for device in preferences.devices
+                if not device.preference.enabled and device.kind in (HEAT_PUMP_TYPE, WATER_HEATER_TYPE)
+            ]
+            load = self._reserve_for_rest_of_home(build, user, slots, pricing.max_grid_kw, unplanned, raw)
         for device in enabled:
             instance, programs = raw[device.device_id]
             if device.kind == "program":
@@ -221,7 +244,7 @@ class PlanService:
             elif device.kind == "ev":
                 self._ev(build, device)
             elif device.kind == WATER_HEATER_TYPE:
-                self._water_heater(build, device, slots, prices)
+                self._water_heater(build, device, slots, prices, load, pricing.max_grid_kw)
             elif device.kind == HEAT_PUMP_TYPE:
                 self._heat_pump(build, device, history.get(instance.id, []))
 
@@ -233,8 +256,6 @@ class PlanService:
             build.notes.append(
                 f"Bez planu: {_list(build.window_start)} startuje na początku podanych godzin, bo nie ma w historii."
             )
-        if pricing.max_grid_kw:
-            self._reserve_for_rest_of_home(build, user, slots, pricing.max_grid_kw)
         result = schedule(build.actions, prices, pricing.max_grid_kw)
         result.actions.extend(build.extra)
         result.cost_before += sum(item.cost_before for item in build.extra)
@@ -258,15 +279,24 @@ class PlanService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie ma takiego planu.")
         return self._out(self.plan_repository.approve(plan))
 
-    def _reserve_for_rest_of_home(self, build: _Build, user: User, slots: list[datetime], max_grid_kw: float) -> None:
-        """Pozostałe urządzenia (stałe) jako obciążenie domu w limicie przyłącza: o każdej porze dnia
-        największy ich pobór z ostatnich dni w plikach. Plan ich nie przesuwa, ale nie może ich wypchnąć ponad limit."""
-        peaks, days = peak_by_clock(self.planning_repository.fixed_slot_usage(user.id, RESERVE_DAYS), RESERVE_DAYS)
+    def _reserve_for_rest_of_home(
+        self, build: _Build, user: User, slots: list[datetime], max_grid_kw: float,
+        unplanned: list[PlanningDevice], raw: dict,
+    ) -> list[float]:
+        """Pozostałe urządzenia jako obciążenie domu w limicie przyłącza: o każdej porze dnia największy ich
+        pobór z ostatnich dni w plikach. To urządzenia stałe oraz odznaczone pompa ciepła i bojler (`unplanned`),
+        które pracują same na termostacie. Plan ich nie przesuwa, ale nie może ich wypchnąć ponad limit.
+
+        Zwraca rezerwę w kWh na każdy kwadrans `slots` (same zera, gdy nie znamy reszty domu)."""
+        usage = self.planning_repository.fixed_slot_usage(
+            user.id, RESERVE_DAYS, [raw[device.device_id][0].id for device in unplanned],
+        )
+        peaks, days = peak_by_clock(usage, RESERVE_DAYS)
         if not peaks:
             build.notes.append(
                 "Nie znamy zużycia pozostałych urządzeń w domu, więc moc przyłącza sprawdzamy tylko dla urządzeń z planu."
             )
-            return
+            return [0.0] * len(slots)
         profile = [peaks.get(clock_minute(slot), 0.0) for slot in slots]
         build.actions.append(ScheduleAction(
             action_id="rest_of_home", device_id="rest_of_home", start=slots[0], profile_kwh=profile, load_only=True,
@@ -275,6 +305,13 @@ class PlanService:
             "Zostawiamy zapas na pozostałe urządzenia w domu, np. kuchenkę przy obiedzie, "
             "żeby razem nie przekroczyć mocy przyłącza."
         )
+        if unplanned:
+            build.notes.append(
+                f"Zapas obejmuje też: {_list([device.device_name for device in unplanned])}. "
+                "Nie układamy ich w planie, ale pracują same na termostacie, tak jak zwykle."
+            )
+        # Kopia: bojler dopisuje do niej swoje grzanie, a akcja `rest_of_home` ma zostać samą rezerwą.
+        return list(profile)
 
     # --- ceny ---
 
@@ -377,18 +414,25 @@ class PlanService:
 
     @staticmethod
     def _usual_start(build: _Build, device: PlanningDevice, starts: list[int]) -> int:
-        """Start bez planu: mediana godzin startu z historii (w minutach od północy dnia planu, po przejściu
-        przez północ, jeśli przedział też przez nią przechodzi), dopasowana do najbliższego dozwolonego startu.
-        Bez historii: początek przedziału."""
+        """Start bez planu: mediana godzin startu z historii (w minutach od północy dnia planu), dopasowana
+        do najbliższego dozwolonego startu. Bez historii: początek przedziału.
+
+        Start wcześniejszy niż początek przedziałów przenosimy na noc po dniu planu tylko wtedy, gdy tam
+        trafia do przedziału przechodzącego przez północ (zmywarka 19:00–07:00 włączana o 00:30). Przy
+        przedziale w ciągu dnia (pralka 12:00–22:00 włączana zwykle o 09:00) zostaje rano tego dnia,
+        więc najbliższy dozwolony start to początek przedziału, a nie jego koniec."""
         actions = build.program_history.get(device.device_id, [])
         if not actions:
             build.window_start.append(device.device_name)
             return starts[0]
         first = starts[0]
-        minutes = sorted(
-            minute if minute >= first else minute + DAY_MINUTES
-            for minute in (clock_minute(action.action_start) for action in actions)
-        )
+        last_end = max(end for _, end in _spans(device))
+
+        def placed(minute: int) -> int:
+            next_night = minute + DAY_MINUTES
+            return next_night if minute < first and next_night < last_end else minute
+
+        minutes = sorted(placed(clock_minute(action.action_start)) for action in actions)
         usual = round(minutes[len(minutes) // 2] / SLOT_MINUTES) * SLOT_MINUTES
         build.usual_start.append(device.device_name)
         return min(starts, key=lambda minute: (abs(minute - usual), minute))
@@ -445,7 +489,10 @@ class PlanService:
                 f"{device.device_name}: do 6:00 auto nie naładuje się do końca, zabraknie ok. {_kwh(missing)} kWh."
             )
 
-    def _water_heater(self, build: _Build, device: PlanningDevice, slots: list[datetime], prices: dict) -> None:
+    def _water_heater(
+        self, build: _Build, device: PlanningDevice, slots: list[datetime], prices: dict,
+        load: list[float] | None = None, max_grid_kw: float | None = None,
+    ) -> None:
         """Bojler jako magazyn ciepła (water_heater.py): najtańsze kwadranse grzania, przy których woda jest
         ciepła na godziny „woda gotowa na” i nigdy zimna. Bez planu: zwykły termostat.
 
@@ -464,7 +511,21 @@ class PlanService:
         daily = device.hot_water_kwh
         draw = draws(len(slots), ready, daily)
         before = thermostat(tank, draw, slot_prices, ready)
-        after = optimize(tank, draw, slot_prices, ready)
+        # Limit przyłącza: grzałka pracuje pełną mocą, więc plan grzeje w kwadransach, w których zmieści się
+        # obok reszty domu (i wcześniej ułożonego bojlera). Limit jest miękki (optimize): ponad nim plan grzeje
+        # tylko wtedy, gdy inaczej woda byłaby za zimna. Termostat bez planu zostaje bez zmian: to, co dom robi dziś.
+        allowed = None
+        if load is not None and max_grid_kw:
+            limit_kwh = max_grid_kw * SLOT_HOURS
+            allowed = [load[position] + tank.slot_kwh <= limit_kwh + 1e-9 for position in range(len(slots))]
+        after = optimize(tank, draw, slot_prices, ready, allowed=allowed)
+        if load is not None:
+            for position, active in enumerate(after.on):
+                if active:
+                    load[position] += tank.slot_kwh
+        over_limit = [
+            slot for position, slot in enumerate(slots) if allowed is not None and after.on[position] and not allowed[position]
+        ]
 
         action_id = device.device_id
         original_start, original = self._heating_profile(before.on, slots, tank.slot_kwh)
@@ -518,7 +579,14 @@ class PlanService:
             f"{device.device_name}: woda będzie gorąca na {ready}. Plan nagrzewa ją na zapas, kiedy prąd jest tani, "
             "a w nocy pozwala jej trochę ostygnąć."
         )
+        if over_limit:
+            build.warnings.append(
+                f"{device.device_name}: grzeje {_slot_ranges(over_limit)} mimo ryzyka przekroczenia mocy przyłącza "
+                f"({_kwh(max_grid_kw)} kW) razem z resztą domu, bo inaczej woda nie byłaby ciepła na czas. "
+                "Nie włączaj wtedy dużych urządzeń, np. piekarnika czy czajnika."
+            )
         if after.shortfall > 0.5:
+            # Limit nie powoduje już niedogrzania (jest miękki), więc to ograniczenie fizyczne bojlera.
             build.warnings.append(
                 f"{device.device_name}: nie zdąży nagrzać tyle wody, ile zwykle zużywacie. Pomoże większy zbiornik."
             )

@@ -3,6 +3,7 @@
 import pytest
 
 from app.services.water_heater import (
+    DRAW_SLOTS,
     LOSS_C_PER_HOUR_AT_READY,
     ROOM_TEMP,
     MAX_TEMP,
@@ -41,6 +42,39 @@ def test_more_residents_need_more_hot_water_and_bigger_tank():
     assert daily_draw_kwh(5) > daily_draw_kwh(2)
     assert (default_tank_liters(2), default_tank_liters(4), default_tank_liters(5)) == (80, 120, 150)
     assert sum(draws(SLOTS, READY, daily_draw_kwh(5))) > sum(draws(SLOTS, READY, daily_draw_kwh(2)))
+
+
+def test_draw_after_midnight_belongs_to_next_day_and_is_not_squeezed_into_last_slot():
+    daily = daily_draw_kwh(3)
+    share = daily / DRAW_SLOTS  # jedna godzina gotowości: cały pobór w 8 kwadransach
+
+    at_midnight = draws(SLOTS, [SLOTS], daily)  # 00:00 na końcu doby
+    late = draws(SLOTS, [SLOTS - 4], daily)  # 23:00: 4 kwadranse tej doby, 4 następnej
+
+    assert sum(at_midnight) == 0.0
+    assert max(late) == pytest.approx(share)
+    assert sum(late) == pytest.approx(share * 4)
+    # Gotowość na 00:00 i tak jest sprawdzana: plan grzeje tak, żeby o północy było co najmniej 55°C.
+    heating = optimize(Tank(liters=80, power_kw=2.0), at_midnight, night_cheap_prices(), [SLOTS])
+    assert heating.shortfall == 0.0
+    assert heating.temps[-1] >= READY_TEMP
+
+
+def test_grid_limit_is_avoided_when_possible_but_hot_water_comes_first():
+    tank, draw, prices = case()
+    # Tanio 00:00–05:00 i 12:00–15:00; w południe grzałka nie mieści się w limicie, ale w nocy tak.
+    allowed = [not 48 <= slot < 60 for slot in range(SLOTS)]
+
+    limited = optimize(tank, draw, prices, READY, allowed=allowed)
+    blocked = optimize(tank, draw, prices, READY, allowed=[False] * SLOTS)
+    free = optimize(tank, draw, prices, READY)
+
+    # Da się ominąć południe: plan grzeje gdzie indziej, woda ciepła.
+    assert not any(limited.on[48:60])
+    assert limited.shortfall == 0.0
+    # Nigdzie się nie mieści: woda i tak ciepła (ponad limitem), bez dogrzewania „na zapas” ponad potrzebę.
+    assert blocked.shortfall == 0.0
+    assert sum(blocked.on) <= sum(free.on)
 
 
 def test_hot_water_cools_down_faster_than_warm():

@@ -281,6 +281,68 @@ def test_grid_limit_keeps_room_for_fixed_devices_at_their_usual_hours(home):
     assert any(note.startswith("Zostawiamy zapas na pozostałe urządzenia") for note in body["notes"])
 
 
+def test_water_heater_heats_only_where_it_fits_next_to_rest_of_home(home):
+    # Płyta (stała) bierze 3,6 kW w tanich 13:00–15:00, limit 5 kW: bojler (2 kW) się tam nie mieści,
+    # więc grzeje w innych tanich godzinach (02:00–04:00), a nie razem z płytą (5,6 kW).
+    hob = {**HOB, "actions": [{
+        "action_id": "act_hob_1", "device_id": "dev_hob_01",
+        "action_start": "2026-10-05T13:00:00+02:00", "action_end": "2026-10-05T15:00:00+02:00", "energy_kwh": 7.2,
+    }]}
+    owner = _owner(home, WATER_HEATER, hob)
+
+    body = _create(owner, prices=_PricesWithGridLimit).json()
+
+    heater = _items_of(body)["dev_wh_01"]
+    afternoon = datetime(2026, 10, 12, 13, tzinfo=WARSAW), datetime(2026, 10, 12, 15, tzinfo=WARSAW)
+    assert heater["charging"]
+    assert not any(
+        _local(period["start"]) < afternoon[1] and _local(period["end"]) > afternoon[0] for period in heater["charging"]
+    )
+    assert body["water_heaters"][0]["shortfall"] == 0
+    # Dało się ominąć płytę, więc nie ma ostrzeżenia o przekroczeniu.
+    assert not any("mimo ryzyka przekroczenia" in warning for warning in body["warnings"])
+
+
+def test_water_heater_keeps_water_hot_over_grid_limit_when_it_cannot_fit_anywhere(home):
+    # Płyta bierze 3,5 kW przez całą dobę, limit 5 kW: bojler (2 kW) nie mieści się w żadnym kwadransie.
+    # Ciepła woda jest ważniejsza niż limit, więc bojler grzeje, a plan mówi, kiedy grozi przekroczenie.
+    hob = {**HOB, "actions": [{
+        "action_id": "act_hob_1", "device_id": "dev_hob_01",
+        "action_start": "2026-10-05T00:00:00+02:00", "action_end": "2026-10-06T00:00:00+02:00", "energy_kwh": 84.0,
+    }]}
+    owner = _owner(home, WATER_HEATER, hob)
+
+    body = _create(owner, prices=_PricesWithGridLimit).json()
+
+    water = body["water_heaters"][0]
+    assert water["shortfall"] == 0
+    temps = {_local(point["start"]).strftime("%H:%M"): point["after"] for point in water["temperatures"]}
+    assert temps["05:45"] >= 55 and temps["17:45"] >= 55
+    over = [warning for warning in body["warnings"] if "mimo ryzyka przekroczenia mocy przyłącza (5,0 kW)" in warning]
+    assert len(over) == 1 and over[0].startswith("Bojler: grzeje o ")
+    assert not any("większy zbiornik" in warning for warning in body["warnings"])
+
+
+def test_grid_limit_keeps_room_for_unticked_heat_pump_running_on_its_own(home):
+    # Pompa grzeje zwykle 13:00–14:00 z mocą 2,9 kW. Odznaczona nie jest w planie, ale dalej grzeje,
+    # więc pralka (do 2,4 kW) przy limicie 5 kW nie zmieści się obok niej i idzie na tanie 14:00.
+    heat_pump = {**HEAT_PUMP, "actions": [{
+        "action_id": "act_hp_1", "device_id": "dev_hp_01",
+        "action_start": "2026-10-05T13:00:00+02:00", "action_end": "2026-10-05T14:00:00+02:00", "energy_kwh": 2.9,
+    }]}
+    owner = _owner(home, WASHER, heat_pump)
+    assert _put(owner, {"devices": [
+        {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))},
+        {"device_id": "dev_hp_01", "enabled": False},
+    ]}).status_code == 200
+
+    body = _create(owner, prices=_PricesWithGridLimit).json()
+
+    assert _items_of(body)["dev_wm_01"]["start"] == "2026-10-12T14:00:00+02:00"
+    assert "dev_hp_01#1" not in _items_of(body)
+    assert any(note.startswith("Zapas obejmuje też: Pompa ciepła.") for note in body["notes"])
+
+
 def _items_of(body) -> dict:
     return {item["action_id"]: item for item in body["items"]}
 
@@ -343,6 +405,27 @@ def test_without_plan_devices_start_as_usual_from_history_also_after_midnight(ho
 
     assert _items_of(body)["dev_dw_01"]["original_start"] == "2026-10-12T23:00:00+02:00"
     assert "Bez planu: Zmywarka startuje o godzinie, o której zwykle jest włączane (z historii)." in body["notes"]
+
+
+def test_without_plan_start_before_daytime_window_stays_that_morning(home):
+    # Pralka z przedziałem 12:00–22:00 (bez przejścia przez północ) włączana o 08:00, 09:00 i 13:00:
+    # mediana to 09:00, więc bez planu startuje na początku przedziału (12:00), a nie wieczorem,
+    # jak wtedy, gdy 08:00 i 09:00 były liczone jako następny dzień (mediana 32:00, czyli koniec przedziału).
+    actions = [
+        {"action_id": f"act_wm_{index}", "device_id": "dev_wm_01", "program_id": "cotton_60", "action_start": start,
+         "action_end": (datetime.fromisoformat(start) + SLOT * 3).isoformat(), "energy_kwh": 1.4}
+        for index, start in enumerate((
+            "2026-10-05T08:00:00+02:00", "2026-10-05T09:00:00+02:00", "2026-10-05T13:00:00+02:00",
+        ))
+    ]
+    owner = _owner(home, {**WASHER, "actions": actions})
+    assert _put(owner, {"devices": [
+        {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("12:00", "22:00"))},
+    ]}).status_code == 200
+
+    body = _create(owner).json()
+
+    assert _items_of(body)["dev_wm_01"]["original_start"] == "2026-10-12T12:00:00+02:00"
 
 
 def test_without_history_device_starts_at_window_start(home):

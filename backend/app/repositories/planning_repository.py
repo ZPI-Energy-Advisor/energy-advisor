@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.DeviceAction import DeviceAction
@@ -72,16 +72,24 @@ class PlanningRepository:
                 result[action.device_instance_id].append(action)
         return result
 
-    def fixed_slot_usage(self, user_id: UUID, days: int) -> list[tuple[datetime, float]]:
+    def fixed_slot_usage(
+        self, user_id: UUID, days: int, extra_instance_ids: list[UUID] | None = None,
+    ) -> list[tuple[datetime, float]]:
         """Pobór urządzeń stałych (lodówka, światło, płyta…) w kwadransach z ostatnich `days` dni w plikach:
-        (początek kwadransu, kWh), bez produkcji PV i bez kwadransów zastąpionych nowszym plikiem."""
+        (początek kwadransu, kWh), bez produkcji PV i bez kwadransów zastąpionych nowszym plikiem.
+
+        `extra_instance_ids`: urządzenia elastyczne liczone jak stałe, bo plan ich nie układa, a i tak pracują
+        (odznaczona pompa ciepła albo bojler)."""
+        counted = DeviceInstance.flexibility_mode == DeviceInstance.FIXED
+        if extra_instance_ids:
+            counted = or_(counted, DeviceInstance.id.in_(extra_instance_ids))
         fixed = (
             select(DeviceSlotUsage.slot_start, DeviceSlotUsage.kwh)
             .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
             .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
             .where(
                 DeviceInstance.user_id == user_id,
-                DeviceInstance.flexibility_mode == DeviceInstance.FIXED,
+                counted,
                 DeviceSlotUsage.superseded.is_(False),
                 DeviceSlotUsage.kwh > 0,
             )

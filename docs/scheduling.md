@@ -190,7 +190,9 @@ Zasada „start w tej samej dobie” nie obowiązuje: każda akcja ma jawne `all
 
 **Start bazowy** („bez planu”) to to, co dom robi bez planu: pralka czy zmywarka startuje o godzinie,
 o której zwykle jest włączana (mediana startów z historii, najbliższy dozwolony start; bez historii
-początek przedziału), auto ładuje pełną mocą od podłączenia, bojler trzyma termostat, a pompa grzeje
+początek przedziału). Start wcześniejszy niż przedział liczymy jako noc po dniu planu tylko wtedy, gdy
+tam trafia do przedziału przez północ (zmywarka 19:00–07:00 włączana o 00:30); pralka z przedziałem
+12:00–22:00 włączana zwykle o 09:00 startuje bez planu o 12:00. Auto ładuje pełną mocą od podłączenia, bojler trzyma termostat, a pompa grzeje
 blokami z historii. `saving = cost_before − cost_after`, a procent na ekranie to oszczędność względem
 kosztu bez planu tych samych urządzeń.
 
@@ -210,7 +212,9 @@ do kosztu bojlera.
 - Pobór ciepłej wody na dobę: z historii bojlera w plikach (średnio z 7 ostatnich dni, bez akcji
   zastąpionych nowszym plikiem) minus straty termostatu przy 55°C, bo plik pokazuje zużycie bojlera
   z termostatem, czyli pobór i straty. Bez historii: liczba osób × 1,6 kWh. Pobór idzie po równo na
-  każdą godzinę z `ready_times`, rozłożony na 2 h od tej godziny.
+  każdą godzinę z `ready_times`, rozłożony na 2 h od tej godziny. Część poboru po północy (godzina
+  gotowości po 22:00, np. 23:00 albo 00:00) należy do kolejnej doby i nie wchodzi do tej; woda i tak musi
+  mieć 55°C na tę godzinę.
 - Woda stygnie proporcjonalnie do różnicy z temperaturą pomieszczenia (22°C): przy 55°C ok. 0,5°C
   na godzinę, przy 75°C o ok. 60% szybciej. Grzanie na zapas kosztuje więc większe straty i plan
   wybiera je tylko wtedy, gdy różnica cen je pokrywa.
@@ -241,6 +245,16 @@ z ostatnich 7 dni w plikach (`device_slot_usage`, bez PV i bez kwadransów zast�
 i dodajemy go jako obciążenie `load_only`. Maksimum zamiast średniej, żeby limit wystarczył także
 w gorszy dzień; w nocy rezerwa jest mała, więc auto może ładować się prawie pełną mocą. Uwaga planu
 podaje szczyt rezerwy i jego godzinę. Bez historii urządzeń stałych limit dotyczy tylko planowanych.
+Odznaczona pompa ciepła albo bojler wchodzą do rezerwy tak jak urządzenia stałe: plan ich nie układa,
+ale pracują same na termostacie. Odznaczona pralka, zmywarka czy auto jutro nie pracują, więc nie.
+Bojler układamy poza rdzeniem, więc sam pilnuje limitu, a limit jest dla niego miękki. Kolejność
+ważności: ciepła woda, potem limit, potem cena. Kwadrans, w którym pełna moc grzałki nie mieści się
+obok rezerwy (i wcześniej ułożonego bojlera), nie jest zakazany, tylko obciążony karą (`OVER_LIMIT_PENALTY`,
+dużo większą niż cena prądu, dużo mniejszą niż kara za zimną wodę). Plan omija więc takie kwadranse,
+kiedy może, a grzeje w nich tylko wtedy, gdy inaczej woda byłaby za zimna; ostrzeżenie podaje wtedy
+godziny („grzeje o 17:00–17:30 mimo ryzyka przekroczenia mocy przyłącza…”). Rezerwa to maksimum z 7 dni,
+więc przekroczenie jest możliwe, ale nie pewne; bez planu termostat i tak grzałby bez względu na limit.
+Termostat „bez planu” zostaje bez zmian, bo opisuje to, co dom robi dziś.
 
 **Poza planem**: produkcja PV (brak prognozy), a urządzenia stałe tylko jako rezerwa w limicie, więc
 oszczędność dotyczy tylko planowanych urządzeń. Plan nie wysyła jeszcze komend do huba.

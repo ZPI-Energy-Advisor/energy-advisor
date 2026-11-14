@@ -42,6 +42,10 @@ DRAW_SLOTS = 8
 SLOT_HOURS = 0.25
 # Kara za każdy °C poniżej wymaganej temperatury w kwadransie: dużo większa niż koszt grzania.
 SHORTFALL_PENALTY = 100.0
+# Kara za kwadrans grzania ponad limit przyłącza (zł): dużo większa niż cena prądu (ok. 0,5 zł za kwadrans),
+# więc plan omija takie kwadranse, kiedy tylko może, ale dużo mniejsza niż kara za zimną wodę (kwadrans
+# grzania to kilka °C, czyli kilkaset zł kary), więc ciepła woda jest ważniejsza niż limit.
+OVER_LIMIT_PENALTY = 10.0
 # Pobór z historii nie może wyjść ujemny ani absurdalnie mały (np. bojler wyłączony na urlopie).
 MIN_DAILY_DRAW_KWH = 0.5
 
@@ -99,15 +103,19 @@ def draw_from_history(daily_kwh: float, liters: float) -> float:
 
 
 def draws(slots: int, ready_indices: list[int], daily_kwh: float) -> list[float]:
-    """Pobór ciepłej wody w kwadransach doby: po równo w 2 h od każdej godziny gotowości."""
+    """Pobór ciepłej wody w kwadransach doby: po równo w 2 h od każdej godziny gotowości.
+
+    Pobór, który wypada po północy (godzina gotowości po 22:00, np. 23:00 albo 00:00), należy do kolejnej
+    doby i tu go pomijamy. Wciśnięty w ostatni kwadrans dawałby nierealny spadek temperatury naraz
+    (przy 00:00 cały 2-godzinny pobór w 15 minut). Gotowość na tę godzinę i tak sprawdza `minimums`:
+    o północy woda musi mieć `READY_TEMP`."""
     result = [0.0] * slots
     if not ready_indices:
         return result
     share = daily_kwh / len(ready_indices) / DRAW_SLOTS
     for index in ready_indices:
-        for slot in range(index, index + DRAW_SLOTS):
-            # Pobór po ostatniej godzinie, który wypada po północy, liczymy na koniec doby.
-            result[min(slot, slots - 1)] += share
+        for slot in range(index, min(index + DRAW_SLOTS, slots)):
+            result[slot] += share
     return result
 
 
@@ -150,8 +158,14 @@ def thermostat(tank: Tank, draw: list[float], prices: list[float], ready_indices
 
 
 def optimize(tank: Tank, draw: list[float], prices: list[float], ready_indices: list[int],
-             start_temp: float = PLAN_START_TEMP) -> Heating:
-    """Najtańsze kwadranse grzania spełniające wymagania temperatury (programowanie dynamiczne)."""
+             start_temp: float = PLAN_START_TEMP, allowed: list[bool] | None = None) -> Heating:
+    """Najtańsze kwadranse grzania spełniające wymagania temperatury (programowanie dynamiczne).
+
+    `allowed`: kwadranse, w których grzałka mieści się w limicie przyłącza obok reszty domu; None to wszystkie.
+    Limit jest miękki: grzanie w pozostałych kwadransach kosztuje `OVER_LIMIT_PENALTY`. Kolejność ważności to
+    ciepła woda, potem limit, potem cena: plan grzeje ponad limit tylko wtedy, gdy inaczej woda byłaby
+    za zimna, i tylko w tylu kwadransach, ile trzeba. `shortfall` zostaje więc tylko wtedy, gdy grzałka
+    fizycznie nie nadąża (za mała moc albo zbiornik)."""
     slots = len(draw)
     required = minimums(slots, ready_indices, start_temp)
     # states: temperatura co 0,1°C -> (koszt z karą, dokładna temperatura) po bieżącym kwadransie.
@@ -166,6 +180,8 @@ def optimize(tank: Tank, draw: list[float], prices: list[float], ready_indices: 
                 if active and after > MAX_TEMP:
                     continue
                 total = base + (prices[slot] * tank.slot_kwh if active else 0.0)
+                if active and allowed is not None and not allowed[slot]:
+                    total += OVER_LIMIT_PENALTY
                 total += SHORTFALL_PENALTY * max(required[slot] - after, 0.0)
                 bucket = round(after, 1)
                 if total < new_states.get(bucket, (float("inf"), 0.0))[0] - 1e-9:

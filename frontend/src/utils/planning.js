@@ -203,9 +203,19 @@ export const errorsFromResponse = (error, devices) => {
   return result;
 };
 
-/** Kolejna godzina „woda gotowa na”: 6 h po ostatniej (pierwsza: 06:00). */
+/**
+ * Kolejna godzina „woda gotowa na”: środek najdłuższej przerwy między podanymi godzinami, licząc w kółko
+ * przez dobę (06:00 → 18:00; 06:00 i 18:00 → 12:00; dalej 00:00), zaokrąglony do kwadransa. Nie powtarza
+ * godziny, bo środek przerwy dłuższej niż kwadrans nie trafia w żadną z nich. Pola puste albo niepełne
+ * pomijamy (bez nich: 06:00), więc nie powstaje „NaN:NaN”.
+ */
 export const nextReadyTime = (times) => {
-  if (!times.length) return "06:00";
-  const last = Math.max(...times.map(minutesOf));
-  return clockOf(last + 360);
+  const taken = [...new Set(times.filter(isQuarter).map(minutesOf))].sort((a, b) => a - b);
+  if (!taken.length) return "06:00";
+  let longest = { gap: 0, from: taken[0] };
+  taken.forEach((minute, index) => {
+    const next = index + 1 < taken.length ? taken[index + 1] : taken[0] + DAY_MINUTES;
+    if (next - minute > longest.gap) longest = { gap: next - minute, from: minute };
+  });
+  return clockOf(longest.from + Math.round(longest.gap / 2 / 15) * 15);
 };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  afterOptions, crossesMidnight, energyNeeded, errorsFromResponse, nextWindow, orderError, validateDevice, windowLength,
+  afterOptions, crossesMidnight, energyNeeded, errorsFromResponse, nextReadyTime, nextWindow, orderError, validateDevice,
+  windowLength,
 } from "./planning";
 
 const washer = {
@@ -119,5 +120,23 @@ describe("planning", () => {
     expect(energyNeeded(preference, 0.9)).toBeNull();
     expect(validateDevice(ev, { ...preference, current_percent: 120, target_percent: 80 }, 0.9))
       .toMatchObject({ current_percent: "Podaj wartość od 0 do 100%." });
+  });
+
+  it("„Dodaj godzinę” bojlera bierze środek najdłuższej przerwy i nie powtarza godzin", () => {
+    expect(nextReadyTime([])).toBe("06:00");
+    expect(nextReadyTime(["06:00"])).toBe("18:00");
+    expect(nextReadyTime(["06:00", "18:00"])).toBe("12:00");
+    expect(nextReadyTime(["06:00", "18:00", "12:00"])).toBe("00:00");
+
+    // Wcześniej: dwa kliknięcia na domyślnych godzinach dawały 00:00 dwa razy.
+    let times = ["06:00", "18:00"];
+    for (let click = 0; click < 2; click += 1) times = [...times, nextReadyTime(times)];
+    expect(new Set(times).size).toBe(times.length);
+
+    // Puste albo niepełne pole jest pomijane, zamiast dawać „NaN:NaN”.
+    expect(nextReadyTime(["06:00", ""])).toBe("18:00");
+    expect(nextReadyTime([""])).toBe("06:00");
+    // Środek przerwy zaokrąglony do kwadransa: 07:00–08:15 → 07:30.
+    expect(nextReadyTime(["07:00", "08:15", "18:00"])).toMatch(/^([01]\d|2[0-3]):(00|15|30|45)$/);
   });
 });
