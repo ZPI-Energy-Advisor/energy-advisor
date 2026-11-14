@@ -83,7 +83,7 @@ function LayoutShell() {
     },
     {
       path: "/schedule",
-      label: "Optymalizacja",
+      label: "Optymalizacja historyczna",
       icon: <FiClock className="mr-3 text-lg" />,
     },
     ...(me?.home_owner ? [HOME_NAV_ITEM] : []),

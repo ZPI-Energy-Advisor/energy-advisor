@@ -12,6 +12,8 @@ class ScheduledActionOut(BaseModel):
     action_id: str
     device_id: str
     device_name: str
+    # Tryb urządzenia z pliku: ekran chowa urządzenia stałe (fixed), których optymalizacja nie przesuwa.
+    flexibility_mode: str | None = None
     program_name: str | None = None
     original_start: datetime
     original_end: datetime

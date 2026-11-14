@@ -124,11 +124,24 @@ def test_window_is_a_hard_limit_for_the_whole_action():
     assert result.actions[0].end == at(19, 22)
 
 
-def test_window_across_midnight_allows_action_ending_next_day():
+def test_action_from_one_day_does_not_cross_midnight_even_in_overnight_window():
     window = TimeWindow(time(19), time(7))
 
     result = schedule(
         [action(start=at(19, 19), profile=[0.1] * 12, allowed_window=window)],
+        prices(cheap=[(at(19, 23), at(20, 2), 0.1)]),
+    )
+
+    # Najtańsze 23:00-2:00 przechodzi przez północ, więc akcja kończy się najpóźniej o 24:00.
+    assert result.actions[0].start == at(19, 21)
+    assert result.actions[0].end == at(20, 0)
+
+
+def test_action_crossing_midnight_in_file_may_still_cross_it():
+    window = TimeWindow(time(19), time(7))
+
+    result = schedule(
+        [action(start=at(19, 22), profile=[0.1] * 12, allowed_window=window)],
         prices(cheap=[(at(19, 23), at(20, 2), 0.1)]),
     )
 

@@ -323,6 +323,7 @@ class EnergyFileService:
         prices_end = end + timedelta(days=1) if latest_end > end else end
 
         names = {device.device_id: device.name for device in devices}
+        modes = {device.device_id: device.flexibility_mode for device in devices}
         programs = {
             (device.device_id, program.program_id): program.name for device in devices for program in device.programs
         }
@@ -370,6 +371,7 @@ class EnergyFileService:
                     action_id=item.action_id,
                     device_id=item.device_id,
                     device_name=names[item.device_id],
+                    flexibility_mode=modes.get(item.device_id),
                     program_name=programs.get((item.device_id, item.program_id)),
                     original_start=local(item.original_start),
                     original_end=local(item.original_start + len(item.original_profile_kwh) * SLOT),

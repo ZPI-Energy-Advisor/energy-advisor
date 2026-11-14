@@ -110,6 +110,8 @@ def test_schedule_moves_action_to_cheap_hours_and_keeps_fixed(db, user_a, client
     assert actions["act_1"]["start"].startswith("2026-10-19T13:00") or actions["act_1"]["start"].startswith("2026-10-19T14:00")
     assert actions["act_1"]["original_start"] == "2026-10-19T18:00:00+02:00"
     assert actions["act_3"]["status"] == "unchanged"
+    # Tryb urządzenia przy akcji: ekran chowa urządzenia stałe.
+    assert (actions["act_1"]["flexibility_mode"], actions["act_3"]["flexibility_mode"]) == ("shiftable", "fixed")
     assert body["cost_after"] < body["cost_before"]
     assert len(body["prices"]) == 96
 
