@@ -89,12 +89,23 @@ def test_saving_again_overwrites_previous_settings(home):
     assert dishwasher["preference"]["windows"] == _windows(("20:00", "22:00"))
 
 
+def test_saving_the_same_settings_again_updates_saved_at(home):
+    owner = _owner_with_devices(home)
+    body = {"devices": [{"device_id": "dev_dw_01", "enabled": True, "program_id": "eco", "windows": _windows(("10:00", "14:00"))}]}
+
+    first = _put(owner, body).json()["saved_at"]
+    second = _put(owner, body).json()["saved_at"]
+
+    assert second > first
+
+
 def test_defaults_list_flexible_devices_with_windows_from_file(home):
     owner = _owner_with_devices(home)
 
     body = _get(owner).json()
 
     assert body["saved_at"] is None
+    assert body["after_max_gap_min"] == 60
     devices = {device["device_id"]: device for device in body["devices"]}
     # Lampa jest fixed, a pompa ciepła nie ma programów ani energii do zaplanowania.
     assert set(devices) == {"dev_wm_01", "dev_dw_01", "dev_ev_01"}
@@ -193,6 +204,17 @@ def test_disabled_device_keeps_settings_without_checking_them(home):
     assert response.status_code == 200
     washer = next(device for device in response.json()["devices"] if device["device_id"] == "dev_wm_01")
     assert washer["preference"]["windows"] == _windows(("08:00", "08:15"))
+
+
+def test_disabled_ev_with_target_below_current_level_is_saved(home):
+    owner = _owner_with_devices(home)
+
+    response = _put(owner, {"devices": [
+        {"device_id": "dev_ev_01", "enabled": False, "windows": _windows(("18:00", "07:00")),
+         "energy_input": "percent", "battery_kwh": 60, "current_percent": 80, "target_percent": 50},
+    ]})
+
+    assert response.status_code == 200
 
 
 def test_unknown_fixed_or_programless_device_and_off_quarter_times_are_rejected(home):

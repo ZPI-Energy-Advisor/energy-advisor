@@ -4,11 +4,12 @@ import apiClient from "../api/client";
 import { getApiErrorMessage } from "../utils/energyFiles";
 import { DEVICE_TYPE_LABELS } from "../utils/home";
 import {
-  AFTER_MAX_GAP_MIN,
   MAX_WINDOWS,
   afterOptions,
+  chainRoot,
   crossesMidnight,
   durationText,
+  earliestStart,
   energyNeeded,
   errorsFromResponse,
   nextWindow,
@@ -162,10 +163,11 @@ function EvEnergy({ device, preference, errors, efficiency, onChange }) {
   );
 }
 
-function DeviceCard({ device, preference, errors, efficiency, afterChoices, onChange }) {
+function DeviceCard({ device, preference, errors, efficiency, afterGapMin, afterChoices, chainStart, onChange }) {
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type] ?? device.device_category;
   const program = device.programs.find((item) => item.program_id === preference.program_id);
   const after = afterChoices.find((item) => item.device_id === preference.after_device_id);
+  const rootStart = chainStart ? earliestStart(chainStart.preference.windows) : null;
 
   return (
     <section className={CARD} aria-label={device.device_name} data-has-error={Object.keys(errors).length ? "" : undefined}>
@@ -230,7 +232,7 @@ function DeviceCard({ device, preference, errors, efficiency, afterChoices, onCh
               </select>
               {after && (
                 <span className="mt-1 block text-xs text-gray-500">
-                  Ruszy po końcu: {after.device_name}, najwyżej {durationText(AFTER_MAX_GAP_MIN)} później.
+                  Ruszy po końcu: {after.device_name}, najwyżej {durationText(afterGapMin)} później.
                 </span>
               )}
               <FieldError message={errors.after_device_id} />
@@ -247,8 +249,13 @@ function DeviceCard({ device, preference, errors, efficiency, afterChoices, onCh
                 onChange={(event) => onChange({ finish_by: event.target.value || null })}
               />
               <span className="mt-1 block text-xs text-gray-500">
-                Opcjonalnie, np. żeby nie hałasowało w nocy. {QUARTER_HINT} Godzina wcześniejsza niż przedziały
-                urządzenia {after.device_name} oznacza rano następnego dnia.
+                Opcjonalnie, np. żeby nie hałasowało w nocy. {QUARTER_HINT}
+                {chainStart && rootStart && (
+                  <>
+                    {" "}Godzina wcześniejsza niż {rootStart} (start urządzenia {chainStart.device_name}) oznacza rano
+                    następnego dnia.
+                  </>
+                )}
               </span>
               <FieldError message={errors.finish_by} />
             </label>
@@ -305,6 +312,7 @@ function PlanningPage() {
   }, []);
 
   const efficiency = data?.charging_efficiency ?? 0.9;
+  const afterGapMin = data?.after_max_gap_min ?? 60;
   const changeDevice = (deviceId, change) => {
     setDevices((current) =>
       current.map((device) =>
@@ -380,7 +388,9 @@ function PlanningPage() {
               preference={device.preference}
               errors={errors[device.device_id] ?? {}}
               efficiency={efficiency}
+              afterGapMin={afterGapMin}
               afterChoices={afterOptions(devices, device)}
+              chainStart={device.preference.after_device_id ? chainRoot(devices, device) : null}
               onChange={(change) => changeDevice(device.device_id, change)}
             />
           ))}

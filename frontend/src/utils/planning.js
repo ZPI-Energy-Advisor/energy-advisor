@@ -59,16 +59,40 @@ export const energyNeeded = (preference, efficiency) => {
   return Math.round(((Number(target) - Number(current)) / 100) * Number(battery) / efficiency * 100) / 100;
 };
 
+const isEmpty = (value) => value === "" || value == null;
+
+/** Pola energii auta widoczne przy wybranym sposobie podania (poziom baterii albo kWh). */
+export const energyFields = (preference) =>
+  preference.energy_input === "percent" ? ["current_percent", "target_percent", "battery_kwh"] : ["energy_kwh"];
+
+/** Zakresy jak w backendzie (schemas/planning.py): procent całkowity 0–100, kWh powyżej 0 i najwyżej 200. */
+export const energyFieldError = (field, value) => {
+  if (isEmpty(value)) return null;
+  const number = Number(value);
+  if (field.endsWith("_percent")) {
+    return Number.isInteger(number) && number >= 0 && number <= 100 ? null : "Podaj liczbę całkowitą od 0 do 100.";
+  }
+  return Number.isFinite(number) && number > 0 && number <= 200 ? null : "Podaj wartość większą od 0, najwyżej 200 kWh.";
+};
+
 /** Błędy jednego urządzenia przed zapisem: pole → komunikat (ten sam tekst co z backendu). */
 export const validateDevice = (device, preference, efficiency) => {
   const errors = {};
-  const levels = preference.energy_input === "percent";
-  if (device.is_ev && levels && preference.current_percent !== "" && preference.target_percent !== ""
-      && preference.current_percent != null && preference.target_percent != null
-      && Number(preference.target_percent) <= Number(preference.current_percent)) {
-    errors.target_percent = "Docelowy poziom baterii musi być wyższy niż obecny.";
-  }
+  // Wyłączone urządzenie ma zwiniętą kartę: nie sprawdzamy go, a błędne ukryte wartości pomija toPayload.
   if (!preference.enabled) return errors;
+  const levels = preference.energy_input === "percent";
+  if (device.is_ev) {
+    for (const field of energyFields(preference)) {
+      const message = energyFieldError(field, preference[field]);
+      if (message) errors[field] = message;
+    }
+    if (levels && !errors.current_percent && !errors.target_percent
+        && !isEmpty(preference.current_percent) && !isEmpty(preference.target_percent)
+        && Number(preference.target_percent) <= Number(preference.current_percent)) {
+      errors.target_percent = "Docelowy poziom baterii musi być wyższy niż obecny.";
+    }
+  }
+  const energyInvalid = Object.keys(errors).length > 0;
   if (preference.after_device_id && device.programs.length) {
     // Start wyznacza poprzednik: zamiast przedziałów tylko opcjonalne „skończ najpóźniej o”.
     if (!device.programs.some((item) => item.program_id === preference.program_id)) errors.program_id = "Wybierz program.";
@@ -97,7 +121,7 @@ export const validateDevice = (device, preference, efficiency) => {
     }
   }
 
-  if (device.is_ev) {
+  if (device.is_ev && !energyInvalid) {
     const energy = energyNeeded(preference, efficiency);
     if (energy == null) {
       if (!errors.target_percent) errors[levels ? "battery_kwh" : "energy_kwh"] = "Podaj, ile energii potrzebuje auto.";
@@ -114,9 +138,6 @@ export const validateDevice = (device, preference, efficiency) => {
   return errors;
 };
 
-/** Ile najwyżej może minąć od końca poprzednika do startu urządzenia „Wykonaj po” (jak suszarka po pralce). */
-export const AFTER_MAX_GAP_MIN = 60;
-
 const waitsFor = (devices, deviceId, otherId) => {
   // Czy deviceId (pośrednio) czeka na otherId: idziemy po kolejnych poprzednikach.
   const byId = Object.fromEntries(devices.map((device) => [device.device_id, device]));
@@ -128,6 +149,29 @@ const waitsFor = (devices, deviceId, otherId) => {
     current = byId[current]?.preference.after_device_id;
   }
   return false;
+};
+
+/**
+ * Pierwsze urządzenie łańcucha „Wykonaj po” (np. pralka dla urządzenia po suszarce, która czeka na pralkę).
+ * Od początku jego przedziałów backend liczy, czy „skończ najpóźniej o” to ten sam dzień, czy rano następnego.
+ */
+export const chainRoot = (devices, device) => {
+  const byId = Object.fromEntries(devices.map((item) => [item.device_id, item]));
+  const seen = new Set();
+  let current = device;
+  while (current.preference.after_device_id && !seen.has(current.device_id)) {
+    seen.add(current.device_id);
+    const previous = byId[current.preference.after_device_id];
+    if (!previous) break;
+    current = previous;
+  }
+  return current;
+};
+
+/** Najwcześniejszy początek przedziałów urządzenia jako godzina (null bez przedziałów). */
+export const earliestStart = (windows) => {
+  const starts = windows.filter((window) => isQuarter(window.start) && isQuarter(window.end)).map((window) => windowSpan(window)[0]);
+  return starts.length ? clockOf(Math.min(...starts)) : null;
 };
 
 /** Urządzenia do wyboru w „Wykonaj po”: z programem, bez samego siebie i bez tych, które już czekają na to urządzenie. */
@@ -146,19 +190,34 @@ export const orderError = (devices, device) => {
   return null;
 };
 
-/** Treść zapisu: liczby z pól formularza (puste pole → null). */
+/**
+ * Treść zapisu: liczby z pól formularza (puste pole → null).
+ *
+ * Pola ukryte na ekranie (zwinięta karta wyłączonego urządzenia, przedziały przy „Wykonaj po”, drugi sposób
+ * podania energii auta) wysyłamy bez błędnych wartości, bo użytkownik nie zobaczyłby błędu i nie mógłby go
+ * poprawić. Poprawne ukryte ustawienia zostają, żeby wróciły po ponownym włączeniu.
+ */
 export const toPayload = (devices) => ({
-  devices: devices.map(({ preference }) => {
-    const number = (value) => (value === "" || value == null ? null : Number(value));
+  devices: devices.map(({ preference, programs = [] }) => {
+    const number = (value) => (isEmpty(value) ? null : Number(value));
+    const shownEnergy = new Set(preference.enabled ? energyFields(preference) : []);
+    const energy = (field) =>
+      !shownEnergy.has(field) && energyFieldError(field, preference[field]) ? null : number(preference[field]);
+    const runsAfter = Boolean(preference.after_device_id) && programs.length > 0;
+    const windowsShown = preference.enabled && !runsAfter;
+    const finishShown = preference.enabled && runsAfter;
     return {
       ...preference,
       program_id: preference.program_id || null,
       after_device_id: preference.after_device_id || null,
-      finish_by: preference.finish_by || null,
-      energy_kwh: number(preference.energy_kwh),
-      battery_kwh: number(preference.battery_kwh),
-      current_percent: number(preference.current_percent),
-      target_percent: number(preference.target_percent),
+      windows: windowsShown
+        ? preference.windows
+        : preference.windows.filter((window) => isQuarter(window.start) && isQuarter(window.end)),
+      finish_by: preference.finish_by && (finishShown || isQuarter(preference.finish_by)) ? preference.finish_by : null,
+      energy_kwh: energy("energy_kwh"),
+      battery_kwh: energy("battery_kwh"),
+      current_percent: energy("current_percent"),
+      target_percent: energy("target_percent"),
     };
   }),
 });

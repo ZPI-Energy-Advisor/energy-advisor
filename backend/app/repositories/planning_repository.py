@@ -1,7 +1,7 @@
 from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.DeviceInstance import DeviceInstance
@@ -54,6 +54,9 @@ class PlanningRepository:
             self.db.add(template)
         else:
             template.devices = devices
+            # Wprost, bo onupdate nie zadziała, gdy zapisano te same ustawienia (SQLAlchemy pomija wtedy UPDATE),
+            # a „Ostatnio zapisano” ma pokazać czas ostatniego zapisu.
+            template.updated_at = func.now()
         self.db.commit()
         self.db.refresh(template)
         return template

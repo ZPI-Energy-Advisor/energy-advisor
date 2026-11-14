@@ -5,14 +5,13 @@ domyślne przedziały) uzupełniamy z urządzeń z plików przy każdym odczycie
 od razu pojawia się na ekranie. Każdy zapis nadpisuje poprzedni.
 """
 
-from datetime import time
-
 from fastapi import HTTPException, status
 
 from app.models.DeviceInstance import DeviceInstance
 from app.models.DeviceProgram import DeviceProgram
 from app.models.User import User
-from app.repositories.planning_repository import PlanningRepository
+from app.repositories.home_repository import clock_text
+from app.repositories.planning_repository import EV_DEVICE_TYPE, PlanningRepository
 from app.schemas.planning import (
     DevicePreference,
     PlanningDevice,
@@ -23,15 +22,12 @@ from app.schemas.planning import (
 from app.schemas.smart_home import HomeDeviceProgram
 from app.services.scheduling import DRYER_AFTER_WASH
 
-EV_DEVICE_TYPE = "ev_charger"
 # Z sieci trzeba pobrać więcej, niż trafi do baterii: ładowanie AC traci ok. 10%.
 CHARGING_EFFICIENCY = 0.9
 DAY_MINUTES = 24 * 60
 WHOLE_DAY = TimeWindow(start="00:00", end="00:00")
-
-
-def _clock(value: time) -> str:
-    return value.strftime("%H:%M")
+# „Wykonaj po”: urządzenie rusza najwyżej tyle minut po końcu poprzednika (jak suszarka po pralce).
+AFTER_MAX_GAP_MIN = int(DRYER_AFTER_WASH.total_seconds() // 60)
 
 
 def _minutes(clock: str) -> int:
@@ -64,7 +60,7 @@ def _kwh_text(value: float) -> str:
 def default_windows(device: DeviceInstance) -> list[TimeWindow]:
     if device.allowed_window_from is None or device.allowed_window_to is None:
         return [WHOLE_DAY]
-    return [TimeWindow(start=_clock(device.allowed_window_from), end=_clock(device.allowed_window_to))]
+    return [TimeWindow(start=clock_text(device.allowed_window_from), end=clock_text(device.allowed_window_to))]
 
 
 def energy_needed_kwh(preference: DevicePreference) -> float | None:
@@ -89,7 +85,8 @@ class PlanningService:
         return self._out(user, saved, template.updated_at if template else None)
 
     def save(self, user: User, preferences: PlanningPreferences) -> PlanningPreferencesOut:
-        devices = {device.source_device_id: (device, programs) for device, programs in self.repository.flexible_devices(user.id)}
+        flexible = self.repository.flexible_devices(user.id)
+        devices = {device.source_device_id: (device, programs) for device, programs in flexible}
         errors = []
         seen = set()
         for index, preference in enumerate(preferences.devices):
@@ -110,11 +107,15 @@ class PlanningService:
             user.id, [preference.model_dump(mode="json") for preference in preferences.devices]
         )
         saved = {preference.device_id: preference for preference in preferences.devices}
-        return self._out(user, saved, template.updated_at)
+        return self._out(user, saved, template.updated_at, flexible)
 
-    def _out(self, user: User, saved: dict[str, DevicePreference], saved_at) -> PlanningPreferencesOut:
+    def _out(
+        self, user: User, saved: dict[str, DevicePreference], saved_at, flexible: list | None = None
+    ) -> PlanningPreferencesOut:
+        """Odpowiedź z urządzeniami użytkownika; `save` podaje urządzenia już pobrane do walidacji."""
         devices = []
-        flexible = self.repository.flexible_devices(user.id)
+        if flexible is None:
+            flexible = self.repository.flexible_devices(user.id)
         with_programs = {device.source_device_id for device, programs in flexible if programs}
         for device, programs in flexible:
             defaults = default_windows(device)
@@ -143,20 +144,26 @@ class PlanningService:
                 preference=preference,
                 energy_needed_kwh=energy_needed_kwh(preference) if is_ev else None,
             ))
-        return PlanningPreferencesOut(saved_at=saved_at, charging_efficiency=CHARGING_EFFICIENCY, devices=devices)
+        return PlanningPreferencesOut(
+            saved_at=saved_at,
+            charging_efficiency=CHARGING_EFFICIENCY,
+            after_max_gap_min=AFTER_MAX_GAP_MIN,
+            devices=devices,
+        )
 
     @staticmethod
     def _validate(
         index: int, preference: DevicePreference, device: DeviceInstance, programs: list[DeviceProgram]
     ) -> list[dict]:
         errors = []
+        # Wyłączone urządzenie zachowuje ustawienia bez sprawdzania, żeby dało się je zapisać w trakcie edycji
+        # (jego karta jest zwinięta, więc błędu i tak nie byłoby widać).
+        if not preference.enabled:
+            return errors
         is_ev = device.device_type == EV_DEVICE_TYPE
         if is_ev and preference.energy_input == "percent" and preference.current_percent is not None \
                 and preference.target_percent is not None and preference.target_percent <= preference.current_percent:
             errors.append(_error(index, "target_percent", "Docelowy poziom baterii musi być wyższy niż obecny."))
-        # Wyłączone urządzenie zachowuje ustawienia bez sprawdzania, żeby dało się je zapisać w trakcie edycji.
-        if not preference.enabled:
-            return errors
         if preference.after_device_id is not None and programs:
             # Start wyznacza poprzednik: przedziałów nie sprawdzamy, czas sprawdza _validate_order.
             if _program(preference, programs) is None:
@@ -173,7 +180,7 @@ class PlanningService:
         longest = max(_length(window) for window in preference.windows)
 
         if programs:
-            program = next((p for p in programs if p.source_program_id == preference.program_id), None)
+            program = _program(preference, programs)
             if program is None:
                 errors.append(_error(index, "program_id", "Wybierz program."))
             elif program.duration_min > longest:
@@ -222,7 +229,7 @@ def _validate_order(preferences: list[DevicePreference], devices: dict) -> list[
     włączone urządzenia, a poprawność samych przedziałów i programów jest już sprawdzona.
     """
     by_id = {preference.device_id: (index, preference) for index, preference in enumerate(preferences)}
-    gap = int(DRYER_AFTER_WASH.total_seconds() // 60)
+    gap = AFTER_MAX_GAP_MIN
     errors = []
     ends_cache: dict[str, set[int]] = {}
 

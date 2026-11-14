@@ -68,4 +68,6 @@ class PlanningPreferencesOut(BaseModel):
     saved_at: datetime | None = None
     # Sprawność ładowania EV: z sieci trzeba pobrać więcej niż trafia do baterii.
     charging_efficiency: float
+    # „Wykonaj po”: najwyżej tyle minut od końca poprzednika do startu urządzenia.
+    after_max_gap_min: int
     devices: list[PlanningDevice]
