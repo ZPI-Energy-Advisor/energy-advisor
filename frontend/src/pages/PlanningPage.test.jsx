@@ -33,7 +33,7 @@ const EV = {
   is_ev: true,
   preference: { ...WASHER.preference, device_id: "dev_ev_01", windows: [{ start: "18:00", end: "07:00" }] },
 };
-const BODY = { saved_at: null, charging_efficiency: 0.9, devices: [WASHER, EV] };
+const BODY = { saved_at: null, charging_efficiency: 0.9, after_max_gap_min: 60, devices: [WASHER, EV] };
 const PLAN = {
   id: "plan-1",
   plan_date: "2026-11-13",

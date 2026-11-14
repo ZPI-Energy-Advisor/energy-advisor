@@ -124,6 +124,9 @@ class PlanningRepository:
             self.db.add(template)
         else:
             template.devices = devices
+            # Wprost, bo onupdate nie zadziała, gdy zapisano te same ustawienia (SQLAlchemy pomija wtedy UPDATE),
+            # a „Ostatnio zapisano” ma pokazać czas ostatniego zapisu.
+            template.updated_at = func.now()
         self.db.commit()
         self.db.refresh(template)
         return template

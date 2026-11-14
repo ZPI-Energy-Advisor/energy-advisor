@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  afterOptions, crossesMidnight, energyNeeded, errorsFromResponse, nextReadyTime, nextWindow, orderError, validateDevice,
-  windowLength,
+  afterOptions, chainRoot, crossesMidnight, earliestStart, energyNeeded, errorsFromResponse, nextReadyTime, nextWindow,
+  orderError, toPayload, validateDevice, windowLength,
 } from "./planning";
 
 const washer = {
@@ -53,6 +53,76 @@ describe("planning", () => {
       "W przedziałach zmieści się najwyżej 7,4 kWh (3,7 kW × 2 h), a auto potrzebuje 10,0 kWh.",
     );
     expect(validateDevice(ev, { ...preference, windows: windows(["18:00", "07:00"]) }, 0.9)).toEqual({});
+  });
+
+  it("pola energii auta mają zakresy jak w backendzie, sprawdzane tylko gdy są widoczne", () => {
+    const levels = {
+      enabled: true, energy_input: "percent", battery_kwh: 60, current_percent: 40, target_percent: 70,
+      windows: windows(["18:00", "07:00"]),
+    };
+
+    expect(validateDevice(ev, { ...levels, target_percent: 150 }, 0.9)).toEqual({
+      target_percent: "Podaj liczbę całkowitą od 0 do 100.",
+    });
+    expect(validateDevice(ev, { ...levels, current_percent: "50.5" }, 0.9)).toEqual({
+      current_percent: "Podaj liczbę całkowitą od 0 do 100.",
+    });
+    expect(validateDevice(ev, { ...levels, battery_kwh: 300 }, 0.9)).toEqual({
+      battery_kwh: "Podaj wartość większą od 0, najwyżej 200 kWh.",
+    });
+    expect(validateDevice(ev, { ...levels, energy_input: "kwh", energy_kwh: "0" }, 0.9)).toEqual({
+      energy_kwh: "Podaj wartość większą od 0, najwyżej 200 kWh.",
+    });
+    // Ukryte pole kWh przy poziomie baterii nie blokuje zapisu.
+    expect(validateDevice(ev, { ...levels, energy_kwh: 300 }, 0.9)).toEqual({});
+  });
+
+  it("wyłączone auto z odwróconymi poziomami baterii nie blokuje zapisu", () => {
+    const preference = {
+      enabled: false, energy_input: "percent", battery_kwh: 60, current_percent: 80, target_percent: 50, windows: [],
+    };
+
+    expect(validateDevice(ev, preference, 0.9)).toEqual({});
+    expect(validateDevice(ev, { ...preference, enabled: true, windows: windows(["18:00", "07:00"]) }, 0.9)).toEqual({
+      target_percent: "Docelowy poziom baterii musi być wyższy niż obecny.",
+    });
+  });
+
+  it("zapis pomija błędne wartości w ukrytych polach, a poprawne zostawia", () => {
+    const evDevice = (preference) => ({ ...ev, preference });
+    const dryer = (preference) => ({ device_id: "dev_td_01", programs: [{ program_id: "dry" }], preference });
+
+    const [hiddenEv, offEv, runsAfter] = toPayload([
+      // kWh ukryte przy poziomie baterii
+      evDevice({ enabled: true, energy_input: "percent", energy_kwh: 300, battery_kwh: 60, current_percent: 40,
+        target_percent: 70, windows: windows(["18:00", "07:00"]) }),
+      // karta zwinięta: procenty poza zakresem znikają, poprawna pojemność zostaje
+      evDevice({ enabled: false, energy_input: "percent", battery_kwh: "60", current_percent: 150, target_percent: "",
+        windows: windows(["18:00", "07:00"]) }),
+      // przy „Wykonaj po” przedziały są ukryte: pusta godzina nie trafia do zapisu
+      dryer({ enabled: true, program_id: "dry", after_device_id: "dev_wm_01", finish_by: "22:00",
+        windows: windows(["08:00", ""], ["12:00", "14:00"]) }),
+    ]).devices;
+
+    expect(hiddenEv).toMatchObject({ energy_kwh: null, battery_kwh: 60, current_percent: 40, target_percent: 70 });
+    expect(offEv).toMatchObject({ battery_kwh: 60, current_percent: null, target_percent: null });
+    expect(runsAfter.windows).toEqual(windows(["12:00", "14:00"]));
+    expect(runsAfter.finish_by).toBe("22:00");
+  });
+
+  it("„skończ najpóźniej o” liczymy od startu pierwszego urządzenia w łańcuchu", () => {
+    const device = (id, after, deviceWindows) => ({
+      device_id: id, device_name: id, preference: { after_device_id: after, windows: deviceWindows },
+    });
+    const washerFirst = device("pralka", null, windows(["20:00", "23:00"]));
+    const dryerAfter = device("suszarka", "pralka", windows(["07:00", "22:00"]));
+    const dishwasherAfter = device("zmywarka", "suszarka", windows(["19:00", "07:00"]));
+    const devices = [washerFirst, dryerAfter, dishwasherAfter];
+
+    expect(chainRoot(devices, dishwasherAfter).device_id).toBe("pralka");
+    expect(chainRoot(devices, dryerAfter).device_id).toBe("pralka");
+    expect(earliestStart(windows(["22:00", "02:00"], ["18:00", "20:00"]))).toBe("18:00");
+    expect(earliestStart(windows(["", "10:00"]))).toBeNull();
   });
 
   it("nowy przedział zaczyna się po ostatnim i trwa 2 h", () => {
@@ -116,10 +186,10 @@ describe("planning", () => {
       windows: [{ start: "17:00", end: "03:00" }],
     };
 
-    expect(validateDevice(ev, preference, 0.9)).toMatchObject({ target_percent: "Podaj wartość od 0 do 100%." });
+    expect(validateDevice(ev, preference, 0.9)).toMatchObject({ target_percent: "Podaj liczbę całkowitą od 0 do 100." });
     expect(energyNeeded(preference, 0.9)).toBeNull();
     expect(validateDevice(ev, { ...preference, current_percent: 120, target_percent: 80 }, 0.9))
-      .toMatchObject({ current_percent: "Podaj wartość od 0 do 100%." });
+      .toMatchObject({ current_percent: "Podaj liczbę całkowitą od 0 do 100." });
   });
 
   it("„Dodaj godzinę” bojlera bierze środek najdłuższej przerwy i nie powtarza godzin", () => {
