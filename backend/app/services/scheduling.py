@@ -314,9 +314,19 @@ class _Plan:
         added = defaultdict(float)
         for action in group.actions:
             if action.allowed_starts is not None:
+                # Plan na jutro (ZP-112): dozwolone starty wprost, akcja może przechodzić przez północ.
                 if action.start + offset * SLOT not in action.allowed_starts:
                     return OUTSIDE_WINDOW
-            elif _local_date(action.start + offset * SLOT) != _local_date(action.start):
+                continue
+            # Start zostaje w dobie oryginału, a ostatni kwadrans w dobie startu albo w dobie, w której
+            # kończył się w pliku: akcja z jednej doby nie przechodzi przez północ, a ta, która w pliku
+            # przez nią przechodzi, może dalej albo zmieścić się w całości przed północą.
+            start_day = _local_date(action.start)
+            last = action.start + max(len(action.profile_kwh) - 1, 0) * SLOT
+            if (
+                _local_date(action.start + offset * SLOT) != start_day
+                or _local_date(last + offset * SLOT) not in (start_day, _local_date(last))
+            ):
                 return OTHER_DAY
         for action in group.actions:
             window = action.allowed_window
@@ -490,7 +500,7 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
     """Rozmieszcza akcje `shiftable` i `interruptible` tak, żeby koszt był najmniejszy; `fixed` zostają bez zmian.
 
     `prices` to słownik: początek kwadransa w UTC -> cena za kWh. Start jest dozwolony, gdy wypada
-    co 15 minut, tej samej doby lokalnej co oryginalny, w `max_shift_min`, a akcja mieści się
+    co 15 minut, akcja zaczyna się i kończy w tych samych dobach lokalnych co oryginalna, w `max_shift_min`, a akcja mieści się
     w `allowed_window`, nie nakłada się na inną akcję urządzenia, ma ceny we wszystkich kwadransach
     i nie przekracza `max_grid_kw`.
 

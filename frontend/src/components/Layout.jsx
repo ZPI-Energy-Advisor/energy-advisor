@@ -80,7 +80,7 @@ function LayoutShell() {
     },
     {
       path: "/schedule",
-      label: "Optymalizacja",
+      label: "Optymalizacja historyczna",
       icon: <FiClock className="mr-3 text-lg" />,
     },
     {
