@@ -34,6 +34,8 @@ class SchedulePrices:
     max_grid_kw: float | None = None
     # Plik ma nadwyżkę PV, a profil nie ma instalacji: godziny produkcji nie są tańsze.
     pv_note: str | None = None
+    # Umowa z ceną dynamiczną: ceny kolejnych dni pojawiają się dopiero po publikacji RCE.
+    dynamic: bool = False
 
 
 class SchedulePriceService:
@@ -91,7 +93,7 @@ class SchedulePriceService:
             )
         return SchedulePrices(
             prices=prices, description=description,
-            max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note,
+            max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note, dynamic=dynamic,
         )
 
     def _surplus_price(self, slot: datetime, grid_price: float, profile: UserProfile) -> float:

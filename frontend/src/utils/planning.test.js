@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  afterOptions, chainRoot, crossesMidnight, earliestStart, energyNeeded, errorsFromResponse, nextWindow, orderError,
-  toPayload, validateDevice, windowLength,
+  afterOptions, chainRoot, crossesMidnight, earliestStart, energyNeeded, errorsFromResponse, nextReadyTime, nextWindow,
+  orderError, toPayload, validateDevice, windowLength,
 } from "./planning";
 
 const washer = {
@@ -164,5 +164,49 @@ describe("planning", () => {
     expect(validateDevice(dryer, { ...preference, after_device_id: null }, 0.9)).toEqual({
       windows: "Dodaj co najmniej jeden przedział godzin.",
     });
+  });
+
+  it("bojler wymaga pojemności zbiornika 30–500 l i godzin co kwadrans bez powtórzeń", () => {
+    const heater = { kind: "water_heater", programs: [] };
+    const preference = { enabled: true, ready_times: ["06:00", "18:00"], tank_liters: 120 };
+
+    expect(validateDevice(heater, preference, 0.9)).toEqual({});
+    expect(validateDevice(heater, { ...preference, tank_liters: "20" }, 0.9)).toEqual({
+      tank_liters: "Podaj pojemność zbiornika od 30 do 500 l.",
+    });
+    expect(validateDevice(heater, { ...preference, ready_times: ["06:00", "06:00"] }, 0.9)).toEqual({
+      ready_times: "Godziny się powtarzają.",
+    });
+  });
+
+  it("poziom baterii auta to najwyżej 100%", () => {
+    const ev = { is_ev: true, programs: [], max_power_kw: 3.7 };
+    const preference = {
+      enabled: true, energy_input: "percent", battery_kwh: 50, current_percent: 20, target_percent: 803,
+      windows: [{ start: "17:00", end: "03:00" }],
+    };
+
+    expect(validateDevice(ev, preference, 0.9)).toMatchObject({ target_percent: "Podaj liczbę całkowitą od 0 do 100." });
+    expect(energyNeeded(preference, 0.9)).toBeNull();
+    expect(validateDevice(ev, { ...preference, current_percent: 120, target_percent: 80 }, 0.9))
+      .toMatchObject({ current_percent: "Podaj liczbę całkowitą od 0 do 100." });
+  });
+
+  it("„Dodaj godzinę” bojlera bierze środek najdłuższej przerwy i nie powtarza godzin", () => {
+    expect(nextReadyTime([])).toBe("06:00");
+    expect(nextReadyTime(["06:00"])).toBe("18:00");
+    expect(nextReadyTime(["06:00", "18:00"])).toBe("12:00");
+    expect(nextReadyTime(["06:00", "18:00", "12:00"])).toBe("00:00");
+
+    // Wcześniej: dwa kliknięcia na domyślnych godzinach dawały 00:00 dwa razy.
+    let times = ["06:00", "18:00"];
+    for (let click = 0; click < 2; click += 1) times = [...times, nextReadyTime(times)];
+    expect(new Set(times).size).toBe(times.length);
+
+    // Puste albo niepełne pole jest pomijane, zamiast dawać „NaN:NaN”.
+    expect(nextReadyTime(["06:00", ""])).toBe("18:00");
+    expect(nextReadyTime([""])).toBe("06:00");
+    // Środek przerwy zaokrąglony do kwadransa: 07:00–08:15 → 07:30.
+    expect(nextReadyTime(["07:00", "08:15", "18:00"])).toMatch(/^([01]\d|2[0-3]):(00|15|30|45)$/);
   });
 });

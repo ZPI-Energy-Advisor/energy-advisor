@@ -44,3 +44,5 @@ class DeviceInstance(Base):
     allowed_window_from = Column(Time, nullable=True)
     allowed_window_to = Column(Time, nullable=True)
     max_shift_min = Column(Integer, nullable=True)
+    # Tylko bojler (water_heater): pojemność zbiornika z pliku, potrzebna planowi grzania wody (ZP-112).
+    tank_liters = Column(Float, nullable=True)

@@ -43,6 +43,19 @@ def test_generated_file_passes_validation(tmp_path, seed, options):
     assert result.returncode == 0, result.stdout
 
 
+def test_water_heater_is_optional_and_passes_validation(tmp_path):
+    path = tmp_path / "devices.json"
+    generate(path, "--days", 14, "--with-water-heater")
+
+    result = run_script(VALIDATOR, path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    heater_actions = [action for action in document["energy_usage"] if action["device_id"] == "dev_wh_01"]
+
+    assert result.returncode == 0, result.stdout
+    assert {d["device_type"] for d in document["devices"]} >= {"water_heater"}
+    assert len(heater_actions) >= 14  # rano i wieczorem, część może nie zmieścić się pod limitem
+
+
 def test_generator_respects_grid_limit(tmp_path):
     path = tmp_path / "devices.json"
     generate(path, "--devices", "full", "--with-pv", "--max-grid-kw", 6)

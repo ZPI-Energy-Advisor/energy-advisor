@@ -121,6 +121,12 @@
           "exclusiveMinimum": 0,
           "x-message": "pole max_power_kw musi być liczbą dodatnią"
         },
+        "tank_liters": {
+          "type": "number",
+          "minimum": 30,
+          "maximum": 500,
+          "x-message": "pole tank_liters musi być liczbą od 30 do 500"
+        },
         "flexibility": { "$ref": "#/$defs/flexibility" },
         "programs": { "type": "array", "items": { "$ref": "#/$defs/program" } }
       },
@@ -131,6 +137,14 @@
             { "required": ["programs"], "properties": { "programs": { "minItems": 1 } } }
           ],
           "x-message": "urządzenie bez programów musi mieć max_power_kw"
+        },
+        {
+          "if": { "required": ["tank_liters"] },
+          "then": {
+            "properties": {
+              "device_type": { "const": "water_heater", "x-message": "pole tank_liters jest tylko dla bojlera (water_heater)" }
+            }
+          }
         },
         {
           "if": {

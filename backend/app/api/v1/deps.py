@@ -39,6 +39,8 @@ from app.services.upload_service import UploadService
 from app.services.user_service import UserService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
+from app.services.plan_service import PlanService
+from app.repositories.day_plan_repository import DayPlanRepository
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.clients.hub_client import API_KEY_HEADER, HubClient
@@ -213,6 +215,14 @@ def get_schedule_price_service(
     return SchedulePriceService(
         user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository)
     )
+
+
+def get_plan_service(
+    db: Session = Depends(get_db),
+    price_service: SchedulePriceService = Depends(get_schedule_price_service),
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> PlanService:
+    return PlanService(PlanningRepository(db), DayPlanRepository(db), price_service, dynamic_price_repository)
 
 
 def get_home_state_service(

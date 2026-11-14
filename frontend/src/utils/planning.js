@@ -1,4 +1,4 @@
-// Plan na jutro (ZP-111): przedziały godzin, walidacja wymagań urządzeń i energia do naładowania auta.
+// Plan na jutro (ZP-111, ZP-112): przedziały godzin, walidacja wymagań urządzeń, energia auta, pompa ciepła i bojler.
 
 export const MAX_WINDOWS = 4;
 const DAY_MINUTES = 24 * 60;
@@ -50,11 +50,13 @@ export const nextWindow = (windows) => {
 
 const isQuarter = (clock) => /^([01]\d|2[0-3]):(00|15|30|45)$/.test(clock ?? "");
 
+const isPercent = (value) => value !== "" && value != null && Number(value) >= 0 && Number(value) <= 100;
+
 /** Energia z sieci do naładowania auta: wprost albo z różnicy poziomu baterii i strat ładowania. */
 export const energyNeeded = (preference, efficiency) => {
   if (preference.energy_input === "kwh") return preference.energy_kwh > 0 ? Number(preference.energy_kwh) : null;
   const { battery_kwh: battery, current_percent: current, target_percent: target } = preference;
-  if (!(battery > 0) || current == null || target == null || current === "" || target === "") return null;
+  if (!(battery > 0) || !isPercent(current) || !isPercent(target)) return null;
   if (Number(target) <= Number(current)) return null;
   return Math.round(((Number(target) - Number(current)) / 100) * Number(battery) / efficiency * 100) / 100;
 };
@@ -81,6 +83,21 @@ export const validateDevice = (device, preference, efficiency) => {
   // Wyłączone urządzenie ma zwiniętą kartę: nie sprawdzamy go, a błędne ukryte wartości pomija toPayload.
   if (!preference.enabled) return errors;
   const levels = preference.energy_input === "percent";
+  if (device.kind === "heat_pump") {
+    if (!preference.shift_hours) errors.shift_hours = "Wybierz, o ile można przesunąć grzanie.";
+    return errors;
+  }
+  if (device.kind === "water_heater") {
+    const times = preference.ready_times ?? [];
+    const liters = preference.tank_liters;
+    if (liters === "" || liters == null || Number(liters) < 30 || Number(liters) > 500) {
+      errors.tank_liters = "Podaj pojemność zbiornika od 30 do 500 l.";
+    }
+    if (!times.length) errors.ready_times = "Dodaj co najmniej jedną godzinę.";
+    else if (times.some((time) => !isQuarter(time))) errors.ready_times = "Godziny ustaw co kwadrans, np. 06:00 albo 17:45.";
+    else if (new Set(times).size !== times.length) errors.ready_times = "Godziny się powtarzają.";
+    return errors;
+  }
   if (device.is_ev) {
     for (const field of energyFields(preference)) {
       const message = energyFieldError(field, preference[field]);
@@ -218,6 +235,9 @@ export const toPayload = (devices) => ({
       battery_kwh: energy("battery_kwh"),
       current_percent: energy("current_percent"),
       target_percent: energy("target_percent"),
+      shift_hours: number(preference.shift_hours),
+      tank_liters: number(preference.tank_liters),
+      ready_times: preference.ready_times ?? [],
     };
   }),
 });
@@ -234,4 +254,21 @@ export const errorsFromResponse = (error, devices) => {
     result[device.device_id] = { ...result[device.device_id], [field]: String(item.msg).replace(/^Value error, /, "") };
   }
   return result;
+};
+
+/**
+ * Kolejna godzina „woda gotowa na”: środek najdłuższej przerwy między podanymi godzinami, licząc w kółko
+ * przez dobę (06:00 → 18:00; 06:00 i 18:00 → 12:00; dalej 00:00), zaokrąglony do kwadransa. Nie powtarza
+ * godziny, bo środek przerwy dłuższej niż kwadrans nie trafia w żadną z nich. Pola puste albo niepełne
+ * pomijamy (bez nich: 06:00), więc nie powstaje „NaN:NaN”.
+ */
+export const nextReadyTime = (times) => {
+  const taken = [...new Set(times.filter(isQuarter).map(minutesOf))].sort((a, b) => a - b);
+  if (!taken.length) return "06:00";
+  let longest = { gap: 0, from: taken[0] };
+  taken.forEach((minute, index) => {
+    const next = index + 1 < taken.length ? taken[index + 1] : taken[0] + DAY_MINUTES;
+    if (next - minute > longest.gap) longest = { gap: next - minute, from: minute };
+  });
+  return clockOf(longest.from + Math.round(longest.gap / 2 / 15) * 15);
 };
