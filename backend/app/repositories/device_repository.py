@@ -24,7 +24,7 @@ SLOT = timedelta(minutes=15)
 # Pola urządzenia i programu, które kolejny import nadpisuje (najnowszy plik wygrywa).
 DEVICE_SETTINGS = (
     "name", "device_type", "device_category", "max_power_kw",
-    "flexibility_mode", "allowed_window_from", "allowed_window_to", "max_shift_min",
+    "flexibility_mode", "allowed_window_from", "allowed_window_to", "max_shift_min", "tank_liters",
 )
 PROGRAM_SETTINGS = ("name", "duration_min", "profile_kwh")
 
@@ -298,6 +298,7 @@ class DeviceRepository:
                 allowed_window_from=instance.allowed_window_from,
                 allowed_window_to=instance.allowed_window_to,
                 max_shift_min=instance.max_shift_min,
+                tank_liters=instance.tank_liters,
             )
             for instance in instances
         }
@@ -416,6 +417,7 @@ class DeviceRepository:
                 "allowed_window_from": device.allowed_window_from,
                 "allowed_window_to": device.allowed_window_to,
                 "max_shift_min": device.max_shift_min,
+                "tank_liters": device.tank_liters,
             }
             for device in devices
         ]

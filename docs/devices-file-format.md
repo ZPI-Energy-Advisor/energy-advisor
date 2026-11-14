@@ -125,6 +125,7 @@ akcji w środku okresu oznacza „nic nie pracowało”, a nie brak danych.
 | `device_type` | string | tak | Typ ze słownika poniżej |
 | `device_category` | string | tak | Kategoria ze słownika poniżej |
 | `max_power_kw` | liczba, kW | gdy brak `programs` | Moc maksymalna (znamionowa). Dla PV: moc falownika |
+| `tank_liters` | liczba, l | nie, tylko bojler | Pojemność zbiornika bojlera (`water_heater`), 30–500 l. Plan na jutro liczy z niej temperaturę wody; bez pola bierze typową pojemność dla liczby osób z profilu |
 | `flexibility` | obiekt | tak | Co optymalizacja może zrobić z akcjami urządzenia |
 | `programs` | lista | nie | Powtarzalne cykle pracy (pralka, zmywarka, suszarka) |
 
@@ -169,7 +170,8 @@ Tylko urządzenia z kategorii `OZE` mogą mieć ujemną energię (produkcja).
   `allowed_window` ładowarki służy tylko symulacji przyszłych dni, dla których nie ma sesji.
 
 Zalecane ustawienia: pralka, zmywarka i suszarka `shiftable` z oknem dziennym; pompa ciepła
-`shiftable` z `max_shift_min: 60`; ładowarka EV `interruptible`; pozostałe `fixed`.
+`shiftable` z `max_shift_min: 60`; bojler (`water_heater`) `shiftable`; ładowarka EV `interruptible`;
+pozostałe `fixed`. Pompę ciepła i bojler plan na jutro (ZP-112) układa z ich historii w pliku.
 
 ### `programs`
 
@@ -242,7 +244,8 @@ schematu reguły z kodu nie są sprawdzane, bo wynikałyby z tych samych błęd�
    ze słowników.
 4. `flexibility.mode` jest jednym z trybów i zawiera tylko pola dozwolone dla tego trybu;
    godziny `allowed_window` mają format `HH:MM` w pełnym kwadransie.
-5. Urządzenie bez `programs` ma `max_power_kw`; urządzenie `fixed` nie ma `programs`.
+5. Urządzenie bez `programs` ma `max_power_kw`; urządzenie `fixed` nie ma `programs`;
+   `tank_liters` (30–500) ma tylko bojler (`water_heater`).
 6. Długość profilu programu odpowiada `duration_min`.
 7. Każda akcja wskazuje istniejące urządzenie, a `program_id` istnieje wtedy i tylko wtedy,
    gdy urządzenie ma programy, i wskazuje jego program.

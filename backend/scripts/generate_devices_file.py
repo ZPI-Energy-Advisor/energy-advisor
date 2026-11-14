@@ -44,10 +44,13 @@ FIXED = {"mode": "fixed"}
 DAYTIME_WINDOW = {"from": "07:00", "to": "22:00"}
 
 
-def device(device_id, name, device_type, category, flexibility, max_power_kw=None, programs=None) -> dict:
+def device(device_id, name, device_type, category, flexibility, max_power_kw=None, programs=None,
+           tank_liters=None) -> dict:
     result = {"device_id": device_id, "device_name": name, "device_type": device_type, "device_category": category}
     if max_power_kw is not None:
         result["max_power_kw"] = max_power_kw
+    if tank_liters is not None:
+        result["tank_liters"] = tank_liters
     result["flexibility"] = flexibility
     if programs:
         result["programs"] = programs
@@ -76,6 +79,9 @@ DEVICES = [
     device("dev_hp_01", "Pompa ciepła Panasonic", "heat_pump", "Ogrzewanie",
            {"mode": "shiftable", "max_shift_min": 60}, max_power_kw=4.5),
     device("dev_pv_01", "Instalacja PV 6 kWp", "pv_inverter", "OZE", FIXED, max_power_kw=6.0),
+    # Tylko z --with-water-heater: pliki demo i przykład w aplikacji go nie mają (ZP-112).
+    device("dev_wh_01", "Bojler elektryczny 80 l", "water_heater", "Ogrzewanie",
+           {"mode": "shiftable", "max_shift_min": 120}, max_power_kw=2.0, tank_liters=80),
     device("dev_vent_01", "Rekuperator", "ventilation", "Ogrzewanie", FIXED, max_power_kw=0.08),
     device("dev_fr_01", "Lodówka Samsung", "fridge", "AGD", FIXED, max_power_kw=0.15),
     device("dev_hob_01", "Płyta indukcyjna", "induction_hob", "AGD", FIXED, max_power_kw=7.2),
@@ -96,6 +102,7 @@ DEVICES = [
     device("dev_hd_01", "Suszarka do włosów", "hair_dryer", "Inne", FIXED, max_power_kw=2.0),
 ]
 PV_DEVICE = "dev_pv_01"
+WATER_HEATER_DEVICE = "dev_wh_01"
 FULL_ONLY = {"dev_ev_01", "dev_hp_01", "dev_vent_01"}
 
 
@@ -235,6 +242,21 @@ class Generator:
         self._heat_pump(day)
         self._ev(day, plan, back, weekend, home_office)
         self._pv(day, sunrise, sunset)
+        self._water_heater(day, wake, bedtime)
+
+    def _water_heater(self, day: date, wake: float, bedtime: float) -> None:
+        """Bojler dogrzewa wodę po porannych prysznicach i wieczorem; zimą więcej (zimniejsza woda z sieci).
+        Losuje tylko z bojlerem w pliku, więc pliki bez niego są takie jak wcześniej."""
+        if WATER_HEATER_DEVICE not in self.house.devices:
+            return
+        rng = self.rng
+        power = self.house.devices[WATER_HEATER_DEVICE]["max_power_kw"]
+        winter = 1.15 if day.month in DARK_MONTHS else 1.0
+        for start_min, base_kwh in ((wake + 30, 1.6), (bedtime - 120, 1.9)):
+            energy = floor2(base_kwh * winter * rng.uniform(0.85, 1.15))
+            slots = math.ceil(energy / (power * SLOT_HOURS))
+            start = at(day, start_min)
+            self.house.add_constant(WATER_HEATER_DEVICE, start, start + slots * SLOT, energy, max_delay_slots=4)
 
     def _always_on(self, day: date) -> None:
         start, end = at(day, 0), at(day + timedelta(days=1), 0)
@@ -613,7 +635,8 @@ def generate_from_meter(meter_path: str, seed: int, device_set: str) -> str:
     start, end, meter = read_meter(meter_path)
     devices = {
         d["device_id"]: dict(d) for d in DEVICES
-        if d["device_id"] != PV_DEVICE and (device_set == "full" or d["device_id"] not in FULL_ONLY)
+        if d["device_id"] not in (PV_DEVICE, WATER_HEATER_DEVICE)
+        and (device_set == "full" or d["device_id"] not in FULL_ONLY)
     }
     devices[OTHER_DEVICE_ID] = device(OTHER_DEVICE_ID, "Inne urządzenia", "other", "Inne", FIXED, max_power_kw=0.1)
     house = MeterHouse(start, end, meter, devices)
@@ -671,10 +694,12 @@ def dump(value, indent: int = 0, key: str | None = None, decimals: int = 2) -> s
     return json.dumps(value, ensure_ascii=False)
 
 
-def generate(start: date, days: int, seed: int, device_set: str, with_pv: bool, max_grid_kw: float) -> str:
+def generate(start: date, days: int, seed: int, device_set: str, with_pv: bool, max_grid_kw: float,
+             with_water_heater: bool = False) -> str:
     devices = {
         d["device_id"]: d for d in DEVICES
         if (d["device_id"] != PV_DEVICE or with_pv) and (device_set == "full" or d["device_id"] not in FULL_ONLY)
+        and (d["device_id"] != WATER_HEATER_DEVICE or with_water_heater)
     }
     period_start = datetime.combine(start, time(), TZ).astimezone(timezone.utc)
     period_end = datetime.combine(start + timedelta(days=days), time(), TZ).astimezone(timezone.utc)
@@ -691,6 +716,7 @@ def main() -> int:
     parser.add_argument("--devices", choices=["standard", "full"], default="full",
                         help="standard: bez EV, pompy ciepła i rekuperatora; full: wszystkie urządzenia")
     parser.add_argument("--with-pv", action="store_true", help="dodaje instalację PV")
+    parser.add_argument("--with-water-heater", action="store_true", help="dodaje bojler elektryczny (water_heater)")
     parser.add_argument("--max-grid-kw", type=float, default=9.0, help="limit mocy przyłącza (domyślnie 9 kW)")
     parser.add_argument("--from-meter", metavar="PLIK",
                         help="plik licznika (CSV, np. Tauron); okres i pobór pochodzą z niego, bez PV")
@@ -700,11 +726,14 @@ def main() -> int:
         parser.error("--days musi być dodatnie")
     if args.from_meter and args.with_pv:
         parser.error("--from-meter nie obsługuje jeszcze PV (--with-pv)")
+    if args.from_meter and args.with_water_heater:
+        parser.error("--from-meter nie obsługuje jeszcze bojlera (--with-water-heater)")
 
     if args.from_meter:
         content = generate_from_meter(args.from_meter, args.seed, args.devices)
     else:
-        content = generate(args.start, args.days, args.seed, args.devices, args.with_pv, args.max_grid_kw)
+        content = generate(args.start, args.days, args.seed, args.devices, args.with_pv, args.max_grid_kw,
+                           args.with_water_heater)
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(content)
     print(f"Zapisano {args.out}")

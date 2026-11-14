@@ -45,17 +45,20 @@ export const daySegment = (start, end, day) => {
 export const dayRows = (actions, day) => {
   const rows = new Map();
   for (const action of actions) {
-    const before = daySegment(action.original_start, action.original_end, day);
+    // Praca bez planu też może mieć przerwy (termostat bojlera): wtedy kilka fragmentów.
+    const before = (action.original_charging ?? [{ start: action.original_start, end: action.original_end }])
+      .map((period) => daySegment(period.start, period.end, day))
+      .filter(Boolean);
     // Ładowanie EV po optymalizacji może mieć przerwy: każdy okres ładowania to osobny fragment.
     const after = (action.charging ?? [{ start: action.start, end: action.end }])
       .map((period) => daySegment(period.start, period.end, day))
       .filter(Boolean);
-    if (!before && !after.length) continue;
+    if (!before.length && !after.length) continue;
     if (!rows.has(action.device_id)) {
       rows.set(action.device_id, { deviceId: action.device_id, name: action.device_name, before: [], after: [] });
     }
     const row = rows.get(action.device_id);
-    if (before) row.before.push({ ...before, action });
+    row.before.push(...before.map((segment) => ({ ...segment, action })));
     row.after.push(...after.map((segment) => ({ ...segment, action })));
   }
   return [...rows.values()].sort((first, second) => first.name.localeCompare(second.name, "pl"));

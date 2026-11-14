@@ -65,7 +65,8 @@ function MovedTable({ actions }) {
                 {action.program_name && <span className="text-gray-500"> · {action.program_name}</span>}
               </td>
               <td className="p-3 whitespace-nowrap">{clockRange(action.original_start, action.original_end)}</td>
-              <td className="p-3">{afterRanges(action)}</td>
+              {/* Data, gdy akcja po optymalizacji zaczyna się innej doby niż w pliku (np. auto po północy). */}
+              <td className="p-3">{afterRanges(action, { withDay: dayOf(action.start) !== dayOf(action.original_start) })}</td>
               <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_before)}</td>
               <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_after)}</td>
             </tr>
@@ -303,6 +304,11 @@ function SchedulePage() {
       {!isDevicesFile ? (
         <p className="p-4 text-sm text-gray-600 bg-white rounded-lg border border-gray-100">
           Wybierz w imporcie danych pojedynczy plik urządzeń, aby zobaczyć optymalizację.
+        </p>
+      ) : !selectedFile.data_start || !selectedFile.data_end ? (
+        // Plik bez odczytów nie ma okresu: kalendarz i „Losowy dzień” nie mają z czego wybierać.
+        <p className="p-4 text-sm text-gray-600 bg-white rounded-lg border border-gray-100">
+          Ten plik urządzeń nie ma odczytów zużycia, więc nie ma okresu do optymalizacji. Wybierz inny plik.
         </p>
       ) : (
         <div className="space-y-6">

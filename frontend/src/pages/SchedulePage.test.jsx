@@ -59,15 +59,15 @@ const SCHEDULE = {
   prices: [{ start: "2026-10-19T00:00:00+02:00", price_pln_kwh: 1.0 }],
 };
 
-const renderPage = () =>
+const renderPage = (file = FILE) =>
   render(
     <MemoryRouter>
       <EnergyFileContext.Provider
         value={{
           isReady: true,
-          selectedFile: FILE,
-          selectedFileId: FILE.id,
-          files: [FILE],
+          selectedFile: file,
+          selectedFileId: file.id,
+          files: [file],
           filesError: null,
           isLoadingFiles: false,
           reload: vi.fn(),
@@ -129,5 +129,28 @@ describe("SchedulePage", () => {
     expect(within(total).getByText("2,40 zł")).toBeTruthy();
     fireEvent.click(within(summary).getByRole("button", { name: "19.10, poniedziałek" }));
     expect(within(browser).getByText("Dzień 1 z 2")).toBeTruthy();
+  });
+  it("plik urządzeń bez odczytów nie wysypuje strony, tylko mówi, że nie ma okresu", () => {
+    renderPage({ ...FILE, data_start: null, data_end: null });
+
+    expect(screen.getByText(/nie ma odczytów zużycia, więc nie ma okresu do optymalizacji/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pokaż wynik" })).toBeNull();
+  });
+
+  it("przesunięcie na następny dzień pokazuje datę w kolumnie Po", async () => {
+    renderPage();
+    const ev = action({
+      action_id: "act_ev", device_id: "dev_ev", device_name: "Ładowarka EV", program_name: null,
+      flexibility_mode: "interruptible",
+      original_start: "2026-10-19T18:00:00+02:00", original_end: "2026-10-19T21:00:00+02:00",
+      start: "2026-10-20T01:00:00+02:00", end: "2026-10-20T04:00:00+02:00",
+    });
+    vi.spyOn(apiClient, "get").mockResolvedValue({ data: { ...SCHEDULE, actions: [ev] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pokaż wynik" }));
+
+    const browser = await screen.findByRole("region", { name: "Wyniki dzień po dniu" });
+    const row = within(browser).getByText("Ładowarka EV", { selector: "td" }).closest("tr");
+    expect(within(row).getByText("20.10 01:00–04:00")).toBeTruthy();
   });
 });

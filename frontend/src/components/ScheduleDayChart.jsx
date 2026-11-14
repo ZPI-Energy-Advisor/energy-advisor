@@ -34,7 +34,7 @@ function Lane({ segments, className, label }) {
 const afterColor = (action) => (action.status === "moved" ? "bg-emerald-500" : "bg-gray-400");
 
 // Doba: wykres cen, a pod nim dla każdego urządzenia akcje przed i po optymalizacji, na tej samej osi.
-function ScheduleDayChart({ day, actions, prices, isTail = false }) {
+function ScheduleDayChart({ day, actions, prices, isTail = false, subtitle = null }) {
   const points = dayPrices(prices, day);
   const rows = dayRows(actions, day);
 
@@ -42,7 +42,9 @@ function ScheduleDayChart({ day, actions, prices, isTail = false }) {
     <section className="bg-white p-4 md:p-5 rounded-lg shadow-sm border border-gray-100">
       <h3 className="font-bold text-gray-900 mb-3">
         {formatDayMonth(day)}
-        {isTail && <span className="ml-2 text-sm font-normal text-gray-500">dokończenie akcji z poprzedniego dnia</span>}
+        {(subtitle || isTail) && (
+          <span className="ml-2 text-sm font-normal text-gray-500">{subtitle ?? "dokończenie akcji z poprzedniego dnia"}</span>
+        )}
       </h3>
 
       <div className="flex">

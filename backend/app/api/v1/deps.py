@@ -26,6 +26,8 @@ from app.repositories.tariff_definition_repository import TariffDefinitionReposi
 from app.services.dynamic_price_service import DynamicPriceService
 from app.services.energy_file_service import EnergyFileService
 from app.services.home_control_service import HomeControlService
+from app.services.planning_service import PlanningService
+from app.repositories.planning_repository import PlanningRepository
 from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
 from app.services.home_state_service import HomeStateService
@@ -37,6 +39,8 @@ from app.services.upload_service import UploadService
 from app.services.user_service import UserService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
+from app.services.plan_service import PlanService
+from app.repositories.day_plan_repository import DayPlanRepository
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.clients.hub_client import API_KEY_HEADER, HubClient
@@ -195,6 +199,10 @@ def get_home_control_service(
     return HomeControlService(HomeRepository(db), hub_client)
 
 
+def get_planning_service(db: Session = Depends(get_db)) -> PlanningService:
+    return PlanningService(PlanningRepository(db))
+
+
 def get_home_event_service(db: Session = Depends(get_db)) -> HomeEventService:
     return HomeEventService(HomeEventRepository(db), HomeRepository(db))
 
@@ -207,6 +215,14 @@ def get_schedule_price_service(
     return SchedulePriceService(
         user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository)
     )
+
+
+def get_plan_service(
+    db: Session = Depends(get_db),
+    price_service: SchedulePriceService = Depends(get_schedule_price_service),
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> PlanService:
+    return PlanService(PlanningRepository(db), DayPlanRepository(db), price_service, dynamic_price_repository)
 
 
 def get_home_state_service(

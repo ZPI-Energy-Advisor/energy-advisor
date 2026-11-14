@@ -33,5 +33,7 @@ class DeviceRecord:
     allowed_window_from: time | None = None
     allowed_window_to: time | None = None
     max_shift_min: int | None = None
+    # Tylko bojler (water_heater): pojemność zbiornika w litrach.
+    tank_liters: float | None = None
     programs: list[ProgramRecord] = field(default_factory=list)
     actions: list[ActionRecord] = field(default_factory=list)

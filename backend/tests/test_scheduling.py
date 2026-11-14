@@ -149,6 +149,19 @@ def test_action_crossing_midnight_in_file_may_still_cross_it():
     assert result.actions[0].end == at(20, 2)
 
 
+def test_action_crossing_midnight_in_file_may_move_wholly_before_midnight():
+    # W pliku 22:00-1:00, najtaniej 19:00-22:00: akcja nie musi dalej przechodzić przez północ.
+    window = TimeWindow(time(19), time(7))
+
+    result = schedule(
+        [action(start=at(19, 22), profile=[0.1] * 12, allowed_window=window)],
+        prices(cheap=[(at(19, 19), at(19, 22), 0.1)]),
+    )
+
+    assert result.actions[0].start == at(19, 19)
+    assert result.actions[0].end == at(19, 22)
+
+
 def test_overnight_window_does_not_jump_to_the_night_before():
     window = TimeWindow(time(19), time(7))
 
