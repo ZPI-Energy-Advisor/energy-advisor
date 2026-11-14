@@ -12,7 +12,8 @@ from app.schemas.smart_home import AllowedWindow, HomeDeviceProgram, HubDevice, 
 
 
 
-def _clock(value: time) -> str:
+def clock_text(value: time) -> str:
+    """Godzina z bazy jako HH:MM (okna z pliku urządzeń; używa też plan na jutro)."""
     return value.strftime("%H:%M")
 
 
@@ -112,7 +113,7 @@ class HomeRepository:
     def _hub_device(instance: DeviceInstance, programs: list[HubProgram]) -> HubDevice:
         window = None
         if instance.allowed_window_from is not None and instance.allowed_window_to is not None:
-            window = AllowedWindow(from_=_clock(instance.allowed_window_from), to=_clock(instance.allowed_window_to))
+            window = AllowedWindow(from_=clock_text(instance.allowed_window_from), to=clock_text(instance.allowed_window_to))
         return HubDevice(
             device_id=instance.source_device_id,
             device_name=instance.name,

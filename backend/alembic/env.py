@@ -43,6 +43,7 @@ from app.models.DeviceAction import DeviceAction  # noqa: F401
 from app.models.DeviceSlotUsage import DeviceSlotUsage  # noqa: F401
 from app.models.HomeConnection import HomeConnection  # noqa: F401
 from app.models.HomeEvent import HomeEvent  # noqa: F401
+from app.models.PlanningTemplate import PlanningTemplate  # noqa: F401
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"
