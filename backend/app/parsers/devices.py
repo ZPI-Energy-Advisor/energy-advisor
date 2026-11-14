@@ -119,6 +119,7 @@ class DevicesJsonParser(DocumentParser):
                 device_category=device["device_category"],
                 flexibility_mode=flexibility["mode"],
                 max_power_kw=device.get("max_power_kw"),
+                tank_liters=device.get("tank_liters"),
                 allowed_window_from=_clock(window.get("from")),
                 allowed_window_to=_clock(window.get("to")),
                 max_shift_min=flexibility.get("max_shift_min"),

@@ -1,4 +1,4 @@
-// Plan na jutro (ZP-111): przedziały godzin, walidacja wymagań urządzeń i energia do naładowania auta.
+// Plan na jutro (ZP-111, ZP-112): przedziały godzin, walidacja wymagań urządzeń, energia auta, pompa ciepła i bojler.
 
 export const MAX_WINDOWS = 4;
 const DAY_MINUTES = 24 * 60;
@@ -50,11 +50,14 @@ export const nextWindow = (windows) => {
 
 const isQuarter = (clock) => /^([01]\d|2[0-3]):(00|15|30|45)$/.test(clock ?? "");
 
+const isPercent = (value) => value !== "" && value != null && Number(value) >= 0 && Number(value) <= 100;
+const PERCENT_ERROR = "Podaj wartość od 0 do 100%.";
+
 /** Energia z sieci do naładowania auta: wprost albo z różnicy poziomu baterii i strat ładowania. */
 export const energyNeeded = (preference, efficiency) => {
   if (preference.energy_input === "kwh") return preference.energy_kwh > 0 ? Number(preference.energy_kwh) : null;
   const { battery_kwh: battery, current_percent: current, target_percent: target } = preference;
-  if (!(battery > 0) || current == null || target == null || current === "" || target === "") return null;
+  if (!(battery > 0) || !isPercent(current) || !isPercent(target)) return null;
   if (Number(target) <= Number(current)) return null;
   return Math.round(((Number(target) - Number(current)) / 100) * Number(battery) / efficiency * 100) / 100;
 };
@@ -63,12 +66,32 @@ export const energyNeeded = (preference, efficiency) => {
 export const validateDevice = (device, preference, efficiency) => {
   const errors = {};
   const levels = preference.energy_input === "percent";
-  if (device.is_ev && levels && preference.current_percent !== "" && preference.target_percent !== ""
-      && preference.current_percent != null && preference.target_percent != null
-      && Number(preference.target_percent) <= Number(preference.current_percent)) {
-    errors.target_percent = "Docelowy poziom baterii musi być wyższy niż obecny.";
+  const filled = (value) => value !== "" && value != null;
+  if (device.is_ev && levels) {
+    // Poziom baterii to procent: najwyżej 100%.
+    if (filled(preference.current_percent) && !isPercent(preference.current_percent)) errors.current_percent = PERCENT_ERROR;
+    if (filled(preference.target_percent) && !isPercent(preference.target_percent)) errors.target_percent = PERCENT_ERROR;
+    if (!errors.current_percent && !errors.target_percent && filled(preference.current_percent)
+        && filled(preference.target_percent) && Number(preference.target_percent) <= Number(preference.current_percent)) {
+      errors.target_percent = "Docelowy poziom baterii musi być wyższy niż obecny.";
+    }
   }
   if (!preference.enabled) return errors;
+  if (device.kind === "heat_pump") {
+    if (!preference.shift_hours) errors.shift_hours = "Wybierz, o ile można przesunąć grzanie.";
+    return errors;
+  }
+  if (device.kind === "water_heater") {
+    const times = preference.ready_times ?? [];
+    const liters = preference.tank_liters;
+    if (liters === "" || liters == null || Number(liters) < 30 || Number(liters) > 500) {
+      errors.tank_liters = "Podaj pojemność zbiornika od 30 do 500 l.";
+    }
+    if (!times.length) errors.ready_times = "Dodaj co najmniej jedną godzinę.";
+    else if (times.some((time) => !isQuarter(time))) errors.ready_times = "Godziny ustaw co kwadrans, np. 06:00 albo 17:45.";
+    else if (new Set(times).size !== times.length) errors.ready_times = "Godziny się powtarzają.";
+    return errors;
+  }
   if (preference.after_device_id && device.programs.length) {
     // Start wyznacza poprzednik: zamiast przedziałów tylko opcjonalne „skończ najpóźniej o”.
     if (!device.programs.some((item) => item.program_id === preference.program_id)) errors.program_id = "Wybierz program.";
@@ -159,6 +182,9 @@ export const toPayload = (devices) => ({
       battery_kwh: number(preference.battery_kwh),
       current_percent: number(preference.current_percent),
       target_percent: number(preference.target_percent),
+      shift_hours: number(preference.shift_hours),
+      tank_liters: number(preference.tank_liters),
+      ready_times: preference.ready_times ?? [],
     };
   }),
 });
@@ -175,4 +201,11 @@ export const errorsFromResponse = (error, devices) => {
     result[device.device_id] = { ...result[device.device_id], [field]: String(item.msg).replace(/^Value error, /, "") };
   }
   return result;
+};
+
+/** Kolejna godzina „woda gotowa na”: 6 h po ostatniej (pierwsza: 06:00). */
+export const nextReadyTime = (times) => {
+  if (!times.length) return "06:00";
+  const last = Math.max(...times.map(minutesOf));
+  return clockOf(last + 360);
 };

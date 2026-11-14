@@ -3,15 +3,20 @@
 Ustawienia zawierają tylko to, co wybrał użytkownik; resztę (urządzenia bez zapisanych preferencji,
 domyślne przedziały) uzupełniamy z urządzeń z plików przy każdym odczycie, więc nowy plik urządzeń
 od razu pojawia się na ekranie. Każdy zapis nadpisuje poprzedni.
+
+Pompa ciepła i bojler (ZP-112) nie mają przedziałów ani programów: plan bierze ich energię z historii,
+a użytkownik podaje tylko, o ile można przesunąć grzanie albo na kiedy woda ma być ciepła.
 """
 
-from datetime import time
+from collections.abc import Callable
+from datetime import date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
 
 from app.models.DeviceInstance import DeviceInstance
 from app.models.DeviceProgram import DeviceProgram
 from app.models.User import User
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.planning_repository import PlanningRepository
 from app.schemas.planning import (
     DevicePreference,
@@ -21,9 +26,20 @@ from app.schemas.planning import (
     TimeWindow,
 )
 from app.schemas.smart_home import HomeDeviceProgram
+from app.services.plan_history import average_daily_energy, daily_energy, reference_day
 from app.services.scheduling import DRYER_AFTER_WASH
+from app.services.water_heater import daily_draw_kwh, default_tank_liters, draw_from_history
 
 EV_DEVICE_TYPE = "ev_charger"
+HEAT_PUMP_TYPE = "heat_pump"
+WATER_HEATER_TYPE = "water_heater"
+# Bojler: woda gotowa rano i na wieczór; pompa ciepła: przesunięcie jak `max_shift_min` z pliku albo 1 h.
+DEFAULT_READY_TIMES = ["06:00", "18:00"]
+# Bez profilu liczymy bojler dla 2 osób.
+DEFAULT_RESIDENTS = 2
+# Historia bojlera: średnie zużycie z tylu ostatnich dni w plikach.
+WATER_HEATER_HISTORY_DAYS = 7
+DEFAULT_SHIFT_HOURS = 1
 # Z sieci trzeba pobrać więcej, niż trafi do baterii: ładowanie AC traci ok. 10%.
 CHARGING_EFFICIENCY = 0.9
 DAY_MINUTES = 24 * 60
@@ -61,6 +77,30 @@ def _kwh_text(value: float) -> str:
     return f"{value:.1f}".replace(".", ",")
 
 
+def tomorrow() -> date:
+    return datetime.now(LOCAL_TIMEZONE).date() + timedelta(days=1)
+
+
+def device_kind(device: DeviceInstance) -> str:
+    if device.device_type == EV_DEVICE_TYPE:
+        return "ev"
+    if device.device_type in (HEAT_PUMP_TYPE, WATER_HEATER_TYPE):
+        return device.device_type
+    return "program"
+
+
+def default_preference(device: DeviceInstance, windows: list[TimeWindow]) -> DevicePreference:
+    """Ustawienia przed pierwszym zapisem. Pompa ciepła i bojler i tak pracują codziennie, więc są od razu
+    zaznaczone; urządzenia z programem i auto zaznacza użytkownik."""
+    kind = device_kind(device)
+    if kind == HEAT_PUMP_TYPE:
+        hours = round((device.max_shift_min or 0) / 60) or DEFAULT_SHIFT_HOURS
+        return DevicePreference(device_id=device.source_device_id, enabled=True, shift_hours=min(max(hours, 1), 3))
+    if kind == WATER_HEATER_TYPE:
+        return DevicePreference(device_id=device.source_device_id, enabled=True, ready_times=DEFAULT_READY_TIMES)
+    return DevicePreference(device_id=device.source_device_id, windows=windows)
+
+
 def default_windows(device: DeviceInstance) -> list[TimeWindow]:
     if device.allowed_window_from is None or device.allowed_window_to is None:
         return [WHOLE_DAY]
@@ -80,8 +120,10 @@ def energy_needed_kwh(preference: DevicePreference) -> float | None:
 
 
 class PlanningService:
-    def __init__(self, repository: PlanningRepository):
+    def __init__(self, repository: PlanningRepository, today: Callable[[], date] = tomorrow):
         self.repository = repository
+        # Dzień planu: jutro (w testach stały), od niego zależy dzień tygodnia historii pompy i bojlera.
+        self.plan_date = today
 
     def get(self, user: User) -> PlanningPreferencesOut:
         template = self.repository.get_template(user.id)
@@ -116,17 +158,38 @@ class PlanningService:
         devices = []
         flexible = self.repository.flexible_devices(user.id)
         with_programs = {device.source_device_id for device, programs in flexible if programs}
+        auto = [device for device, _ in flexible if device_kind(device) in (HEAT_PUMP_TYPE, WATER_HEATER_TYPE)]
+        history = self.repository.device_actions([device.id for device in auto])
+        residents = self.repository.residents(user.id) or DEFAULT_RESIDENTS
+        plan_date = self.plan_date()
         for device, programs in flexible:
             defaults = default_windows(device)
-            preference = saved.get(device.source_device_id) or DevicePreference(
-                device_id=device.source_device_id, windows=defaults
-            )
-            if not preference.windows:
+            kind = device_kind(device)
+            preference = saved.get(device.source_device_id) or default_preference(device, defaults)
+            if not preference.windows and kind in ("program", "ev"):
                 preference = preference.model_copy(update={"windows": defaults})
+            # Pojemność z pliku jest faktem o urządzeniu, więc wygrywa z ustawieniem; bez niej domyślna z liczby osób.
+            tank_from_file = round(device.tank_liters) if kind == WATER_HEATER_TYPE and device.tank_liters else None
+            if tank_from_file:
+                preference = preference.model_copy(update={"tank_liters": tank_from_file})
+            elif kind == WATER_HEATER_TYPE and preference.tank_liters is None:
+                preference = preference.model_copy(update={"tank_liters": default_tank_liters(residents)})
             if preference.after_device_id is not None and preference.after_device_id not in with_programs:
                 # Urządzenia, na które czekało, nie ma już w plikach.
                 preference = preference.model_copy(update={"after_device_id": None})
-            is_ev = device.device_type == EV_DEVICE_TYPE
+            is_ev = kind == "ev"
+            history_day, history_kwh, hot_water_kwh, hot_water_source = None, None, None, None
+            if kind == HEAT_PUMP_TYPE:
+                history_day = reference_day(history.get(device.id, []), plan_date)
+                history_kwh = daily_energy(history[device.id], history_day) if history_day else None
+            elif kind == WATER_HEATER_TYPE:
+                # Ciepła woda z historii bojlera (zużycie z termostatem minus jego straty), a bez niej z liczby osób.
+                history_kwh, days = average_daily_energy(history.get(device.id, []), WATER_HEATER_HISTORY_DAYS)
+                history_day = days[-1] if days else None
+                if history_kwh:
+                    hot_water_kwh, hot_water_source = draw_from_history(history_kwh, preference.tank_liters), "history"
+                else:
+                    hot_water_kwh, hot_water_source = daily_draw_kwh(residents), "residents"
             devices.append(PlanningDevice(
                 device_id=device.source_device_id,
                 device_name=device.name,
@@ -140,10 +203,20 @@ class PlanningService:
                 ],
                 default_windows=defaults,
                 is_ev=is_ev,
+                kind=kind,
                 preference=preference,
+                history_day=history_day,
+                history_kwh=history_kwh,
+                residents=residents if kind == WATER_HEATER_TYPE else None,
+                tank_liters_from_file=tank_from_file,
+                hot_water_kwh=round(hot_water_kwh, 2) if hot_water_kwh is not None else None,
+                hot_water_source=hot_water_source,
                 energy_needed_kwh=energy_needed_kwh(preference) if is_ev else None,
             ))
-        return PlanningPreferencesOut(saved_at=saved_at, charging_efficiency=CHARGING_EFFICIENCY, devices=devices)
+        return PlanningPreferencesOut(
+            saved_at=saved_at, charging_efficiency=CHARGING_EFFICIENCY, devices=devices,
+            flat_tariff=self.repository.flat_tariff(user.id),
+        )
 
     @staticmethod
     def _validate(
@@ -156,6 +229,17 @@ class PlanningService:
             errors.append(_error(index, "target_percent", "Docelowy poziom baterii musi być wyższy niż obecny."))
         # Wyłączone urządzenie zachowuje ustawienia bez sprawdzania, żeby dało się je zapisać w trakcie edycji.
         if not preference.enabled:
+            return errors
+        kind = device_kind(device)
+        if kind == HEAT_PUMP_TYPE:
+            if preference.shift_hours is None:
+                errors.append(_error(index, "shift_hours", "Wybierz, o ile można przesunąć grzanie."))
+            return errors
+        if kind == WATER_HEATER_TYPE:
+            if not preference.ready_times:
+                errors.append(_error(index, "ready_times", "Dodaj co najmniej jedną godzinę."))
+            elif len(set(preference.ready_times)) != len(preference.ready_times):
+                errors.append(_error(index, "ready_times", "Godziny się powtarzają."))
             return errors
         if preference.after_device_id is not None and programs:
             # Start wyznacza poprzednik: przedziałów nie sprawdzamy, czas sprawdza _validate_order.

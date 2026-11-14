@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { FiCheckCircle, FiPlus, FiRotateCcw, FiTrash2 } from "react-icons/fi";
+import { Link } from "react-router-dom";
 import apiClient from "../api/client";
+import DayPlanView, { FlatTariffNote } from "../components/DayPlanView";
+import { noPricesFrom, onDay } from "../utils/dayPlan";
 import { getApiErrorMessage } from "../utils/energyFiles";
+import { formatDayMonth } from "../utils/schedule";
 import { DEVICE_TYPE_LABELS } from "../utils/home";
 import {
   AFTER_MAX_GAP_MIN,
@@ -11,6 +15,7 @@ import {
   durationText,
   energyNeeded,
   errorsFromResponse,
+  nextReadyTime,
   nextWindow,
   orderError,
   sameWindows,
@@ -103,8 +108,9 @@ const ENERGY_INPUTS = [
 function EvEnergy({ device, preference, errors, efficiency, onChange }) {
   const levels = preference.energy_input === "percent";
   const energy = energyNeeded(preference, efficiency);
+  // Stała szerokość pola: komunikat błędu zawija się pod polem zamiast rozpychać sąsiednie pola.
   const field = (name, label, unit, props = {}) => (
-    <label className="text-sm text-gray-700">
+    <label className="w-40 shrink-0 text-sm text-gray-700">
       <span className="block font-medium mb-1">{label}</span>
       <span className="flex items-center gap-1.5">
         <input
@@ -159,6 +165,135 @@ function EvEnergy({ device, preference, errors, efficiency, onChange }) {
         </p>
       )}
     </div>
+  );
+}
+
+const AUTO_KINDS = new Set(["heat_pump", "water_heater"]);
+const SHIFT_OPTIONS = [1, 2, 3];
+
+// Pompa ciepła i bojler (ZP-112): bez przedziałów i programów, energia z historii zużycia w plikach.
+function AutoDeviceCard({ device, preference, errors, onChange }) {
+  const typeLabel = DEVICE_TYPE_LABELS[device.device_type] ?? device.device_category;
+  const times = preference.ready_times ?? [];
+  const setTime = (index, value) => onChange({ ready_times: times.map((time, position) => (position === index ? value : time)) });
+
+  return (
+    <section className={CARD} aria-label={device.device_name} data-has-error={Object.keys(errors).length ? "" : undefined}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-gray-900">{device.device_name}</h3>
+          <p className="text-xs text-gray-500">
+            {typeLabel} ·{" "}
+            {device.kind === "water_heater"
+              ? device.hot_water_source === "history"
+                ? "ile ciepłej wody zużywacie, bierzemy z historii"
+                : `ciepłą wodę liczymy dla ${device.residents} ${device.residents === 1 ? "osoby" : "osób"} z profilu`
+              : device.history_day
+                ? `grzanie jak ${onDay(device.history_day)}`
+                : "nie ma jej w historii zużycia, plan ją pominie"}
+          </p>
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-emerald-600"
+            checked={preference.enabled}
+            onChange={(event) => onChange({ enabled: event.target.checked })}
+          />
+          Planuj automatycznie
+        </label>
+      </div>
+
+      {preference.enabled && device.kind === "heat_pump" && (
+        <label className="mt-4 block text-sm text-gray-700">
+          <span className="block font-medium mb-1">Można przesunąć grzanie o</span>
+          <select
+            className={`${INPUT} w-full sm:w-auto`}
+            value={preference.shift_hours ?? ""}
+            onChange={(event) => onChange({ shift_hours: event.target.value ? Number(event.target.value) : null })}
+          >
+            <option value="">Wybierz</option>
+            {SHIFT_OPTIONS.map((hours) => <option key={hours} value={hours}>{hours} h</option>)}
+          </select>
+          <span className="mt-1 block text-xs text-gray-500">
+            Pompa grzeje tyle co zwykle, tylko trochę wcześniej albo później, kiedy prąd jest tańszy. Dom trzyma
+            ciepło, więc nie poczujesz różnicy.
+          </span>
+          <FieldError message={errors.shift_hours} />
+        </label>
+      )}
+
+      {preference.enabled && device.kind === "water_heater" && (
+        <div className="mt-4 text-sm text-gray-700">
+          {device.tank_liters_from_file ? (
+            <p className="mb-4">
+              <span className="font-medium">Pojemność zbiornika:</span> {device.tank_liters_from_file} l
+              <span className="text-xs text-gray-500"> (z pliku urządzeń)</span>
+            </p>
+          ) : (
+          <label className="block mb-4">
+            <span className="block font-medium mb-1">Pojemność zbiornika</span>
+            <span className="flex items-center gap-1.5">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={30}
+                max={500}
+                step={10}
+                className={`${INPUT} w-24`}
+                aria-label="Pojemność zbiornika"
+                value={preference.tank_liters ?? ""}
+                onChange={(event) => onChange({ tank_liters: event.target.value })}
+              />
+              <span className="text-gray-500">l</span>
+            </span>
+            <span className="mt-1 block text-xs text-gray-500">
+              W większym zbiorniku zmieści się więcej wody nagrzanej na zapas.
+            </span>
+            <FieldError message={errors.tank_liters} />
+          </label>
+          )}
+          <p className="font-medium">Woda gotowa na</p>
+          <p className="text-xs text-gray-500">
+            O tych godzinach woda będzie gorąca, a poza nimi nigdy zimna. Plan nagrzeje ją na zapas, kiedy prąd jest
+            tani. {QUARTER_HINT}
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-3">
+            {times.map((time, index) => (
+              <li key={index} className="flex items-center gap-1">
+                <input
+                  type="time"
+                  step={900}
+                  className={INPUT}
+                  aria-label={`${device.device_name}: woda gotowa na (${index + 1})`}
+                  value={time}
+                  onChange={(event) => setTime(index, event.target.value)}
+                />
+                {times.length > 1 && (
+                  <button
+                    type="button"
+                    className="p-1.5 text-gray-400 hover:text-red-600"
+                    aria-label={`Usuń godzinę ${index + 1}: ${device.device_name}`}
+                    onClick={() => onChange({ ready_times: times.filter((_, position) => position !== index) })}
+                  >
+                    <FiTrash2 aria-hidden="true" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <FieldError message={errors.ready_times} />
+          <button
+            type="button"
+            className={`${LINK_BUTTON} mt-2`}
+            disabled={times.length >= MAX_WINDOWS}
+            onClick={() => onChange({ ready_times: [...times, nextReadyTime(times)] })}
+          >
+            <FiPlus aria-hidden="true" /> Dodaj godzinę
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -274,19 +409,27 @@ function DeviceCard({ device, preference, errors, efficiency, afterChoices, onCh
   );
 }
 
-// Plan na jutro: wymagania urządzeń z plików użytkownika, które da się przesuwać albo dzielić (ZP-111).
-// Na ich podstawie powstanie najtańszy plan pracy urządzeń na jutro (ZP-112). Dla każdego zalogowanego;
-// ustawienia zostają do następnego zapisu, który je nadpisuje.
+// Plan na jutro (ZP-111, ZP-112): ustawienia urządzeń z plików użytkownika, a po zapisie najtańszy plan pracy
+// na jutro. Dla każdego zalogowanego; ustawienia zostają do następnego zapisu, który je nadpisuje.
 function PlanningPage() {
   const [data, setData] = useState(null);
   const [devices, setDevices] = useState([]);
+  const [plan, setPlan] = useState(null);
+  const [view, setView] = useState("form");
   const [errors, setErrors] = useState({});
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  // Plan wymaga uzupełnionego profilu (operator, taryfa): wtedy przy błędzie link do profilu.
+  const [needsProfile, setNeedsProfile] = useState(false);
+  const [isReplanning, setIsReplanning] = useState(false);
+  const [noPrices, setNoPrices] = useState(null);
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [approveError, setApproveError] = useState(null);
   const [scrollRequest, setScrollRequest] = useState(0);
   const formRef = useRef(null);
+  const topRef = useRef(null);
 
   // Po nieudanym zapisie przewijamy do pierwszej karty z błędem (przy wielu urządzeniach może być poza ekranem).
   useEffect(() => {
@@ -298,9 +441,24 @@ function PlanningPage() {
     setDevices(body.devices);
   };
 
+  const showPlan = (body) => {
+    setPlan(body);
+    setView("plan");
+    setNoPrices(null);
+    setApproveError(null);
+    topRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+
   useEffect(() => {
-    apiClient.get("/planning/preferences")
-      .then(({ data: body }) => apply(body))
+    // Ostatni plan jest dodatkiem: gdy nie da się go odczytać, ustawienia i tak muszą się pokazać.
+    const current = apiClient.get("/planning/plans/current").catch(() => ({ data: null }));
+    Promise.all([apiClient.get("/planning/preferences"), current])
+      .then(([{ data: body }, { data: current }]) => {
+        apply(body);
+        setPlan(current);
+        // Plan ułożony po ostatnim zapisie ustawień jest aktualny: pokazujemy go od razu.
+        if (current && (!body.saved_at || new Date(current.created_at) >= new Date(body.saved_at))) setView("plan");
+      })
       .catch((err) => setLoadError(getApiErrorMessage(err, "Nie udało się pobrać ustawień planu.")));
   }, []);
 
@@ -314,6 +472,36 @@ function PlanningPage() {
     setErrors((current) => ({ ...current, [deviceId]: {} }));
     setSaved(false);
     setSaveError(null);
+  };
+
+  const createPlan = async (planDate = null) => {
+    setNeedsProfile(false);
+    try {
+      const { data: body } = await apiClient.post("/planning/plans", planDate ? { plan_date: planDate } : {});
+      showPlan(body);
+    } catch (err) {
+      // Błąd pokazujemy przy przycisku zapisu, także gdy plan układaliśmy z widoku planu.
+      setView("form");
+      const missing = noPricesFrom(err);
+      if (missing) {
+        setNoPrices(missing);
+        return;
+      }
+      const detail = err?.response?.data?.detail;
+      const status = err?.response?.status;
+      setNeedsProfile(typeof detail === "string" && (status === 409 || detail.startsWith("Brak stawek")));
+      setSaveError(getApiErrorMessage(err, "Ustawienia są zapisane, ale nie udało się ułożyć planu."));
+    }
+  };
+
+  const replan = async () => {
+    setIsReplanning(true);
+    setSaveError(null);
+    try {
+      await createPlan();
+    } finally {
+      setIsReplanning(false);
+    }
   };
 
   const save = async (event) => {
@@ -330,6 +518,7 @@ function PlanningPage() {
     setErrors(found);
     setSaved(false);
     setSaveError(null);
+    setNoPrices(null);
     if (Object.keys(found).length) {
       setScrollRequest((count) => count + 1);
       return;
@@ -340,6 +529,7 @@ function PlanningPage() {
       const { data: body } = await apiClient.put("/planning/preferences", toPayload(devices));
       apply(body);
       setSaved(true);
+      await createPlan();
     } catch (err) {
       const fieldErrors = errorsFromResponse(err, devices);
       if (fieldErrors) {
@@ -352,11 +542,46 @@ function PlanningPage() {
     }
   };
 
+  const demo = async () => {
+    setIsSaving(true);
+    try {
+      await createPlan(noPrices.latest_price_date);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const approve = async () => {
+    setIsApproving(true);
+    setApproveError(null);
+    try {
+      const { data: body } = await apiClient.post(`/planning/plans/${plan.id}/approve`);
+      setPlan(body);
+    } catch (err) {
+      setApproveError(getApiErrorMessage(err, "Nie udało się zatwierdzić planu."));
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   const hasErrors = Object.values(errors).some((deviceErrors) => Object.keys(deviceErrors ?? {}).length);
+  const scheduled = devices.filter((device) => !AUTO_KINDS.has(device.kind));
+  const automatic = devices.filter((device) => AUTO_KINDS.has(device.kind));
+  const card = (device) => {
+    const shared = {
+      device,
+      preference: device.preference,
+      errors: errors[device.device_id] ?? {},
+      onChange: (change) => changeDevice(device.device_id, change),
+    };
+    return AUTO_KINDS.has(device.kind)
+      ? <AutoDeviceCard key={device.device_id} {...shared} />
+      : <DeviceCard key={device.device_id} {...shared} efficiency={efficiency} afterChoices={afterOptions(devices, device)} />;
+  };
 
   return (
     <div className="max-w-4xl mx-auto pb-12">
-      <h2 className="text-xl font-bold text-gray-900">Plan na jutro</h2>
+      <h2 ref={topRef} className="text-xl font-bold text-gray-900">Plan na jutro</h2>
       <p className="mt-1 mb-6 border-b border-gray-200 pb-4 text-sm text-gray-500">
         Powiedz, które urządzenia mają jutro pracować i kiedy mogą to robić. Na tej podstawie ułożymy najtańszy plan.
         Ustawienia zapamiętamy, więc kolejnego dnia wystarczy zmienić to, co trzeba.
@@ -365,33 +590,70 @@ function PlanningPage() {
       {loadError && <p className="p-3 rounded bg-red-50 text-sm text-red-700" role="alert">{loadError}</p>}
       {!data && !loadError && <p className="text-sm text-gray-500" role="status">Ładowanie ustawień…</p>}
 
-      {data && (
+      {data && view === "plan" && plan && (
+        <DayPlanView
+          plan={plan}
+          flatTariff={data.flat_tariff}
+          onApprove={approve}
+          onEdit={() => setView("form")}
+          onReplan={replan}
+          isApproving={isApproving}
+          isReplanning={isReplanning}
+          approveError={approveError}
+        />
+      )}
+
+      {data && view === "form" && (
         <form ref={formRef} onSubmit={save} noValidate className="space-y-4">
           {!devices.length && (
             <p className={`${CARD} text-sm text-gray-600`}>
-              W Twoich plikach nie ma urządzeń, które da się przesuwać albo dzielić. Zaimportuj plik urządzeń
-              z pralką, zmywarką albo ładowarką EV.
+              W Twoich plikach nie ma urządzeń, które da się planować. Zaimportuj plik urządzeń z pralką, zmywarką,
+              ładowarką EV, pompą ciepła albo bojlerem.
             </p>
           )}
-          {devices.map((device) => (
-            <DeviceCard
-              key={device.device_id}
-              device={device}
-              preference={device.preference}
-              errors={errors[device.device_id] ?? {}}
-              efficiency={efficiency}
-              afterChoices={afterOptions(devices, device)}
-              onChange={(change) => changeDevice(device.device_id, change)}
-            />
-          ))}
+          {scheduled.map(card)}
+          {automatic.length > 0 && (
+            <>
+              <div className="pt-2">
+                <h3 className="font-semibold text-gray-900">Ogrzewanie i ciepła woda</h3>
+                <p className="text-sm text-gray-500">
+                  Te urządzenia planujemy same, nie trzeba podawać godzin pracy.
+                </p>
+              </div>
+              {automatic.map(card)}
+            </>
+          )}
+
+          {data.flat_tariff && <FlatTariffNote />}
+
+          {noPrices && (
+            <div className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-2" role="alert">
+              <p>{noPrices.message}</p>
+              {noPrices.latest_price_date && (
+                <button
+                  type="button"
+                  className="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  onClick={demo}
+                  disabled={isSaving}
+                >
+                  Ułóż plan demo na {formatDayMonth(noPrices.latest_price_date)} (ostatni dzień z cenami)
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               className="w-full sm:w-auto rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
               disabled={isSaving || !devices.length}
             >
-              {isSaving ? "Zapisywanie..." : "Zapisz ustawienia"}
+              {isSaving ? "Układanie planu..." : "Zapisz i ułóż plan"}
             </button>
+            {plan && (
+              <button type="button" className={LINK_BUTTON} onClick={() => setView("plan")}>
+                Wróć do planu bez zmian
+              </button>
+            )}
             <p role="status" className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
               {saved && <><FiCheckCircle aria-hidden="true" />Zapisano.</>}
             </p>
@@ -399,7 +661,12 @@ function PlanningPage() {
               <p className="text-sm text-gray-500">Ostatnio zapisano: {savedAtText(data.saved_at)}</p>
             )}
             {hasErrors && <p className="text-sm text-red-600">Nie zapisano – popraw zaznaczone pola.</p>}
-            {saveError && <p className="text-sm text-red-600" role="alert">{saveError}</p>}
+            {saveError && (
+              <p className="text-sm text-red-600" role="alert">
+                {saveError}
+                {needsProfile && <>{" "}<Link to="/profile" className="font-semibold underline">Przejdź do profilu</Link></>}
+              </p>
+            )}
           </div>
         </form>
       )}

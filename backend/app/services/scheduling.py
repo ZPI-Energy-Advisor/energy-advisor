@@ -84,6 +84,12 @@ class ScheduleAction:
     # Tylko obciążenie domu do limitu przyłącza (produkcja PV, akcje z doby przed albo po okresie):
     # nie przesuwa się, nie ma kosztu i nie trafia do wyniku.
     load_only: bool = False
+    # Plan na jutro (ZP-112): dozwolone starty (UTC) wyliczone z przedziałów użytkownika i zakresu planu.
+    # Zastępują `allowed_window`, `max_shift_min` i zasadę tej samej doby; `start` to start bazowy.
+    allowed_starts: frozenset[datetime] | None = None
+    # Tylko INTERRUPTIBLE: kwadranse (UTC), w których sesja może pobierać energię, np. kilka przedziałów
+    # podłączenia auta; bez tego cały zakres [window_start, window_end).
+    allowed_slots: frozenset[datetime] | None = None
 
 
 @dataclass
@@ -138,12 +144,20 @@ class _Group:
         limits = [action.max_shift_min // SLOT_MINUTES for action in self.actions if action.max_shift_min is not None]
         self.max_offset = min(limits, default=MAX_SLOTS_IN_DAY)
 
-    def offsets(self) -> range:
+    def offsets(self) -> Iterable[int]:
         """Przesunięcia do sprawdzenia: w `max_shift_min` i w tym samym wystąpieniu okna co oryginał.
 
         Okno 19:00-7:00 obejmuje też 3:00 tego samego dnia, ale to noc wcześniejsza: bez tego zmywarka
-        z wieczora przeskoczyłaby na noc przed kolacją.
+        z wieczora przeskoczyłaby na noc przed kolacją. Akcje z `allowed_starts` mają przesunięcia
+        wprost z dozwolonych startów (wspólne dla całej grupy, bo grupa przesuwa się razem).
         """
+        explicit = [action for action in self.actions if action.allowed_starts is not None]
+        if explicit:
+            common = None
+            for action in explicit:
+                offsets = {int((start - action.start) / SLOT) for start in action.allowed_starts}
+                common = offsets if common is None else common & offsets
+            return sorted(common | {0})
         low, high = -self.max_offset, self.max_offset
         for action in self.actions:
             window = action.allowed_window
@@ -244,8 +258,10 @@ class _Session:
 
     def window_slots(self):
         slot, end = _slot_ceil(self.action.window_start), self.action.window_end
+        allowed = self.action.allowed_slots
         while slot + SLOT <= end:
-            yield slot
+            if allowed is None or slot in allowed:
+                yield slot
             slot += SLOT
 
 
@@ -297,7 +313,10 @@ class _Plan:
         """Powód, dla którego grupy nie można ustawić z tym przesunięciem; None, gdy można."""
         added = defaultdict(float)
         for action in group.actions:
-            if _local_date(action.start + offset * SLOT) != _local_date(action.start):
+            if action.allowed_starts is not None:
+                if action.start + offset * SLOT not in action.allowed_starts:
+                    return OUTSIDE_WINDOW
+            elif _local_date(action.start + offset * SLOT) != _local_date(action.start):
                 return OTHER_DAY
         for action in group.actions:
             window = action.allowed_window

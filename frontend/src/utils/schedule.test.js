@@ -27,6 +27,21 @@ const action = (overrides) => ({
 });
 
 describe("schedule", () => {
+  it("praca bez planu z przerwami (termostat bojlera) to kilka fragmentów na osi", () => {
+    const heater = action({
+      original_start: "2026-10-19T00:00:00+02:00",
+      original_end: "2026-10-19T20:00:00+02:00",
+      original_charging: [
+        { start: "2026-10-19T00:00:00+02:00", end: "2026-10-19T00:30:00+02:00" },
+        { start: "2026-10-19T19:00:00+02:00", end: "2026-10-19T20:00:00+02:00" },
+      ],
+    });
+
+    const [row] = dayRows([heater], "2026-10-19");
+
+    expect(row.before).toHaveLength(2);
+  });
+
   it("czyta godzinę z czasu lokalnego", () => {
     expect(minutesOf("2026-10-19T17:30:00+02:00")).toBe(17 * 60 + 30);
   });

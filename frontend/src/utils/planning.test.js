@@ -94,4 +94,30 @@ describe("planning", () => {
       windows: "Dodaj co najmniej jeden przedział godzin.",
     });
   });
+
+  it("bojler wymaga pojemności zbiornika 30–500 l i godzin co kwadrans bez powtórzeń", () => {
+    const heater = { kind: "water_heater", programs: [] };
+    const preference = { enabled: true, ready_times: ["06:00", "18:00"], tank_liters: 120 };
+
+    expect(validateDevice(heater, preference, 0.9)).toEqual({});
+    expect(validateDevice(heater, { ...preference, tank_liters: "20" }, 0.9)).toEqual({
+      tank_liters: "Podaj pojemność zbiornika od 30 do 500 l.",
+    });
+    expect(validateDevice(heater, { ...preference, ready_times: ["06:00", "06:00"] }, 0.9)).toEqual({
+      ready_times: "Godziny się powtarzają.",
+    });
+  });
+
+  it("poziom baterii auta to najwyżej 100%", () => {
+    const ev = { is_ev: true, programs: [], max_power_kw: 3.7 };
+    const preference = {
+      enabled: true, energy_input: "percent", battery_kwh: 50, current_percent: 20, target_percent: 803,
+      windows: [{ start: "17:00", end: "03:00" }],
+    };
+
+    expect(validateDevice(ev, preference, 0.9)).toMatchObject({ target_percent: "Podaj wartość od 0 do 100%." });
+    expect(energyNeeded(preference, 0.9)).toBeNull();
+    expect(validateDevice(ev, { ...preference, current_percent: 120, target_percent: 80 }, 0.9))
+      .toMatchObject({ current_percent: "Podaj wartość od 0 do 100%." });
+  });
 });

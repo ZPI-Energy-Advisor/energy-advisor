@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import apiClient from "../api/client";
 import PlanningPage from "./PlanningPage";
 
@@ -34,9 +34,46 @@ const EV = {
   preference: { ...WASHER.preference, device_id: "dev_ev_01", windows: [{ start: "18:00", end: "07:00" }] },
 };
 const BODY = { saved_at: null, charging_efficiency: 0.9, devices: [WASHER, EV] };
+const PLAN = {
+  id: "plan-1",
+  plan_date: "2026-11-13",
+  status: "draft",
+  created_at: "2026-11-12T16:00:00+01:00",
+  approved_at: null,
+  horizon_start: "2026-11-13T00:00:00+01:00",
+  horizon_end: "2026-11-14T06:00:00+01:00",
+  pricing: "PGE, G11",
+  max_grid_kw: null,
+  approximate_from: null,
+  cost_before: 3.2,
+  cost_after: 2.1,
+  saving: 1.1,
+  notes: ["Bojler: 3,6 kWh na dobę jak w czw. 05.11, po 1,8 kWh przed każdą godziną."],
+  items: [{
+    action_id: "dev_wm_01", device_id: "dev_wm_01", device_name: "Pralka Bosch", program_name: "Bawełna 60°C",
+    kind: "program", original_start: "2026-11-13T07:00:00+01:00", original_end: "2026-11-13T09:00:00+01:00",
+    start: "2026-11-13T13:00:00+01:00", end: "2026-11-13T15:00:00+01:00", energy_kwh: 1.4,
+    cost_before: 1.4, cost_after: 0.3, status: "moved", reason: null, charging: null,
+  }],
+  prices: [{ start: "2026-11-13T00:00:00+01:00", price_pln_kwh: 0.9 }],
+  water_heaters: [{
+    device_id: "dev_wh_01", device_name: "Bojler", tank_liters: 120, residents: 3, hot_water_kwh: 4.8,
+    ready_times: ["06:00", "18:00"], min_temp: 40, ready_temp: 55, max_temp: 75, loss_per_hour: 0.5, shortfall: 0,
+    start_before: 55, start_after: 45,
+    temperatures: [
+      { start: "2026-11-13T00:00:00+01:00", before: 54.9, after: 60.2 },
+      { start: "2026-11-13T00:15:00+01:00", before: 54.8, after: 65.4 },
+    ],
+  }],
+};
 
-const renderPage = () => {
-  const get = vi.spyOn(apiClient, "get").mockResolvedValue({ data: BODY });
+// GET ustawień i ostatniego planu (domyślnie bez planu).
+const mockGet = (body = BODY, plan = null) =>
+  vi.spyOn(apiClient, "get").mockImplementation((url) =>
+    Promise.resolve({ data: url === "/planning/plans/current" ? plan : body }));
+
+const renderPage = (body = BODY, plan = null) => {
+  const get = mockGet(body, plan);
   render(
     <MemoryRouter>
       <PlanningPage />
@@ -47,7 +84,15 @@ const renderPage = () => {
 
 const card = (name) => screen.findByRole("region", { name });
 
-afterEach(() => vi.restoreAllMocks());
+// „Dziś” to 12.11, więc plan na 13.11 jest planem na jutro.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-12T15:00:00"));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("PlanningPage", () => {
   it("pobiera ustawienia zalogowanego użytkownika, bez domu Smart Home", async () => {
@@ -69,7 +114,7 @@ describe("PlanningPage", () => {
   });
 
   it("pokazuje datę ostatniego zapisu", async () => {
-    vi.spyOn(apiClient, "get").mockResolvedValue({ data: { ...BODY, saved_at: "2026-11-12T09:30:00Z" } });
+    mockGet({ ...BODY, saved_at: "2026-11-12T09:30:00Z" });
     render(
       <MemoryRouter>
         <PlanningPage />
@@ -104,15 +149,16 @@ describe("PlanningPage", () => {
     fireEvent.click(within(washer).getByRole("checkbox", { name: "Pracuje jutro" }));
     fireEvent.change(within(washer).getByLabelText("Pralka Bosch: do (przedział 1)"), { target: { value: "08:00" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz ustawienia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
 
     expect(put).not.toHaveBeenCalled();
     expect(within(washer).getByText("Najdłuższy przedział (1 h) jest krótszy niż program Bawełna 60°C (2 h).")).toBeTruthy();
   });
 
-  it("zapisuje ustawienia z poziomem baterii auta", async () => {
+  it("zapisuje ustawienia z poziomem baterii auta i pokazuje ułożony plan", async () => {
     renderPage();
     const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: { ...BODY, saved_at: "2026-11-12T10:00:00Z" } });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: PLAN });
     const ev = await card("Ładowarka EV");
     fireEvent.click(within(ev).getByRole("checkbox", { name: "Pracuje jutro" }));
     fireEvent.click(within(ev).getByRole("radio", { name: "poziom baterii" }));
@@ -121,9 +167,10 @@ describe("PlanningPage", () => {
     fireEvent.change(within(ev).getByLabelText("Naładuj do"), { target: { value: "70" } });
     expect(within(ev).getByText(/Z sieci auto pobierze ok\. 20,0 kWh/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz ustawienia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
 
-    expect(await screen.findByText("Zapisano.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Plan na piątek 13.11" })).toBeTruthy();
+    expect(post).toHaveBeenCalledWith("/planning/plans", {});
     expect(put.mock.calls[0][0]).toBe("/planning/preferences");
     const body = put.mock.calls[0][1];
     expect(body).not.toHaveProperty("mode");
@@ -142,7 +189,8 @@ describe("PlanningPage", () => {
       programs: [{ program_id: "dry", program_name: "Suszenie", duration_min: 90 }],
       preference: { ...WASHER.preference, device_id: "dev_td_01" },
     };
-    vi.spyOn(apiClient, "get").mockResolvedValue({ data: { ...BODY, devices: [WASHER, dryer, EV] } });
+    mockGet({ ...BODY, devices: [WASHER, dryer, EV] });
+    vi.spyOn(apiClient, "post").mockResolvedValue({ data: PLAN });
     const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: { ...BODY, devices: [WASHER, dryer, EV] } });
     render(
       <MemoryRouter>
@@ -160,7 +208,7 @@ describe("PlanningPage", () => {
     expect(within(dryerCard).queryByText("Kiedy może pracować")).toBeNull();
     fireEvent.change(within(dryerCard).getByLabelText(/Skończ najpóźniej o/), { target: { value: "22:00" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz ustawienia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
     expect(put).not.toHaveBeenCalled();
     expect(within(dryerCard).getByText("Pralka Bosch nie pracuje jutro. Zaznacz je albo usuń „Wykonaj po”.")).toBeTruthy();
 
@@ -168,9 +216,9 @@ describe("PlanningPage", () => {
     fireEvent.click(within(washer).getByRole("checkbox", { name: "Pracuje jutro" }));
     // Pralka nie dostaje wyboru „Wykonaj po”, bo jedyne inne urządzenie z programem już na nią czeka.
     expect(within(washer).getAllByRole("combobox")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz ustawienia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
 
-    expect(await screen.findByText("Zapisano.")).toBeTruthy();
+    expect(await screen.findByText("Plan na piątek 13.11")).toBeTruthy();
     expect(put.mock.calls[0][1].devices[1]).toMatchObject({ device_id: "dev_td_01", after_device_id: "dev_wm_01", finish_by: "22:00" });
     expect(put.mock.calls[0][1].devices[0].after_device_id).toBeNull();
   });
@@ -183,8 +231,160 @@ describe("PlanningPage", () => {
     const washer = await card("Pralka Bosch");
     fireEvent.click(within(washer).getByRole("checkbox", { name: "Pracuje jutro" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz ustawienia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
 
     expect(await within(washer).findByText("Przedziały godzin nachodzą na siebie.")).toBeTruthy();
+  });
+
+  it("od razu pokazuje plan ułożony po ostatnim zapisie i pozwala go zatwierdzić", async () => {
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, PLAN);
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({
+      data: { ...PLAN, status: "approved", approved_at: "2026-11-12T16:05:00+01:00" },
+    });
+
+    expect(await screen.findByText("Szkic")).toBeTruthy();
+    expect(screen.getByText("Oszczędność")).toBeTruthy();
+    expect(screen.getByText("1,10 zł")).toBeTruthy();
+    expect(screen.getByText("34,4%")).toBeTruthy(); // 1,10 z 3,20 zł
+    expect(screen.getByText("13.11 07:00–09:00")).toBeTruthy();
+    expect(screen.getByText(PLAN.notes[0])).toBeTruthy();
+    // Wykres temperatury wody otwiera się w okienku.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Temperatura wody/ }));
+    const dialog = screen.getByRole("dialog", { name: "Temperatura wody: Bojler" });
+    expect(within(dialog).getByText(/Woda jest gorąca na 06:00 i 18:00/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zamknij" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Zatwierdź plan" }));
+
+    expect(await screen.findByText(/Plan zatwierdzony o 16:05/)).toBeTruthy();
+    expect(post).toHaveBeenCalledWith("/planning/plans/plan-1/approve");
+    expect(screen.getByText("Zatwierdzony")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Edytuj ustawienia/ }));
+    expect(await card("Pralka Bosch")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Wróć do planu bez zmian" }));
+    expect(screen.getByText("Zatwierdzony")).toBeTruthy();
+  });
+
+  it("bez cen na jutro pokazuje godzinę publikacji i układa plan demo na ostatni dzień z cenami", async () => {
+    renderPage();
+    vi.spyOn(apiClient, "put").mockResolvedValue({ data: BODY });
+    const post = vi.spyOn(apiClient, "post")
+      .mockRejectedValueOnce({ response: { status: 409, data: { detail: {
+        code: "no_prices", message: "Nie ma jeszcze cen dynamicznych na 13.11.2026. PSE publikuje ceny ok. 14:00.",
+        latest_price_date: "2026-11-12",
+      } } } })
+      .mockResolvedValueOnce({ data: { ...PLAN, plan_date: "2026-11-12" } });
+    const washer = await card("Pralka Bosch");
+    fireEvent.click(within(washer).getByRole("checkbox", { name: "Pracuje jutro" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
+
+    expect(await screen.findByText(/PSE publikuje ceny ok\. 14:00/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Ułóż plan demo na 12\.11/ }));
+    expect(await screen.findByText("Plan na czwartek 12.11")).toBeTruthy();
+    expect(post).toHaveBeenLastCalledWith("/planning/plans", { plan_date: "2026-11-12" });
+  });
+
+  it("pompa ciepła i bojler są w osobnej sekcji, bez przedziałów godzin", async () => {
+    const heatPump = {
+      ...WASHER, device_id: "dev_hp_01", device_name: "Pompa ciepła", device_type: "heat_pump", programs: [],
+      kind: "heat_pump", history_kwh: 12.4, history_day: "2026-11-06",
+      preference: { ...WASHER.preference, device_id: "dev_hp_01", enabled: true, shift_hours: 1, windows: [] },
+    };
+    const heater = {
+      ...heatPump, device_id: "dev_wh_01", device_name: "Bojler", device_type: "water_heater", kind: "water_heater",
+      history_kwh: null, history_day: null, residents: 3, hot_water_kwh: 4.8,
+      preference: {
+        ...heatPump.preference, device_id: "dev_wh_01", shift_hours: null, ready_times: ["06:00", "18:00"], tank_liters: 120,
+      },
+    };
+    renderPage({ ...BODY, devices: [WASHER, heatPump, heater] });
+    const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: BODY });
+    vi.spyOn(apiClient, "post").mockResolvedValue({ data: PLAN });
+
+    const pump = await card("Pompa ciepła");
+    const boiler = await card("Bojler");
+    expect(screen.getByRole("heading", { name: "Ogrzewanie i ciepła woda" })).toBeTruthy();
+    expect(within(pump).getByText(/grzanie jak w piątek 6 listopada/)).toBeTruthy();
+    expect(within(pump).queryByText("Kiedy może pracować")).toBeNull();
+    fireEvent.change(within(pump).getByRole("combobox"), { target: { value: "2" } });
+    expect(within(boiler).getByText(/ciepłą wodę liczymy dla 3 osób z profilu/)).toBeTruthy();
+    fireEvent.change(within(boiler).getByLabelText("Pojemność zbiornika"), { target: { value: "150" } });
+    fireEvent.click(within(boiler).getByRole("button", { name: /Dodaj godzinę/ }));
+    expect(within(boiler).getByLabelText("Bojler: woda gotowa na (3)").value).toBe("00:00");
+
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
+
+    await screen.findByText("Plan na piątek 13.11");
+    const [, pumpPayload, heaterPayload] = put.mock.calls[0][1].devices;
+    expect(pumpPayload).toMatchObject({ device_id: "dev_hp_01", enabled: true, shift_hours: 2 });
+    expect(heaterPayload.ready_times).toEqual(["06:00", "18:00", "00:00"]);
+    expect(heaterPayload.tank_liters).toBe(150);
+  });
+
+  it("pojemność bojlera z pliku urządzeń jest tylko do odczytu", async () => {
+    const heater = {
+      ...WASHER, device_id: "dev_wh_01", device_name: "Bojler", device_type: "water_heater", programs: [],
+      kind: "water_heater", residents: 2, hot_water_kwh: 3.2, tank_liters_from_file: 150,
+      preference: { ...WASHER.preference, device_id: "dev_wh_01", enabled: true, ready_times: ["06:00"], tank_liters: 150 },
+    };
+    renderPage({ ...BODY, devices: [heater] });
+
+    const boiler = await card("Bojler");
+
+    expect(within(boiler).getByText("(z pliku urządzeń)")).toBeTruthy();
+    expect(within(boiler).queryByLabelText("Pojemność zbiornika")).toBeNull();
+  });
+
+  it("ciepła woda bojlera z historii w plikach, gdy ją ma", async () => {
+    const heater = {
+      ...WASHER, device_id: "dev_wh_01", device_name: "Bojler", device_type: "water_heater", programs: [],
+      kind: "water_heater", residents: 2, history_kwh: 3.6, hot_water_kwh: 2.48, hot_water_source: "history",
+      preference: { ...WASHER.preference, device_id: "dev_wh_01", enabled: true, ready_times: ["06:00"], tank_liters: 80 },
+    };
+    renderPage({ ...BODY, devices: [heater] });
+
+    const boiler = await card("Bojler");
+
+    expect(within(boiler).getByText(/ile ciepłej wody zużywacie, bierzemy z historii/)).toBeTruthy();
+  });
+
+  it("plan na wcześniejszy dzień można od razu ułożyć na jutro", async () => {
+    renderPage({ ...BODY, saved_at: "2026-11-11T14:00:00Z" }, { ...PLAN, plan_date: "2026-11-12" });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: PLAN });
+
+    expect(await screen.findByText(/To plan na czwartek 12\.11, czyli nie na jutro/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Ułóż plan na jutro/ }));
+
+    expect(await screen.findByText("Plan na piątek 13.11")).toBeTruthy();
+    expect(post).toHaveBeenCalledWith("/planning/plans", {});
+    expect(screen.queryByText(/czyli nie na jutro/)).toBeNull();
+  });
+
+  it("ostrzeżenia planu są osobno, a przy taryfie ze stałą ceną jest podpowiedź", async () => {
+    renderPage(
+      { ...BODY, flat_tariff: true, saved_at: "2026-11-12T14:00:00Z" },
+      { ...PLAN, warnings: ["Ładowarka EV: do 6:00 auto nie naładuje się do końca, zabraknie ok. 0,6 kWh."] },
+    );
+
+    const warnings = await screen.findByRole("alert");
+    expect(within(warnings).getByText(/zabraknie ok\. 0,6 kWh/)).toBeTruthy();
+    expect(screen.getByText(/taryfę ze stałą ceną/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sprawdź w Analizie taryf" }).getAttribute("href")).toBe("/results");
+  });
+
+  it("bez profilu podpowiada przejście do profilu", async () => {
+    renderPage();
+    vi.spyOn(apiClient, "put").mockResolvedValue({ data: BODY });
+    vi.spyOn(apiClient, "post").mockRejectedValue({ response: { status: 409, data: {
+      detail: "Uzupełnij profil (operator i taryfa), żeby optymalizacja liczyła ceny Twojej taryfy.",
+    } } });
+    const washer = await card("Pralka Bosch");
+    fireEvent.click(within(washer).getByRole("checkbox", { name: "Pracuje jutro" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
+
+    expect(await screen.findByRole("link", { name: "Przejdź do profilu" })).toBeTruthy();
   });
 });

@@ -24,6 +24,8 @@ class ScheduledActionOut(BaseModel):
     reason: str | None = None
     # Ładowanie EV po optymalizacji, gdy ma przerwy: okresy ciągłego ładowania między start a end.
     charging: list[ChargingPeriodOut] | None = None
+    # To samo dla pracy bez planu (np. termostat bojlera grzeje krótkimi porcjami); tylko plan na jutro.
+    original_charging: list[ChargingPeriodOut] | None = None
 
 
 class SchedulePriceOut(BaseModel):
