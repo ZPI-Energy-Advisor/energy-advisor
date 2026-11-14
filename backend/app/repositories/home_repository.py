@@ -1,14 +1,23 @@
 from collections import defaultdict
-from datetime import time
+from datetime import datetime, time
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.DeviceInstance import DeviceInstance
+from app.models.DeviceAction import DeviceAction
 from app.models.DeviceProgram import DeviceProgram
+from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.HomeConnection import HomeConnection
-from app.schemas.smart_home import AllowedWindow, HomeDeviceProgram, HubDevice, HubFlexibility, HubProgram
+from app.schemas.smart_home import (
+    AllowedWindow,
+    HomeDeviceProgram,
+    HubDevice,
+    HubFlexibility,
+    HubProgram,
+    ReplaySlot,
+)
 
 
 
@@ -104,6 +113,36 @@ class HomeRepository:
             }
             for device in devices
         }
+
+    def fixed_action_slots(self, user_id: UUID, start_utc: datetime, end_utc: datetime) -> list[ReplaySlot]:
+        """Kwadranse akcji urządzeń fixed użytkownika w [start_utc, end_utc), do odtworzenia doby.
+
+        Tylko kwadranse nieprzykryte nowszym plikiem (superseded), jak w danych „Wszystkich plików”,
+        więc dwa pliki z tą samą dobą nie odtworzą akcji dwa razy.
+        """
+        rows = self.db.execute(
+            select(
+                DeviceInstance.source_device_id,
+                DeviceAction.id,
+                DeviceAction.source_action_id,
+                DeviceSlotUsage.slot_start,
+                DeviceSlotUsage.kwh,
+            )
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceInstance.flexibility_mode == "fixed",
+                DeviceSlotUsage.superseded.is_(False),
+                DeviceSlotUsage.slot_start >= start_utc,
+                DeviceSlotUsage.slot_start < end_utc,
+            )
+            .order_by(DeviceInstance.source_device_id, DeviceSlotUsage.slot_start)
+        ).all()
+        return [
+            ReplaySlot(device_id=device_id, action_id=action_id, ref=ref, slot_start=slot_start, kwh=kwh)
+            for device_id, action_id, ref, slot_start, kwh in rows
+        ]
 
     def commit(self) -> None:
         self.db.commit()

@@ -462,6 +462,48 @@ def test_invalid_clock_update_is_rejected(client, body):
     assert client.get("/home/clock").json() == before
 
 
+def test_same_sim_time_without_restart_keeps_simulation(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+    _run_profile(client, [0.01], start_at="2026-10-19T12:15:00+02:00")
+
+    _set_clock(client)  # Ponowiony PUT: niczego nie zmienia.
+
+    assert client.get("/home/clock").json()["simulation_id"] == simulation_id
+    _tick(client, 2)  # device_started zaplanowanego startu przychodzi z kolejnym tickiem.
+    assert len(_events(client, "dev_lt_01", "device_started")) == 1
+
+
+def test_restart_with_same_sim_time_starts_new_simulation_and_clears_scheduled(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+    _run_profile(client, [0.01], start_at="2026-10-19T12:15:00+02:00")
+
+    response = client.put("/home/clock", json={"sim_time": "2026-10-19T12:00:00+02:00", "restart": True})
+
+    assert response.status_code == 200
+    assert response.json()["simulation_id"] != simulation_id
+    _tick(client, 2)
+    assert _events(client, "dev_lt_01", "device_started") == []
+
+
+def test_restart_requires_sim_time(client):
+    response = client.put("/home/clock", json={"restart": True})
+
+    assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+
+
+def test_restart_is_rejected_while_clock_runs(client):
+    _set_clock(client)
+    client.put("/home/clock", json={"running": True, "speed": 1})
+
+    response = client.put("/home/clock", json={"sim_time": "2026-10-19T12:00:00+02:00", "restart": True})
+
+    assert (response.status_code, response.json()["code"]) == (409, "clock_running")
+
+
 def test_sim_time_cannot_be_changed_while_clock_runs(client):
     _set_clock(client)
     client.put("/home/clock", json={"running": True, "speed": 1})
@@ -997,11 +1039,11 @@ def test_device_started_carries_command_id(client):
     _tick(client, 13)
 
     first, second = _events(client, "dev_wm_01", "device_started")
-    assert first["data"] == {"program_id": "cotton_60", "command_id": now}
-    assert second["data"] == {"program_id": "cotton_60", "command_id": later}
+    assert first["data"] == {"program_id": "cotton_60", "command_id": now, "ref": None}
+    assert second["data"] == {"program_id": "cotton_60", "command_id": later, "ref": None}
     assert second["sim_time"] == "2026-10-19T15:00:00+02:00"
     started_lamp, = _events(client, "dev_lt_01", "device_started")
-    assert started_lamp["data"] == {"program_id": None, "command_id": lamp}
+    assert started_lamp["data"] == {"program_id": None, "command_id": lamp, "ref": None}
 
 
 def test_events_have_unique_ids_and_simulation_of_their_run(client):
@@ -1051,3 +1093,80 @@ def test_stopping_hub_sends_waiting_events(settings, backend):
         unavailable["down"] = False
 
     assert [event["type"] for event in backend.events] == ["device_started", "energy_report"]
+
+
+# Odtwarzanie akcji z historii (run_profile)
+
+
+def _run_profile(client: TestClient, profile: list[float], start_at: str | None = None, ref: str = "act_1",
+                 device_id: str = "dev_lt_01"):
+    body = {"command": "run_profile", "profile_kwh": profile, "ref": ref}
+    if start_at:
+        body["start_at"] = start_at
+    return client.post(f"/home/devices/{device_id}/commands", json=body)
+
+
+def test_run_profile_now_reaches_device_and_shows_in_status(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+
+    response = _run_profile(client, [0.01, 0.02])
+
+    assert (response.status_code, response.json()["status"], response.json()["state"]) == (202, "accepted", "running")
+    status = _device_status(client, "dev_lt_01")
+    assert status["power_kw"] == pytest.approx(0.04)
+    assert status["run"] == {
+        "ref": "act_1",
+        "started_at": "2026-10-19T12:00:00+02:00",
+        "ends_at": "2026-10-19T12:30:00+02:00",
+    }
+
+
+def test_scheduled_runs_replay_history_back_to_back(client):
+    # Dwie sąsiednie akcje lampy z pliku: druga zaczyna się dokładnie, gdy kończy się pierwsza.
+    _put(client, [_lamp()])
+    _set_clock(client)
+    first = _run_profile(client, [0.01, 0.01], start_at="2026-10-19T12:30:00+02:00", ref="act_1")
+    second = _run_profile(client, [0.02], start_at="2026-10-19T13:00:00+02:00", ref="act_2")
+    assert [first.json()["status"], second.json()["status"]] == ["scheduled", "scheduled"]
+
+    _tick(client, 5)
+
+    assert _device_status(client, "dev_lt_01")["state"] == "off"
+    started = _events(client, "dev_lt_01", "device_started")
+    finished = _events(client, "dev_lt_01", "device_finished")
+    assert [(event["sim_time"], event["data"]["ref"]) for event in started] == [
+        ("2026-10-19T12:30:00+02:00", "act_1"), ("2026-10-19T13:00:00+02:00", "act_2"),
+    ]
+    assert [event["data"]["energy_kwh"] for event in finished] == pytest.approx([0.02, 0.02])
+    reports = sum(event["data"]["energy_kwh"] for event in _energy_reports(client, "dev_lt_01"))
+    assert reports == pytest.approx(0.04)
+
+
+def test_scheduled_run_on_busy_device_is_reported_as_device_error(client):
+    _put(client, [_washing_machine()])
+    _set_clock(client)
+    _start_program(client)
+    _run_profile(client, [0.1], start_at="2026-10-19T12:15:00+02:00", device_id="dev_wm_01")
+
+    _tick(client)
+
+    error, = _events(client, "dev_wm_01", "device_error")
+    assert error["data"]["code"] == "invalid_state"
+
+
+@pytest.mark.parametrize("body", [
+    {"command": "run_profile"},
+    {"command": "run_profile", "profile_kwh": []},
+    {"command": "run_profile", "profile_kwh": [0.1] * (7 * 96 + 1)},
+    {"command": "run_profile", "profile_kwh": [0.1], "program_id": "cotton_60"},
+    {"command": "run_profile", "profile_kwh": [0.1], "ref": ""},
+    {"command": "on", "profile_kwh": [0.1]},
+    {"command": "on", "start_at": "2026-10-19T13:00:00+02:00"},
+])
+def test_invalid_run_profile_is_rejected(client, body):
+    _put(client, [_lamp()])
+
+    response = client.post("/home/devices/dev_lt_01/commands", json=body)
+
+    assert (response.status_code, response.json()["code"]) == (422, "validation_error")

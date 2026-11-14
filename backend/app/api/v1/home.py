@@ -12,8 +12,8 @@ from app.models.User import User
 from app.schemas.smart_home import (
     CommandResult,
     DeviceCommand,
-    HomeClockState,
     HomeClockUpdate,
+    HomeClockUpdated,
     HomeState,
     HomeStatus,
     HubEventBatch,
@@ -85,13 +85,16 @@ def send_device_command(
     return service.send_command(owner, device_id, command)
 
 
-@router.put("/clock", response_model=HomeClockState)
+@router.put("/clock", response_model=HomeClockUpdated)
 def update_home_clock(
     update: HomeClockUpdate,
     owner: User = Depends(get_home_owner),
     service: HomeControlService = Depends(get_home_control_service),
 ):
-    """Start, pauza i tempo zegara symulacji. `day` zaczyna symulację od północy tej doby (tylko przy pauzie)."""
+    """Start, pauza i tempo zegara symulacji.
+
+    `day` zaczyna symulację od północy tej doby (tylko przy pauzie) i odtwarza z historii akcje urządzeń fixed.
+    """
     return service.update_clock(owner, update)
 
 

@@ -110,9 +110,23 @@ class HubClient:
     def get_clock(self) -> HubClock:
         return self._parse(HubClock, self._request("GET", "/home/clock"))
 
-    def update_clock(self, sim_time: datetime | None = None, running: bool | None = None, speed: float | None = None) -> HubClock:
-        """Zmienia podane pola zegara; pominięte zostają bez zmian."""
-        payload = {"sim_time": sim_time.isoformat() if sim_time else None, "running": running, "speed": speed}
+    def update_clock(
+        self,
+        sim_time: datetime | None = None,
+        running: bool | None = None,
+        speed: float | None = None,
+        restart: bool = False,
+    ) -> HubClock:
+        """Zmienia podane pola zegara; pominięte zostają bez zmian.
+
+        `restart` zaczyna nową symulację także wtedy, gdy `sim_time` jest równy bieżącemu.
+        """
+        payload = {
+            "sim_time": sim_time.isoformat() if sim_time else None,
+            "restart": True if restart else None,
+            "running": running,
+            "speed": speed,
+        }
         payload = {key: value for key, value in payload.items() if value is not None}
         return self._parse(HubClock, self._request("PUT", "/home/clock", json=payload))
 

@@ -3,18 +3,13 @@ import apiClient from "../api/client";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { getApiErrorMessage } from "../utils/energyFiles";
+import { plural } from "../utils/home";
 
 const BUTTON = "px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 const PRIMARY = `${BUTTON} bg-emerald-600 text-white hover:bg-emerald-700`;
 const SECONDARY = `${BUTTON} border border-gray-300 text-gray-700 hover:bg-gray-50`;
 
-const devicesLabel = (count) => {
-  if (count === 1) return "1 urządzenie";
-  const lastDigit = count % 10;
-  const lastTwo = count % 100;
-  const few = lastDigit >= 2 && lastDigit <= 4 && (lastTwo < 12 || lastTwo > 14);
-  return `${count} ${few ? "urządzenia" : "urządzeń"}`;
-};
+const devicesLabel = (count) => plural(count, "urządzenie", "urządzenia", "urządzeń");
 
 // Kręcące się kółko na przycisku w trakcie akcji: podłączenie czeka, aż hub uruchomi urządzenia (kilka sekund).
 function Spinner() {

@@ -200,6 +200,7 @@ class HomeStateService:
                 program_id=device.program_id,
                 program_started_at=device.program_started_at,
                 program_ends_at=device.program_ends_at,
+                run=device.run,
                 power_kw=device.power_kw,
                 energy_today_kwh=_kwh(energy.by_device.get(device.device_id, 0.0)) if energy else 0.0,
             )

@@ -155,11 +155,12 @@ class DeviceSupervisor:
             if command.start_at is not None and command.start_at < self.clock.sim_time:
                 raise HubError(422, "start_at_in_past", "start_at jest wcześniejszy niż czas symulacji")
             if command.start_at is not None and command.start_at > self.clock.sim_time:
-                self._require_program(device, command.program_id)
+                if command.command == "start_program":
+                    self._require_program(device, command.program_id)
                 self._scheduled.append(ScheduledCommand(device_id, command_id, command))
                 status = None
             else:
-                status = await self._forward(device, self._command_path(command), payload={"command_id": command_id})
+                status = await self._forward(device, *self._command_request(command, command_id))
         if status is None:
             status = await self._read_status(device)
             result = "scheduled"
@@ -170,7 +171,8 @@ class DeviceSupervisor:
     async def update_clock(self, update: ClockUpdate) -> dict:
         async with self._clock_lock:
             # Ponowiony PUT z tym samym czasem niczego nie zmienia, a HubClient ponawia PUT-y.
-            if update.sim_time is not None and not self.clock.is_at(update.sim_time):
+            # `restart` wymusza nową symulację: backend przed odtworzeniem doby potrzebuje pustej kolejki.
+            if update.sim_time is not None and (update.restart or not self.clock.is_at(update.sim_time)):
                 if self.clock.running:
                     raise HubError(409, "clock_running", "Czas można ustawić tylko przy zatrzymanym zegarze")
                 await self._start_new_simulation(update.sim_time)
@@ -227,7 +229,7 @@ class DeviceSupervisor:
 
     async def _run_scheduled(self, device: ManagedDevice, item: ScheduledCommand, sim_time: datetime) -> list[dict]:
         try:
-            await self._forward(device, self._command_path(item.command), payload={"command_id": item.command_id})
+            await self._forward(device, *self._command_request(item.command, item.command_id))
         except HubError as e:
             return [self._device_error(device, sim_time, e.code, e.detail)]
         return []
@@ -395,7 +397,7 @@ class DeviceSupervisor:
             return self._status_without_readings(device, UNREACHABLE)
 
     async def _forward(
-        self, device: ManagedDevice, path: str, method: str = "POST", payload: dict | None = None,
+        self, device: ManagedDevice, path: str, payload: dict | None = None, method: str = "POST",
     ) -> dict:
         try:
             response = await self._client.request(method, f"{device.url}{path}", json=payload)
@@ -420,10 +422,13 @@ class DeviceSupervisor:
             raise HubError(404, "program_not_found", f"Urządzenie nie ma programu {program_id!r}")
 
     @staticmethod
-    def _command_path(command: DeviceCommand) -> str:
+    def _command_request(command: DeviceCommand, command_id: str) -> tuple[str, dict]:
+        """Ścieżka i treść żądania do urządzenia; command_id wraca w zdarzeniu device_started."""
         if command.command == "start_program":
-            return f"/programs/{quote(command.program_id, safe='')}/start"
-        return f"/{command.command}"
+            return f"/programs/{quote(command.program_id, safe='')}/start", {"command_id": command_id}
+        if command.command == "run_profile":
+            return "/run", {"command_id": command_id, "profile_kwh": command.profile_kwh, "ref": command.ref}
+        return f"/{command.command}", {"command_id": command_id}
 
     @staticmethod
     def _status_without_readings(device: ManagedDevice, state: str) -> dict:
@@ -433,6 +438,7 @@ class DeviceSupervisor:
             "program_id": None,
             "program_started_at": None,
             "program_ends_at": None,
+            "run": None,
             "power_kw": None,
             "energy_kwh": None,
         }

@@ -8,6 +8,7 @@ import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
 import { getApiErrorMessage } from "../utils/energyFiles";
+import { replaySummary } from "../utils/home";
 
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
@@ -17,16 +18,18 @@ const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
 function HomeLive() {
   const { state, error, isLoading, refresh } = useHomeState();
   const [actionError, setActionError] = useState(null);
+  const [replayNotice, setReplayNotice] = useState(null);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
+  // Zwraca treść odpowiedzi albo null przy błędzie.
   const perform = async (request, describeError) => {
     try {
-      await request();
+      const { data } = await request();
       setActionError(null);
-      return true;
+      return data ?? {};
     } catch (err) {
       setActionError(describeError(err));
-      return false;
+      return null;
     } finally {
       refresh();
     }
@@ -38,11 +41,15 @@ function HomeLive() {
       (err) => `${device.device_name}: ${getApiErrorMessage(err, "nie udało się wysłać polecenia.")}`,
     );
 
-  const updateClock = (change) =>
-    perform(
+  const updateClock = async (change) => {
+    const data = await perform(
       () => apiClient.put("/home/clock", change),
       (err) => getApiErrorMessage(err, "Nie udało się zmienić zegara symulacji."),
     );
+    // Nowa doba: mówimy, co odtworzy się z historii, a nieudane ustawienie chowa opis poprzedniej doby.
+    if (change.day) setReplayNotice(data ? replaySummary(data.replay) : null);
+    return data !== null;
+  };
 
   const hubDown = state?.hub_available === false;
 
@@ -67,6 +74,12 @@ function HomeLive() {
         <p className={`${NOTICE} border-amber-200 bg-amber-50 text-amber-800`} role="status">
           Hub Smart Home nie odpowiada. Zużycie pochodzi z ostatnich zapisanych zdarzeń, a sterowanie wróci,
           gdy hub będzie dostępny.
+        </p>
+      )}
+
+      {replayNotice && (
+        <p className={`${NOTICE} border-sky-200 bg-sky-50 text-sky-800`} role="status">
+          {replayNotice}
         </p>
       )}
 

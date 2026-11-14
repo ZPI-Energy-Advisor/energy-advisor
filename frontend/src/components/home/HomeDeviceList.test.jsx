@@ -34,6 +34,22 @@ describe("HomeDeviceList", () => {
     });
   });
 
+  it("pokazuje akcję odtwarzaną z historii z godziną końca", () => {
+    const lamp = {
+      ...washer([]),
+      device_name: "Lampa",
+      state: "running",
+      power_kw: 0.06,
+      run: { ref: "act_1", started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" },
+    };
+
+    render(<HomeDeviceList devices={[lamp]} onCommand={vi.fn()} />);
+
+    expect(screen.getByText("Odtwarza historię")).toBeTruthy();
+    expect(screen.getByText("Akcja z historii, koniec 19:00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wyłącz: Lampa" })).toBeTruthy();
+  });
+
   it("blokuje sterowanie urządzeniem bez połączenia", () => {
     render(<HomeDeviceList devices={[{ ...washer([]), state: "unreachable", power_kw: null }]} onCommand={vi.fn()} />);
 
