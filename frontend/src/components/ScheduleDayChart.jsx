@@ -1,5 +1,5 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { clockOf, dayPrices, dayRows, formatDayMonth, formatPln } from "../utils/schedule";
+import { actionSummary, dayPrices, dayRows, formatDayMonth, formatPln } from "../utils/schedule";
 
 const PRICE_COLOR = "#10b981";
 const HOURS = [0, 6, 12, 18, 24];
@@ -16,21 +16,13 @@ function PriceTooltip({ active, payload }) {
   );
 }
 
-function actionTitle({ action }) {
-  const program = action.program_name ? ` (${action.program_name})` : "";
-  return (
-    `${action.device_name}${program}: ${clockOf(action.original_start)} → ${clockOf(action.start)}, ` +
-    `${formatPln(action.cost_before)} → ${formatPln(action.cost_after)}`
-  );
-}
-
 function Lane({ segments, className, label }) {
   return (
     <div className="relative h-3" aria-label={label}>
       {segments.map((segment) => (
         <div
-          key={segment.action.action_id}
-          title={actionTitle(segment)}
+          key={`${segment.action.action_id}-${segment.left}`}
+          title={actionSummary(segment.action)}
           className={`absolute inset-y-0 rounded-sm ${className(segment.action)}`}
           style={{ left: `${segment.left}%`, width: `${segment.width}%` }}
         />
@@ -42,7 +34,7 @@ function Lane({ segments, className, label }) {
 const afterColor = (action) => (action.status === "moved" ? "bg-emerald-500" : "bg-gray-400");
 
 // Doba: wykres cen, a pod nim dla każdego urządzenia akcje przed i po optymalizacji, na tej samej osi.
-function ScheduleDayChart({ day, actions, prices, isTail = false }) {
+function ScheduleDayChart({ day, actions, prices, isTail = false, subtitle = null }) {
   const points = dayPrices(prices, day);
   const rows = dayRows(actions, day);
 
@@ -50,7 +42,9 @@ function ScheduleDayChart({ day, actions, prices, isTail = false }) {
     <section className="bg-white p-4 md:p-5 rounded-lg shadow-sm border border-gray-100">
       <h3 className="font-bold text-gray-900 mb-3">
         {formatDayMonth(day)}
-        {isTail && <span className="ml-2 text-sm font-normal text-gray-500">dokończenie akcji z poprzedniego dnia</span>}
+        {(subtitle || isTail) && (
+          <span className="ml-2 text-sm font-normal text-gray-500">{subtitle ?? "dokończenie akcji z poprzedniego dnia"}</span>
+        )}
       </h3>
 
       <div className="flex">

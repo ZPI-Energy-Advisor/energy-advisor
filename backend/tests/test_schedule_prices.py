@@ -110,6 +110,21 @@ def test_slot_with_pv_surplus_costs_value_of_lost_export_in_net_billing():
     assert result.prices[_local(10)] == pytest.approx((0.60 + 0.40 + 0.045) * 1.23)
 
 
+def test_pv_surplus_without_pv_in_profile_keeps_grid_price_and_warns():
+    service = _service(pv_mode="none")
+
+    result = service.for_user(None, _local(0), _local(0) + timedelta(days=1), {_local(12): 0.8, _local(13): 0.45})
+
+    assert result.prices[_local(12)] == pytest.approx((0.60 + 0.40 + 0.045) * 1.23)
+    assert result.pv_note.startswith("Plik ma 1,25 kWh nadwyżki z fotowoltaiki")
+
+
+def test_no_pv_warning_without_surplus_or_with_pv_in_profile():
+    assert _prices(_service(pv_mode="none")).pv_note is None
+    with_pv = _service(market=lambda slot: 0.35, pv_mode="net_billing")
+    assert with_pv.for_user(None, _local(0), _local(0) + timedelta(days=1), {_local(12): 0.8}).pv_note is None
+
+
 def test_slot_with_pv_surplus_uses_rcem_when_chosen_in_profile():
     service = _service(market=lambda slot: 0.35, pv_mode="net_billing", rcem=0.20)
 

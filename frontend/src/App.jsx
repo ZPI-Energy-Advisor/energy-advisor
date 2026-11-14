@@ -9,6 +9,7 @@ import DynamicPricesPage from "./pages/DynamicPricesPage";
 import ProfilePage from "./pages/ProfilePage";
 import CalculationResultsPage from "./pages/CalculationResultsPage";
 import HomePage from "./pages/HomePage";
+import PlanningPage from "./pages/PlanningPage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -32,6 +33,7 @@ function App() {
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/prices" element={<DynamicPricesPage />} />
             <Route path="/home" element={<HomePage />} />
+            <Route path="/plan" element={<PlanningPage />} />
           </Route>
         </Route>
       </Routes>
