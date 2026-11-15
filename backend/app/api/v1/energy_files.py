@@ -13,10 +13,12 @@ from app.schemas.energy_file import (
     EnergyDataFileListResponse,
 )
 from app.schemas.device_usage import DeviceUsageGroupBy, DeviceUsageResolution, DeviceUsageResponse
+from app.schemas.other import TariffTypeEnum
 from app.schemas.schedule import ScheduleResponse
 from app.services.device_usage_service import DeviceUsageService
 from app.services.dynamic_price_service import DynamicTariffNotFoundError
 from app.services.energy_file_service import EnergyFileService
+from app.services.schedule_prices import TariffChoice
 
 
 
@@ -110,11 +112,23 @@ def get_energy_file_schedule(
     file_id: UUID,
     date_from: date | None = DATE_FROM_QUERY,
     date_to: date | None = DATE_TO_QUERY,
+    tariff: TariffTypeEnum | None = Query(
+        None, description="Grupa taryfowa zamiast tej z profilu (operator zawsze z profilu), np. G12."
+    ),
+    dynamic: bool | None = Query(None, description="Umowa z ceną dynamiczną zamiast ustawienia z profilu."),
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
+    """Optymalizacja historyczna pliku urządzeń; domyślnie taryfa z profilu, a `tariff`/`dynamic` sprawdzają inną."""
+    if tariff == TariffTypeEnum.DYNAMIC:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Podaj grupę taryfową (np. G12), a umowę z ceną dynamiczną parametrem dynamic.",
+        )
     try:
-        return service.get_file_schedule(file_id, user.id, date_from, date_to)
+        return service.get_file_schedule(
+            file_id, user.id, date_from, date_to, TariffChoice(group=tariff, dynamic=dynamic),
+        )
     except DynamicTariffNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 

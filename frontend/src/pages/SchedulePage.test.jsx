@@ -154,3 +154,72 @@ describe("SchedulePage", () => {
     expect(within(row).getByText("20.10 01:00–04:00")).toBeTruthy();
   });
 });
+
+describe("SchedulePage: taryfa", () => {
+  const PROFILE = { base_info: { distribution_operator: "PGE" }, consumption_and_tariff: { tariff_type: "G12", dynamic_price: false } };
+  const OPTIONS = {
+    tariffs: [{ code: "G11" }, { code: "G12" }, { code: "G12w" }],
+    dynamic_offer: { distribution_groups: ["G11", "G12"] },
+  };
+  const G11_RESULT = { ...SCHEDULE, tariff_group: "G11", tariff_dynamic: false, prosumer: false, cost_before: 3.1, cost_after: 3.1 };
+
+  const mockApi = (schedule) =>
+    vi.spyOn(apiClient, "get").mockImplementation(async (url) => {
+      if (url === "/users/me/profile") return { data: PROFILE };
+      if (url === "/tariffs/options") return { data: OPTIONS };
+      return { data: schedule };
+    });
+
+  it("domyślnie taryfa z profilu, a wybrana inna idzie w zapytaniu", async () => {
+    const get = mockApi(SCHEDULE);
+    renderPage();
+
+    const group = await screen.findByLabelText("Grupa taryfowa");
+    expect(group.value).toBe("G12");
+    expect(screen.getByText(/Taryfa z Twojego profilu/)).toBeTruthy();
+
+    fireEvent.change(group, { target: { value: "G11" } });
+    fireEvent.click(screen.getByRole("button", { name: "Z ceną dynamiczną" }));
+    expect(screen.getByText(/Sprawdzasz inną taryfę niż w profilu \(G12\)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Pokaż wynik" }));
+
+    expect(get).toHaveBeenCalledWith("/energy-files/f1/schedule", {
+      params: { from: "2026-10-19", to: "2026-10-19", tariff: "G11", dynamic: true },
+    });
+  });
+
+  it("cena dynamiczna niedostępna dla grupy, której sprzedawca nie dopuszcza", async () => {
+    mockApi(SCHEDULE);
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Grupa taryfowa"), { target: { value: "G12w" } });
+
+    expect(screen.getByRole("button", { name: "Z ceną dynamiczną" }).disabled).toBe(true);
+  });
+
+  it("tylko oszczędność faktyczna, bez szacunku na miesiąc i rok", async () => {
+    mockApi(SCHEDULE);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pokaż wynik" }));
+
+    expect((await screen.findAllByText("Oszczędność")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Szacunek oszczędności")).toBeNull();
+    expect(screen.queryByText(/rocznie/)).toBeNull();
+  });
+
+  it("G11: wyjaśnienie zerowej oszczędności i sprawdzenie ceny dynamicznej jednym kliknięciem", async () => {
+    const get = mockApi(G11_RESULT);
+    renderPage();
+    await screen.findByLabelText("Grupa taryfowa");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pokaż wynik" }));
+
+    expect(await screen.findByText(/W taryfie G11 prąd kosztuje tyle samo o każdej porze/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sprawdź z ceną dynamiczną" }));
+
+    expect(get).toHaveBeenLastCalledWith("/energy-files/f1/schedule", {
+      params: { from: "2026-10-19", to: "2026-10-19", tariff: "G11", dynamic: true },
+    });
+  });
+});

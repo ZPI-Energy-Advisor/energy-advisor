@@ -63,7 +63,8 @@ class CalculationsService:
             )
         self.settlement = settlement or FinancialSettlement()
 
-    def _load_inputs(self, user_id: UUID, file_id: UUID, readings=None):
+    def _load_inputs(self, user_id: UUID, file_id: UUID, readings=None, tariff=None):
+        """`tariff` (TariffChoice): grupa i umowa dynamiczna zamiast tych z profilu (optymalizacja z wyborem taryfy)."""
         profile = self.user_repository.get_profile(user_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
@@ -90,9 +91,14 @@ class CalculationsService:
             ) from exc
 
         base_info = profile_data.base_info
+        if tariff is not None:
+            tariff_type, dynamic_price = tariff.resolve(profile_data)
+        else:
+            tariff_type = profile_data.consumption_and_tariff.tariff_type
+            dynamic_price = profile_data.consumption_and_tariff.dynamic_price
         tariff_data = TariffData(
-            tariff_type=profile_data.consumption_and_tariff.tariff_type,
-            dynamic_price=profile_data.consumption_and_tariff.dynamic_price,
+            tariff_type=tariff_type,
+            dynamic_price=dynamic_price,
             billing_cycle=base_info.billing_cycle,
             billing_period_start_date=base_info.billing_period_start_date,
             distribution_operator=base_info.distribution_operator,
@@ -130,11 +136,12 @@ class CalculationsService:
         )
 
     def perform_tariff_calculations(
-        self, user_id: UUID, file_id: UUID, readings=None, selected_only: bool = False
+        self, user_id: UUID, file_id: UUID, readings=None, selected_only: bool = False, tariff=None,
     ) -> CalculationDetails:
         """Rachunki dla pliku; `readings` zastępuje odczyty z bazy (np. zużycie po przesunięciu akcji),
-        `selected_only` liczy tylko taryfę z profilu (grupa albo grupa z ceną dynamiczną)."""
-        profile_data, tariff_data, readings = self._load_inputs(user_id, file_id, readings)
+        `selected_only` liczy tylko wybraną taryfę (grupa albo grupa z ceną dynamiczną): z profilu albo
+        z `tariff` (TariffChoice z ekranu optymalizacji)."""
+        profile_data, tariff_data, readings = self._load_inputs(user_id, file_id, readings, tariff)
         operator = tariff_data.distribution_operator
         file_first = min(reading.measured_at for reading in readings).date()
         file_last = max(reading.measured_at for reading in readings).date()

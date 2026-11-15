@@ -10,6 +10,7 @@ from app.schemas.calculation import CalculationDetails, PVDetails, TariffData
 from app.schemas.other import DistributionOperatorEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
 from app.services.new_calculations_service import CalculationsService
 from app.services.pv_service import PVBalancingEngine
+from app.services.schedule_prices import TariffChoice
 from app.services.tariff_engine import (
     BillingContext,
     FinancialSettlement,
@@ -949,3 +950,19 @@ def test_selected_only_bills_profile_tariff_for_given_readings():
     assert result.tariff_calculation["cycles"][0]["active_energy_kwh"] == 2.0
     assert result.tariff_calculation["cycles"][0]["variable_network_net"] == pytest.approx(0.10)
 
+
+
+def test_selected_only_bills_tariff_chosen_instead_of_profile():
+    definitions = [
+        _definition(TariffTypeEnum.G11, ["0.50"], ["0.30"]),
+        _definition(TariffTypeEnum.G12, ["0.60", "0.40"], ["0.40", "0.05"]),
+    ]
+    service = _service([(_at(FRIDAY, "23:00"), 2.0)], definitions, [_period()], tariff="G12")
+
+    result = service.perform_tariff_calculations(
+        None, None, selected_only=True, tariff=TariffChoice(group=TariffTypeEnum.G11),
+    )
+
+    # Profil ma G12, a optymalizacja sprawdza G11: tylko ten rachunek, dystrybucja 2 × 0,30.
+    assert set(result.tariff_calculations) == {"G11"}
+    assert result.tariff_calculation["cycles"][0]["variable_network_net"] == pytest.approx(0.60)

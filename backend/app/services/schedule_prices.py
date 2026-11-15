@@ -1,4 +1,5 @@
-"""Ceny kwadransów dla optymalizacji harmonogramu z nowego cennika, według taryfy z profilu użytkownika.
+"""Ceny kwadransów dla optymalizacji harmonogramu z nowego cennika, według taryfy z profilu użytkownika
+albo taryfy wybranej na ekranie (`TariffChoice`).
 
 Cena kwadransa to wszystko, co na rachunku zależy od zużytej kWh: energia (cena strefy albo cena rynkowa z marżą przy
 umowie z ceną dynamiczną), akcyza, dystrybucja zmienna strefy, opłaty jakościowa, OZE i kogeneracyjna, z VAT.
@@ -27,6 +28,21 @@ SLOT = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
+class TariffChoice:
+    """Taryfa wybrana na ekranie optymalizacji zamiast tej z profilu; pole None bierze wartość z profilu."""
+
+    group: TariffTypeEnum | None = None
+    dynamic: bool | None = None
+
+    def resolve(self, profile: UserProfile) -> tuple[TariffTypeEnum, bool]:
+        """Grupa taryfowa i umowa z ceną dynamiczną: wybór z ekranu, a brakujące pola z profilu."""
+        tariff = profile.consumption_and_tariff
+        group = self.group or tariff.tariff_type
+        dynamic = tariff.dynamic_price if self.dynamic is None else self.dynamic
+        return group, dynamic
+
+
+@dataclass(frozen=True)
 class SchedulePrices:
     prices: dict[datetime, float]
     description: str
@@ -36,6 +52,9 @@ class SchedulePrices:
     pv_note: str | None = None
     # Umowa z ceną dynamiczną: ceny kolejnych dni pojawiają się dopiero po publikacji RCE.
     dynamic: bool = False
+    # Policzona grupa taryfowa i czy profil ma instalację PV (ekran wyjaśnia wtedy wynik taryfy G11).
+    group: TariffTypeEnum | None = None
+    prosumer: bool = False
 
 
 class SchedulePriceService:
@@ -46,13 +65,14 @@ class SchedulePriceService:
         self.market_prices = market_prices
 
     def for_user(
-        self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None
+        self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None,
+        tariff: TariffChoice | None = None,
     ) -> SchedulePrices:
-        """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh)."""
+        """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh).
+        `tariff`: taryfa wybrana na ekranie; bez niej taryfa z profilu. Operator zawsze z profilu."""
         profile = self._profile(user_id)
         operator = profile.base_info.distribution_operator
-        group = profile.consumption_and_tariff.tariff_type
-        dynamic = profile.consumption_and_tariff.dynamic_price
+        group, dynamic = (tariff or TariffChoice()).resolve(profile)
         prosumer = profile.pv_config.mode != "none"
         first_day = start_utc.astimezone(LOCAL_TIMEZONE).date()
         last_day = (end_utc - SLOT).astimezone(LOCAL_TIMEZONE).date()
@@ -94,6 +114,7 @@ class SchedulePriceService:
         return SchedulePrices(
             prices=prices, description=description,
             max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note, dynamic=dynamic,
+            group=group, prosumer=prosumer,
         )
 
     def _surplus_price(self, slot: datetime, grid_price: float, profile: UserProfile) -> float:

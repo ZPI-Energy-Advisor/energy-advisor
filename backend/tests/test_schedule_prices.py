@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.schemas.other import TariffTypeEnum as T
 from app.schemas.other import TypeOfMarketEnergyEnum
-from app.services.schedule_prices import SchedulePriceService
+from app.services.schedule_prices import SchedulePriceService, TariffChoice
 from tariff_helpers import HOURS, definition, period
 
 WARSAW = ZoneInfo("Europe/Warsaw")
@@ -77,6 +77,35 @@ def test_dynamic_price_uses_market_price_margin_and_distribution_of_the_group():
     # Ujemna cena rynkowa liczona jak 0 (dolny limit oferty), 13:00 to strefa nocna G12.
     assert result.prices[_local(13)] == pytest.approx((0 + 0.10 + 0.05 + 0.045) * 1.23)
     assert result.description == "TAURON, G12 z ceną dynamiczną"
+
+
+def test_tariff_chosen_on_screen_replaces_profile_tariff():
+    g11 = definition(T.G11, ["0.50"], ["0.30"])
+
+    result = _service(definitions=(G12, DYNAMIC_G12, g11)).for_user(
+        None, _local(0), _local(0) + timedelta(days=1), tariff=TariffChoice(group=T.G11, dynamic=False),
+    )
+
+    # Profil ma G12, a ekran sprawdza G11: jedna cena przez całą dobę.
+    assert list(result.prices.values()) == pytest.approx([(0.50 + 0.30 + 0.045) * 1.23] * 96)
+    assert (result.description, result.group, result.dynamic) == ("TAURON, G11", T.G11, False)
+
+
+def test_dynamic_contract_chosen_on_screen_keeps_group_from_profile():
+    result = _service(dynamic=False).for_user(
+        None, _local(0), _local(0) + timedelta(days=1), tariff=TariffChoice(dynamic=True),
+    )
+
+    assert result.prices[_local(10)] == pytest.approx((0.30 + 0.10 + 0.40 + 0.045) * 1.23)
+    assert (result.description, result.dynamic) == ("TAURON, G12 z ceną dynamiczną", True)
+
+
+def test_chosen_tariff_without_rates_is_reported():
+    with pytest.raises(HTTPException) as error:
+        _service().for_user(None, _local(0), _local(0) + timedelta(days=1), tariff=TariffChoice(group=T.G13))
+
+    assert error.value.status_code == 422
+    assert "Brak stawek taryfy G13" in error.value.detail
 
 
 def test_slots_without_market_price_are_left_out():
