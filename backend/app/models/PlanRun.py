@@ -9,15 +9,16 @@ from app.database import Base
 class PlanRun(Base):
     """Przebieg planu dnia w symulacji Smart Home.
 
-    Zatwierdzony plan trafia do huba jako komendy ze `start_at` na dobę planu. Urządzeń stałych (światło,
-    lodówka, PV) nie odtwarzamy: symulacja pokazuje plan. Z historii dnia referencyjnego (`history_day`) pracują
-    tylko pompa ciepła i bojler odznaczone w planie, bo plan zakłada, że chodzą same. Zużycie i awarie
+    Zatwierdzony plan trafia do huba jako komendy ze `start_at` na dobę planu. Urządzenia stałe (światło,
+    lodówka, czajnik…) startują wyłączone i włącza je użytkownik. Z historii dnia referencyjnego (`history_day`)
+    pracują tylko produkcja PV oraz pompa ciepła i bojler odznaczone w planie, bo plan zakłada, że chodzą same.
+    Zużycie i awarie
     przebiegu to zdarzenia huba z tym samym `simulation_id` (tabela home_events), więc tu trzymamy tylko to,
     czego zdarzenia nie mają.
 
     `items` to migawka pozycji planu z wynikiem komendy huba: ponowne ułożenie planu nadpisuje wiersz
     day_plans, a przebieg ma dalej opisywać to, co faktycznie wysłaliśmy. `replay` opisuje odtworzenie historii
-    w kształcie HomeReplay.
+    w kształcie PlanRunReplay.
 
     Status: `running` od uruchomienia, `completed` gdy zegar przebiegu minie koniec planu, `ended` po
     „Zakończ”, `superseded` gdy hub zaczął inną symulację (nowy przebieg, ustawienie doby, restart huba).
@@ -44,11 +45,11 @@ class PlanRun(Base):
     status = Column(String(20), nullable=False, default=RUNNING)
     horizon_start = Column(DateTime(timezone=True), nullable=False)
     horizon_end = Column(DateTime(timezone=True), nullable=False)
-    # Dzień, z którego odtworzyliśmy pompę ciepła i bojler spoza planu; NULL, gdy nie ma czego odtwarzać.
+    # Dzień, z którego odtworzyliśmy PV oraz pompę ciepła i bojler spoza planu; NULL, gdy nie ma czego odtwarzać.
     history_day = Column(Date, nullable=True)
     items = Column(JSONB, nullable=False)
     replay = Column(JSONB, nullable=False)
-    # Urządzenia spoza planu odtwarzane z historii (pompa ciepła, bojler): ekran pokazuje je obok planu.
+    # Urządzenia odtwarzane z historii, które hub przyjął: [{"device_id", "history_kwh"}], ujemne dla PV.
     replayed_devices = Column(JSONB, nullable=False, default=list)
     started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)

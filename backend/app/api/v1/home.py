@@ -16,8 +16,8 @@ from app.schemas.plan_run import PlanRunOut, PlanRunRequest
 from app.schemas.smart_home import (
     CommandResult,
     DeviceCommand,
+    HomeClockState,
     HomeClockUpdate,
-    HomeClockUpdated,
     HomeState,
     HomeStatus,
     HubEventBatch,
@@ -90,16 +90,13 @@ def send_device_command(
     return service.send_command(owner, device_id, command)
 
 
-@router.put("/clock", response_model=HomeClockUpdated)
+@router.put("/clock", response_model=HomeClockState)
 def update_home_clock(
     update: HomeClockUpdate,
     owner: User = Depends(get_home_owner),
     service: HomeControlService = Depends(get_home_control_service),
 ):
-    """Start, pauza i tempo zegara symulacji.
-
-    `day` zaczyna symulację od północy tej doby (tylko przy pauzie) i odtwarza z historii akcje urządzeń fixed.
-    """
+    """Start, pauza i tempo zegara symulacji. `day` zaczyna symulację od północy tej doby (tylko przy pauzie)."""
     return service.update_clock(owner, update)
 
 
@@ -111,8 +108,9 @@ def start_plan_run(
 ):
     """Uruchamia zatwierdzony plan dnia w symulacji od północy jego doby (ZP-113).
 
-    Hub dostaje jednym żądaniem pozycje planu (i historię pompy ciepła albo bojlera odznaczonych w planie),
-    a zegar rusza. Ponowne uruchomienie zaczyna dobę od nowa.
+    Hub dostaje jednym żądaniem pozycje planu i historię dnia referencyjnego (produkcja PV, pompa ciepła
+    albo bojler odznaczone w planie), a zegar rusza. Urządzenia stałe startują wyłączone. Ponowne
+    uruchomienie zaczyna dobę od nowa.
     """
     return service.start(owner, request.plan_id)
 
@@ -132,7 +130,10 @@ def end_plan_run(
     owner: User = Depends(get_home_owner),
     service: PlanRunService = Depends(get_plan_run_service),
 ):
-    """„Zakończ”: zatrzymuje zegar symulacji i zamyka przebieg. Zakończony przebieg zostaje bez zmian."""
+    """„Zakończ”: zatrzymuje zegar, kasuje resztę planu w kolejce huba i zamyka przebieg.
+
+    Zakończony przebieg zostaje bez zmian.
+    """
     return service.end(owner, run_id)
 
 

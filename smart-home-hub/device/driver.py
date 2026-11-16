@@ -38,9 +38,9 @@ class Action:
     energy_kwh: float = 0.0
     # Polecenie huba, które zaczęło akcję; wraca w zdarzeniu device_started.
     command_id: str | None = None
-    # Energia w kolejnych kwadransach: z programu albo z POST /run (odtworzenie akcji z historii).
+    # Energia w kolejnych kwadransach: z programu albo z POST /run (np. akcja planu, profil PV).
     profile_kwh: list[float] | None = None
-    # Identyfikator odtwarzanej akcji z historii; wraca w zdarzeniach, żeby odróżnić je od poleceń ręcznych.
+    # Identyfikator akcji przebiegu (np. z planu); wraca w zdarzeniach, żeby odróżnić ją od poleceń ręcznych.
     ref: str | None = None
 
     @property
@@ -98,8 +98,9 @@ class DeviceDriver:
     def run_profile(self, profile_kwh: list[float], command_id: str | None = None, ref: str | None = None) -> None:
         """Praca według podanego profilu (kWh na kwadrans) i koniec po ostatnim kwadransie.
 
-        Tak odtwarzamy akcję z historii. Praca stałą mocą po ręcznym włączeniu ustępuje przebiegowi,
-        bo domownik w historii zrobił w tym czasie właśnie to; program albo inny przebieg go blokują.
+        Tak wykonujemy akcje bez programu: ładowanie EV z przerwami, grzanie bojlera i pompy ciepła
+        w wybranych kwadransach, produkcję PV. Praca stałą mocą po ręcznym włączeniu ustępuje przebiegowi,
+        bo plan ma pierwszeństwo; program albo inny przebieg go blokują.
         """
         if not profile_kwh:
             raise DeviceError(422, "validation_error", "profile_kwh musi mieć co najmniej jeden kwadrans")
@@ -177,7 +178,7 @@ class DeviceDriver:
         return self._action is not None and self._action.profile_kwh is not None
 
     def _busy_message(self) -> str:
-        return "Trwa odtwarzanie akcji urządzenia" if self._action.is_run else "Trwa program urządzenia"
+        return "Trwa przebieg urządzenia" if self._action.is_run else "Trwa program urządzenia"
 
     def _begin_action(
         self, program: Program | None, command_id: str | None,
@@ -209,7 +210,7 @@ class DeviceDriver:
         self._add_energy(action, energy_kwh)
         if now >= ends_at:
             self._finish_action(ends_at, interrupted=False)
-            # Po programie urządzenie czeka włączone; po odtworzonej akcji wraca do stanu wyłączonego.
+            # Po programie urządzenie czeka włączone; po przebiegu bez programu wraca do stanu wyłączonego.
             self.state = IDLE if self.config.programs else OFF
         return energy_kwh
 

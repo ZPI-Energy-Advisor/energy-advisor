@@ -180,7 +180,7 @@ function DayPlanView({
               onClick={onRun}
               disabled={isStartingRun}
             >
-              <FiPlay aria-hidden="true" /> {isStartingRun ? "Uruchamianie..." : "Uruchom w symulacji"}
+              <FiPlay aria-hidden="true" /> {isStartingRun ? "Uruchamianie..." : "Uruchom symulację"}
             </button>
             <p className="mt-1 text-xs text-gray-500">Symulacja zacznie dobę planu od północy w „Mój dom”.</p>
           </div>

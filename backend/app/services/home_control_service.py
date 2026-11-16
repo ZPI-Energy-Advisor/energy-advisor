@@ -6,7 +6,7 @@ urządzenia”) przechodzą bez zmian, a awarie huba i błędna konfiguracja dos
 """
 
 import logging
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time
 
 from fastapi import HTTPException, status
 
@@ -15,17 +15,15 @@ from app.models.User import User
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.home_repository import HomeRepository
 from app.schemas.smart_home import (
+    MAX_BATCH_COMMANDS,
     CommandResult,
     DeviceCommand,
+    HomeClockState,
     HomeClockUpdate,
-    HomeClockUpdated,
-    HomeReplay,
     HubClock,
-    MAX_BATCH_COMMANDS,
     HubCommand,
     HubCommandResult,
 )
-from app.services.home_replay import replay_commands, replay_runs, replay_summary
 from app.services.home_service import AUTH_MESSAGE, DISABLED_MESSAGE, require_connected
 
 
@@ -37,9 +35,6 @@ DEVICE_UNREACHABLE_MESSAGE = "Urządzenie nie odpowiada. Hub uruchomi je ponowni
 CLOCK_RESET_FAILED_MESSAGE = "Nie wszystkie urządzenia przyjęły nową dobę. Ustaw dobę ponownie."
 UNCONFIRMED_COMMAND_MESSAGE = (
     "Hub nie potwierdził polecenia na czas i mógł je wykonać. Sprawdź stan urządzenia, zanim wyślesz je ponownie."
-)
-REPLAY_FAILED_MESSAGE = (
-    "Doba została ustawiona, ale hub nie przyjął odtworzenia historii. Ustaw dobę ponownie."
 )
 
 
@@ -120,28 +115,15 @@ class HomeControlService:
             logger.warning("Hub nie wykonał komendy %s dla %s: %s", command.command.value, device_id, error)
             raise hub_http_error(error) from error
 
-    def update_clock(self, owner: User, update: HomeClockUpdate) -> HomeClockUpdated:
-        """Zmienia zegar w kolejności z kontraktu: doba, potem odtworzenie jej historii, na końcu start i tempo.
-
-        Ustawienie doby resetuje urządzenia i kasuje zaplanowane komendy, więc odtworzenie trzeba
-        zaplanować po nim, a przed startem zegara, żeby żadna akcja z historii nie wypadła w przeszłości.
-        """
+    def update_clock(self, owner: User, update: HomeClockUpdate) -> HomeClockState:
         hub_client = self._require_ready(owner)
-        clock, replay = None, None
-        if update.day is not None:
-            # restart: także ta sama doba drugi raz zaczyna od pustej kolejki, więc nic nie odtworzy się podwójnie.
-            clock = update_hub_clock(hub_client, sim_time=day_midnight(update.day), restart=True)
-            replay = self._replay_day(hub_client, owner, update.day)
-        if update.running is not None or update.speed is not None:
-            clock = update_hub_clock(hub_client, running=update.running, speed=update.speed)
-        return HomeClockUpdated(
-            sim_time=clock.sim_time, running=clock.running, speed=clock.speed, stop_at=clock.stop_at, replay=replay,
+        clock = update_hub_clock(
+            hub_client,
+            sim_time=day_midnight(update.day) if update.day else None,
+            # Ustawienie doby zawsze zaczyna nową symulację, także gdy zegar już stoi na tej północy:
+            # urządzenia wracają do stanu wyłączonego, a zaplanowane komendy znikają.
+            restart=update.day is not None,
+            running=update.running,
+            speed=update.speed,
         )
-
-    def _replay_day(self, hub_client: HubClient, owner: User, day: date) -> HomeReplay:
-        """Wysyła do huba akcje urządzeń fixed z doby `day` jako run_profile ze startem akcji, jednym żądaniem."""
-        start = day_midnight(day).astimezone(timezone.utc)
-        end = day_midnight(day + timedelta(days=1)).astimezone(timezone.utc)
-        runs = replay_runs(self.home_repository.fixed_action_slots(owner.id, start, end))
-        results = send_batch(hub_client, replay_commands(runs), REPLAY_FAILED_MESSAGE)
-        return replay_summary(runs, results)
+        return HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed, stop_at=clock.stop_at)

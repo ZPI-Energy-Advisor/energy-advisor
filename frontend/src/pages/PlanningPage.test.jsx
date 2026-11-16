@@ -272,7 +272,7 @@ describe("PlanningPage", () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, approved, { home_owner: true });
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { id: "run-1", status: "running" } });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Uruchom w symulacji" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Uruchom symulację" }));
 
     expect(await screen.findByText("Mój dom")).toBeTruthy();
     expect(post).toHaveBeenCalledWith("/home/plan-runs", { plan_id: "plan-1" });
@@ -284,10 +284,10 @@ describe("PlanningPage", () => {
     const detail = "Ten plan ułożono, zanim można było go uruchomić w symulacji. Ułóż go ponownie i zatwierdź.";
     vi.spyOn(apiClient, "post").mockRejectedValue({ response: { status: 409, data: { detail } } });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Uruchom w symulacji" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Uruchom symulację" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(detail);
-    expect(screen.getByRole("button", { name: "Uruchom w symulacji" }).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Uruchom symulację" }).disabled).toBe(false);
   });
 
   it("bez domu Smart Home zatwierdzonego planu nie da się uruchomić w symulacji", async () => {
@@ -295,7 +295,7 @@ describe("PlanningPage", () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, approved);
 
     expect(await screen.findByText(/Plan zatwierdzony o 16:05/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Uruchom w symulacji" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Uruchom symulację" })).toBeNull();
   });
 
   it("bez cen na jutro pokazuje godzinę publikacji i układa plan demo na ostatni dzień z cenami", async () => {

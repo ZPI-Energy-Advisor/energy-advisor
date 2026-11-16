@@ -1,6 +1,7 @@
 # ruff: noqa: F811 (fikstury db i home są parametrami testów)
 """ZP-113: wykonanie zatwierdzonego planu dnia w symulacji – jedno żądanie do huba, przebieg w bazie, raport."""
 
+import json
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -22,12 +23,34 @@ from app.services.plan_run_service import (
 from test_day_plan import WARSAW, _create
 from test_energy_files import _headers, client
 from test_home import HEAT_PUMP, LAMP, WASHER, _devices_file, _upload, db  # noqa: F401 (db: fixture)
-from test_home_control import _file, _hub_error, home  # noqa: F401 (home: fixture)
+from test_home_control import _hub_error, home  # noqa: F401 (home: fixture)
 from test_home_events import _event, _report
 from test_planning_preferences import EV, _put, _windows
 
 
 PLAN_DAY = "2026-10-12"  # Dzień planu w test_day_plan; historia w plikach jest z 05.10.
+PV = {"device_id": "dev_pv_01", "device_name": "Instalacja PV", "device_type": "pv_inverter",
+      "device_category": "OZE", "max_power_kw": 5.0, "flexibility": {"mode": "fixed"}}
+WASHER_IN_PLAN = {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))}
+
+
+def _file(period: dict, devices: list[dict], actions: list[dict]) -> bytes:
+    return json.dumps({"period": period, "devices": devices, "energy_usage": actions}).encode()
+
+
+def _pv_action(day: str, energy_kwh: float) -> dict:
+    """Produkcja PV 10:00–14:00 danego dnia (ujemna energia)."""
+    return {"action_id": f"act_pv_{day}", "device_id": "dev_pv_01", "action_start": f"{day}T10:00:00+02:00",
+            "action_end": f"{day}T14:00:00+02:00", "energy_kwh": energy_kwh}
+
+
+def _home_with_pv(home, pv_actions: list[dict]):
+    """Pralka z historią z 05.10 i PV z podanymi akcjami."""
+    period = {"start": "2026-10-05T00:00:00+02:00", "end": "2026-10-13T00:00:00+02:00"}
+    content = _file(period, [WASHER["device"], PV], [*WASHER["actions"], *pv_actions])
+    assert _upload(home.owner, content).status_code == 200
+    home.hub.use_clock_state()
+    return home.owner
 
 
 def _plan(owner, *, approve: bool = True, plan_date: str | None = None, devices: list[dict] | None = None) -> dict:
@@ -129,7 +152,7 @@ def _items_energy(plan: dict, device_id: str) -> float:
 
 
 def test_fixed_devices_are_not_replayed_in_plan_run(home):
-    # Symulacja planu pokazuje plan: lampa z historii (05.10) nie rusza, a jej akcja nie trafia do huba.
+    # Urządzenia stałe startują wyłączone i włącza je użytkownik: akcja lampy z historii nie trafia do huba.
     owner = _home_with_files(home)
     plan = _plan(owner)
 
@@ -140,10 +163,56 @@ def test_fixed_devices_are_not_replayed_in_plan_run(home):
     assert run["replay"] == {"actions": 0, "devices": 0, "skipped_devices": [], "rejected_actions": 0}
 
 
-def test_unticked_heat_pump_replays_plan_day_when_it_has_own_history(home):
+def test_pv_produces_like_reference_day_moved_to_plan_day(home):
+    owner = _home_with_pv(home, [_pv_action("2026-10-05", -6.4)])
+    plan = _plan(owner, devices=[WASHER_IN_PLAN])
+
+    run = _start(owner, plan["id"]).json()
+
+    pv, = _by_device(home.hub.batches[0])["dev_pv_01"]
+    assert (pv["command"], pv["ref"], pv["start_at"]) == ("run_profile", "act_pv_2026-10-05", f"{PLAN_DAY}T10:00:00+02:00")
+    # Profil i energia z dnia referencyjnego (tolerancja 1%), z ujemnym znakiem.
+    assert len(pv["profile_kwh"]) == 16
+    assert sum(pv["profile_kwh"]) == pytest.approx(-6.4, rel=0.01)
+    assert all(kwh < 0 for kwh in pv["profile_kwh"])
+    assert run["history_day"] == "2026-10-05"
+    assert run["replayed_devices"] == [
+        {"device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_kwh": -6.4, "actual_kwh": 0.0},
+    ]
+
+
+def test_reference_day_is_last_day_with_history_before_plan_day(home):
+    # „Wczoraj” względem doby planu, jak w planie: historia z dnia planu i późniejsza (plan demo) się nie liczy.
+    owner = _home_with_pv(home, [
+        _pv_action("2026-10-10", -3.0), _pv_action("2026-10-11", -5.0), _pv_action("2026-10-12", -9.0),
+    ])
+    plan = _plan(owner, devices=[WASHER_IN_PLAN])
+
+    run = _start(owner, plan["id"]).json()
+
+    pv, = _by_device(home.hub.batches[0])["dev_pv_01"]
+    assert (run["history_day"], pv["ref"]) == ("2026-10-11", "act_pv_2026-10-11")
+    assert sum(pv["profile_kwh"]) == pytest.approx(-5.0)
+
+
+def test_report_compares_pv_with_reference_day(home, db):
+    owner = _home_with_pv(home, [_pv_action("2026-10-05", -6.4)])
+    run = _start(owner, _plan(owner, devices=[WASHER_IN_PLAN])["id"]).json()
+    _store_events(db, owner, [_report(run["simulation_id"], "dev_pv_01", f"{PLAN_DAY}T10:00:00+02:00", -0.4)])
+    home.hub.clock_state["sim_time"] = f"{PLAN_DAY}T10:15:00+02:00"
+
+    report = _latest(owner).json()
+
+    pv, = report["replayed_devices"]
+    assert (pv["history_kwh"], pv["actual_kwh"]) == (-6.4, pytest.approx(-0.4))
+    # Bilans planu obejmuje tylko jego urządzenia.
+    assert report["actual_kwh"] == 0.0
+
+
+def test_unticked_heat_pump_uses_latest_day_when_plan_is_before_all_history(home):
+    # Plan demo na dzień z historii, bez wcześniejszego: bierzemy ostatni dzień z historii w ogóle.
     owner = _home_with_files(home, WASHER, HEAT_PUMP, LAMP)
-    washer = {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))}
-    plan = _plan(owner, plan_date="2026-10-05", devices=[washer, {"device_id": "dev_hp_01", "enabled": False}])
+    plan = _plan(owner, plan_date="2026-10-05", devices=[WASHER_IN_PLAN, {"device_id": "dev_hp_01", "enabled": False}])
 
     run = _start(owner, plan["id"]).json()
 
@@ -153,8 +222,7 @@ def test_unticked_heat_pump_replays_plan_day_when_it_has_own_history(home):
 
 def test_heat_pump_unticked_in_plan_replays_its_history_and_ticked_one_follows_plan(home):
     owner = _home_with_files(home, WASHER, HEAT_PUMP, LAMP)
-    washer = {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))}
-    plan = _plan(owner, devices=[washer, {"device_id": "dev_hp_01", "enabled": False}])
+    plan = _plan(owner, devices=[WASHER_IN_PLAN, {"device_id": "dev_hp_01", "enabled": False}])
 
     run = _start(owner, plan["id"]).json()
 
@@ -162,10 +230,11 @@ def test_heat_pump_unticked_in_plan_replays_its_history_and_ticked_one_follows_p
     heat_pump, = commands["dev_hp_01"]
     assert (heat_pump["ref"], heat_pump["start_at"]) == ("act_hp_1", f"{PLAN_DAY}T12:00:00+02:00")
     assert "dev_lamp_01" not in commands
-    assert (run["history_day"], run["replayed_devices"]) == ("2026-10-05", ["dev_hp_01"])
+    assert run["history_day"] == "2026-10-05"
+    assert [device["device_id"] for device in run["replayed_devices"]] == ["dev_hp_01"]
     assert run["replay"]["actions"] == 1
 
-    planned = _plan(owner, devices=[washer, {"device_id": "dev_hp_01", "enabled": True, "shift_hours": 1}])
+    planned = _plan(owner, devices=[WASHER_IN_PLAN, {"device_id": "dev_hp_01", "enabled": True, "shift_hours": 1}])
     _start(owner, planned["id"])
 
     heat_pump, = _by_device(home.hub.batches[1])["dev_hp_01"]
@@ -182,8 +251,8 @@ def test_unticked_heat_pump_replays_only_day_without_following_night(home):
                "actions": [*WASHER["actions"], *HEAT_PUMP["actions"], night]}
     assert _upload(home.owner, _file(period, entries["devices"], entries["actions"])).status_code == 200
     home.hub.use_clock_state()
-    washer = {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))}
-    plan = _plan(home.owner, plan_date="2026-10-05", devices=[washer, {"device_id": "dev_hp_01", "enabled": False}])
+    # Dzień referencyjny dla doby 06.10 to 05.10; blok z 02:00 06.10 jest już w nocy po nim.
+    plan = _plan(home.owner, plan_date="2026-10-06", devices=[WASHER_IN_PLAN, {"device_id": "dev_hp_01", "enabled": False}])
 
     run = _start(home.owner, plan["id"]).json()
 
@@ -368,11 +437,26 @@ def test_end_stops_clock_and_closes_run_once(home):
     assert ended.status_code == 200
     body = ended.json()
     assert (body["status"], body["sim_time"]) == ("ended", f"{PLAN_DAY}T09:00:00+02:00")
-    # Bez zatrzymania o 06:00: ręczny Start po „Zakończ” nie stanie nagle o końcu planu.
+    # Bez zatrzymania o 06:00 i bez reszty planu w kolejce: ręczny Start po „Zakończ” nie stanie nagle
+    # o końcu planu ani nie uruchomi np. ładowania auta.
     assert home.hub.clock_updates[-1] == {"running": False, "stop_at": None}
-    updates = len(home.hub.clock_updates)
+    assert home.hub.log[-2:] == ["clock ['running', 'stop_at']", "cancel scheduled"]
+    log = len(home.hub.log)
     assert _end(owner, run["id"]).json()["status"] == "ended"
-    assert len(home.hub.clock_updates) == updates  # Zakończony przebieg nie zatrzymuje zegara drugi raz.
+    assert len(home.hub.log) == log  # Zakończony przebieg nie zmienia już niczego w hubie.
+
+
+def test_hub_failure_while_cancelling_queue_keeps_run_open_to_retry(home):
+    owner = _home_with_files(home)
+    run = _start(owner, _plan(owner)["id"]).json()
+    home.hub.commands_down = True
+
+    assert _end(owner, run["id"]).status_code == 503
+    assert _latest(owner).json()["status"] == "running"
+
+    home.hub.commands_down = False
+    assert _end(owner, run["id"]).json()["status"] == "ended"
+    assert home.hub.log[-1] == "cancel scheduled"
 
 
 def test_end_of_unknown_run_is_not_found(home):

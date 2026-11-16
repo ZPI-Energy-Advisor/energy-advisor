@@ -409,7 +409,7 @@ def test_started_event_carries_command_id():
     assert lamp_started["data"] == {"program_id": None, "command_id": None, "ref": None}
 
 
-# Przebieg z własnym profilem (POST /run): odtworzenie akcji z historii
+# Przebieg z własnym profilem (POST /run): akcja planu albo produkcja PV
 
 
 LAMP_RUN = [0.01, 0.015, 0.015, 0.01]  # Godzina pracy lampy z pliku, kWh na kwadrans.
@@ -488,7 +488,7 @@ def test_manual_off_interrupts_run_and_keeps_energy_so_far():
 
 
 def test_run_takes_over_manual_constant_power():
-    # Lampa włączona ręcznie przed akcją z historii: dalej świeci według historii, a nie stałą mocą.
+    # Urządzenie włączone ręcznie przed akcją planu: od jej startu pracuje według profilu, a nie stałą mocą.
     lamp = _plain_device(power=0.1)
     lamp.tick(START)
     lamp.turn_on()
@@ -513,7 +513,7 @@ def test_manual_on_during_run_is_rejected():
         lamp.turn_on()
 
     assert (error.value.status_code, error.value.code) == (409, "invalid_state")
-    assert error.value.detail == "Trwa odtwarzanie akcji urządzenia"
+    assert error.value.detail == "Trwa przebieg urządzenia"
 
 
 def test_run_during_program_is_rejected():

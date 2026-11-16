@@ -40,7 +40,7 @@ SCHEDULABLE_COMMANDS = ("start_program", "run_profile")
 class DeviceCommand(BaseModel):
     command: Literal["on", "off", "start_program", "run_profile"]
     program_id: str | None = None
-    # run_profile: energia w kolejnych kwadransach (ujemna dla PV) i identyfikator akcji z historii.
+    # run_profile: energia w kolejnych kwadransach (ujemna dla PV) i identyfikator akcji, np. z planu.
     # Długość, skończone liczby i długość ref sprawdzają typy wspólne z POST /run urządzenia.
     profile_kwh: RunProfile | None = None
     ref: ActionRef | None = None

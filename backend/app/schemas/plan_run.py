@@ -6,11 +6,31 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas.smart_home import HomeReplay, HubCommandStatus
+from app.schemas.smart_home import HubCommandStatus
 
 
 class PlanRunRequest(BaseModel):
     plan_id: UUID
+
+
+class PlanRunReplay(BaseModel):
+    """Przebiegi z historii wysłane do huba razem z planem: produkcja PV oraz pompa ciepła i bojler spoza planu."""
+
+    actions: int
+    devices: int
+    # Urządzenia spoza rejestru huba (device_not_found, np. zaległa wysyłka); ich historia się nie odtworzy.
+    skipped_devices: list[str] = []
+    # Pojedyncze przebiegi odrzucone przez hub z innego powodu (np. zajęte urządzenie).
+    rejected_actions: int = 0
+
+
+class PlanRunHistoryDeviceOut(BaseModel):
+    """Urządzenie odtwarzane z dnia referencyjnego: energia z historii i w symulacji (ujemna dla PV)."""
+
+    device_id: str
+    device_name: str
+    history_kwh: float
+    actual_kwh: float
 
 
 class PlanRunActionOut(BaseModel):
@@ -62,11 +82,11 @@ class PlanRunOut(BaseModel):
     sim_time: datetime | None = None
     horizon_start: datetime
     horizon_end: datetime
-    # Pompa ciepła i bojler odznaczone w planie pracują jak w tym dniu historii; None, gdy nie ma czego odtwarzać.
+    # Dzień referencyjny: z niego PV oraz pompa ciepła i bojler spoza planu pracują w dobie planu;
+    # None, gdy nie ma czego odtwarzać.
     history_day: date | None = None
-    replay: HomeReplay
-    # Urządzenia spoza planu, które odtwarzają historię (device_id): ekran pokazuje je obok urządzeń planu.
-    replayed_devices: list[str] = []
+    replay: PlanRunReplay
+    replayed_devices: list[PlanRunHistoryDeviceOut] = []
     planned_kwh: float
     actual_kwh: float
     devices: list[PlanRunDeviceOut]

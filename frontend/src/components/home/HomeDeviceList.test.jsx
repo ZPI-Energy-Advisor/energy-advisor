@@ -34,20 +34,20 @@ describe("HomeDeviceList", () => {
     });
   });
 
-  it("pokazuje akcję odtwarzaną z historii z godziną końca", () => {
-    const lamp = {
+  it("pokazuje przebieg według planu z godziną końca", () => {
+    const boiler = {
       ...washer([]),
-      device_name: "Lampa",
+      device_name: "Bojler",
       state: "running",
-      power_kw: 0.06,
-      run: { ref: "act_1", started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" },
+      power_kw: 2.0,
+      run: { ref: "plan_1", started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" },
     };
 
-    render(<HomeDeviceList devices={[lamp]} onCommand={vi.fn()} />);
+    render(<HomeDeviceList devices={[boiler]} onCommand={vi.fn()} />);
 
-    expect(screen.getByText("Odtwarza historię")).toBeTruthy();
-    expect(screen.getByText("Akcja z historii, koniec 19:00")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Wyłącz: Lampa" })).toBeTruthy();
+    expect(screen.getByText("Według planu")).toBeTruthy();
+    expect(screen.getByText("Według planu, koniec 19:00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wyłącz: Bojler" })).toBeTruthy();
   });
 
   it("instalacja PV nie ma przycisków, a ładowarka EV ma", () => {

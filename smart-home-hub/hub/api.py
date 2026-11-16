@@ -90,6 +90,10 @@ def create_app(
         # 200, a nie 202: każda komenda ma własny wynik w odpowiedzi, także odrzucona.
         return {"results": await supervisor.send_commands(request.commands)}
 
+    @router.delete("/commands")
+    async def cancel_scheduled_commands():
+        return {"cancelled": await supervisor.cancel_scheduled()}
+
     @router.get("/clock")
     async def get_clock():
         return supervisor.clock.state()

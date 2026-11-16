@@ -1,9 +1,12 @@
-"""Odtworzenie doby z historii: akcje urządzeń fixed jako przebiegi run_profile dla huba.
+"""Przebiegi run_profile z historii: kwadranse akcji z pliku zamienione na profile dla huba.
 
-Urządzenia fixed (PV, oświetlenie, lodówka…) nie podlegają optymalizacji, więc symulacja powtarza ich
-akcje z pliku: każda akcja to przebieg z profilem jej kwadransów, zaplanowany na jej start (`start_at`).
-Profil bierzemy z `device_slot_usage`, czyli tego samego rozkładu na kwadranse co wycena i wykresy,
-dzięki czemu energia odtworzonej doby jest równa energii z pliku.
+Każda akcja to przebieg z profilem jej kwadransów, zaplanowany na jej start (`start_at`). Profil bierzemy
+z `device_slot_usage`, czyli tego samego rozkładu na kwadranse co wycena i wykresy, więc energia przebiegów
+jest równa energii z pliku.
+
+Urządzeniami stałymi w symulacji steruje użytkownik, a z historii idzie tylko produkcja PV: z dnia
+referencyjnego na dobę planu przy wykonaniu planu (ZP-113). Przy ustawieniu doby na zegarze niczego
+nie odtwarzamy.
 """
 
 from collections import defaultdict
@@ -11,14 +14,8 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 
 from app.parsers.devices import LOCAL_TIMEZONE
-from app.schemas.smart_home import (
-    CommandType,
-    HomeReplay,
-    HubCommand,
-    HubCommandResult,
-    HubCommandStatus,
-    ReplaySlot,
-)
+from app.schemas.plan_run import PlanRunReplay
+from app.schemas.smart_home import CommandType, HubCommand, HubCommandResult, HubCommandStatus, ReplaySlot
 from app.services.plan_history import moved_to
 
 
@@ -91,7 +88,7 @@ def _merge_overlapping(runs: list[ReplayRun]) -> list[ReplayRun]:
 def moved_runs(runs: list[ReplayRun], source_day: date, target_day: date) -> list[ReplayRun]:
     """Przebiegi z doby `source_day` przeniesione na te same godziny zegarowe doby `target_day`.
 
-    Tak plan na jutro odtwarza urządzenia stałe: jutro nie ma historii, więc bierzemy dzień referencyjny.
+    Tak plan na jutro dostaje produkcję PV: jutro nie ma historii, więc bierzemy dzień referencyjny.
     """
     if source_day == target_day:
         return runs
@@ -114,7 +111,7 @@ def replay_commands(runs: list[ReplayRun]) -> list[HubCommand]:
     ]
 
 
-def replay_summary(runs: list[ReplayRun], results: list[HubCommandResult]) -> HomeReplay:
+def replay_summary(runs: list[ReplayRun], results: list[HubCommandResult]) -> PlanRunReplay:
     """Opis odtworzenia z wyników huba dla komend z `replay_commands(runs)`, w tej samej kolejności.
 
     Urządzenie spoza rejestru huba (np. przy zaległej wysyłce) trafia do `skipped_devices`; inne odrzucenie
@@ -130,4 +127,4 @@ def replay_summary(runs: list[ReplayRun], results: list[HubCommandResult]) -> Ho
             skipped.add(run.device_id)
         else:
             rejected += 1
-    return HomeReplay(actions=actions, devices=len(replayed), skipped_devices=sorted(skipped), rejected_actions=rejected)
+    return PlanRunReplay(actions=actions, devices=len(replayed), skipped_devices=sorted(skipped), rejected_actions=rejected)

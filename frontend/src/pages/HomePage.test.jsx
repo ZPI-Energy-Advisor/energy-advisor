@@ -71,8 +71,11 @@ const PLAN_RUN = {
   horizon_start: "2026-10-19T00:00:00+02:00",
   horizon_end: "2026-10-20T06:00:00+02:00",
   history_day: "2026-10-12",
-  replay: { actions: 2, devices: 1, skipped_devices: [], rejected_actions: 0 },
-  replayed_devices: ["dev_hp_01"],
+  replay: { actions: 2, devices: 2, skipped_devices: [], rejected_actions: 0 },
+  replayed_devices: [
+    { device_id: "dev_pv_01", device_name: "Instalacja PV", history_kwh: -6.4, actual_kwh: -1.2 },
+    { device_id: "dev_hp_01", device_name: "Pompa ciepła", history_kwh: 9.5, actual_kwh: 4.1 },
+  ],
   planned_kwh: 6.4,
   actual_kwh: 0.6,
   devices: [
@@ -263,29 +266,6 @@ describe("HomePage", () => {
     await waitFor(() => expect(put).toHaveBeenCalledWith("/home/clock", { day: "2026-10-25" }));
   });
 
-  it("po ustawieniu doby mówi, ile akcji odtworzy z historii", async () => {
-    mockApi();
-    vi.spyOn(apiClient, "put").mockResolvedValue({
-      data: { ...STATE.clock, replay: { actions: 26, devices: 19, skipped_devices: [] } },
-    });
-    renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Zacznij dobę od północy" }));
-
-    expect(await screen.findByText("Doba odtworzy z historii 26 akcji z 19 urządzeń stałych.")).toBeTruthy();
-  });
-
-  it("start zegara nie zmienia opisu odtworzenia doby", async () => {
-    mockApi();
-    vi.spyOn(apiClient, "put").mockResolvedValue({ data: { ...STATE.clock, running: true, replay: null } });
-    renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
-
-    await waitFor(() => expect(apiClient.put).toHaveBeenCalled());
-    expect(screen.queryByText(/odtworzy z historii|Brak historii/)).toBeNull();
-  });
-
   it("przy działającym zegarze nie pozwala zmienić doby", async () => {
     mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, running: true } }] });
     renderPage();
@@ -333,30 +313,22 @@ describe("HomePage", () => {
     const ev = within(card).getByRole("listitem", { name: "Ładowarka EV" });
     expect(ev.textContent).toContain("Odrzucone: Nie ma urządzenia w rejestrze");
     expect(within(card).getByRole("alert").textContent).toContain("08:15 Lampa salon: Brak odpowiedzi urządzenia");
-    expect(card.textContent).toContain(
-      "Pompa ciepła i bojler spoza planu pracują same, tak jak w poniedziałek, 12 października 2026 (2 akcje z historii).",
-    );
+    const history = within(card).getByRole("region", { name: "Z dnia referencyjnego" });
+    expect(history.textContent).toContain("Pracują same, jak w poniedziałek, 12 października 2026:");
+    // PV na plusie, z dopiskiem „produkcji”.
+    expect(history.textContent).toContain("Instalacja PV: 1,20 kWh z 6,40 kWh produkcji");
+    expect(history.textContent).toContain("Pompa ciepła: 4,10 kWh z 9,50 kWh");
   });
 
-  it("w trakcie przebiegu planu pokazuje tylko urządzenia, które w nim pracują", async () => {
-    const heatPump = { ...LAMP, device_id: "dev_hp_01", device_name: "Pompa ciepła", device_category: "Ogrzewanie" };
-    mockApi({ states: [{ ...STATE, devices: [LAMP, WASHER, heatPump] }], planRun: PLAN_RUN });
+  it("w trakcie przebiegu planu lista pokazuje cały dom, żeby włączać urządzenia stałe ręcznie", async () => {
+    mockApi({ states: [{ ...STATE, devices: [LAMP, WASHER] }], planRun: PLAN_RUN });
     renderPage();
 
-    await screen.findByRole("region", { name: "Przebieg planu" });
+    const card = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(card.textContent).toContain("Urządzenia stałe (światło, czajnik, TV…) włącza się ręcznie na liście niżej");
     const list = await screen.findByRole("region", { name: "Urządzenia" });
+    expect(within(list).getByRole("listitem", { name: "Lampa salon" })).toBeTruthy();
     expect(within(list).getByRole("listitem", { name: "Pralka Bosch" })).toBeTruthy();
-    expect(within(list).getByRole("listitem", { name: "Pompa ciepła" })).toBeTruthy();
-    expect(within(list).queryByRole("listitem", { name: "Lampa salon" })).toBeNull();
-    expect(screen.getByText(/widać tylko urządzenia, które w nim pracują/)).toBeTruthy();
-  });
-
-  it("po zakończonym planie albo przy innej symulacji pokazuje cały dom", async () => {
-    mockApi({ planRun: { ...PLAN_RUN, status: "ended" } });
-    renderPage();
-
-    expect(await deviceRow("Lampa salon")).toBeTruthy();
-    expect(screen.queryByText(/widać tylko urządzenia, które w nim pracują/)).toBeNull();
   });
 
   it("„Zakończ” zamyka przebieg planu i odświeża stan domu", async () => {

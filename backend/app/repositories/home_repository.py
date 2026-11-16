@@ -116,39 +116,16 @@ class HomeRepository:
             for device in devices
         }
 
-    def fixed_action_slots(self, user_id: UUID, start_utc: datetime, end_utc: datetime) -> list[ReplaySlot]:
-        """Kwadranse akcji urządzeń fixed użytkownika w [start_utc, end_utc), do odtworzenia doby.
+    def action_slots(
+        self, user_id: UUID, device_ids: list[str], start_utc: datetime, end_utc: datetime,
+    ) -> list[ReplaySlot]:
+        """Kwadranse akcji wskazanych urządzeń w [start_utc, end_utc), np. PV dnia referencyjnego (ZP-113).
 
         Tylko kwadranse nieprzykryte nowszym plikiem (superseded), jak w danych „Wszystkich plików”,
         więc dwa pliki z tą samą dobą nie odtworzą akcji dwa razy.
         """
-        return self._replay_slots(user_id, start_utc, end_utc, DeviceInstance.flexibility_mode == DeviceInstance.FIXED)
-
-    def action_slots(
-        self, user_id: UUID, device_ids: list[str], start_utc: datetime, end_utc: datetime,
-    ) -> list[ReplaySlot]:
-        """Kwadranse akcji wskazanych urządzeń w [start_utc, end_utc), np. pompy ciepła spoza planu (ZP-113)."""
         if not device_ids:
             return []
-        return self._replay_slots(user_id, start_utc, end_utc, DeviceInstance.source_device_id.in_(device_ids))
-
-    def last_slot_before(self, user_id: UUID, device_ids: list[str], before_utc: datetime) -> datetime | None:
-        """Początek ostatniego kwadransu historii wskazanych urządzeń przed `before_utc` (dzień referencyjny)."""
-        if not device_ids:
-            return None
-        return self.db.execute(
-            select(func.max(DeviceSlotUsage.slot_start))
-            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
-            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
-            .where(
-                DeviceInstance.user_id == user_id,
-                DeviceInstance.source_device_id.in_(device_ids),
-                DeviceSlotUsage.superseded.is_(False),
-                DeviceSlotUsage.slot_start < before_utc,
-            )
-        ).scalar_one_or_none()
-
-    def _replay_slots(self, user_id: UUID, start_utc: datetime, end_utc: datetime, devices) -> list[ReplaySlot]:
         rows = self.db.execute(
             select(
                 DeviceInstance.source_device_id,
@@ -161,7 +138,7 @@ class HomeRepository:
             .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
             .where(
                 DeviceInstance.user_id == user_id,
-                devices,
+                DeviceInstance.source_device_id.in_(device_ids),
                 DeviceSlotUsage.superseded.is_(False),
                 DeviceSlotUsage.slot_start >= start_utc,
                 DeviceSlotUsage.slot_start < end_utc,
@@ -172,6 +149,26 @@ class HomeRepository:
             ReplaySlot(device_id=device_id, action_id=action_id, ref=ref, slot_start=slot_start, kwh=kwh)
             for device_id, action_id, ref, slot_start, kwh in rows
         ]
+
+    def last_slot_before(
+        self, user_id: UUID, device_ids: list[str], before_utc: datetime | None = None,
+    ) -> datetime | None:
+        """Początek ostatniego kwadransu historii wskazanych urządzeń przed `before_utc` (bez niego: w ogóle)."""
+        if not device_ids:
+            return None
+        conditions = [
+            DeviceInstance.user_id == user_id,
+            DeviceInstance.source_device_id.in_(device_ids),
+            DeviceSlotUsage.superseded.is_(False),
+        ]
+        if before_utc is not None:
+            conditions.append(DeviceSlotUsage.slot_start < before_utc)
+        return self.db.execute(
+            select(func.max(DeviceSlotUsage.slot_start))
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(*conditions)
+        ).scalar_one_or_none()
 
     def device_ids_of_types(self, user_id: UUID, device_types: Iterable[str]) -> list[str]:
         return list(self.db.execute(

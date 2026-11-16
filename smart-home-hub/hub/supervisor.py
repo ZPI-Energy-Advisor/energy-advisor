@@ -181,6 +181,17 @@ class DeviceSupervisor:
             ))
         return results
 
+    async def cancel_scheduled(self) -> int:
+        """Kasuje wszystkie zaplanowane komendy (np. resztę planu po „Zakończ”) i zwraca ich liczbę.
+
+        To, co urządzenia już wykonują, pracuje dalej; zegar, urządzenia i symulacja zostają bez zmian.
+        Pod blokadą zegara, więc żadna kasowana komenda nie wystartuje w trakcie.
+        """
+        async with self._clock_lock:
+            cancelled = len(self._scheduled)
+            self._scheduled.clear()
+        return cancelled
+
     def _accept(self, device_id: str, command: DeviceCommand) -> tuple[ManagedDevice, str, bool]:
         """Sprawdza komendę i planuje ją, gdy ma start w przyszłości. Wywoływać pod blokadą zegara.
 
@@ -217,7 +228,7 @@ class DeviceSupervisor:
     async def update_clock(self, update: ClockUpdate) -> dict:
         async with self._clock_lock:
             # Ponowiony PUT z tym samym czasem niczego nie zmienia, a HubClient ponawia PUT-y.
-            # `restart` wymusza nową symulację: backend przed odtworzeniem doby potrzebuje pustej kolejki.
+            # `restart` wymusza nową symulację: ustawienie doby z backendu zawsze zaczyna od pustej kolejki.
             new_simulation = update.sim_time is not None and (update.restart or not self.clock.is_at(update.sim_time))
             # Sprawdzone przed zmianami: odrzucone żądanie nie może już zresetować urządzeń.
             sim_time = update.sim_time if new_simulation else self.clock.sim_time

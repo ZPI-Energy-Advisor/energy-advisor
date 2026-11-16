@@ -8,8 +8,6 @@ import {
   formatSimTime,
   groupDevicesByCategory,
   isControllable,
-  plural,
-  replaySummary,
   simDay,
   speedOptions,
 } from "./home";
@@ -37,31 +35,11 @@ describe("home utils", () => {
     expect(deviceStateLabel(device({ state: "unreachable", power_kw: null }))).toBe("Brak połączenia");
   });
 
-  it("oznacza akcję odtwarzaną z historii, ale produkcja PV ma pierwszeństwo", () => {
+  it("oznacza przebieg według planu, ale produkcja PV ma pierwszeństwo", () => {
     const run = { ref: "act_1", started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" };
 
-    expect(deviceStateLabel(device({ state: "running", power_kw: 0.06, run }))).toBe("Odtwarza historię");
+    expect(deviceStateLabel(device({ state: "running", power_kw: 0.06, run }))).toBe("Według planu");
     expect(deviceStateLabel(device({ state: "running", power_kw: -2.5, run }))).toBe("Produkuje");
-  });
-
-  it("odmienia liczebniki", () => {
-    expect([1, 2, 5, 12, 22, 25].map((count) => plural(count, "akcja", "akcje", "akcji"))).toEqual([
-      "1 akcja", "2 akcje", "5 akcji", "12 akcji", "22 akcje", "25 akcji",
-    ]);
-  });
-
-  it("opisuje odtworzenie doby z historii", () => {
-    expect(replaySummary(null)).toBeNull();
-    expect(replaySummary({ actions: 26, devices: 19, skipped_devices: [] })).toBe(
-      "Doba odtworzy z historii 26 akcji z 19 urządzeń stałych.",
-    );
-    expect(replaySummary({ actions: 0, devices: 0, skipped_devices: [] })).toBe(
-      "Brak historii zużycia urządzeń stałych w tej dobie, więc same się nie włączą.",
-    );
-    expect(replaySummary({ actions: 1, devices: 1, skipped_devices: ["dev_x"] })).toBe(
-      "Doba odtworzy z historii 1 akcję z 1 urządzenia stałego. Pominięte, bo hub ich nie ma: dev_x. " +
-        "Podłącz dom ponownie, żeby je wysłać.",
-    );
   });
 
   it("nie pozwala sterować urządzeniem bez połączenia albo po awarii", () => {

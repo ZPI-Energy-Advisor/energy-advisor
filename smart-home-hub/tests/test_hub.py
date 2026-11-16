@@ -1095,7 +1095,7 @@ def test_stopping_hub_sends_waiting_events(settings, backend):
     assert [event["type"] for event in backend.events] == ["device_started", "energy_report"]
 
 
-# Odtwarzanie akcji z historii (run_profile)
+# Przebieg z własnym profilem (run_profile)
 
 
 def _run_profile(client: TestClient, profile: list[float], start_at: str | None = None, ref: str = "act_1",
@@ -1122,8 +1122,8 @@ def test_run_profile_now_reaches_device_and_shows_in_status(client):
     }
 
 
-def test_scheduled_runs_replay_history_back_to_back(client):
-    # Dwie sąsiednie akcje lampy z pliku: druga zaczyna się dokładnie, gdy kończy się pierwsza.
+def test_scheduled_runs_follow_each_other_back_to_back(client):
+    # Dwie sąsiednie akcje jednego urządzenia: druga zaczyna się dokładnie, gdy kończy się pierwsza.
     _put(client, [_lamp()])
     _set_clock(client)
     first = _run_profile(client, [0.01, 0.01], start_at="2026-10-19T12:30:00+02:00", ref="act_1")
@@ -1306,6 +1306,28 @@ def test_plan_with_two_actions_ends_with_planned_energy(client):
         assert reported == pytest.approx(planned, rel=0.01)
         assert _device_status(client, device_id)["state"] in ("idle", "off")
 
+
+def test_cancel_scheduled_drops_queue_and_keeps_what_already_runs(client):
+    # „Zakończ” planu: reszta planu nie wystartuje, a trwający przebieg i symulacja zostają.
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+    _send_batch(client, [
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01] * 8},
+        {"device_id": "dev_wm_01", "command": "start_program", "program_id": "cotton_60",
+         "start_at": "2026-10-19T12:15:00+02:00"},
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01],
+         "start_at": "2026-10-19T14:00:00+02:00"},
+    ])
+
+    response = client.delete("/home/commands")
+
+    assert (response.status_code, response.json()) == (200, {"cancelled": 2})
+    _tick(client, 2)
+    assert _events(client, "dev_wm_01", "device_started") == []
+    assert _device_status(client, "dev_lt_01")["state"] == "running"
+    assert client.get("/home/clock").json()["simulation_id"] == simulation_id
+    assert client.delete("/home/commands").json() == {"cancelled": 0}
 
 
 # Zatrzymanie zegara o zadanej chwili: stop_at

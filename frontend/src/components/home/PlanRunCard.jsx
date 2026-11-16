@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FiAlertTriangle, FiSquare } from "react-icons/fi";
-import { formatKwh, formatSimDate, formatSimTime, plural } from "../../utils/home";
+import { formatKwh, formatSimDate, formatSimTime } from "../../utils/home";
 import { CARD, SECONDARY_BUTTON } from "./styles";
 
 const STATUS = {
@@ -19,16 +19,31 @@ const actionText = (action) => {
   return action.status === "accepted" ? `Uruchomione, ${window}` : `Zaplanowane na ${window}`;
 };
 
-// Pompa ciepła i bojler odznaczone w planie pracują same, jak w dniu z historii; urządzenia stałe nie ruszają.
-const historyText = (run) => {
-  if (!run.history_day || !run.replay.actions) return null;
-  const source = run.history_day === run.plan_date ? "w tym dniu" : `w ${dayText(run.history_day)}`;
-  const actions = plural(run.replay.actions, "akcja", "akcje", "akcji");
-  return `Pompa ciepła i bojler spoza planu pracują same, tak jak ${source} (${actions} z historii).`;
-};
+// Produkcja PV ma znak ujemny; na ekranie pokazujemy ją jako dodatnią z dopiskiem „produkcji”.
+const historyEnergy = (device) =>
+  device.history_kwh < 0
+    ? `${formatKwh(-device.actual_kwh)} z ${formatKwh(-device.history_kwh)} produkcji`
+    : `${formatKwh(device.actual_kwh)} z ${formatKwh(device.history_kwh)}`;
+
+// PV oraz pompa ciepła i bojler spoza planu pracują same, jak w dniu referencyjnym.
+function HistoryDevices({ run }) {
+  if (!run.history_day || !run.replayed_devices.length) return null;
+  return (
+    <section className="mt-4" aria-label="Z dnia referencyjnego">
+      <p className="text-sm text-gray-700">Pracują same, jak w {dayText(run.history_day)}:</p>
+      <ul className="mt-1 space-y-0.5 text-sm text-gray-600">
+        {run.replayed_devices.map((device) => (
+          <li key={device.device_id}>
+            {device.device_name}: {historyEnergy(device)}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 // Przebieg zatwierdzonego planu w symulacji (ZP-113): postęp, energia urządzeń z planu i awarie.
-// „Zakończ” zatrzymuje zegar i zamyka przebieg; do chwilowej przerwy służy Pauza na zegarze.
+// „Zakończ” zatrzymuje zegar, kasuje resztę planu w hubie i zamyka przebieg; do chwilowej przerwy służy Pauza.
 function PlanRunCard({ run, disabled, onEnd }) {
   const [isEnding, setIsEnding] = useState(false);
   const status = STATUS[run.status] ?? STATUS.ended;
@@ -97,7 +112,14 @@ function PlanRunCard({ run, disabled, onEnd }) {
         ))}
       </ul>
 
-      {historyText(run) && <p className="mt-3 text-xs text-gray-500">{historyText(run)}</p>}
+      <HistoryDevices run={run} />
+
+      {running && (
+        <p className="mt-3 text-xs text-gray-500">
+          Urządzenia stałe (światło, czajnik, TV…) włącza się ręcznie na liście niżej: widać wtedy, jak razem
+          z planem obciążają przyłącze.
+        </p>
+      )}
 
       {run.errors.length > 0 && (
         <div className="mt-4 p-3 rounded border border-red-200 bg-red-50" role="alert">

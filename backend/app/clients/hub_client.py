@@ -25,9 +25,10 @@ DEFAULT_TIMEOUT_SECONDS = 5.0
 REGISTRY_TIMEOUT_SECONDS = 60.0
 # Partia komend: komendy „teraz” hub przekazuje urządzeniom (do 3 s każda), a jednego urządzenia po kolei.
 BATCH_TIMEOUT_SECONDS = 30.0
-# Ponawiać można tylko żądania, których powtórzenie niczego nie zmienia. Komenda mogła dojść do huba
-# mimo timeoutu, a hub nie rozpoznaje powtórzeń, więc ponowiona mogłaby się wykonać drugi raz.
-RETRYABLE_METHODS = ("GET", "PUT")
+# Ponawiać można tylko żądania, których powtórzenie niczego nie zmienia (DELETE kolejki drugi raz nie ma
+# już czego skasować). Komenda mogła dojść do huba mimo timeoutu, a hub nie rozpoznaje powtórzeń, więc
+# ponowiona mogłaby się wykonać drugi raz.
+RETRYABLE_METHODS = ("GET", "PUT", "DELETE")
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -56,7 +57,7 @@ class HubError(Exception):
 class HubUnavailableError(HubError):
     """Hub nie odpowiedział (timeout, brak połączenia) albo zwrócił 5xx.
 
-    `retryable` mówi, czy żądanie można bezpiecznie ponowić (tylko GET i PUT).
+    `retryable` mówi, czy żądanie można bezpiecznie ponowić (tylko GET, PUT i DELETE).
     """
 
     def __init__(
@@ -130,6 +131,13 @@ class HubClient:
         if len(results) != len(commands):
             raise HubError(f"Hub zwrócił {len(results)} wyników dla {len(commands)} komend")
         return results
+
+    def cancel_scheduled(self) -> int:
+        """Kasuje wszystkie zaplanowane komendy (DELETE /home/commands); zwraca ich liczbę."""
+        cancelled = self._request("DELETE", "/home/commands").get("cancelled")
+        if not isinstance(cancelled, int):
+            raise HubError("Hub nie podał liczby skasowanych komend")
+        return cancelled
 
     def get_clock(self) -> HubClock:
         return self._parse(HubClock, self._request("GET", "/home/clock"))

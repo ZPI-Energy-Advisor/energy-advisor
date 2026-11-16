@@ -4,12 +4,14 @@ Uruchomienie zaczyna w hubie dobę planu od północy i wysyła jednym żądanie
 
 - pozycje planu: program pralki czy zmywarki jako `start_program`, a auto, bojler i pompa ciepła jako
   `run_profile` z profilem z planu (zera w przerwach ładowania), każda ze startem z planu w `start_at`;
-- pompa ciepła i bojler odznaczone w planie jako przebiegi z historii: plan zakłada, że pracują same, jak
-  zwykle. Bierzemy dobę dnia referencyjnego (dnia planu, gdy ma historię, np. plan demo z przeszłości,
-  a inaczej ostatniego dnia przed nim), przeniesioną na te same godziny doby planu, bez nocy po niej.
+- przebiegi z historii dnia referencyjnego, przeniesione na te same godziny doby planu (bez nocy po niej):
+  produkcja PV, od której zależy, czy plan się opłaca (pralka w południe z paneli), oraz pompa ciepła
+  i bojler odznaczone w planie, bo plan zakłada, że pracują same na termostacie i liczy na nie miejsce
+  w limicie przyłącza. Dzień referencyjny to „wczoraj” jak w planie (`plan_history.reference_day`):
+  ostatni dzień z historią przed dobą planu, a bez takiego ostatni w ogóle. Docelowo PV z prognozy pogody.
 
-Urządzeń stałych (światło, lodówka, PV) nie odtwarzamy: symulacja pokazuje plan, a oszczędność planu
-i tak ich nie obejmuje, bo plan ich nie przesuwa. Pełną dobę z historii odtwarza ustawienie doby na zegarze.
+Urządzenia stałe (światło, TV, czajnik…) startują wyłączone i włącza je użytkownik z ekranu „Mój dom”:
+widać wtedy, jak plan i ręczne włączenia razem obciążają przyłącze.
 
 Zegar rusza ze `stop_at` na koniec planu, więc hub sam staje o 06:00 następnego dnia. Hub jest jedynym
 źródłem czasu i stanu, więc status przebiegu sprawdzamy przy odczycie: hub z innym `simulation_id` zaczął
@@ -33,15 +35,15 @@ from app.repositories.home_event_repository import HomeEventRepository
 from app.repositories.home_repository import HomeRepository
 from app.repositories.plan_run_repository import PlanRunRepository
 from app.schemas.day_plan import PlanItemOut
-from app.schemas.plan_run import PlanRunActionOut, PlanRunDeviceOut, PlanRunErrorOut, PlanRunOut
-from app.schemas.smart_home import (
-    CommandType,
-    HomeReplay,
-    HubClock,
-    HubCommand,
-    HubCommandResult,
-    HubCommandStatus,
+from app.schemas.plan_run import (
+    PlanRunActionOut,
+    PlanRunDeviceOut,
+    PlanRunErrorOut,
+    PlanRunHistoryDeviceOut,
+    PlanRunOut,
+    PlanRunReplay,
 )
+from app.schemas.smart_home import CommandType, HubClock, HubCommand, HubCommandResult, HubCommandStatus
 from app.services.home_control_service import (
     INVALID_RESPONSE_MESSAGE,
     day_midnight,
@@ -65,7 +67,8 @@ PLAN_OUTDATED_MESSAGE = (
     "Ten plan ułożono, zanim można było go uruchomić w symulacji. Ułóż go ponownie i zatwierdź."
 )
 PLAN_FAILED_MESSAGE = "Doba planu została ustawiona, ale hub nie przyjął planu. Uruchom plan ponownie."
-# Urządzenia pracujące same na termostacie, gdy plan ich nie układa: odtwarzamy je z historii jak stałe.
+PV_TYPE = "pv_inverter"
+# Urządzenia pracujące same na termostacie, gdy plan ich nie układa: odtwarzamy je z historii jak PV.
 THERMOSTAT_TYPES = (HEAT_PUMP_TYPE, WATER_HEATER_TYPE)
 MAX_REPORTED_ERRORS = 50
 
@@ -109,7 +112,7 @@ class PlanRunService:
         planned = self._plan_commands(items)
         horizon_start = datetime.fromisoformat(plan.result["horizon_start"])
         horizon_end = datetime.fromisoformat(plan.result["horizon_end"])
-        history_day, runs = self._unplanned_history(owner, plan, {item.device_id for item in items})
+        history_day, runs = self._history(owner, plan, {item.device_id for item in items})
 
         # Blokada wiersza domu: dwa równoczesne „Uruchom” (albo uruchomienie i wysyłka rejestru) nie przeplatają
         # zmian w hubie. Trzymamy ją do zapisu przebiegu.
@@ -141,10 +144,7 @@ class PlanRunService:
                 for (item, _), result in zip(planned, plan_results, strict=True)
             ],
             replay=replay_summary(runs, replay_results).model_dump(mode="json"),
-            replayed_devices=sorted({
-                run.device_id for run, result in zip(runs, replay_results, strict=True)
-                if result.status != HubCommandStatus.REJECTED
-            }),
+            replayed_devices=self._history_energy(runs, replay_results),
             started_at=now,
         ))
         # Zegar sam stanie o końcu planu: później nie ma już czego symulować.
@@ -174,22 +174,24 @@ class PlanRunService:
             planned.append((item, command))
         return planned
 
-    def _unplanned_history(
+    def _history(
         self, owner: User, plan: DayPlan, planned_devices: set[str],
     ) -> tuple[date | None, list[ReplayRun]]:
-        """Pompa ciepła i bojler spoza planu: doba dnia referencyjnego (00:00–24:00) przeniesiona na dobę planu.
+        """PV oraz pompa ciepła i bojler spoza planu: doba dnia referencyjnego przeniesiona na dobę planu.
 
-        Tylko doba, bez nocy po niej, tak jak plan liczy te urządzenia, gdy są zaznaczone: bojler na dobę planu,
-        a pompa ciepła bloki z jednego dnia. Noc należy do planu na kolejny dzień, a porównanie z planem
-        (ZP-114) ma po obu stronach ten sam zakres.
+        Dzień referencyjny jak w planie: ostatni z historią tych urządzeń przed dobą planu, a bez takiego
+        (plan demo sprzed całej historii) ostatni w ogóle. Tylko doba 00:00–24:00, bez nocy po niej, tak jak
+        plan liczy pompę i bojler, gdy są zaznaczone. Noc należy do planu na kolejny dzień, a porównanie
+        z planem (ZP-114) ma po obu stronach ten sam zakres.
         """
-        devices = [
-            device_id for device_id in self.home_repository.device_ids_of_types(owner.id, THERMOSTAT_TYPES)
-            if device_id not in planned_devices
+        thermostats = self.home_repository.device_ids_of_types(owner.id, THERMOSTAT_TYPES)
+        devices = self.home_repository.device_ids_of_types(owner.id, (PV_TYPE,)) + [
+            device_id for device_id in thermostats if device_id not in planned_devices
         ]
-        last = self.home_repository.last_slot_before(
-            owner.id, devices, day_midnight(plan.plan_date + timedelta(days=1)).astimezone(timezone.utc),
-        )
+        plan_start = day_midnight(plan.plan_date).astimezone(timezone.utc)
+        last = self.home_repository.last_slot_before(owner.id, devices, plan_start)
+        if last is None:
+            last = self.home_repository.last_slot_before(owner.id, devices)
         if last is None:
             return None, []
         source = local_day(last)
@@ -200,6 +202,15 @@ class PlanRunService:
             day_midnight(source + timedelta(days=1)).astimezone(timezone.utc),
         )
         return source, moved_runs(replay_runs(slots), source, plan.plan_date)
+
+    @staticmethod
+    def _history_energy(runs: list[ReplayRun], results: list[HubCommandResult]) -> list[dict]:
+        """Energia z historii urządzeń, których przebiegi hub przyjął: z nią raport porówna symulację."""
+        energy: dict[str, float] = defaultdict(float)
+        for run, result in zip(runs, results, strict=True):
+            if result.status != HubCommandStatus.REJECTED:
+                energy[run.device_id] += sum(run.profile_kwh)
+        return [{"device_id": device_id, "history_kwh": _kwh(kwh)} for device_id, kwh in sorted(energy.items())]
 
     @staticmethod
     def _action(item: PlanItemOut, result: HubCommandResult) -> PlanRunActionOut:
@@ -230,7 +241,12 @@ class PlanRunService:
         return self._out(owner, run, clock)
 
     def end(self, owner: User, run_id: UUID) -> PlanRunOut:
-        """„Zakończ”: zatrzymuje zegar i zamyka przebieg. Zakończony już przebieg zostaje bez zmian."""
+        """„Zakończ”: zatrzymuje zegar, kasuje resztę planu w kolejce huba i zamyka przebieg.
+
+        To, co urządzenia już wykonują (np. pralka w połowie programu), po ponownym Starcie się dokończy;
+        wyłączyć można je ręcznie. Zakończony już przebieg zostaje bez zmian. Gdy hub zawiedzie przy
+        kasowaniu kolejki, przebieg zostaje `running`, a ponowne „Zakończ” robi wszystko jeszcze raz.
+        """
         run = self.run_repository.get(owner.id, run_id)
         if run is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RUN_NOT_FOUND_MESSAGE)
@@ -245,6 +261,12 @@ class PlanRunService:
         if run.status == PlanRun.RUNNING:
             # Bez zatrzymania o końcu planu: ręczny Start po „Zakończ” nie stanie nagle o 06:00.
             clock = update_hub_clock(hub_client, running=False, clear_stop_at=True)
+            # Ani zatrzymanie o 06:00, ani zaplanowane komendy nie mogą przeżyć planu: inaczej po Starcie
+            # o 02:00 i tak ruszyłoby np. ładowanie auta z zakończonego planu.
+            try:
+                hub_client.cancel_scheduled()
+            except HubError as error:
+                raise hub_http_error(error) from error
             self._close(owner, run, PlanRun.ENDED, datetime.now(timezone.utc), sim_time=clock.sim_time)
         self.run_repository.commit()
         return self._out(owner, run, clock)
@@ -288,11 +310,12 @@ class PlanRunService:
         by_device: dict[str, list[PlanRunActionOut]] = defaultdict(list)
         for action in actions:
             by_device[action.device_id].append(action)
+        history = {entry["device_id"]: entry["history_kwh"] for entry in run.replayed_devices}
         actual = defaultdict(float)
-        if sim_time is not None and by_device:
+        if sim_time is not None and (by_device or history):
             until = min(sim_time, run.horizon_end)
             steps = self.event_repository.energy_steps(
-                owner.id, run.simulation_id, run.horizon_start, until, device_ids=list(by_device),
+                owner.id, run.simulation_id, run.horizon_start, until, device_ids=[*by_device, *history],
             )
             actual = day_energy(steps, run.horizon_start, until).by_device
         devices = [
@@ -307,6 +330,15 @@ class PlanRunService:
             for device_id, device_actions in by_device.items()
         ]
         names = self.home_repository.device_names(owner.id)
+        replayed = [
+            PlanRunHistoryDeviceOut(
+                device_id=device_id,
+                device_name=names.get(device_id, device_id),
+                history_kwh=history_kwh,
+                actual_kwh=_kwh(actual.get(device_id, 0.0)),
+            )
+            for device_id, history_kwh in history.items()
+        ]
         errors = [
             PlanRunErrorOut(
                 device_id=error.device_id,
@@ -329,8 +361,8 @@ class PlanRunService:
             horizon_start=run.horizon_start.astimezone(LOCAL_TIMEZONE),
             horizon_end=run.horizon_end.astimezone(LOCAL_TIMEZONE),
             history_day=run.history_day,
-            replay=HomeReplay.model_validate(run.replay),
-            replayed_devices=run.replayed_devices,
+            replay=PlanRunReplay.model_validate(run.replay),
+            replayed_devices=replayed,
             planned_kwh=_kwh(sum(device.planned_kwh for device in devices)),
             actual_kwh=_kwh(sum(device.actual_kwh for device in devices)),
             devices=devices,

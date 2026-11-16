@@ -252,6 +252,25 @@ def test_send_commands_timeout_is_not_retryable():
     assert exc_info.value.retryable is False
 
 
+def test_cancel_scheduled_deletes_queue_and_can_be_retried():
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append((request.method, request.url.path))
+        if len(seen) == 1:
+            raise httpx.ReadTimeout("timeout", request=request)
+        return httpx.Response(200, json={"cancelled": 3})
+
+    client = _client(handler)
+    with pytest.raises(HubUnavailableError) as exc_info:
+        client.cancel_scheduled()
+
+    # Drugie kasowanie nie ma już czego skasować, więc DELETE wolno ponowić mimo timeoutu.
+    assert exc_info.value.retryable is True
+    assert client.cancel_scheduled() == 3
+    assert seen == [("DELETE", "/home/commands")] * 2
+
+
 @pytest.mark.parametrize("count", [0, MAX_BATCH_COMMANDS + 1])
 def test_send_commands_refuses_batch_outside_contract_limits(count):
     def handler(request: httpx.Request):

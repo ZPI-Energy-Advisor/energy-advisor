@@ -105,7 +105,7 @@ function SimulationClock({ clock, disabled, onUpdate }) {
       <p className="mt-2 text-xs text-gray-500">
         {clock?.running
           ? "Dobę można zmienić po zatrzymaniu zegara."
-          : "Nowa doba zaczyna symulację od nowa: zużycie liczy się od zera, a urządzenia stałe (oświetlenie, PV, lodówka…) odtwarzają swoje akcje z historii tej doby."}
+          : "Nowa doba zaczyna symulację od nowa: urządzenia wracają do stanu wyłączonego, a zużycie liczy się od zera."}
       </p>
     </section>
   );

@@ -10,7 +10,6 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
 import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
-import { planRunDeviceIds, replaySummary } from "../utils/home";
 
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
@@ -20,19 +19,17 @@ const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
 function HomeLive() {
   const { state, error, isLoading, refresh } = useHomeState();
   const [actionError, setActionError] = useState(null);
-  const [replayNotice, setReplayNotice] = useState(null);
   const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
-  // Zwraca treść odpowiedzi albo null przy błędzie.
   const perform = async (request, describeError) => {
     try {
-      const { data } = await request();
+      await request();
       setActionError(null);
-      return data ?? {};
+      return true;
     } catch (err) {
       setActionError(describeError(err));
-      return null;
+      return false;
     } finally {
       refresh();
     }
@@ -44,28 +41,20 @@ function HomeLive() {
       (err) => `${device.device_name}: ${getApiErrorMessage(err, "nie udało się wysłać polecenia.")}`,
     );
 
-  const updateClock = async (change) => {
-    const data = await perform(
+  const updateClock = (change) =>
+    perform(
       () => apiClient.put("/home/clock", change),
       (err) => getApiErrorMessage(err, "Nie udało się zmienić zegara symulacji."),
     );
-    // Nowa doba: mówimy, co odtworzy się z historii, a nieudane ustawienie chowa opis poprzedniej doby.
-    if (change.day) setReplayNotice(data ? replaySummary(data.replay) : null);
-    return data !== null;
-  };
 
-  const endPlanRun = async (run) => {
-    const data = await perform(
-      () => apiClient.post(`/home/plan-runs/${run.id}/end`),
+  // Odpowiedź „Zakończ” to już zamknięty przebieg, więc podmieniamy kartę bez kolejnego żądania.
+  const endPlanRun = (run) =>
+    perform(
+      async () => planRun.replace((await apiClient.post(`/home/plan-runs/${run.id}/end`)).data),
       (err) => getApiErrorMessage(err, "Nie udało się zakończyć przebiegu planu."),
     );
-    if (data) planRun.replace(data);
-  };
 
   const hubDown = state?.hub_available === false;
-  // W trakcie przebiegu planu lista pokazuje tylko jego urządzenia: reszta domu w nim nie pracuje.
-  const planDevices = planRunDeviceIds(planRun.run, state?.simulation_id);
-  const devices = planDevices ? state.devices.filter((device) => planDevices.has(device.device_id)) : state?.devices;
 
   return (
     <>
@@ -91,12 +80,6 @@ function HomeLive() {
         </p>
       )}
 
-      {replayNotice && (
-        <p className={`${NOTICE} border-sky-200 bg-sky-50 text-sky-800`} role="status">
-          {replayNotice}
-        </p>
-      )}
-
       {actionError && (
         <p className={ERROR_NOTICE} role="alert">
           {actionError}
@@ -113,12 +96,7 @@ function HomeLive() {
             </p>
           )}
           <HomeSummary power={state.power} today={state.today} />
-          {!hubDown && planDevices && (
-            <p className="text-sm text-gray-600" role="status">
-              Trwa plan dnia, więc widać tylko urządzenia, które w nim pracują. Po zakończeniu planu wróci cały dom.
-            </p>
-          )}
-          {!hubDown && <HomeDeviceList devices={devices} onCommand={sendCommand} />}
+          {!hubDown && <HomeDeviceList devices={state.devices} onCommand={sendCommand} />}
         </>
       )}
     </>

@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 
-# Najdłuższy przebieg z własnym profilem: tydzień kwadransów (akcje z historii trwają zwykle minuty albo dobę).
+# Najdłuższy przebieg z własnym profilem: tydzień kwadransów (akcje planu trwają zwykle od kwadransa do doby).
 # Ten sam limit ma backend (app/schemas/smart_home.py); oba wynikają z kontraktu w docs/smart-home-api.md.
 MAX_RUN_QUARTERS = 7 * 96
 
@@ -91,9 +91,9 @@ class CommandContext(BaseModel):
 
 
 class RunRequest(BaseModel):
-    """POST /run: praca według profilu (kWh na kwadrans), np. odtworzenie akcji z historii.
+    """POST /run: praca według profilu (kWh na kwadrans), np. akcja planu albo produkcja PV.
 
-    Ujemne wartości to produkcja (PV). `ref` wskazuje akcję z historii i wraca w zdarzeniach.
+    Ujemne wartości to produkcja (PV). `ref` wskazuje akcję (np. z planu) i wraca w zdarzeniach.
     """
 
     profile_kwh: RunProfile
