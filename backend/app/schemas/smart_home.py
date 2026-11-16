@@ -144,12 +144,40 @@ class CommandResult(BaseModel):
     state: DeviceState
 
 
+# Ten sam limit co w hubie (smart-home-hub/hub/models.py), z kontraktu POST /home/commands.
+MAX_BATCH_COMMANDS = 1000
+
+
+class HubCommand(DeviceCommand):
+    """Komenda w POST /home/commands: jak polecenie dla urządzenia, z device_id w treści."""
+
+    device_id: str
+
+
+class HubCommandStatus(str, Enum):
+    ACCEPTED = "accepted"  # Wykonana albo przekazana do urządzenia.
+    SCHEDULED = "scheduled"  # Czeka na start_at.
+    REJECTED = "rejected"  # Odrzucona: powód w `code` i `detail`.
+
+
+class HubCommandResult(BaseModel):
+    """Wynik jednej komendy z POST /home/commands; `command_id` ma tylko komenda przyjęta albo zaplanowana."""
+
+    device_id: str
+    status: HubCommandStatus
+    command_id: str | None = None
+    code: str | None = None
+    detail: str | None = None
+
+
 class HubClock(BaseModel):
     sim_time: datetime
     running: bool
     speed: float
     # Przebieg symulacji: zmienia go ustawienie czasu i restart huba.
     simulation_id: str | None = None
+    # Chwila, w której zegar sam stanie (koniec planu dnia); None: chodzi, dopóki nikt go nie zatrzyma.
+    stop_at: datetime | None = None
 
 
 class HubEventType(str, Enum):
@@ -208,6 +236,7 @@ class HomeClockState(BaseModel):
     sim_time: datetime
     running: bool
     speed: float
+    stop_at: datetime | None = None
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from hub.config import HubSettings
-from hub.models import ClockUpdate, DeviceCommand, RegistryRequest
+from hub.models import BatchRequest, ClockUpdate, DeviceCommand, RegistryRequest
 from hub.supervisor import DeviceSupervisor, HubError
 from hub.webhook import EventPublisher
 
@@ -84,6 +84,11 @@ def create_app(
     @router.post("/devices/{device_id}/commands", status_code=202)
     async def send_command(device_id: str, command: DeviceCommand):
         return await supervisor.send_command(device_id, command)
+
+    @router.post("/commands")
+    async def send_commands(request: BatchRequest):
+        # 200, a nie 202: każda komenda ma własny wynik w odpowiedzi, także odrzucona.
+        return {"results": await supervisor.send_commands(request.commands)}
 
     @router.get("/clock")
     async def get_clock():

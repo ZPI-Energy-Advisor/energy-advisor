@@ -65,12 +65,37 @@ class DeviceCommand(BaseModel):
         return self
 
 
+# Najwięcej komend w POST /home/commands. Doba z historii to kilkadziesiąt akcji, a plan dnia kilkanaście,
+# więc limit tylko chroni hub przed żądaniem, które trzymałoby blokadę zegara bardzo długo.
+MAX_BATCH_COMMANDS = 1000
+
+
+class BatchCommand(DeviceCommand):
+    """Komenda w POST /home/commands: jak w POST /home/devices/{device_id}/commands, z device_id w treści."""
+
+    device_id: str
+
+
+class BatchRequest(BaseModel):
+    commands: list[BatchCommand]
+
+    @model_validator(mode="after")
+    def validate_size(self):
+        # Walidator, a nie Field(min_length…): złamanie reguły kontraktu to 422 validation_error, a nie 400.
+        if not 1 <= len(self.commands) <= MAX_BATCH_COMMANDS:
+            raise ValueError(f"commands musi mieć od 1 do {MAX_BATCH_COMMANDS} komend")
+        return self
+
+
 class ClockUpdate(BaseModel):
     sim_time: datetime | None = None
     # Nowa symulacja także przy sim_time równym bieżącemu (reset urządzeń i kolejki komend).
     restart: bool = False
     running: bool | None = None
     speed: float | None = None
+    # Zegar sam stanie, gdy dojdzie do tej chwili (koniec planu dnia). `null` kasuje zatrzymanie,
+    # a brak pola zostawia je bez zmian; nowa doba (`sim_time`) zawsze je kasuje.
+    stop_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_clock(self):
@@ -78,6 +103,8 @@ class ClockUpdate(BaseModel):
             raise ValueError("restart wymaga sim_time")
         if self.sim_time is not None:
             _validate_sim_moment(self.sim_time, "sim_time")
+        if self.stop_at is not None:
+            _validate_sim_moment(self.stop_at, "stop_at")
         if self.speed is not None and not (math.isfinite(self.speed) and self.speed > 0):
             raise ValueError("speed musi być dodatnie")
         return self

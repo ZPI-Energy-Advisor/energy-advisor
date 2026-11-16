@@ -124,7 +124,9 @@ class HomeStateService:
         return HomeState(
             hub_available=clock is not None,
             simulation_id=simulation_id,
-            clock=HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed) if clock else None,
+            clock=HomeClockState(
+                sim_time=clock.sim_time, running=clock.running, speed=clock.speed, stop_at=clock.stop_at,
+            ) if clock else None,
             power=self._power(devices) if devices else None,
             devices=self._devices(devices, self._descriptions(owner, devices), energy) if devices else [],
             today=today,

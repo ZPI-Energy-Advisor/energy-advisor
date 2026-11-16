@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ from device.driver import EDITABLE_FIELDS
 from device.models import DeviceConfig
 from hub.clock import SimClock
 from hub.config import HubSettings
-from hub.models import ClockUpdate, DeviceCommand
+from hub.models import BatchCommand, ClockUpdate, DeviceCommand
 from hub.state import StateFile
 from hub.webhook import EventPublisher
 
@@ -144,38 +145,90 @@ class DeviceSupervisor:
         ]
 
     async def send_command(self, device_id: str, command: DeviceCommand) -> dict:
-        device = self.devices.get(device_id)
-        if device is None:
-            raise HubError(404, "device_not_found", f"Nie ma urządzenia {device_id!r} w rejestrze")
-        command_id = f"cmd_{uuid.uuid4().hex[:12]}"
         # Pod blokadą zegara: tick w trakcie przesuwa urządzeniom czas na kolejny kwadrans, więc komenda „teraz”
         # wysłana w jego trakcie zaczęłaby się kwadrans później, a decyzja „teraz czy później” opierałaby się na
         # czasie, który zaraz się zmieni.
         async with self._clock_lock:
-            if command.start_at is not None and command.start_at < self.clock.sim_time:
-                raise HubError(422, "start_at_in_past", "start_at jest wcześniejszy niż czas symulacji")
-            if command.start_at is not None and command.start_at > self.clock.sim_time:
-                if command.command == "start_program":
-                    self._require_program(device, command.program_id)
-                self._scheduled.append(ScheduledCommand(device_id, command_id, command))
-                status = None
-            else:
-                status = await self._forward(device, *self._command_request(command, command_id))
+            device, command_id, scheduled = self._accept(device_id, command)
+            status = None if scheduled else await self._forward(device, *self._command_request(command, command_id))
         if status is None:
             status = await self._read_status(device)
-            result = "scheduled"
-        else:
-            result = "accepted"
+        result = "scheduled" if scheduled else "accepted"
         return {"command_id": command_id, "device_id": device_id, "status": result, "state": status["state"]}
+
+    async def send_commands(self, commands: list[BatchCommand]) -> list[dict]:
+        """Wiele komend pod jedną blokadą zegara, z wynikiem dla każdej w kolejności żądania.
+
+        Cała partia widzi ten sam czas symulacji, więc np. plan doby nie rozjedzie się z tickiem w połowie
+        wysyłki. Odrzucenie jednej komendy nie zatrzymuje pozostałych. Komendy „teraz” idą do urządzeń
+        równolegle, ale komendy jednego urządzenia po kolei, w kolejności z żądania.
+        """
+        results: list[dict] = []
+        now_by_device: dict[str, list[tuple[int, str, DeviceCommand]]] = defaultdict(list)
+        async with self._clock_lock:
+            for index, item in enumerate(commands):
+                try:
+                    _, command_id, scheduled = self._accept(item.device_id, item)
+                except HubError as error:
+                    results.append(self._rejected(item.device_id, error))
+                    continue
+                results.append({"device_id": item.device_id, "command_id": command_id, "status": "scheduled"})
+                if not scheduled:
+                    now_by_device[item.device_id].append((index, command_id, item))
+            await asyncio.gather(*(
+                self._forward_in_order(self.devices[device_id], queue, results)
+                for device_id, queue in now_by_device.items()
+            ))
+        return results
+
+    def _accept(self, device_id: str, command: DeviceCommand) -> tuple[ManagedDevice, str, bool]:
+        """Sprawdza komendę i planuje ją, gdy ma start w przyszłości. Wywoływać pod blokadą zegara.
+
+        Zwraca urządzenie, command_id i to, czy komenda czeka na `start_at` (inaczej trzeba ją wysłać teraz).
+        """
+        device = self.devices.get(device_id)
+        if device is None:
+            raise HubError(404, "device_not_found", f"Nie ma urządzenia {device_id!r} w rejestrze")
+        if command.start_at is not None and command.start_at < self.clock.sim_time:
+            raise HubError(422, "start_at_in_past", "start_at jest wcześniejszy niż czas symulacji")
+        command_id = f"cmd_{uuid.uuid4().hex[:12]}"
+        if command.start_at is None or command.start_at == self.clock.sim_time:
+            return device, command_id, False
+        if command.command == "start_program":
+            self._require_program(device, command.program_id)
+        self._scheduled.append(ScheduledCommand(device_id, command_id, command))
+        return device, command_id, True
+
+    async def _forward_in_order(
+        self, device: ManagedDevice, queue: list[tuple[int, str, DeviceCommand]], results: list[dict],
+    ) -> None:
+        for index, command_id, command in queue:
+            try:
+                await self._forward(device, *self._command_request(command, command_id))
+            except HubError as error:
+                results[index] = self._rejected(device.config.device_id, error)
+            else:
+                results[index]["status"] = "accepted"
+
+    @staticmethod
+    def _rejected(device_id: str, error: HubError) -> dict:
+        return {"device_id": device_id, "status": "rejected", "code": error.code, "detail": error.detail}
 
     async def update_clock(self, update: ClockUpdate) -> dict:
         async with self._clock_lock:
             # Ponowiony PUT z tym samym czasem niczego nie zmienia, a HubClient ponawia PUT-y.
             # `restart` wymusza nową symulację: backend przed odtworzeniem doby potrzebuje pustej kolejki.
-            if update.sim_time is not None and (update.restart or not self.clock.is_at(update.sim_time)):
+            new_simulation = update.sim_time is not None and (update.restart or not self.clock.is_at(update.sim_time))
+            # Sprawdzone przed zmianami: odrzucone żądanie nie może już zresetować urządzeń.
+            sim_time = update.sim_time if new_simulation else self.clock.sim_time
+            if update.stop_at is not None and update.stop_at <= sim_time:
+                raise HubError(422, "stop_at_in_past", "stop_at musi być późniejszy niż czas symulacji")
+            if new_simulation:
                 if self.clock.running:
                     raise HubError(409, "clock_running", "Czas można ustawić tylko przy zatrzymanym zegarze")
                 await self._start_new_simulation(update.sim_time)
+            if "stop_at" in update.model_fields_set:
+                self.clock.set_stop_at(update.stop_at)
             self.clock.configure(update.running, update.speed)
             return self.clock.state()
 

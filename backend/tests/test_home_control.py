@@ -54,6 +54,22 @@ class FakeHub:
         self.command_replies: dict[str, httpx.Response] = {}
         self.commands_down = False
         self.log: list[str] = []
+        # Partie POST /home/commands: każda to lista komend z device_id.
+        self.batches: list[list[dict]] = []
+        # Zegar ze stanem (`use_clock_state`): PUT zmienia go jak hub, a nowa doba daje nowe simulation_id.
+        self.clock_state: dict | None = None
+
+    def use_clock_state(self) -> None:
+        self.clock_state = dict(CLOCK)
+
+    def _update_clock_state(self, body: dict) -> dict:
+        clock = self.clock_state
+        if "sim_time" in body and (body.get("restart") or body["sim_time"] != clock["sim_time"]):
+            clock["sim_time"] = body["sim_time"]
+            clock["simulation_id"] = f"sim_{len(self.clock_updates)}"
+            clock["stop_at"] = None
+        clock.update({key: body[key] for key in ("running", "speed", "stop_at") if key in body})
+        return clock
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.headers.get(API_KEY_HEADER) != API_KEY:
@@ -71,18 +87,22 @@ class FakeHub:
         if (method, path) == ("GET", "/home/devices"):
             return httpx.Response(200, json={"sim_time": CLOCK["sim_time"], "devices": self.devices})
         if (method, path) == ("GET", "/home/clock"):
-            return httpx.Response(200, json=CLOCK)
+            return httpx.Response(200, json=self.clock_state or CLOCK)
         if self.reply is not None:
             return self.reply
         if (method, path) == ("PUT", "/home/clock"):
             body = json.loads(request.content)
             self.clock_updates.append(body)
             self.log.append(f"clock {sorted(body)}")
+            if self.clock_state is not None:
+                return httpx.Response(200, json=self._update_clock_state(body))
             return httpx.Response(200, json={**CLOCK, **body})
         assert method == "POST" and path.endswith("/commands"), (method, path)
-        device_id = path.split("/")[3]
         if self.commands_down:
             return _hub_error(503, "internal_error", "Hub przeciążony")
+        if path == "/home/commands":
+            return self._batch(json.loads(request.content)["commands"])
+        device_id = path.split("/")[3]
         if device_id in self.command_replies:
             return self.command_replies[device_id]
         body = json.loads(request.content)
@@ -91,6 +111,22 @@ class FakeHub:
         return httpx.Response(202, json={
             "command_id": "cmd_1", "device_id": device_id, "status": "accepted", "state": "running",
         })
+
+    def _batch(self, commands: list[dict]) -> httpx.Response:
+        """POST /home/commands: `command_replies` odrzucają komendy swojego urządzenia, reszta czeka na start_at."""
+        self.batches.append(commands)
+        self.log.append(f"commands {[body['command'] + ' ' + body['device_id'] for body in commands]}")
+        results = []
+        for index, body in enumerate(commands):
+            device_id = body["device_id"]
+            reply = self.command_replies.get(device_id)
+            if reply is not None:
+                error = reply.json()
+                results.append({"device_id": device_id, "status": "rejected", **error})
+                continue
+            self.commands.append((device_id, {key: value for key, value in body.items() if key != "device_id"}))
+            results.append({"device_id": device_id, "command_id": f"cmd_{index}", "status": "scheduled"})
+        return httpx.Response(200, json={"results": results})
 
 
 @pytest.fixture
@@ -257,7 +293,9 @@ def test_start_and_speed_are_forwarded_to_hub(home):
     response = _clock(home.owner, {"running": True, "speed": 1440})
 
     assert response.status_code == 200
-    assert response.json() == {"sim_time": CLOCK["sim_time"], "running": True, "speed": 1440.0, "replay": None}
+    assert response.json() == {
+        "sim_time": CLOCK["sim_time"], "running": True, "speed": 1440.0, "stop_at": None, "replay": None,
+    }
     assert home.hub.clock_updates == [{"running": True, "speed": 1440.0}]
 
 
@@ -356,7 +394,25 @@ def test_replay_is_planned_after_new_day_and_before_clock_starts(home):
 
     _clock(home.owner, {"day": "2026-10-05", "running": True, "speed": 1440})
 
-    assert home.hub.log == ["clock ['restart', 'sim_time']", "run_profile dev_lamp_01", "clock ['running', 'speed']"]
+    assert home.hub.log == [
+        "clock ['restart', 'sim_time']", "commands ['run_profile dev_lamp_01']", "clock ['running', 'speed']",
+    ]
+
+
+def test_whole_day_is_replayed_with_one_request_to_hub(home):
+    period = {"start": "2026-10-05T00:00:00+02:00", "end": "2026-10-06T00:00:00+02:00"}
+    actions = [
+        {"action_id": f"act_{hour}", "device_id": "dev_lamp_01", "action_start": f"2026-10-05T{hour:02d}:00:00+02:00",
+         "action_end": f"2026-10-05T{hour:02d}:30:00+02:00", "energy_kwh": 0.03}
+        for hour in range(6, 22, 2)
+    ]
+    _upload(home.owner, _file(period, [LAMP["device"]], actions))
+
+    replay = _clock(home.owner, {"day": "2026-10-05"}).json()["replay"]
+
+    assert replay["actions"] == len(actions) == 8
+    batch, = home.hub.batches
+    assert [body["ref"] for body in batch] == [action["action_id"] for action in actions]
 
 
 def test_replayed_day_has_energy_of_file_for_fixed_devices(home):

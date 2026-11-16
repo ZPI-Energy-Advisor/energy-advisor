@@ -161,3 +161,12 @@ export const durationLabel = (minutes) => {
   if (!hours) return `${rest} min`;
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
 };
+
+/**
+ * Urządzenia widoczne w trakcie przebiegu planu: z planu i spoza niego odtwarzane z historii (pompa, bojler).
+ * null, gdy przebieg nie trwa w bieżącej symulacji domu: wtedy lista pokazuje cały dom.
+ */
+export const planRunDeviceIds = (run, simulationId) => {
+  if (!run || run.status !== "running" || run.simulation_id !== simulationId) return null;
+  return new Set([...run.devices.map((device) => device.device_id), ...run.replayed_devices]);
+};

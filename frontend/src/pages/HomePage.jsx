@@ -4,11 +4,13 @@ import apiClient from "../api/client";
 import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
+import PlanRunCard from "../components/home/PlanRunCard";
 import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
+import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
-import { replaySummary } from "../utils/home";
+import { planRunDeviceIds, replaySummary } from "../utils/home";
 
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
@@ -19,6 +21,7 @@ function HomeLive() {
   const { state, error, isLoading, refresh } = useHomeState();
   const [actionError, setActionError] = useState(null);
   const [replayNotice, setReplayNotice] = useState(null);
+  const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
   // Zwraca treść odpowiedzi albo null przy błędzie.
@@ -51,7 +54,18 @@ function HomeLive() {
     return data !== null;
   };
 
+  const endPlanRun = async (run) => {
+    const data = await perform(
+      () => apiClient.post(`/home/plan-runs/${run.id}/end`),
+      (err) => getApiErrorMessage(err, "Nie udało się zakończyć przebiegu planu."),
+    );
+    if (data) planRun.replace(data);
+  };
+
   const hubDown = state?.hub_available === false;
+  // W trakcie przebiegu planu lista pokazuje tylko jego urządzenia: reszta domu w nim nie pracuje.
+  const planDevices = planRunDeviceIds(planRun.run, state?.simulation_id);
+  const devices = planDevices ? state.devices.filter((device) => planDevices.has(device.device_id)) : state?.devices;
 
   return (
     <>
@@ -92,8 +106,19 @@ function HomeLive() {
       {state && (
         <>
           <SimulationClock clock={state.clock} disabled={hubDown} onUpdate={updateClock} />
+          {planRun.run && <PlanRunCard run={planRun.run} disabled={hubDown} onEnd={endPlanRun} />}
+          {planRun.error && (
+            <p className={ERROR_NOTICE} role="alert">
+              {planRun.error}
+            </p>
+          )}
           <HomeSummary power={state.power} today={state.today} />
-          {!hubDown && <HomeDeviceList devices={state.devices} onCommand={sendCommand} />}
+          {!hubDown && planDevices && (
+            <p className="text-sm text-gray-600" role="status">
+              Trwa plan dnia, więc widać tylko urządzenia, które w nim pracują. Po zakończeniu planu wróci cały dom.
+            </p>
+          )}
+          {!hubDown && <HomeDeviceList devices={devices} onCommand={sendCommand} />}
         </>
       )}
     </>

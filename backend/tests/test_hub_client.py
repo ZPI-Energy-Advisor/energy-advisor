@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.clients.hub_client import (
     API_KEY_HEADER,
+    BATCH_TIMEOUT_SECONDS,
     REGISTRY_TIMEOUT_SECONDS,
     HubAuthError,
     HubClient,
@@ -17,7 +18,15 @@ from app.clients.hub_client import (
 )
 from app import config
 from app.core import smart_home_factory
-from app.schemas.smart_home import CommandType, DeviceCommand, DeviceState, HubDevice
+from app.schemas.smart_home import (
+    MAX_BATCH_COMMANDS,
+    CommandType,
+    DeviceCommand,
+    DeviceState,
+    HubCommand,
+    HubCommandStatus,
+    HubDevice,
+)
 import main
 
 
@@ -193,6 +202,83 @@ def test_on_command_sends_only_command():
     _client(handler).send_command("dev_tv_01", DeviceCommand(command=CommandType.ON))
 
     assert json.loads(requests[0].content) == {"command": "on"}
+
+
+def _batch() -> list[HubCommand]:
+    return [
+        HubCommand(device_id="dev_wm_01", command=CommandType.START_PROGRAM, program_id="cotton_60",
+                   start_at=datetime(2026, 10, 19, 13, 0, tzinfo=WARSAW)),
+        HubCommand(device_id="dev_ev_01", command=CommandType.RUN_PROFILE, profile_kwh=[0.9, 0.0, 0.9]),
+    ]
+
+
+def test_send_commands_posts_one_batch_and_returns_result_per_command():
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append((request.method, request.url.path, json.loads(request.content), request.extensions["timeout"]["read"]))
+        return httpx.Response(200, json={"results": [
+            {"device_id": "dev_wm_01", "command_id": "cmd_1", "status": "scheduled"},
+            {"device_id": "dev_ev_01", "status": "rejected", "code": "device_not_found", "detail": "Brak"},
+        ]})
+
+    scheduled, rejected = _client(handler).send_commands(_batch())
+
+    (method, path, body, timeout), = seen
+    assert (method, path, timeout) == ("POST", "/home/commands", BATCH_TIMEOUT_SECONDS)
+    assert body == {"commands": [
+        {"device_id": "dev_wm_01", "command": "start_program", "program_id": "cotton_60",
+         "start_at": "2026-10-19T13:00:00+02:00"},
+        {"device_id": "dev_ev_01", "command": "run_profile", "profile_kwh": [0.9, 0.0, 0.9]},
+    ]}
+    assert (scheduled.status, scheduled.command_id) == (HubCommandStatus.SCHEDULED, "cmd_1")
+    assert (rejected.status, rejected.code, rejected.command_id) == (HubCommandStatus.REJECTED, "device_not_found", None)
+
+
+def test_send_commands_requires_result_for_every_command():
+    def handler(request: httpx.Request):
+        return httpx.Response(200, json={"results": [{"device_id": "dev_wm_01", "status": "accepted"}]})
+
+    with pytest.raises(HubError, match="1 wyników dla 2 komend"):
+        _client(handler).send_commands(_batch())
+
+
+def test_send_commands_timeout_is_not_retryable():
+    def handler(request: httpx.Request):
+        raise httpx.ReadTimeout("timeout", request=request)
+
+    with pytest.raises(HubUnavailableError) as exc_info:
+        _client(handler).send_commands(_batch())
+    assert exc_info.value.retryable is False
+
+
+@pytest.mark.parametrize("count", [0, MAX_BATCH_COMMANDS + 1])
+def test_send_commands_refuses_batch_outside_contract_limits(count):
+    def handler(request: httpx.Request):
+        raise AssertionError("Partia spoza limitów nie może trafić do huba")
+
+    command = HubCommand(device_id="dev_lt_01", command=CommandType.ON)
+    with pytest.raises(ValueError):
+        _client(handler).send_commands([command] * count)
+
+
+@pytest.mark.parametrize(("kwargs", "body"), [
+    ({"running": True, "stop_at": datetime(2026, 10, 20, 6, 0, tzinfo=WARSAW)},
+     {"running": True, "stop_at": "2026-10-20T06:00:00+02:00"}),
+    ({"running": False, "clear_stop_at": True}, {"running": False, "stop_at": None}),
+])
+def test_update_clock_sets_and_clears_stop_at(kwargs, body):
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"sim_time": "2026-10-19T12:00:00+02:00", "running": False, "speed": 288.0,
+                                         "stop_at": body["stop_at"]})
+
+    clock = _client(handler).update_clock(**kwargs)
+
+    assert sent == [body]
+    assert clock.stop_at == (datetime.fromisoformat(body["stop_at"]) if body["stop_at"] else None)
 
 
 def test_update_clock_sends_only_given_fields():

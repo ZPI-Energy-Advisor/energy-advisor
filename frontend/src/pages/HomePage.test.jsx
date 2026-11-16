@@ -59,10 +59,51 @@ const STATE = {
   },
 };
 
-const mockApi = ({ connection = CONNECTED, states = [STATE] } = {}) => {
+const PLAN_RUN = {
+  id: "run-1",
+  plan_id: "plan-1",
+  plan_date: "2026-10-19",
+  status: "running",
+  simulation_id: "sim_1",
+  started_at: "2026-11-15T10:00:00Z",
+  ended_at: null,
+  sim_time: "2026-10-19T12:00:00+02:00",
+  horizon_start: "2026-10-19T00:00:00+02:00",
+  horizon_end: "2026-10-20T06:00:00+02:00",
+  history_day: "2026-10-12",
+  replay: { actions: 2, devices: 1, skipped_devices: [], rejected_actions: 0 },
+  replayed_devices: ["dev_hp_01"],
+  planned_kwh: 6.4,
+  actual_kwh: 0.6,
+  devices: [
+    {
+      device_id: "dev_wm_01", device_name: "Pralka Bosch", kind: "program", planned_kwh: 1.4, actual_kwh: 0.6,
+      actions: [{
+        action_id: "dev_wm_01", device_id: "dev_wm_01", device_name: "Pralka Bosch", kind: "program",
+        label: "Bawełna 60°C", start: "2026-10-19T11:45:00+02:00", end: "2026-10-19T12:30:00+02:00",
+        energy_kwh: 1.4, status: "scheduled", code: null, detail: null,
+      }],
+    },
+    {
+      device_id: "dev_ev_01", device_name: "Ładowarka EV", kind: "ev", planned_kwh: 5, actual_kwh: 0,
+      actions: [{
+        action_id: "dev_ev_01", device_id: "dev_ev_01", device_name: "Ładowarka EV", kind: "ev", label: "5 kWh",
+        start: "2026-10-19T22:00:00+02:00", end: "2026-10-20T03:00:00+02:00", energy_kwh: 5,
+        status: "rejected", code: "device_not_found", detail: "Nie ma urządzenia w rejestrze",
+      }],
+    },
+  ],
+  errors: [{
+    device_id: "dev_lamp_01", device_name: "Lampa salon", sim_time: "2026-10-19T08:15:00+02:00",
+    code: "device_unreachable", message: "Brak odpowiedzi urządzenia",
+  }],
+};
+
+const mockApi = ({ connection = CONNECTED, states = [STATE], planRun = null } = {}) => {
   let calls = 0;
   return vi.spyOn(apiClient, "get").mockImplementation((url) => {
     if (url === "/home") return Promise.resolve({ data: connection });
+    if (url === "/home/plan-runs/latest") return Promise.resolve({ data: planRun });
     if (url === "/home/state") {
       const next = states[Math.min(calls, states.length - 1)];
       calls += 1;
@@ -262,6 +303,78 @@ describe("HomePage", () => {
     expect(screen.getByText("6,42 kWh")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Urządzenia" })).toBeNull();
     expect(screen.getByRole("button", { name: "Start" }).disabled).toBe(true);
+  });
+
+  it("pokazuje, o której zegar sam stanie na końcu planu", async () => {
+    mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, running: true, stop_at: "2026-10-20T06:00:00+02:00" } }] });
+    renderPage();
+
+    expect(await screen.findByText("Zegar sam stanie o 06:00, na końcu planu dnia.")).toBeTruthy();
+  });
+
+  it("bez przebiegu planu nie pokazuje jego karty", async () => {
+    mockApi();
+    renderPage();
+
+    expect(await screen.findByTestId("sim-time")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Przebieg planu" })).toBeNull();
+  });
+
+  it("pokazuje przebieg planu: energię z planu i symulacji, odrzucone komendy i awarie", async () => {
+    mockApi({ planRun: PLAN_RUN });
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(within(card).getByText("Plan w trakcie")).toBeTruthy();
+    expect(card.textContent).toContain("Urządzenia z planu zużyły 0,60 kWh z 6,40 kWh według planu.");
+    const washer = within(card).getByRole("listitem", { name: "Pralka Bosch" });
+    expect(washer.textContent).toContain("0,60 kWh / 1,40 kWh");
+    expect(washer.textContent).toContain("Bawełna 60°C: Zaplanowane na 11:45–12:30");
+    const ev = within(card).getByRole("listitem", { name: "Ładowarka EV" });
+    expect(ev.textContent).toContain("Odrzucone: Nie ma urządzenia w rejestrze");
+    expect(within(card).getByRole("alert").textContent).toContain("08:15 Lampa salon: Brak odpowiedzi urządzenia");
+    expect(card.textContent).toContain(
+      "Pompa ciepła i bojler spoza planu pracują same, tak jak w poniedziałek, 12 października 2026 (2 akcje z historii).",
+    );
+  });
+
+  it("w trakcie przebiegu planu pokazuje tylko urządzenia, które w nim pracują", async () => {
+    const heatPump = { ...LAMP, device_id: "dev_hp_01", device_name: "Pompa ciepła", device_category: "Ogrzewanie" };
+    mockApi({ states: [{ ...STATE, devices: [LAMP, WASHER, heatPump] }], planRun: PLAN_RUN });
+    renderPage();
+
+    await screen.findByRole("region", { name: "Przebieg planu" });
+    const list = await screen.findByRole("region", { name: "Urządzenia" });
+    expect(within(list).getByRole("listitem", { name: "Pralka Bosch" })).toBeTruthy();
+    expect(within(list).getByRole("listitem", { name: "Pompa ciepła" })).toBeTruthy();
+    expect(within(list).queryByRole("listitem", { name: "Lampa salon" })).toBeNull();
+    expect(screen.getByText(/widać tylko urządzenia, które w nim pracują/)).toBeTruthy();
+  });
+
+  it("po zakończonym planie albo przy innej symulacji pokazuje cały dom", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "ended" } });
+    renderPage();
+
+    expect(await deviceRow("Lampa salon")).toBeTruthy();
+    expect(screen.queryByText(/widać tylko urządzenia, które w nim pracują/)).toBeNull();
+  });
+
+  it("„Zakończ” zamyka przebieg planu i odświeża stan domu", async () => {
+    const get = mockApi({ planRun: PLAN_RUN });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({
+      data: { ...PLAN_RUN, status: "ended", ended_at: "2026-11-15T10:05:00Z" },
+    });
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Przebieg planu" });
+    const stateCalls = get.mock.calls.filter(([url]) => url === "/home/state").length;
+    fireEvent.click(within(card).getByRole("button", { name: "Zakończ" }));
+
+    expect(await within(card).findByText("Zakończony")).toBeTruthy();
+    expect(post).toHaveBeenCalledWith("/home/plan-runs/run-1/end");
+    expect(within(card).queryByRole("button", { name: "Zakończ" })).toBeNull();
+    await waitFor(() =>
+      expect(get.mock.calls.filter(([url]) => url === "/home/state").length).toBeGreaterThan(stateCalls));
   });
 
   it("pokazuje błąd pobrania stanu i pozwala ponowić", async () => {
