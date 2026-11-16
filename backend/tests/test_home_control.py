@@ -24,14 +24,13 @@ from app.services.home_control_service import (
     DEVICE_UNREACHABLE_MESSAGE,
     HUB_UNAVAILABLE_MESSAGE,
     INVALID_RESPONSE_MESSAGE,
-    REPLAY_FAILED_MESSAGE,
     UNCONFIRMED_COMMAND_MESSAGE,
     HomeControlService,
 )
 from app.services.home_service import AUTH_MESSAGE, DISABLED_MESSAGE, NOT_CONNECTED_MESSAGE
 from main import app
 from test_energy_files import _create_user, _flat_tariff_repository, _headers, client
-from test_home import HEAT_PUMP, LAMP, WASHER, _devices_file, _reset_home, _upload, db  # noqa: F401 (db: fixture)
+from test_home import LAMP, WASHER, _devices_file, _reset_home, _upload, db  # noqa: F401 (db: fixture)
 from test_home_events import FlatPrices, _device
 
 
@@ -50,10 +49,6 @@ class FakeHub:
         self.reply: httpx.Response | None = None
         self.down = False
         self.timeout = False
-        # Odpowiedzi tylko dla komend urządzeń (device_id -> odpowiedź) i kolejność zmian w hubie.
-        self.command_replies: dict[str, httpx.Response] = {}
-        self.commands_down = False
-        self.log: list[str] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.headers.get(API_KEY_HEADER) != API_KEY:
@@ -77,17 +72,10 @@ class FakeHub:
         if (method, path) == ("PUT", "/home/clock"):
             body = json.loads(request.content)
             self.clock_updates.append(body)
-            self.log.append(f"clock {sorted(body)}")
             return httpx.Response(200, json={**CLOCK, **body})
         assert method == "POST" and path.endswith("/commands"), (method, path)
         device_id = path.split("/")[3]
-        if self.commands_down:
-            return _hub_error(503, "internal_error", "Hub przeciążony")
-        if device_id in self.command_replies:
-            return self.command_replies[device_id]
-        body = json.loads(request.content)
-        self.commands.append((device_id, body))
-        self.log.append(f"{body['command']} {device_id}")
+        self.commands.append((device_id, json.loads(request.content)))
         return httpx.Response(202, json={
             "command_id": "cmd_1", "device_id": device_id, "status": "accepted", "state": "running",
         })
@@ -257,7 +245,7 @@ def test_start_and_speed_are_forwarded_to_hub(home):
     response = _clock(home.owner, {"running": True, "speed": 1440})
 
     assert response.status_code == 200
-    assert response.json() == {"sim_time": CLOCK["sim_time"], "running": True, "speed": 1440.0, "replay": None}
+    assert response.json() == {"sim_time": CLOCK["sim_time"], "running": True, "speed": 1440.0}
     assert home.hub.clock_updates == [{"running": True, "speed": 1440.0}]
 
 
@@ -326,116 +314,29 @@ def test_state_describes_devices_with_registry_data(home):
     assert (unknown["device_category"], unknown["flexibility_mode"], unknown["programs"]) == (None, None, [])
 
 
-# Odtworzenie doby z historii (ZP-96)
+# Przebieg z własnym profilem (ZP-96)
 
 
-def _file(period: dict, devices: list[dict], actions: list[dict]) -> bytes:
-    return json.dumps({"period": period, "devices": devices, "energy_usage": actions}).encode()
+def test_run_profile_is_forwarded_to_hub_with_start(home):
+    body = {"command": "run_profile", "profile_kwh": [0.5, 0.5, 0.25], "ref": "plan_1",
+            "start_at": "2026-10-19T04:30:00+02:00"}
+
+    response = _command(home.owner, "dev_bo_01", body)
+
+    assert response.status_code == 202
+    assert home.hub.commands == [("dev_bo_01", body)]
 
 
-def _runs(hub: FakeHub) -> list[tuple[str, dict]]:
-    return [(device_id, body) for device_id, body in hub.commands if body["command"] == "run_profile"]
-
-
-def test_setting_day_replays_fixed_actions_from_history(home):
-    assert _upload(home.owner, _devices_file(WASHER, LAMP, HEAT_PUMP)).status_code == 200
-
-    response = _clock(home.owner, {"day": "2026-10-05"})
-
-    assert response.status_code == 200
-    assert response.json()["replay"] == {"actions": 1, "devices": 1, "skipped_devices": [], "rejected_actions": 0}
-    (device_id, run), = _runs(home.hub)  # Pralka i pompa ciepła są przesuwalne: nimi steruje optymalizacja.
-    assert device_id == "dev_lamp_01"
-    assert (run["ref"], run["start_at"]) == ("act_lamp_1", "2026-10-05T18:00:00+02:00")
-    assert len(run["profile_kwh"]) == 4
-    assert sum(run["profile_kwh"]) == pytest.approx(0.08)  # Energia akcji z pliku.
-
-
-def test_replay_is_planned_after_new_day_and_before_clock_starts(home):
-    _upload(home.owner, _devices_file(LAMP))
-
+def test_day_with_start_goes_to_hub_in_one_request_with_restart(home):
     _clock(home.owner, {"day": "2026-10-05", "running": True, "speed": 1440})
 
-    assert home.hub.log == ["clock ['restart', 'sim_time']", "run_profile dev_lamp_01", "clock ['running', 'speed']"]
-
-
-def test_replayed_day_has_energy_of_file_for_fixed_devices(home):
-    # Akcje na granicy dób: lampa 23:00-1:00, lodówka przez całą dobę i PV w dzień.
-    period = {"start": "2026-10-05T00:00:00+02:00", "end": "2026-10-07T00:00:00+02:00"}
-    devices = [
-        {**LAMP["device"]},
-        {"device_id": "dev_fr_01", "device_name": "Lodówka", "device_type": "fridge", "device_category": "AGD",
-         "max_power_kw": 0.15, "flexibility": {"mode": "fixed"}},
-        {"device_id": "dev_pv_01", "device_name": "PV", "device_type": "pv_inverter", "device_category": "OZE",
-         "max_power_kw": 5.0, "flexibility": {"mode": "fixed"}},
+    assert home.hub.clock_updates == [
+        {"sim_time": "2026-10-05T00:00:00+02:00", "restart": True, "running": True, "speed": 1440.0},
     ]
-    actions = [
-        {"action_id": "act_1", "device_id": "dev_lamp_01", "action_start": "2026-10-05T23:00:00+02:00",
-         "action_end": "2026-10-06T01:00:00+02:00", "energy_kwh": 0.16},
-        {"action_id": "act_2", "device_id": "dev_fr_01", "action_start": "2026-10-06T00:00:00+02:00",
-         "action_end": "2026-10-07T00:00:00+02:00", "energy_kwh": 0.95},
-        {"action_id": "act_3", "device_id": "dev_pv_01", "action_start": "2026-10-06T10:00:00+02:00",
-         "action_end": "2026-10-06T14:00:00+02:00", "energy_kwh": -6.4},
-    ]
-    assert _upload(home.owner, _file(period, devices, actions)).status_code == 200
-
-    replay = _clock(home.owner, {"day": "2026-10-06"}).json()["replay"]
-
-    runs = {device_id: run for device_id, run in _runs(home.hub)}
-    assert replay == {"actions": 3, "devices": 3, "skipped_devices": [], "rejected_actions": 0}
-    # Lampa z poprzedniej doby: od północy, z drugą połową energii.
-    assert runs["dev_lamp_01"]["start_at"] == "2026-10-06T00:00:00+02:00"
-    assert sum(runs["dev_lamp_01"]["profile_kwh"]) == pytest.approx(0.08)
-    assert (len(runs["dev_fr_01"]["profile_kwh"]), sum(runs["dev_fr_01"]["profile_kwh"])) == (96, pytest.approx(0.95))
-    assert sum(runs["dev_pv_01"]["profile_kwh"]) == pytest.approx(-6.4)
-    assert all(kwh < 0 for kwh in runs["dev_pv_01"]["profile_kwh"])
 
 
-def test_day_without_history_replays_nothing(home):
-    _upload(home.owner, _devices_file(LAMP))
-
-    response = _clock(home.owner, {"day": "2026-11-01"})
-
-    assert response.json()["replay"] == {"actions": 0, "devices": 0, "skipped_devices": [], "rejected_actions": 0}
-    assert _runs(home.hub) == []
-
-
-def test_clock_change_without_day_does_not_replay(home):
-    _upload(home.owner, _devices_file(LAMP))
-
-    response = _clock(home.owner, {"running": True})
-
-    assert response.json()["replay"] is None
-    assert _runs(home.hub) == []
-
-
-def test_device_unknown_to_hub_is_skipped_and_rest_is_replayed(home):
-    _upload(home.owner, _devices_file(LAMP))
-    other = {"device": {**LAMP["device"], "device_id": "dev_lamp_02"},
-             "actions": [{**LAMP["actions"][0], "action_id": "act_lamp_2", "device_id": "dev_lamp_02"}]}
-    _upload(home.owner, _devices_file(other), name="druga.json")
-    home.hub.command_replies["dev_lamp_02"] = _hub_error(404, "device_not_found", "Nie ma urządzenia")
-
-    replay = _clock(home.owner, {"day": "2026-10-05"}).json()["replay"]
-
-    assert replay == {"actions": 1, "devices": 1, "skipped_devices": ["dev_lamp_02"], "rejected_actions": 0}
-    assert [device_id for device_id, _ in _runs(home.hub)] == ["dev_lamp_01"]
-
-
-def test_action_rejected_for_other_reason_is_counted_but_device_is_not_skipped(home):
-    _upload(home.owner, _devices_file(LAMP))
-    home.hub.command_replies["dev_lamp_01"] = _hub_error(409, "invalid_state", "Trwa program urządzenia")
-
-    replay = _clock(home.owner, {"day": "2026-10-05"}).json()["replay"]
-
-    # Hub zna urządzenie, więc ponowne podłączenie domu nic by nie dało.
-    assert replay == {"actions": 0, "devices": 0, "skipped_devices": [], "rejected_actions": 1}
-
-
-def test_setting_same_day_again_restarts_simulation_before_replay(home):
-    # Hub bez `restart` nie resetuje przy tym samym sim_time, więc druga doba zdublowałaby akcje w kolejce.
-    _upload(home.owner, _devices_file(LAMP))
-
+def test_setting_same_day_again_restarts_simulation(home):
+    # Hub bez `restart` nie resetuje przy tym samym sim_time: urządzenia i zaplanowane komendy by zostały.
     _clock(home.owner, {"day": "2026-10-05"})
     _clock(home.owner, {"day": "2026-10-05"})
 
@@ -443,19 +344,9 @@ def test_setting_same_day_again_restarts_simulation_before_replay(home):
     assert home.hub.clock_updates == [midnight, midnight]
 
 
-def test_hub_failure_during_replay_asks_to_set_day_again(home):
-    _upload(home.owner, _devices_file(LAMP))
-    home.hub.commands_down = True
-
-    response = _clock(home.owner, {"day": "2026-10-05", "running": True})
-
-    assert (response.status_code, response.json()["detail"]) == (502, REPLAY_FAILED_MESSAGE)
-    assert home.hub.clock_updates == [{"sim_time": "2026-10-05T00:00:00+02:00", "restart": True}]  # Zegar nie ruszył.
-
-
-def test_state_shows_replayed_action(home):
-    run = {"ref": "act_lamp_1", "started_at": "2026-10-05T18:00:00+02:00", "ends_at": "2026-10-05T19:00:00+02:00"}
-    home.hub.devices = [{**_device("dev_lamp_01", state="running", power_kw=0.08), "run": run}]
+def test_state_shows_running_profile(home):
+    run = {"ref": "plan_1", "started_at": "2026-10-05T04:30:00+02:00", "ends_at": "2026-10-05T05:15:00+02:00"}
+    home.hub.devices = [{**_device("dev_bo_01", state="running", power_kw=2.0), "run": run}]
 
     device, = client.get("/api/v1/home/state", headers=_headers(home.owner)).json()["devices"]
 

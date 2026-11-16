@@ -60,7 +60,7 @@ class RegisteredDevice(BaseModel):
 
 
 class HubRun(BaseModel):
-    """Trwający przebieg z własnym profilem: odtwarzana akcja z historii (`ref`)."""
+    """Trwający przebieg z własnym profilem (run_profile), np. akcja planu; `ref` wskazuje tę akcję."""
 
     ref: str | None = None
     started_at: datetime | None = None
@@ -104,7 +104,7 @@ def _finite(profile: list[float]) -> list[float]:
     return profile
 
 
-# Te same reguły co w hubie: 1–MAX_RUN_QUARTERS skończonych liczb i ref z 1–100 znaków (jak source_action_id).
+# Te same reguły co w hubie: 1–MAX_RUN_QUARTERS skończonych liczb i ref z 1–100 znaków.
 RunProfile = Annotated[list[float], Field(min_length=1, max_length=MAX_RUN_QUARTERS), AfterValidator(_finite)]
 ActionRef = Annotated[str, Field(min_length=1, max_length=100)]
 
@@ -112,7 +112,7 @@ ActionRef = Annotated[str, Field(min_length=1, max_length=100)]
 class DeviceCommand(BaseModel):
     command: CommandType
     program_id: str | None = None
-    # run_profile: energia w kolejnych kwadransach (ujemna dla PV) i identyfikator akcji z historii.
+    # run_profile: energia w kolejnych kwadransach (ujemna dla PV) i identyfikator akcji, np. z planu.
     profile_kwh: RunProfile | None = None
     ref: ActionRef | None = None
     start_at: datetime | None = None
@@ -219,22 +219,6 @@ class ReplaySlot:
     ref: str
     slot_start: datetime
     kwh: float
-
-
-class HomeReplay(BaseModel):
-    """Odtworzenie doby: akcje urządzeń fixed z historii wysłane do huba jako run_profile."""
-
-    actions: int
-    devices: int
-    # Urządzenia spoza rejestru huba (device_not_found, np. zaległa wysyłka); ich akcje nie zostaną odtworzone.
-    skipped_devices: list[str] = []
-    # Pojedyncze akcje odrzucone przez hub z innego powodu (np. zajęte urządzenie).
-    rejected_actions: int = 0
-
-
-class HomeClockUpdated(HomeClockState):
-    # Tylko przy ustawieniu doby (`day`).
-    replay: HomeReplay | None = None
 
 
 class HomeClockUpdate(BaseModel):

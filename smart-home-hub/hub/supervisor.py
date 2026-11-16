@@ -171,7 +171,7 @@ class DeviceSupervisor:
     async def update_clock(self, update: ClockUpdate) -> dict:
         async with self._clock_lock:
             # Ponowiony PUT z tym samym czasem niczego nie zmienia, a HubClient ponawia PUT-y.
-            # `restart` wymusza nową symulację: backend przed odtworzeniem doby potrzebuje pustej kolejki.
+            # `restart` wymusza nową symulację: ustawienie doby z backendu zawsze zaczyna od pustej kolejki.
             if update.sim_time is not None and (update.restart or not self.clock.is_at(update.sim_time)):
                 if self.clock.running:
                     raise HubError(409, "clock_running", "Czas można ustawić tylko przy zatrzymanym zegarze")

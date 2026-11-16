@@ -56,7 +56,7 @@ export const deviceStateLabel = (device) => {
   switch (device.state) {
     case "running":
       if (isProducing(device)) return "Produkuje";
-      if (device.run) return "Odtwarza historię";
+      if (device.run) return "Według planu";
       return device.program_id ? "Program w toku" : "Pracuje";
     case "idle":
       return "Gotowe";
@@ -131,29 +131,6 @@ export const formatSimTime = (iso) => timeFormat.format(new Date(iso));
 export const formatSimDate = (iso) => dateFormat.format(new Date(iso));
 /** Doba symulacji jako RRRR-MM-DD w strefie domu (wartość pola daty). */
 export const simDay = (iso) => isoDateFormat.format(new Date(iso));
-
-/** Liczebnik z rzeczownikiem: 1 akcja, 2 akcje, 5 akcji (formy: jeden, kilka, wiele). */
-export const plural = (count, one, few, many) => {
-  if (count === 1) return `1 ${one}`;
-  const lastDigit = count % 10;
-  const lastTwo = count % 100;
-  const isFew = lastDigit >= 2 && lastDigit <= 4 && (lastTwo < 12 || lastTwo > 14);
-  return `${count} ${isFew ? few : many}`;
-};
-
-/** Opis odtworzenia doby z odpowiedzi PUT /home/clock (`replay`). */
-export const replaySummary = (replay) => {
-  if (!replay) return null;
-  const skipped = replay.skipped_devices.length
-    ? ` Pominięte, bo hub ich nie ma: ${replay.skipped_devices.join(", ")}. Podłącz dom ponownie, żeby je wysłać.`
-    : "";
-  if (!replay.actions) {
-    return `Brak historii zużycia urządzeń stałych w tej dobie, więc same się nie włączą.${skipped}`;
-  }
-  const actions = plural(replay.actions, "akcję", "akcje", "akcji");
-  const devices = plural(replay.devices, "urządzenia stałego", "urządzeń stałych", "urządzeń stałych");
-  return `Doba odtworzy z historii ${actions} z ${devices}.${skipped}`;
-};
 
 export const durationLabel = (minutes) => {
   const hours = Math.floor(minutes / 60);

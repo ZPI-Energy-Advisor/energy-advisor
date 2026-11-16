@@ -222,29 +222,6 @@ describe("HomePage", () => {
     await waitFor(() => expect(put).toHaveBeenCalledWith("/home/clock", { day: "2026-10-25" }));
   });
 
-  it("po ustawieniu doby mówi, ile akcji odtworzy z historii", async () => {
-    mockApi();
-    vi.spyOn(apiClient, "put").mockResolvedValue({
-      data: { ...STATE.clock, replay: { actions: 26, devices: 19, skipped_devices: [] } },
-    });
-    renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Zacznij dobę od północy" }));
-
-    expect(await screen.findByText("Doba odtworzy z historii 26 akcji z 19 urządzeń stałych.")).toBeTruthy();
-  });
-
-  it("start zegara nie zmienia opisu odtworzenia doby", async () => {
-    mockApi();
-    vi.spyOn(apiClient, "put").mockResolvedValue({ data: { ...STATE.clock, running: true, replay: null } });
-    renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
-
-    await waitFor(() => expect(apiClient.put).toHaveBeenCalled());
-    expect(screen.queryByText(/odtworzy z historii|Brak historii/)).toBeNull();
-  });
-
   it("przy działającym zegarze nie pozwala zmienić doby", async () => {
     mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, running: true } }] });
     renderPage();

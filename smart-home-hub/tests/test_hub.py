@@ -1095,7 +1095,7 @@ def test_stopping_hub_sends_waiting_events(settings, backend):
     assert [event["type"] for event in backend.events] == ["device_started", "energy_report"]
 
 
-# Odtwarzanie akcji z historii (run_profile)
+# Przebieg z własnym profilem (run_profile)
 
 
 def _run_profile(client: TestClient, profile: list[float], start_at: str | None = None, ref: str = "act_1",
@@ -1122,8 +1122,8 @@ def test_run_profile_now_reaches_device_and_shows_in_status(client):
     }
 
 
-def test_scheduled_runs_replay_history_back_to_back(client):
-    # Dwie sąsiednie akcje lampy z pliku: druga zaczyna się dokładnie, gdy kończy się pierwsza.
+def test_scheduled_runs_follow_each_other_back_to_back(client):
+    # Dwie sąsiednie akcje jednego urządzenia: druga zaczyna się dokładnie, gdy kończy się pierwsza.
     _put(client, [_lamp()])
     _set_clock(client)
     first = _run_profile(client, [0.01, 0.01], start_at="2026-10-19T12:30:00+02:00", ref="act_1")

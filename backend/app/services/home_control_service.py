@@ -6,7 +6,7 @@ urządzenia”) przechodzą bez zmian, a awarie huba i błędna konfiguracja dos
 """
 
 import logging
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time
 
 from fastapi import HTTPException, status
 
@@ -14,16 +14,7 @@ from app.clients.hub_client import HubAuthError, HubClient, HubError, HubUnavail
 from app.models.User import User
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.home_repository import HomeRepository
-from app.schemas.smart_home import (
-    CommandResult,
-    CommandType,
-    DeviceCommand,
-    HomeClockUpdate,
-    HomeClockUpdated,
-    HomeReplay,
-    HubClock,
-)
-from app.services.home_replay import replay_runs
+from app.schemas.smart_home import CommandResult, DeviceCommand, HomeClockState, HomeClockUpdate
 from app.services.home_service import AUTH_MESSAGE, DISABLED_MESSAGE, require_connected
 
 
@@ -35,11 +26,6 @@ DEVICE_UNREACHABLE_MESSAGE = "Urządzenie nie odpowiada. Hub uruchomi je ponowni
 CLOCK_RESET_FAILED_MESSAGE = "Nie wszystkie urządzenia przyjęły nową dobę. Ustaw dobę ponownie."
 UNCONFIRMED_COMMAND_MESSAGE = (
     "Hub nie potwierdził polecenia na czas i mógł je wykonać. Sprawdź stan urządzenia, zanim wyślesz je ponownie."
-)
-# Kod huba dla urządzenia spoza jego rejestru: tylko takie urządzenia trafiają do skipped_devices.
-DEVICE_NOT_FOUND = "device_not_found"
-REPLAY_FAILED_MESSAGE = (
-    "Doba została ustawiona, ale hub nie przyjął całego odtworzenia historii. Ustaw dobę ponownie."
 )
 
 
@@ -84,73 +70,18 @@ class HomeControlService:
             logger.warning("Hub nie wykonał komendy %s dla %s: %s", command.command.value, device_id, error)
             raise hub_http_error(error) from error
 
-    def update_clock(self, owner: User, update: HomeClockUpdate) -> HomeClockUpdated:
-        """Zmienia zegar w kolejności z kontraktu: doba, potem odtworzenie jej historii, na końcu start i tempo.
-
-        Ustawienie doby resetuje urządzenia i kasuje zaplanowane komendy, więc odtworzenie trzeba
-        zaplanować po nim, a przed startem zegara, żeby żadna akcja z historii nie wypadła w przeszłości.
-        """
+    def update_clock(self, owner: User, update: HomeClockUpdate) -> HomeClockState:
         hub_client = self._require_ready(owner)
-        clock, replay = None, None
-        if update.day is not None:
-            # restart: także ta sama doba drugi raz zaczyna od pustej kolejki, więc nic nie odtworzy się podwójnie.
-            clock = self._update_clock(hub_client, sim_time=day_midnight(update.day), restart=True)
-            replay = self._replay_day(hub_client, owner, update.day)
-        if update.running is not None or update.speed is not None:
-            clock = self._update_clock(hub_client, running=update.running, speed=update.speed)
-        return HomeClockUpdated(sim_time=clock.sim_time, running=clock.running, speed=clock.speed, replay=replay)
-
-    @staticmethod
-    def _update_clock(hub_client: HubClient, **changes) -> HubClock:
         try:
-            return hub_client.update_clock(**changes)
+            clock = hub_client.update_clock(
+                sim_time=day_midnight(update.day) if update.day else None,
+                # Ustawienie doby zawsze zaczyna nową symulację, także gdy zegar już stoi na tej północy:
+                # urządzenia wracają do stanu wyłączonego, a zaplanowane komendy znikają.
+                restart=update.day is not None,
+                running=update.running,
+                speed=update.speed,
+            )
         except HubError as error:
             logger.warning("Hub nie zmienił zegara: %s", error)
             raise hub_http_error(error, unreachable_message=CLOCK_RESET_FAILED_MESSAGE) from error
-
-    def _replay_day(self, hub_client: HubClient, owner: User, day: date) -> HomeReplay:
-        """Wysyła do huba akcje urządzeń fixed z doby `day` jako run_profile ze startem akcji.
-
-        Urządzenie spoza rejestru huba (np. przy zaległej wysyłce) jest pomijane, a reszta doby się odtwarza.
-        Inne odrzucenie pojedynczej akcji (np. zajęte urządzenie) liczymy w `rejected_actions`.
-        Awaria huba w trakcie przerywa wysyłkę: ponowne ustawienie doby resetuje urządzenia i zaczyna od nowa,
-        więc nic nie odtworzy się dwa razy.
-        """
-        start = day_midnight(day).astimezone(timezone.utc)
-        end = day_midnight(day + timedelta(days=1)).astimezone(timezone.utc)
-        runs = replay_runs(self.home_repository.fixed_action_slots(owner.id, start, end))
-        replayed, skipped = set(), set()
-        actions = rejected = 0
-        for run in runs:
-            command = DeviceCommand(
-                command=CommandType.RUN_PROFILE,
-                profile_kwh=run.profile_kwh,
-                ref=run.ref,
-                start_at=run.start.astimezone(LOCAL_TIMEZONE),
-            )
-            try:
-                hub_client.send_command(run.device_id, command)
-            except HubError as error:
-                if not _rejected_by_contract(error):
-                    logger.warning("Odtwarzanie doby %s przerwane po %d akcjach: %s", day, actions, error)
-                    if isinstance(error, HubAuthError):
-                        raise hub_http_error(error) from error
-                    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=REPLAY_FAILED_MESSAGE) from error
-                logger.warning("Hub odrzucił akcję %s urządzenia %s: %s", run.ref, run.device_id, error)
-                if error.code == DEVICE_NOT_FOUND:
-                    skipped.add(run.device_id)
-                else:
-                    rejected += 1
-                continue
-            actions += 1
-            replayed.add(run.device_id)
-        return HomeReplay(
-            actions=actions, devices=len(replayed), skipped_devices=sorted(skipped), rejected_actions=rejected,
-        )
-
-
-def _rejected_by_contract(error: HubError) -> bool:
-    """Hub odrzucił samo polecenie (np. device_not_found), a nie zawiódł jako usługa."""
-    if isinstance(error, HubAuthError) or error.status_code is None or not error.code:
-        return False
-    return 400 <= error.status_code < 500
+        return HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed)

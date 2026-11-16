@@ -1,9 +1,12 @@
-"""Odtworzenie doby z historii: akcje urządzeń fixed jako przebiegi run_profile dla huba.
+"""Przebiegi run_profile z historii: kwadranse akcji z pliku zamienione na profile dla huba.
 
-Urządzenia fixed (PV, oświetlenie, lodówka…) nie podlegają optymalizacji, więc symulacja powtarza ich
-akcje z pliku: każda akcja to przebieg z profilem jej kwadransów, zaplanowany na jej start (`start_at`).
-Profil bierzemy z `device_slot_usage`, czyli tego samego rozkładu na kwadranse co wycena i wykresy,
-dzięki czemu energia odtworzonej doby jest równa energii z pliku.
+Każda akcja to przebieg z profilem jej kwadransów, zaplanowany na jej start (`start_at`). Profil bierzemy
+z `device_slot_usage`, czyli tego samego rozkładu na kwadranse co wycena i wykresy, więc energia przebiegów
+jest równa energii z pliku.
+
+Urządzeniami stałymi w symulacji steruje użytkownik, a z historii idzie tylko produkcja PV: z dnia
+referencyjnego na dobę planu przy wykonaniu planu (ZP-113). Przy ustawieniu doby na zegarze niczego
+nie odtwarzamy.
 """
 
 from collections import defaultdict
