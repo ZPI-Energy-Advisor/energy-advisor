@@ -3,14 +3,13 @@
 Cena kwadransa to wszystko, co na rachunku zależy od zużytej kWh: energia (cena strefy albo cena rynkowa z marżą przy
 umowie z ceną dynamiczną), akcyza, dystrybucja zmienna strefy, opłaty jakościowa, OZE i kogeneracyjna, z VAT.
 Opłaty miesięczne (stała, abonament, mocowa, handlowa) pomijamy, bo przesunięcie urządzenia ich nie zmienia.
-Ceny energii liczą te same funkcje co silnik taryf (`zone_energy_price`, `dynamic_energy_price`).
+Ceny kwadransów liczy wspólna funkcja `quarter_prices`, tak jak energię i dystrybucję w silniku taryf.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -20,8 +19,7 @@ from app.parsers.devices import LOCAL_TIMEZONE
 from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import PVBalancingEngine
-from app.services.tariff_engine import decimal, dynamic_energy_price, zone_energy_price
-from app.services.tariff_zones import ZoneSchedule, covers
+from app.services.quarter_prices import quarter_prices
 
 SLOT = timedelta(minutes=15)
 
@@ -70,17 +68,20 @@ class SchedulePriceService:
                 detail=f"Brak stawek taryfy {label} u operatora {operator.value} dla wybranego okresu.",
             )
         periods = self.tariff_repository.list_regulatory_periods(date_from=first_day, date_to=last_day)
-        schedule = ZoneSchedule(definitions)
+        if dynamic:
+            preload = getattr(self.market_prices, "preload_rce", None)
+            if preload is not None:
+                preload(start_utc, end_utc)
+        quarters = quarter_prices(
+            definitions, periods, start_utc, end_utc,
+            market_price=self.market_prices.rce if dynamic else None, prosumer=prosumer,
+        )
 
         prices: dict[datetime, float] = {}
-        slot = start_utc
-        while slot < end_utc:
-            price = self._price(slot, schedule, periods, dynamic, prosumer)
-            if price is not None and prosumer and (exports or {}).get(slot, 0) > 0:
+        for slot, price in quarters.gross().items():
+            if prosumer and (exports or {}).get(slot, 0) > 0:
                 price = self._surplus_price(slot, price, profile)
-            if price is not None:
-                prices[slot] = price
-            slot += SLOT
+            prices[slot] = price
         name = next((definition.name for definition in definitions if definition.name), None)
         description = f"{operator.value}, {label}" + (f" ({name})" if dynamic and name else "")
         pv_note = None
@@ -122,31 +123,3 @@ class SchedulePriceService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Uzupełnij profil (operator i taryfa), żeby optymalizacja liczyła ceny Twojej taryfy.",
             ) from exc
-
-    def _price(self, slot: datetime, schedule: ZoneSchedule, periods, dynamic: bool, prosumer: bool) -> float | None:
-        local = slot.astimezone(LOCAL_TIMEZONE)
-        day = local.date()
-        definition = schedule.definition_for(day)
-        period = next((item for item in periods if covers(item, day)), None)
-        if definition is None or period is None:
-            return None
-        zone = schedule.zone_index(local.replace(tzinfo=None))
-        energy_rates = {int(rate.zone_index): decimal(rate.energy_price_per_kwh_net_pln) for rate in definition.supplier_ure_rates}
-        network_rates = {int(rate.zone_index): decimal(rate.rate_per_kwh_net_pln) for rate in definition.variable_network_rates}
-        excise = decimal(getattr(period, "excise_per_kwh", 0) or 0)
-        if dynamic:
-            try:
-                market = self.market_prices.rce(slot.astimezone(timezone.utc))
-            except ValueError:
-                return None
-            energy = dynamic_energy_price(definition, market, energy_rates[1], prosumer, excise)
-        else:
-            energy = zone_energy_price(definition, energy_rates[zone], excise)
-        per_kwh_fees = (
-            decimal(period.quality_fee_per_kwh)
-            + decimal(period.renewable_energy_fee_per_kwh)
-            + decimal(period.cogeneration_fee_per_kwh)
-        )
-        net = energy + excise + network_rates[zone] + per_kwh_fees
-        return float(round(net * (Decimal(1) + decimal(period.vat_rate)), 5))
-

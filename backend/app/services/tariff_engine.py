@@ -7,8 +7,23 @@ from typing import Any, Iterable, Sequence
 from dateutil.relativedelta import relativedelta
 
 from app.schemas.calculation import CalculationDetails
-from app.schemas.other import PhaseTypeEnum, TariffTypeEnum
+from app.schemas.other import TariffTypeEnum
+from app.services.quarter_prices import (
+    FeeParameters,
+    TariffRates,
+    decimal,
+    dynamic_energy_price,
+    included_excise,
+    monthly_fees,
+    rates_by_zone,
+    subscription_fee,
+    threshold_fee,
+    trade_fee,
+    zone_energy_price,
+)
 from app.services.tariff_zones import ZoneSchedule
+
+__all__ = ["decimal", "dynamic_energy_price", "included_excise", "zone_energy_price"]
 
 
 CENT = Decimal("0.01")
@@ -40,38 +55,6 @@ def format_day_ranges(days: Iterable[date]) -> str:
         first.isoformat() if first == last else f"{first.isoformat()} – {last.isoformat()}"
         for first, last in ranges
     )
-
-
-def decimal(value: Any) -> Decimal:
-    return Decimal(str(value))
-
-
-def included_excise(definition: Any, excise: Decimal) -> Decimal:
-    """Akcyza zawarta w cenie (marży) sprzedawcy — odejmujemy ją, bo doliczamy ją osobną pozycją."""
-    return excise if getattr(definition, "energy_includes_excise", False) else Decimal("0")
-
-
-def zone_energy_price(definition: Any, energy_rate: Decimal, excise: Decimal) -> Decimal:
-    """Cena energii netto strefy bez akcyzy, ograniczona ceną maksymalną definicji (jeśli jest)."""
-    price = energy_rate - included_excise(definition, excise)
-    cap = getattr(definition, "energy_price_cap_per_kwh", None)
-    return price if cap is None else min(price, decimal(cap))
-
-
-def dynamic_energy_price(definition: Any, market_pln_kwh: Any, margin: Decimal, prosumer: bool, excise: Decimal) -> Decimal:
-    """Cena energii netto kwadransa w ofercie dynamicznej bez akcyzy: cena rynkowa ograniczona do
-    [market_price_floor, market_price_cap] + marża (prosumenta, jeśli oferta ją podaje)."""
-    prosumer_margin = getattr(definition, "prosumer_margin_per_kwh", None)
-    if prosumer and prosumer_margin is not None:
-        margin = decimal(prosumer_margin)
-    market = decimal(market_pln_kwh) * MWH
-    floor = getattr(definition, "market_price_floor_mwh", None)
-    cap = getattr(definition, "market_price_cap_mwh", None)
-    if floor is not None:
-        market = max(market, decimal(floor))
-    if cap is not None:
-        market = min(market, decimal(cap))
-    return market / MWH + margin - included_excise(definition, excise)
 
 
 @dataclass(frozen=True)
@@ -233,7 +216,9 @@ class ZonedTariffCalculationStrategy:
             totals = dict.fromkeys(COMPONENTS, Decimal("0"))
             vat = Decimal("0")
             for segment in segments:
-                parts = self._segment_parts(segment, calculation_details, context, months, days_in_cycle, tariff_type)
+                parts = self._segment_parts(
+                    segment, calculation_details, context, months, days_in_cycle, tariff_type, schedule
+                )
                 vat_rate = decimal(segment.period.vat_rate)
                 vat += sum(parts.values(), Decimal("0")) * vat_rate
                 active_energy_gross += (parts["active_energy_net"] + parts["excise_net"]) * (1 + vat_rate)
@@ -275,55 +260,53 @@ class ZonedTariffCalculationStrategy:
         months: int,
         days_in_cycle: int,
         tariff_type: TariffTypeEnum,
+        schedule: ZoneSchedule,
     ) -> dict[str, Decimal]:
         definition, period = segment.definition, segment.period
-        energy_rates = self._rates_by_zone(definition.supplier_ure_rates, "energy_price_per_kwh_net_pln")
-        network_rates = self._rates_by_zone(definition.variable_network_rates, "rate_per_kwh_net_pln")
+        rates = TariffRates(definition, period)
         zone_energy = segment.zone_energy
         kwh = sum(zone_energy, Decimal("0"))
-        excise = decimal(getattr(period, "excise_per_kwh", 0) or 0)
 
         if tariff_type == TariffTypeEnum.DYNAMIC:
             if segment.records is None:
                 raise ValueError("Taryfa dynamiczna wymaga zużycia z zachowanymi znacznikami czasu.")
-            active = sum(
-                (
-                    decimal(value) * dynamic_energy_price(
-                        definition, self.dynamic_price_resolver(timestamp), energy_rates[1], context.prosumer, excise
-                    )
-                    for timestamp, value in segment.records
-                ),
-                Decimal("0"),
-            )
+            active = Decimal("0")
+            network = Decimal("0")
+            for timestamp, value in segment.records:
+                price = rates.price(
+                    schedule.zone_index(timestamp), self.dynamic_price_resolver(timestamp), context.prosumer
+                )
+                active += decimal(value) * price.energy
+                network += decimal(value) * price.network
         else:
-            active = sum(
-                (energy * zone_energy_price(definition, energy_rates[zone], excise)
-                 for zone, energy in enumerate(zone_energy, start=1)),
-                Decimal("0"),
-            )
+            prices = [rates.price(zone) for zone in range(1, len(zone_energy) + 1)]
+            active = sum((energy * price.energy for energy, price in zip(zone_energy, prices)), Decimal("0"))
+            network = sum((energy * price.network for energy, price in zip(zone_energy, prices)), Decimal("0"))
 
-        fixed_network = (
-            definition.fixed_network_fee_1phase_monthly
-            if calculation_details.tariff_data.phase_type == PhaseTypeEnum.SINGLE_PHASE
-            else definition.fixed_network_fee_3phase_monthly
+        fees = monthly_fees(
+            definition,
+            period,
+            FeeParameters(
+                phase_type=calculation_details.tariff_data.phase_type,
+                billing_cycle_months=months,
+                annual_kwh=context.annual_kwh,
+                prosumer=context.prosumer,
+            ),
         )
         # Część opłat miesięcznych przypadająca na dni odcinka.
         share = Decimal(months) * Decimal(len(segment.days)) / Decimal(days_in_cycle)
         return {
             "active_energy_net": active,
-            "excise_net": kwh * excise,
-            "variable_network_net": sum(
-                (energy * network_rates[zone] for zone, energy in enumerate(zone_energy, start=1)), Decimal("0")
-            ),
-            "quality_net": kwh * decimal(period.quality_fee_per_kwh),
-            "renewable_net": kwh * decimal(period.renewable_energy_fee_per_kwh),
-            "cogeneration_net": kwh * decimal(period.cogeneration_fee_per_kwh),
-            "fixed_network_net": decimal(fixed_network) * share,
-            "subscription_net": self._subscription_fee(definition.subscription_fees, months) * share,
-            "capacity_net": self._threshold_fee(period.capacity_thresholds, context.annual_kwh, "mocowej") * share,
-            "transition_net": self._threshold_fee(period.transition_thresholds, context.annual_kwh, "przejściowej")
-            * share,
-            "trade_fee_net": self._trade_fee(definition, context.prosumer) * share,
+            "excise_net": kwh * rates.excise,
+            "variable_network_net": network,
+            "quality_net": kwh * rates.quality,
+            "renewable_net": kwh * rates.renewable,
+            "cogeneration_net": kwh * rates.cogeneration,
+            "fixed_network_net": fees.fixed_network * share,
+            "subscription_net": fees.subscription * share,
+            "capacity_net": fees.capacity * share,
+            "transition_net": fees.transition * share,
+            "trade_fee_net": fees.trade * share,
         }
 
     @staticmethod
@@ -416,7 +399,7 @@ class ZonedTariffCalculationStrategy:
 
     @staticmethod
     def _rates_by_zone(rates: Iterable[Any], field: str) -> dict[int, Decimal]:
-        return {int(rate.zone_index): decimal(getattr(rate, field)) for rate in rates}
+        return rates_by_zone(rates, field)
 
     @staticmethod
     def _cycles(calculation_details: CalculationDetails) -> Iterable[tuple[datetime, Any]]:
@@ -424,34 +407,15 @@ class ZonedTariffCalculationStrategy:
 
     @staticmethod
     def _subscription_fee(fees: Iterable[Any], months: int) -> Decimal:
-        for fee in fees:
-            if fee.billing_cycle_months == months:
-                return decimal(fee.monthly_fee_net_pln)
-        raise ValueError(f"Brak opłaty abonamentowej dla cyklu {months} miesięcy.")
+        return subscription_fee(fees, months)
 
     @staticmethod
     def _trade_fee(definition: Any, prosumer: bool) -> Decimal:
-        """Miesięczna opłata handlowa sprzedawcy (prosument może mieć własną); brak = brak opłaty."""
-        fee = getattr(definition, "trade_fee_monthly", None)
-        prosumer_fee = getattr(definition, "prosumer_trade_fee_monthly", None)
-        if prosumer and prosumer_fee is not None:
-            fee = prosumer_fee
-        return Decimal("0") if fee is None else decimal(fee)
+        return trade_fee(definition, prosumer)
 
     @staticmethod
     def _threshold_fee(thresholds: Iterable[Any], annual_kwh: Decimal, name: str) -> Decimal:
-        """Miesięczna opłata z progu, do którego należy roczne zużycie (próg od min włącznie do max wyłącznie).
-
-        Okres bez progów (np. opłata przejściowa od 2026 r.) oznacza brak opłaty."""
-        thresholds = list(thresholds)
-        if not thresholds:
-            return Decimal("0")
-        for threshold in thresholds:
-            minimum = decimal(threshold.min_kwh_annual)
-            maximum = None if threshold.max_kwh_annual is None else decimal(threshold.max_kwh_annual)
-            if minimum <= annual_kwh and (maximum is None or annual_kwh < maximum):
-                return decimal(threshold.monthly_fee_net_pln)
-        raise ValueError(f"Brak progu opłaty {name} dla rocznego zużycia {annual_kwh:.0f} kWh.")
+        return threshold_fee(thresholds, annual_kwh, name)
 
 
 def zone_totals(energy: Any, schedule: ZoneSchedule) -> list[Decimal]:
