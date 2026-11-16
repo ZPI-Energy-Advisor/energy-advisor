@@ -19,9 +19,20 @@ class DeviceUsageResolution(str, Enum):
 
 
 class DeviceUsageTariff(BaseModel):
-    name: str
+    key: str
+    label: str
+    operator: str
     source: Literal["query", "profile", "default"]
     note: str | None = None
+
+
+class CostBreakdown(BaseModel):
+    """Koszt brutto w częściach: energia, dystrybucja i opłaty za kWh netto oraz VAT."""
+
+    energy: float
+    distribution: float
+    fees: float
+    vat: float
 
 
 class KwhSeries(BaseModel):
@@ -72,4 +83,5 @@ class DeviceUsageResponse(BaseModel):
     rest_of_house: RestOfHouse | None = None
     total_kwh: float
     total_cost_pln: float
+    cost_breakdown: CostBreakdown | None = None
     missing_price_slots: int = 0

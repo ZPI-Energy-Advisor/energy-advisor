@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Iterable, Sequence
@@ -46,8 +46,8 @@ def dynamic_energy_price(definition: Any, market_pln_kwh: Any, margin: Decimal, 
     return market / MWH + margin - included_excise(definition, excise)
 
 
-def rates_by_zone(rates: Iterable[Any], field: str) -> dict[int, Decimal]:
-    return {int(rate.zone_index): decimal(getattr(rate, field)) for rate in rates}
+def rates_by_zone(rates: Iterable[Any], attribute: str) -> dict[int, Decimal]:
+    return {int(rate.zone_index): decimal(getattr(rate, attribute)) for rate in rates}
 
 
 @dataclass(frozen=True)
@@ -62,14 +62,13 @@ class KwhPrice:
     renewable: Decimal
     cogeneration: Decimal
     vat_rate: Decimal
+    net: Decimal = field(init=False, repr=False, compare=False)
+    gross: Decimal = field(init=False, repr=False, compare=False)
 
-    @property
-    def net(self) -> Decimal:
-        return self.energy + self.excise + self.network + self.quality + self.renewable + self.cogeneration
-
-    @property
-    def gross(self) -> Decimal:
-        return self.net * (Decimal(1) + self.vat_rate)
+    def __post_init__(self):
+        net = self.energy + self.excise + self.network + self.quality + self.renewable + self.cogeneration
+        object.__setattr__(self, "net", net)
+        object.__setattr__(self, "gross", net * (Decimal(1) + self.vat_rate))
 
     def as_dict(self) -> dict[str, float | int]:
         return {
@@ -100,12 +99,26 @@ class TariffRates:
         self.cogeneration = decimal(period.cogeneration_fee_per_kwh)
         self.vat_rate = decimal(period.vat_rate)
         self._fixed: dict[int, KwhPrice] = {}
+        if self.dynamic:
+            prosumer_margin = getattr(definition, "prosumer_margin_per_kwh", None)
+            floor = getattr(definition, "market_price_floor_mwh", None)
+            cap = getattr(definition, "market_price_cap_mwh", None)
+            margin = self.energy_rates[1]
+            self._margins = {False: margin, True: margin if prosumer_margin is None else decimal(prosumer_margin)}
+            self._floor = None if floor is None else decimal(floor)
+            self._cap = None if cap is None else decimal(cap)
+            self._included_excise = included_excise(definition, self.excise)
 
     def energy(self, zone: int, market_pln_kwh: Any = None, prosumer: bool = False) -> Decimal:
         if self.dynamic:
             if market_pln_kwh is None:
                 raise ValueError("Taryfa dynamiczna wymaga ceny rynkowej kwadransa.")
-            return dynamic_energy_price(self.definition, market_pln_kwh, self.energy_rates[1], prosumer, self.excise)
+            market = decimal(market_pln_kwh) * MWH
+            if self._floor is not None:
+                market = max(market, self._floor)
+            if self._cap is not None:
+                market = min(market, self._cap)
+            return market / MWH + self._margins[bool(prosumer)] - self._included_excise
         return zone_energy_price(self.definition, self.energy_rates[zone], self.excise)
 
     def price(self, zone: int, market_pln_kwh: Any = None, prosumer: bool = False) -> KwhPrice:
@@ -256,11 +269,14 @@ def quarter_prices(
     prices: dict[datetime, KwhPrice] = {}
     missing: list[datetime] = []
     slot = start_utc
+    current_day = definition = period = None
     while slot < end_utc:
         local = slot.astimezone(LOCAL_TIMEZONE)
         day = local.date()
-        definition = schedule.definition_for(day)
-        period = next((item for item in periods if covers(item, day)), None)
+        if day != current_day:
+            current_day = day
+            definition = schedule.definition_for(day)
+            period = next((item for item in periods if covers(item, day)), None)
         if definition is None or period is None:
             missing.append(slot)
             slot += SLOT

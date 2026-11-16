@@ -11,6 +11,7 @@ from app.api.v1.deps import (
     require_price_sync_admin_key,
 )
 from app.models.PriceSyncRun import PriceSyncTrigger
+from app.models.User import User
 from app.schemas.dynamic_price import (
     DynamicPriceDayResponse,
     PriceHistoryQuery,
@@ -84,16 +85,13 @@ def get_price_history_query(
         raise RequestValidationError(e.errors(include_url=False, include_context=False)) from e
 
 
-@router.get(
-    "/history",
-    response_model=PriceHistoryResponse,
-    dependencies=[Depends(get_authenticated_user)],
-)
+@router.get("/history", response_model=PriceHistoryResponse)
 def get_price_history(
     query: PriceHistoryQuery = Depends(get_price_history_query),
     service: DynamicPriceService = Depends(get_dynamic_price_service),
+    user: User = Depends(get_authenticated_user),
 ):
     try:
-        return service.get_history(query.date_from, query.date_to, query.resolution)
+        return service.get_history(query.date_from, query.date_to, query.resolution, user.id)
     except DynamicTariffNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

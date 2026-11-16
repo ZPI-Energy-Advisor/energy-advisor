@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
+import { CurrentUserContext } from "./currentUserContext";
 import { EnergyFileContext } from "./energyFileContext";
 import { aggregateIdForSourceType, getApiErrorMessage } from "../utils/energyFiles";
 
@@ -223,6 +224,20 @@ export function EnergyFileProvider({ children }) {
       setIsLoadingFiles(false);
     }
   }, [initialize]);
+
+  // Koszty liczone są przy odczycie z taryfy w profilu: po jego zmianie pobieramy ponownie ten sam plik i zakres.
+  const userVersion = useContext(CurrentUserContext)?.version ?? 0;
+  const seenUserVersionRef = useRef(null);
+  const shownRangeKey = fileData?.date_from && fileData?.date_to ? `${fileData.date_from}|${fileData.date_to}` : null;
+  useEffect(() => {
+    const previous = seenUserVersionRef.current;
+    seenUserVersionRef.current = userVersion;
+    if (!previous || previous === userVersion || !selectedFileId) return;
+    const [from, to] = shownRangeKey ? shownRangeKey.split("|") : [];
+    loadFileData(selectedFileId, from ? { from, to } : null, (error) =>
+      setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
+    );
+  }, [userVersion, selectedFileId, shownRangeKey, loadFileData]);
 
   // Nowe pliki trafiają na początek listy, więc odświeżenie wraca na 1. stronę.
   const refreshFiles = useCallback(() => fetchFilesPage(1), [fetchFilesPage]);

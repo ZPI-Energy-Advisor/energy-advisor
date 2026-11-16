@@ -79,7 +79,7 @@ def get_device_usage(
     resolution: DeviceUsageResolution = Query(DeviceUsageResolution.HOUR, description="Długość okresu na osi czasu."),
     date_from: date | None = DATE_FROM_QUERY,
     date_to: date | None = DATE_TO_QUERY,
-    tariff: str | None = Query(None, description="Taryfa kosztów; domyślnie taryfa z profilu, a bez niej G11."),
+    tariff: str | None = Query(None, description="Klucz taryfy operatora z profilu (np. G12 albo G12-dynamic); domyślnie taryfa z profilu, a bez profilu PGE G11."),
     category: str | None = Query(None, description="Tylko urządzenia z tej kategorii, np. AGD."),
     device_type: str | None = Query(None, alias="type", description="Tylko urządzenia tego typu, np. ev_charger."),
     flexible: bool = Query(False, description="Tylko urządzenia, które można przenieść na inne godziny."),

@@ -79,6 +79,15 @@ def test_dynamic_price_uses_market_price_margin_and_distribution_of_the_group():
     assert result.description == "TAURON, G12 z ceną dynamiczną"
 
 
+def test_average_price_is_broken_into_energy_distribution_fees_and_vat():
+    result = _prices(_service())
+
+    parts = result.breakdown
+    assert parts["fees"] == pytest.approx(0.045)
+    assert parts["energy"] + parts["distribution"] + parts["fees"] == pytest.approx(parts["vat"] / 0.23, abs=1e-4)
+    assert sum(parts.values()) == pytest.approx(sum(result.prices.values()) / len(result.prices), abs=1e-4)
+
+
 def test_slots_without_market_price_are_left_out():
     def market(slot):
         if slot.astimezone(WARSAW).hour == 5:

@@ -4,10 +4,12 @@ import apiClient from "../api/client";
 import PriceChart from "../components/PriceChart";
 import PriceDataCompleteness from "../components/PriceDataCompleteness";
 import PriceRangeForm from "../components/PriceRangeForm";
+import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { countDays, formatDate, getApiErrorMessage } from "../utils/energyFiles";
 import {
   PRICE_RESOLUTIONS,
   QUARTER_HOUR_PRICES_SINCE,
+  describeAveragePrice,
   describeTariffPrice,
   formatDateTime,
   formatDaysCount,
@@ -103,6 +105,11 @@ function DynamicPricesPage() {
         Ceny dynamiczne energii
       </h2>
 
+      <ProfileTariffNotice
+        missingProfile=", żebyśmy pokazali ceny oferty Twojego operatora. Do tego czasu pokazujemy ofertę PGE z dystrybucją G11."
+        pricingNote={history?.note}
+      />
+
       {error && (
         <div role="alert" className="mb-6 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
           <span>
@@ -147,9 +154,9 @@ function DynamicPricesPage() {
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
-            <StatTile label="Średnia w okresie" value={formatPrice(history.average_price_pln_kwh)} hint="cena brutto w taryfie dynamicznej" />
-            <StatTile label="Najniższa" value={formatPrice(history.min_price_pln_kwh)} hint="cena brutto w taryfie dynamicznej" />
-            <StatTile label="Najwyższa" value={formatPrice(history.max_price_pln_kwh)} hint="cena brutto w taryfie dynamicznej" />
+            <StatTile label="Średnia w okresie" value={formatPrice(history.average_price_pln_kwh)} hint="pełna cena kWh brutto" />
+            <StatTile label="Najniższa" value={formatPrice(history.min_price_pln_kwh)} hint="pełna cena kWh brutto" />
+            <StatTile label="Najwyższa" value={formatPrice(history.max_price_pln_kwh)} hint="pełna cena kWh brutto" />
             <StatTile
               label="Ostatnia aktualizacja"
               value={
@@ -168,10 +175,13 @@ function DynamicPricesPage() {
           >
             <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-base md:text-lg font-bold text-gray-800">Cena w taryfie {history.tariff_name}</h3>
+                <h3 className="text-base md:text-lg font-bold text-gray-800">Pełna cena kWh: {history.tariff_name}</h3>
                 <p className="text-xs md:text-sm text-gray-500">
                   {describeTariffPrice(history)} · cena brutto za kWh · czas polski
                 </p>
+                {describeAveragePrice(history) && (
+                  <p className="text-xs md:text-sm text-gray-500">{describeAveragePrice(history)}</p>
+                )}
               </div>
               <div className="flex bg-gray-100 p-1 rounded-lg w-full sm:w-auto" role="group" aria-label="Rozdzielczość">
                 {PRICE_RESOLUTIONS.map((option) => {

@@ -101,3 +101,39 @@ def period(quality="0", renewable="0", cogeneration="0", capacity=("0", "0", "0"
         capacity_thresholds=thresholds(*capacity),
         transition_thresholds=thresholds(*transition) if transition else [],
     )
+
+
+TEST_YEARS = (date(2020, 1, 1), date(2035, 12, 31))
+
+
+def flat_definition(code=TariffTypeEnum.G11, energy=("1.0",), network=("0",), **extra):
+    """Taryfa testów API bez opłat miesięcznych, ważna we wszystkich latach testów, z abonamentem dla każdego okresu."""
+    item = definition(code, list(energy), list(network), valid=TEST_YEARS, **extra)
+    item.subscription_fees = [
+        SimpleNamespace(billing_cycle_months=months, monthly_fee_net_pln=Decimal("0")) for months in (1, 2, 6, 12)
+    ]
+    return item
+
+
+class FlatTariffRepository:
+    """Cennik w pamięci (jak TariffDefinitionRepository): domyślnie G11 za 1 zł/kWh brutto (VAT 0), więc koszt
+    w złotych równa się zużyciu w kWh."""
+
+    def __init__(self, definitions=None, periods=None):
+        self.definitions = definitions if definitions is not None else [flat_definition()]
+        self.periods = periods if periods is not None else [period(vat="0", valid=TEST_YEARS)]
+
+    def list_for_period(self, *, operator, date_from, date_to):
+        return [item for item in self.definitions if item.valid_from <= date_to and item.valid_to >= date_from]
+
+    def list_for_operator(self, *, operator):
+        return list(self.definitions)
+
+    def list_regulatory_periods(self, *, date_from, date_to):
+        return [item for item in self.periods if item.valid_from <= date_to and item.valid_to >= date_from]
+
+    def first_valid_from(self, *, operator):
+        return min((item.valid_from for item in self.definitions), default=None)
+
+    def list_unsupported(self, *, operator, date_from=None, date_to=None):
+        return []
