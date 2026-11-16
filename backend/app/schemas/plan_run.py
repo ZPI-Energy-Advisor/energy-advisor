@@ -29,6 +29,8 @@ class PlanRunHistoryDeviceOut(BaseModel):
 
     device_id: str
     device_name: str
+    # Dzień referencyjny tego urządzenia, jak w planie: liczony osobno dla każdego urządzenia.
+    history_day: date
     history_kwh: float
     actual_kwh: float
 
@@ -82,7 +84,7 @@ class PlanRunOut(BaseModel):
     sim_time: datetime | None = None
     horizon_start: datetime
     horizon_end: datetime
-    # Dzień referencyjny: z niego PV oraz pompa ciepła i bojler spoza planu pracują w dobie planu;
+    # Najnowszy z dni referencyjnych w `replayed_devices` (zwykle wszystkie urządzenia mają ten sam);
     # None, gdy nie ma czego odtwarzać.
     history_day: date | None = None
     replay: PlanRunReplay

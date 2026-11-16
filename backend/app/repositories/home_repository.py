@@ -150,25 +150,30 @@ class HomeRepository:
             for device_id, action_id, ref, slot_start, kwh in rows
         ]
 
-    def last_slot_before(
+    def last_action_starts(
         self, user_id: UUID, device_ids: list[str], before_utc: datetime | None = None,
-    ) -> datetime | None:
-        """Początek ostatniego kwadransu historii wskazanych urządzeń przed `before_utc` (bez niego: w ogóle)."""
+    ) -> dict[str, datetime]:
+        """Start ostatniej akcji z historii każdego z urządzeń przed `before_utc` (bez niego: w ogóle).
+
+        Jak historia planu (`PlanningRepository.device_actions`): liczy się start akcji, a akcje w całości
+        przykryte nowszym plikiem pomijamy. Urządzenia bez takiej akcji nie ma w wyniku.
+        """
         if not device_ids:
-            return None
-        conditions = [
-            DeviceInstance.user_id == user_id,
-            DeviceInstance.source_device_id.in_(device_ids),
-            DeviceSlotUsage.superseded.is_(False),
-        ]
+            return {}
+        current = (
+            select(DeviceSlotUsage.device_action_id)
+            .where(DeviceSlotUsage.device_action_id == DeviceAction.id, DeviceSlotUsage.superseded.is_(False))
+            .exists()
+        )
+        conditions = [DeviceInstance.user_id == user_id, DeviceInstance.source_device_id.in_(device_ids), current]
         if before_utc is not None:
-            conditions.append(DeviceSlotUsage.slot_start < before_utc)
-        return self.db.execute(
-            select(func.max(DeviceSlotUsage.slot_start))
-            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            conditions.append(DeviceAction.action_start < before_utc)
+        return dict(self.db.execute(
+            select(DeviceInstance.source_device_id, func.max(DeviceAction.action_start))
             .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
             .where(*conditions)
-        ).scalar_one_or_none()
+            .group_by(DeviceInstance.source_device_id)
+        ).all())
 
     def device_ids_of_types(self, user_id: UUID, device_types: Iterable[str]) -> list[str]:
         return list(self.db.execute(

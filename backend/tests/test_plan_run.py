@@ -176,9 +176,10 @@ def test_pv_produces_like_reference_day_moved_to_plan_day(home):
     assert sum(pv["profile_kwh"]) == pytest.approx(-6.4, rel=0.01)
     assert all(kwh < 0 for kwh in pv["profile_kwh"])
     assert run["history_day"] == "2026-10-05"
-    assert run["replayed_devices"] == [
-        {"device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_kwh": -6.4, "actual_kwh": 0.0},
-    ]
+    assert run["replayed_devices"] == [{
+        "device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_day": "2026-10-05",
+        "history_kwh": -6.4, "actual_kwh": 0.0,
+    }]
 
 
 def test_reference_day_is_last_day_with_history_before_plan_day(home):
@@ -193,6 +194,21 @@ def test_reference_day_is_last_day_with_history_before_plan_day(home):
     pv, = _by_device(home.hub.batches[0])["dev_pv_01"]
     assert (run["history_day"], pv["ref"]) == ("2026-10-11", "act_pv_2026-10-11")
     assert sum(pv["profile_kwh"]) == pytest.approx(-5.0)
+
+
+def test_each_device_has_its_own_reference_day_like_in_plan(home):
+    # Pliki PV sięgają 11.10, a pompy ciepła 05.10: plan bierze dla pompy 05.10, więc symulacja też.
+    owner = _home_with_pv(home, [_pv_action("2026-10-11", -5.0)])
+    assert _upload(owner, _devices_file(HEAT_PUMP), name="pompa.json").status_code == 200
+    plan = _plan(owner, devices=[WASHER_IN_PLAN, {"device_id": "dev_hp_01", "enabled": False}])
+
+    run = _start(owner, plan["id"]).json()
+
+    commands = _by_device(home.hub.batches[0])
+    assert (commands["dev_pv_01"][0]["ref"], commands["dev_hp_01"][0]["ref"]) == ("act_pv_2026-10-11", "act_hp_1")
+    days = {device["device_id"]: device["history_day"] for device in run["replayed_devices"]}
+    assert days == {"dev_pv_01": "2026-10-11", "dev_hp_01": "2026-10-05"}
+    assert run["history_day"] == "2026-10-11"  # Najnowszy z dni urządzeń.
 
 
 def test_report_compares_pv_with_reference_day(home, db):
@@ -440,7 +456,7 @@ def test_end_stops_clock_and_closes_run_once(home):
     # Bez zatrzymania o 06:00 i bez reszty planu w kolejce: ręczny Start po „Zakończ” nie stanie nagle
     # o końcu planu ani nie uruchomi np. ładowania auta.
     assert home.hub.clock_updates[-1] == {"running": False, "stop_at": None}
-    assert home.hub.log[-2:] == ["clock ['running', 'stop_at']", "cancel scheduled"]
+    assert home.hub.log[-2:] == ["cancel scheduled", "clock ['running', 'stop_at']"]
     log = len(home.hub.log)
     assert _end(owner, run["id"]).json()["status"] == "ended"
     assert len(home.hub.log) == log  # Zakończony przebieg nie zmienia już niczego w hubie.
@@ -453,10 +469,12 @@ def test_hub_failure_while_cancelling_queue_keeps_run_open_to_retry(home):
 
     assert _end(owner, run["id"]).status_code == 503
     assert _latest(owner).json()["status"] == "running"
+    # Zegar dalej ma zatrzymanie o końcu planu: Start zamiast ponownego „Zakończ” nie przeciągnie doby.
+    assert home.hub.clock_state["stop_at"] == run["horizon_end"]
 
     home.hub.commands_down = False
     assert _end(owner, run["id"]).json()["status"] == "ended"
-    assert home.hub.log[-1] == "cancel scheduled"
+    assert home.hub.log[-2:] == ["cancel scheduled", "clock ['running', 'stop_at']"]
 
 
 def test_end_of_unknown_run_is_not_found(home):

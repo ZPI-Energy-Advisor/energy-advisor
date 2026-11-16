@@ -45,11 +45,12 @@ class PlanRun(Base):
     status = Column(String(20), nullable=False, default=RUNNING)
     horizon_start = Column(DateTime(timezone=True), nullable=False)
     horizon_end = Column(DateTime(timezone=True), nullable=False)
-    # Dzień, z którego odtworzyliśmy PV oraz pompę ciepła i bojler spoza planu; NULL, gdy nie ma czego odtwarzać.
+    # Najnowszy z dni referencyjnych odtwarzanych urządzeń; NULL, gdy nie ma czego odtwarzać.
     history_day = Column(Date, nullable=True)
     items = Column(JSONB, nullable=False)
     replay = Column(JSONB, nullable=False)
-    # Urządzenia odtwarzane z historii, które hub przyjął: [{"device_id", "history_kwh"}], ujemne dla PV.
+    # Urządzenia odtwarzane z historii, które hub przyjął: [{"device_id", "history_day", "history_kwh"}],
+    # energia ujemna dla PV. Dzień referencyjny liczymy dla każdego urządzenia osobno, jak plan.
     replayed_devices = Column(JSONB, nullable=False, default=list)
     started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)

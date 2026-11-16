@@ -73,8 +73,8 @@ const PLAN_RUN = {
   history_day: "2026-10-12",
   replay: { actions: 2, devices: 2, skipped_devices: [], rejected_actions: 0 },
   replayed_devices: [
-    { device_id: "dev_pv_01", device_name: "Instalacja PV", history_kwh: -6.4, actual_kwh: -1.2 },
-    { device_id: "dev_hp_01", device_name: "Pompa ciepła", history_kwh: 9.5, actual_kwh: 4.1 },
+    { device_id: "dev_pv_01", device_name: "Instalacja PV", history_day: "2026-10-12", history_kwh: -6.4, actual_kwh: -1.2 },
+    { device_id: "dev_hp_01", device_name: "Pompa ciepła", history_day: "2026-10-12", history_kwh: 9.5, actual_kwh: 4.1 },
   ],
   planned_kwh: 6.4,
   actual_kwh: 0.6,
@@ -314,10 +314,25 @@ describe("HomePage", () => {
     expect(ev.textContent).toContain("Odrzucone: Nie ma urządzenia w rejestrze");
     expect(within(card).getByRole("alert").textContent).toContain("08:15 Lampa salon: Brak odpowiedzi urządzenia");
     const history = within(card).getByRole("region", { name: "Z dnia referencyjnego" });
-    expect(history.textContent).toContain("Pracują same, jak w poniedziałek, 12 października 2026:");
+    expect(history.textContent).toContain("Pracują same, tak jak 12 października 2026:");
     // PV na plusie, z dopiskiem „produkcji”.
     expect(history.textContent).toContain("Instalacja PV: 1,20 kWh z 6,40 kWh produkcji");
     expect(history.textContent).toContain("Pompa ciepła: 4,10 kWh z 9,50 kWh");
+  });
+
+  it("podaje dzień przy urządzeniu, gdy urządzenia mają różne dni referencyjne, i nie pokazuje -0", async () => {
+    const [pv, heatPump] = PLAN_RUN.replayed_devices;
+    mockApi({ planRun: { ...PLAN_RUN, replayed_devices: [
+      { ...pv, history_day: "2026-10-18", actual_kwh: -0 },
+      heatPump,
+    ] } });
+    renderPage();
+
+    const history = await screen.findByRole("region", { name: "Z dnia referencyjnego" });
+    expect(history.textContent).toContain("Pracują same, tak jak w dniu referencyjnym:");
+    expect(history.textContent).toContain("Instalacja PV (jak 18 października 2026): 0,00 kWh z 6,40 kWh produkcji");
+    expect(history.textContent).toContain("Pompa ciepła (jak 12 października 2026)");
+    expect(history.textContent).not.toContain("-0,00");
   });
 
   it("w trakcie przebiegu planu lista pokazuje cały dom, żeby włączać urządzenia stałe ręcznie", async () => {

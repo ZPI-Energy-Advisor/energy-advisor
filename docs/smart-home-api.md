@@ -576,7 +576,7 @@ wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_UR
 | `PUT /api/v1/home/clock` | Start, pauza, tempo i doba zegara symulacji ([niżej](#sterowanie-domem)) |
 | `POST /api/v1/home/plan-runs` | Uruchamia zatwierdzony plan dnia w symulacji ([niżej](#wykonanie-planu-dnia)) |
 | `GET /api/v1/home/plan-runs/latest` | Ostatni przebieg planu z raportem albo `null` |
-| `POST /api/v1/home/plan-runs/{run_id}/end` | „Zakończ”: zatrzymuje zegar, kasuje resztę planu w hubie i zamyka przebieg |
+| `POST /api/v1/home/plan-runs/{run_id}/end` | „Zakończ”: kasuje zaplanowane komendy przebiegu, zatrzymuje zegar i zamyka przebieg |
 
 `GET /api/v1/home`, `POST /api/v1/home/connect` i `DELETE /api/v1/home` odpowiadają `200` ze stanem podłączenia:
 
@@ -705,9 +705,9 @@ jutro” (szkic: `409`, plan sprzed ZP-113 bez profili: `409` z prośbą o ponow
    - historię **dnia referencyjnego** jako `run_profile`: produkcję PV (od niej zależy, czy plan się
      opłaca, np. pralka w południe z paneli) oraz pompę ciepła i bojler **odznaczone w planie**, bo plan
      zakłada, że pracują same na termostacie, i liczy na nie miejsce w limicie przyłącza.
-     Dzień referencyjny to „wczoraj” jak w planie: ostatni dzień z historią tych urządzeń przed dobą
-     planu, a bez takiego (plan sprzed całej historii) ostatni w ogóle. Jego doba (00:00–24:00, bez nocy
-     po niej) trafia na te same godziny doby planu. `profile_kwh` to kwadranse akcji z `device_slot_usage`
+     Dzień referencyjny to „wczoraj” jak w planie, liczony dla każdego urządzenia osobno: dzień startu
+     jego ostatniej akcji przed dobą planu, a bez takiej (plan sprzed całej historii) ostatniej w ogóle.
+     Doba tego dnia (00:00–24:00, bez nocy po niej) trafia na te same godziny doby planu. `profile_kwh` to kwadranse akcji z `device_slot_usage`
      (ten sam rozkład co wycena i wykresy, ujemny dla PV), a `ref` to `action_id` z pliku. Kwadranse
      przykryte nowszym plikiem (`superseded`) są pomijane, przerwa w kwadransach akcji dzieli ją na osobne
      przebiegi, a nachodzące na siebie przebiegi jednego urządzenia są łączone w jeden.
@@ -731,8 +731,10 @@ Odpowiedź (`201`, a w `GET …/latest` i `POST …/end` `200`):
   "history_day": "2026-10-05",
   "replay": { "actions": 2, "devices": 2, "skipped_devices": [], "rejected_actions": 0 },
   "replayed_devices": [
-    { "device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_kwh": -18.2, "actual_kwh": -7.9 },
-    { "device_id": "dev_hp_01", "device_name": "Pompa ciepła", "history_kwh": 9.5, "actual_kwh": 4.1 }
+    { "device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_day": "2026-10-05",
+      "history_kwh": -18.2, "actual_kwh": -7.9 },
+    { "device_id": "dev_hp_01", "device_name": "Pompa ciepła", "history_day": "2026-10-05",
+      "history_kwh": 9.5, "actual_kwh": 4.1 }
   ],
   "planned_kwh": 6.4, "actual_kwh": 0.6,
   "devices": [{
@@ -750,16 +752,18 @@ Odpowiedź (`201`, a w `GET …/latest` i `POST …/end` `200`):
 | `status` | `running`; `completed`, gdy zegar przebiegu minie `horizon_end`; `ended` po „Zakończ”; `superseded`, gdy hub zaczął inną symulację (kolejny przebieg, ustawienie doby, restart huba). Backend sprawdza to w hubie przy odczycie; bez huba zostaje ostatni znany status |
 | `sim_time` | Bieżący czas przebiegu, a po jego końcu chwila, w której się skończył |
 | `devices` | Urządzenia z planu: energia według planu i zużyta w symulacji (zdarzenia `energy_report` przebiegu od początku planu do `sim_time`) |
-| `history_day` | Dzień referencyjny; `null`, gdy nie było czego odtwarzać |
+| `history_day` | Najnowszy z dni referencyjnych w `replayed_devices` (zwykle wszystkie urządzenia mają ten sam); `null`, gdy nie było czego odtwarzać |
 | `replay` | Przebiegi z historii: `actions` i `devices` przyjęte przez hub, `skipped_devices` spoza rejestru huba (`device_not_found`, np. przy zaległej wysyłce rejestru), `rejected_actions` odrzucone z innego powodu (np. `409 invalid_state`) |
-| `replayed_devices` | Urządzenia, których historię hub przyjął: energia dnia referencyjnego (`history_kwh`) i zużyta w symulacji (`actual_kwh`), ujemne dla PV. Nie wchodzą do `planned_kwh` i `actual_kwh` przebiegu, które dotyczą tylko urządzeń planu |
+| `replayed_devices` | Urządzenia, których historię hub przyjął: ich dzień referencyjny (`history_day`), energia z niego (`history_kwh`) i zużyta w symulacji (`actual_kwh`), ujemne dla PV. Nie wchodzą do `planned_kwh` i `actual_kwh` przebiegu, które dotyczą tylko urządzeń planu |
 | `errors` | Do 50 ostatnich `device_error` przebiegu, np. komenda, której urządzenie nie wykonało o `start_at` |
 
-„Zakończ” zatrzymuje zegar, kasuje `stop_at` i resztę planu w kolejce huba (`DELETE /home/commands`)
-i oznacza przebieg jako `ended`: ręczny Start później nie stanie nagle o 06:00 ani nie uruchomi np.
-ładowania auta z zakończonego planu. To, co urządzenia już wykonują (pralka w połowie programu), po
-Starcie się dokończy; wyłączyć można je ręcznie. Gdy hub zawiedzie przy kasowaniu kolejki, przebieg
-zostaje `running`, a ponowne „Zakończ” robi wszystko jeszcze raz. Zakończony przebieg zostaje bez zmian.
+„Zakończ” najpierw kasuje kolejkę huba (`DELETE /home/commands`): wszystkie zaplanowane komendy
+przebiegu, czyli resztę planu i historii (np. PV od 10:00, kolejne bloki pompy ciepła). Potem zatrzymuje
+zegar, kasuje `stop_at` i oznacza przebieg jako `ended`. Ręczny Start później nie stanie nagle o 06:00
+ani nie uruchomi np. ładowania auta z zakończonego planu. To, co urządzenia już wykonują (pralka
+w połowie programu, PV w trakcie produkcji), po Starcie się dokończy; wyłączyć można je ręcznie. Gdy hub
+zawiedzie po drodze, przebieg zostaje `running` z zatrzymaniem o końcu planu, a ponowne „Zakończ” robi
+wszystko jeszcze raz. Zakończony przebieg zostaje bez zmian.
 Do chwilowej przerwy służy pauza zegara, a ponowne uruchomienie zaczyna plan od północy.
 
 Błędy huba:

@@ -12,6 +12,11 @@ const STATUS = {
 
 // Doba RRRR-MM-DD słowami; południe UTC to ten sam dzień w strefie domu.
 const dayText = (day) => formatSimDate(`${day}T12:00:00Z`);
+// Data bez dnia tygodnia: po „jak” nazwa dnia wymagałaby odmiany („w niedzielę”), której Intl nie daje.
+const historyDayFormat = new Intl.DateTimeFormat("pl-PL", {
+  day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Warsaw",
+});
+const historyDayText = (day) => historyDayFormat.format(new Date(`${day}T12:00:00Z`));
 
 const actionText = (action) => {
   if (action.status === "rejected") return `Odrzucone: ${action.detail || action.code}`;
@@ -20,21 +25,28 @@ const actionText = (action) => {
 };
 
 // Produkcja PV ma znak ujemny; na ekranie pokazujemy ją jako dodatnią z dopiskiem „produkcji”.
+// Math.abs, a nie minus: przed pierwszą produkcją -0 wyświetliłoby się jako „-0,00”.
 const historyEnergy = (device) =>
   device.history_kwh < 0
-    ? `${formatKwh(-device.actual_kwh)} z ${formatKwh(-device.history_kwh)} produkcji`
+    ? `${formatKwh(Math.abs(device.actual_kwh))} z ${formatKwh(Math.abs(device.history_kwh))} produkcji`
     : `${formatKwh(device.actual_kwh)} z ${formatKwh(device.history_kwh)}`;
 
-// PV oraz pompa ciepła i bojler spoza planu pracują same, jak w dniu referencyjnym.
+// PV oraz pompa ciepła i bojler spoza planu pracują same, jak w dniu referencyjnym. Dzień liczymy dla każdego
+// urządzenia osobno (jak plan); zwykle jest wspólny, więc wtedy podajemy go raz, w nagłówku.
 function HistoryDevices({ run }) {
-  if (!run.history_day || !run.replayed_devices.length) return null;
+  const devices = run.replayed_devices;
+  if (!devices.length) return null;
+  const sameDay = devices.every((device) => device.history_day === devices[0].history_day);
   return (
     <section className="mt-4" aria-label="Z dnia referencyjnego">
-      <p className="text-sm text-gray-700">Pracują same, jak w {dayText(run.history_day)}:</p>
+      <p className="text-sm text-gray-700">
+        {sameDay ? `Pracują same, tak jak ${historyDayText(devices[0].history_day)}:` : "Pracują same, tak jak w dniu referencyjnym:"}
+      </p>
       <ul className="mt-1 space-y-0.5 text-sm text-gray-600">
-        {run.replayed_devices.map((device) => (
+        {devices.map((device) => (
           <li key={device.device_id}>
-            {device.device_name}: {historyEnergy(device)}
+            {device.device_name}
+            {!sameDay && ` (jak ${historyDayText(device.history_day)})`}: {historyEnergy(device)}
           </li>
         ))}
       </ul>
@@ -43,7 +55,8 @@ function HistoryDevices({ run }) {
 }
 
 // Przebieg zatwierdzonego planu w symulacji (ZP-113): postęp, energia urządzeń z planu i awarie.
-// „Zakończ” zatrzymuje zegar, kasuje resztę planu w hubie i zamyka przebieg; do chwilowej przerwy służy Pauza.
+// „Zakończ” kasuje zaplanowane komendy przebiegu (plan i historię), zatrzymuje zegar i zamyka przebieg;
+// do chwilowej przerwy służy Pauza.
 function PlanRunCard({ run, disabled, onEnd }) {
   const [isEnding, setIsEnding] = useState(false);
   const status = STATUS[run.status] ?? STATUS.ended;
@@ -63,7 +76,7 @@ function PlanRunCard({ run, disabled, onEnd }) {
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-gray-900">
-            Plan na {dayText(run.plan_date)}
+            Plan dnia: {dayText(run.plan_date)}
           </h3>
           <p className="text-sm text-gray-600">
             {run.sim_time ? `Czas symulacji ${formatSimTime(run.sim_time)}` : "Czas symulacji nieznany"}

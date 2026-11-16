@@ -130,7 +130,7 @@ def end_plan_run(
     owner: User = Depends(get_home_owner),
     service: PlanRunService = Depends(get_plan_run_service),
 ):
-    """„Zakończ”: zatrzymuje zegar, kasuje resztę planu w kolejce huba i zamyka przebieg.
+    """„Zakończ”: kasuje zaplanowane komendy przebiegu (plan i historię), zatrzymuje zegar i zamyka przebieg.
 
     Zakończony przebieg zostaje bez zmian.
     """
