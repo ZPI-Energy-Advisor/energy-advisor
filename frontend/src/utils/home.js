@@ -56,6 +56,7 @@ export const deviceStateLabel = (device) => {
   switch (device.state) {
     case "running":
       if (isProducing(device)) return "Produkuje";
+      if (device.run) return "Według planu";
       return device.program_id ? "Program w toku" : "Pracuje";
     case "idle":
       return "Gotowe";

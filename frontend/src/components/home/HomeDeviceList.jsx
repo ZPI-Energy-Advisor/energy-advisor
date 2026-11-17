@@ -121,6 +121,9 @@ function DeviceRow({ device, disabled, onCommand }) {
               {device.program_ends_at && `, koniec ${formatSimTime(device.program_ends_at)}`}
             </span>
           )}
+          {device.run?.ends_at && (
+            <span className="block text-gray-600">Według planu, koniec {formatSimTime(device.run.ends_at)}</span>
+          )}
         </p>
       </div>
 

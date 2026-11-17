@@ -35,6 +35,13 @@ describe("home utils", () => {
     expect(deviceStateLabel(device({ state: "unreachable", power_kw: null }))).toBe("Brak połączenia");
   });
 
+  it("oznacza przebieg według planu, ale produkcja PV ma pierwszeństwo", () => {
+    const run = { ref: "act_1", started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" };
+
+    expect(deviceStateLabel(device({ state: "running", power_kw: 0.06, run }))).toBe("Według planu");
+    expect(deviceStateLabel(device({ state: "running", power_kw: -2.5, run }))).toBe("Produkuje");
+  });
+
   it("nie pozwala sterować urządzeniem bez połączenia albo po awarii", () => {
     expect(isControllable(device({ state: "idle" }))).toBe(true);
     expect(isControllable(device({ state: "unreachable" }))).toBe(false);

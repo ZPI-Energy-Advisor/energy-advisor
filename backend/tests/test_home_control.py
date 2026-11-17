@@ -263,7 +263,7 @@ def test_pause_is_forwarded_to_hub(home):
 def test_day_sets_sim_time_to_midnight_in_home_timezone(home, day, midnight):
     assert _clock(home.owner, {"day": day}).status_code == 200
 
-    assert home.hub.clock_updates == [{"sim_time": midnight}]
+    assert home.hub.clock_updates == [{"sim_time": midnight, "restart": True}]
 
 
 @pytest.mark.parametrize("body", [{}, {"speed": 0}, {"speed": -288}, {"day": "19.10.2026"}])
@@ -312,3 +312,54 @@ def test_state_describes_devices_with_registry_data(home):
         {"program_id": "quick_30", "program_name": "Szybkie 30°C", "duration_min": 30},
     ]
     assert (unknown["device_category"], unknown["flexibility_mode"], unknown["programs"]) == (None, None, [])
+
+
+# Przebieg z własnym profilem (ZP-96)
+
+
+def test_run_profile_is_forwarded_to_hub_with_start(home):
+    body = {"command": "run_profile", "profile_kwh": [0.5, 0.5, 0.25], "ref": "plan_1",
+            "start_at": "2026-10-19T04:30:00+02:00"}
+
+    response = _command(home.owner, "dev_bo_01", body)
+
+    assert response.status_code == 202
+    assert home.hub.commands == [("dev_bo_01", body)]
+
+
+def test_day_with_start_goes_to_hub_in_one_request_with_restart(home):
+    _clock(home.owner, {"day": "2026-10-05", "running": True, "speed": 1440})
+
+    assert home.hub.clock_updates == [
+        {"sim_time": "2026-10-05T00:00:00+02:00", "restart": True, "running": True, "speed": 1440.0},
+    ]
+
+
+def test_setting_same_day_again_restarts_simulation(home):
+    # Hub bez `restart` nie resetuje przy tym samym sim_time: urządzenia i zaplanowane komendy by zostały.
+    _clock(home.owner, {"day": "2026-10-05"})
+    _clock(home.owner, {"day": "2026-10-05"})
+
+    midnight = {"sim_time": "2026-10-05T00:00:00+02:00", "restart": True}
+    assert home.hub.clock_updates == [midnight, midnight]
+
+
+def test_state_shows_running_profile(home):
+    run = {"ref": "plan_1", "started_at": "2026-10-05T04:30:00+02:00", "ends_at": "2026-10-05T05:15:00+02:00"}
+    home.hub.devices = [{**_device("dev_bo_01", state="running", power_kw=2.0), "run": run}]
+
+    device, = client.get("/api/v1/home/state", headers=_headers(home.owner)).json()["devices"]
+
+    assert device["run"] == run
+
+
+@pytest.mark.parametrize("body", [
+    {"command": "run_profile"},
+    {"command": "run_profile", "profile_kwh": []},
+    {"command": "run_profile", "profile_kwh": [0.1], "program_id": "eco"},
+    {"command": "on", "profile_kwh": [0.1]},
+    {"command": "off", "start_at": "2026-10-05T18:00:00+02:00"},
+])
+def test_invalid_run_profile_command_is_rejected_before_hub(home, body):
+    assert _command(home.owner, "dev_lamp_01", body).status_code == 422
+    assert home.hub.commands == []

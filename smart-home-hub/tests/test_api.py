@@ -180,3 +180,31 @@ def test_start_command_accepts_command_id(client):
 
     started, = _tick(client, "2026-10-19T13:15:00+02:00").json()["events"]
     assert started["data"]["command_id"] == "cmd_7f3a2c"
+
+
+def test_run_endpoint_starts_profile_and_returns_status(client):
+    _tick(client, "2026-10-19T13:00:00+02:00")
+
+    response = client.post("/run", json={"profile_kwh": [0.2, 0.3], "command_id": "cmd_1", "ref": "act_1"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["state"], body["power_kw"]) == ("running", 0.8)
+    assert body["run"] == {
+        "ref": "act_1",
+        "started_at": "2026-10-19T13:00:00+02:00",
+        "ends_at": "2026-10-19T13:30:00+02:00",
+    }
+
+
+@pytest.mark.parametrize("body", [
+    {"profile_kwh": []},
+    {"profile_kwh": "0.2"},
+    {},
+    {"profile_kwh": [0.1] * (7 * 96 + 1)},
+])
+def test_run_endpoint_rejects_invalid_profile(client, body):
+    response = client.post("/run", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_request"

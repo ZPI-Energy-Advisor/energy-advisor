@@ -6,7 +6,7 @@ urządzenia”) przechodzą bez zmian, a awarie huba i błędna konfiguracja dos
 """
 
 import logging
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from fastapi import HTTPException, status
 
@@ -46,7 +46,7 @@ def hub_http_error(error: HubError, unreachable_message: str = DEVICE_UNREACHABL
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=INVALID_RESPONSE_MESSAGE)
 
 
-def day_midnight(day) -> datetime:
+def day_midnight(day: date) -> datetime:
     """Północ doby w strefie domu: przesunięcie strefy zależy od daty (czas letni i zimowy)."""
     return datetime.combine(day, time(0), tzinfo=LOCAL_TIMEZONE)
 
@@ -75,6 +75,9 @@ class HomeControlService:
         try:
             clock = hub_client.update_clock(
                 sim_time=day_midnight(update.day) if update.day else None,
+                # Ustawienie doby zawsze zaczyna nową symulację, także gdy zegar już stoi na tej północy:
+                # urządzenia wracają do stanu wyłączonego, a zaplanowane komendy znikają.
+                restart=update.day is not None,
                 running=update.running,
                 speed=update.speed,
             )

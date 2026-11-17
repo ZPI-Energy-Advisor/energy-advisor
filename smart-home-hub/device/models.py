@@ -1,6 +1,35 @@
+import math
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+
+
+# Najdłuższy przebieg z własnym profilem: tydzień kwadransów (akcje planu trwają zwykle od kwadransa do doby).
+# Ten sam limit ma backend (app/schemas/smart_home.py); oba wynikają z kontraktu w docs/smart-home-api.md.
+MAX_RUN_QUARTERS = 7 * 96
+
+
+MAX_REF_LENGTH = 100  # Jak action_id z pliku urządzeń (source_action_id w backendzie).
+
+
+def _valid_profile(profile: list[float]) -> list[float]:
+    if not 1 <= len(profile) <= MAX_RUN_QUARTERS or not all(math.isfinite(value) for value in profile):
+        raise ValueError(f"profile_kwh musi mieć od 1 do {MAX_RUN_QUARTERS} skończonych liczb")
+    return profile
+
+
+def _valid_ref(ref: str) -> str:
+    if not 1 <= len(ref) <= MAX_REF_LENGTH:
+        raise ValueError(f"ref musi mieć od 1 do {MAX_REF_LENGTH} znaków")
+    return ref
+
+
+# Reguły przebiegu z własnym profilem, wspólne dla POST /run urządzenia i komendy run_profile huba.
+# Walidatory (a nie Field(min_length…)), bo hub odpowiada na złamanie reguł kontraktu 422 validation_error,
+# a ograniczenia Field dałyby 400 invalid_request jak przy złym typie.
+RunProfile = Annotated[list[float], AfterValidator(_valid_profile)]
+ActionRef = Annotated[str, AfterValidator(_valid_ref)]
 
 class AllowedWindow(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -59,3 +88,14 @@ class CommandContext(BaseModel):
     """Opcjonalna treść poleceń startu: hub podaje command_id, które wraca w zdarzeniu device_started."""
 
     command_id: str | None = None
+
+
+class RunRequest(BaseModel):
+    """POST /run: praca według profilu (kWh na kwadrans), np. akcja planu albo produkcja PV.
+
+    Ujemne wartości to produkcja (PV). `ref` wskazuje akcję (np. z planu) i wraca w zdarzeniach.
+    """
+
+    profile_kwh: RunProfile
+    command_id: str | None = None
+    ref: ActionRef | None = None
