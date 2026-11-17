@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiPlay, FiRefreshCw } from "react-icons/fi";
 import Dialog from "./Dialog";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
@@ -37,7 +37,11 @@ export function FlatTariffNote() {
 
 // Plan pracy urządzeń na dzień (ZP-112): koszt i ostrzeżenia, oś doby na tle cen, tabela przydziałów,
 // przyciski, a na końcu uwagi; temperatura wody w okienku.
-function DayPlanView({ plan, flatTariff, onApprove, onEdit, onReplan, isApproving, isReplanning, approveError }) {
+// `onRun`: uruchomienie zatwierdzonego planu w symulacji domu; null, gdy konto nie ma domu Smart Home.
+function DayPlanView({
+  plan, flatTariff, onApprove, onEdit, onReplan, isApproving, isReplanning, approveError,
+  onRun = null, isStartingRun = false, runError = null,
+}) {
   const [waterHeater, setWaterHeater] = useState(null);
   const closeWaterHeater = useCallback(() => setWaterHeater(null), []);
   const approved = plan.status === "approved";
@@ -156,13 +160,30 @@ function DayPlanView({ plan, flatTariff, onApprove, onEdit, onReplan, isApprovin
             >
               {isApproving ? "Zatwierdzanie..." : "Zatwierdź plan"}
             </button>
-            <p className="mt-1 text-xs text-gray-500">Na razie zapamiętamy, że plan Ci pasuje. Wkrótce wyślemy go do domu.</p>
+            <p className="mt-1 text-xs text-gray-500">
+              {onRun
+                ? "Zatwierdzony plan możesz uruchomić w symulacji domu."
+                : "Zapamiętamy, że plan Ci pasuje."}
+            </p>
           </div>
         )}
         {approved && (
           <p className="flex items-center gap-1.5 py-3 text-sm font-medium text-emerald-700" role="status">
             <FiCheckCircle aria-hidden="true" /> Plan zatwierdzony o {clockOf(plan.approved_at)}.
           </p>
+        )}
+        {approved && onRun && (
+          <div>
+            <button
+              type="button"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              onClick={onRun}
+              disabled={isStartingRun}
+            >
+              <FiPlay aria-hidden="true" /> {isStartingRun ? "Uruchamianie..." : "Uruchom symulację"}
+            </button>
+            <p className="mt-1 text-xs text-gray-500">Symulacja zacznie dobę planu od północy w „Mój dom”.</p>
+          </div>
         )}
         <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>
           <FiEdit2 aria-hidden="true" /> Edytuj ustawienia
@@ -173,6 +194,7 @@ function DayPlanView({ plan, flatTariff, onApprove, onEdit, onReplan, isApprovin
           </button>
         ))}
         {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
+        {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
       </div>
 
 

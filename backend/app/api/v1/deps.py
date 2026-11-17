@@ -41,6 +41,8 @@ from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.plan_service import PlanService
 from app.repositories.day_plan_repository import DayPlanRepository
+from app.repositories.plan_run_repository import PlanRunRepository
+from app.services.plan_run_service import PlanRunService
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.clients.hub_client import API_KEY_HEADER, HubClient
@@ -197,6 +199,15 @@ def get_home_control_service(
     hub_client: HubClient | None = Depends(get_hub_client),
 ) -> HomeControlService:
     return HomeControlService(HomeRepository(db), hub_client)
+
+
+def get_plan_run_service(
+    db: Session = Depends(get_db),
+    hub_client: HubClient | None = Depends(get_hub_client),
+) -> PlanRunService:
+    return PlanRunService(
+        HomeRepository(db), DayPlanRepository(db), PlanRunRepository(db), HomeEventRepository(db), hub_client,
+    )
 
 
 def get_planning_service(db: Session = Depends(get_db)) -> PlanningService:

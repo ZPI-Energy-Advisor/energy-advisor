@@ -1,8 +1,9 @@
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime, time
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.DeviceInstance import DeviceInstance
@@ -115,12 +116,16 @@ class HomeRepository:
             for device in devices
         }
 
-    def fixed_action_slots(self, user_id: UUID, start_utc: datetime, end_utc: datetime) -> list[ReplaySlot]:
-        """Kwadranse akcji urządzeń fixed użytkownika w [start_utc, end_utc), do odtworzenia doby.
+    def action_slots(
+        self, user_id: UUID, device_ids: list[str], start_utc: datetime, end_utc: datetime,
+    ) -> list[ReplaySlot]:
+        """Kwadranse akcji wskazanych urządzeń w [start_utc, end_utc), np. PV dnia referencyjnego (ZP-113).
 
         Tylko kwadranse nieprzykryte nowszym plikiem (superseded), jak w danych „Wszystkich plików”,
         więc dwa pliki z tą samą dobą nie odtworzą akcji dwa razy.
         """
+        if not device_ids:
+            return []
         rows = self.db.execute(
             select(
                 DeviceInstance.source_device_id,
@@ -133,7 +138,7 @@ class HomeRepository:
             .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
             .where(
                 DeviceInstance.user_id == user_id,
-                DeviceInstance.flexibility_mode == "fixed",
+                DeviceInstance.source_device_id.in_(device_ids),
                 DeviceSlotUsage.superseded.is_(False),
                 DeviceSlotUsage.slot_start >= start_utc,
                 DeviceSlotUsage.slot_start < end_utc,
@@ -144,6 +149,43 @@ class HomeRepository:
             ReplaySlot(device_id=device_id, action_id=action_id, ref=ref, slot_start=slot_start, kwh=kwh)
             for device_id, action_id, ref, slot_start, kwh in rows
         ]
+
+    def last_action_starts(
+        self, user_id: UUID, device_ids: list[str], before_utc: datetime | None = None,
+    ) -> dict[str, datetime]:
+        """Start ostatniej akcji z historii każdego z urządzeń przed `before_utc` (bez niego: w ogóle).
+
+        Jak historia planu (`PlanningRepository.device_actions`): liczy się start akcji, a akcje w całości
+        przykryte nowszym plikiem pomijamy. Urządzenia bez takiej akcji nie ma w wyniku.
+        """
+        if not device_ids:
+            return {}
+        current = (
+            select(DeviceSlotUsage.device_action_id)
+            .where(DeviceSlotUsage.device_action_id == DeviceAction.id, DeviceSlotUsage.superseded.is_(False))
+            .exists()
+        )
+        conditions = [DeviceInstance.user_id == user_id, DeviceInstance.source_device_id.in_(device_ids), current]
+        if before_utc is not None:
+            conditions.append(DeviceAction.action_start < before_utc)
+        return dict(self.db.execute(
+            select(DeviceInstance.source_device_id, func.max(DeviceAction.action_start))
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(*conditions)
+            .group_by(DeviceInstance.source_device_id)
+        ).all())
+
+    def device_ids_of_types(self, user_id: UUID, device_types: Iterable[str]) -> list[str]:
+        return list(self.db.execute(
+            select(DeviceInstance.source_device_id)
+            .where(DeviceInstance.user_id == user_id, DeviceInstance.device_type.in_(list(device_types)))
+            .order_by(DeviceInstance.source_device_id)
+        ).scalars())
+
+    def device_names(self, user_id: UUID) -> dict[str, str]:
+        return dict(self.db.execute(
+            select(DeviceInstance.source_device_id, DeviceInstance.name).where(DeviceInstance.user_id == user_id)
+        ).all())
 
     def commit(self) -> None:
         self.db.commit()

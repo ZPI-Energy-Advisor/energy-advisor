@@ -319,7 +319,7 @@ def test_state_has_clock_devices_and_home_power(home):
 
     assert body["hub_available"] is True
     assert body["simulation_id"] == home.simulation_id
-    assert body["clock"] == {"sim_time": "2026-10-19T12:00:00+02:00", "running": True, "speed": 288.0}
+    assert body["clock"] == {"sim_time": "2026-10-19T12:00:00+02:00", "running": True, "speed": 288.0, "stop_at": None}
     assert body["power"] == {"consumption_kw": 1.8, "production_kw": 3.0, "net_kw": -1.2}
     washer = body["devices"][0]
     assert (washer["device_name"], washer["state"], washer["program_id"]) == ("Pralka", "running", "cotton_60")

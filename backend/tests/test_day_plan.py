@@ -438,3 +438,40 @@ def test_without_history_device_starts_at_window_start(home):
 
     assert _items_of(body)["dev_dw_01"]["original_start"] == "2026-10-12T19:00:00+02:00"
     assert any("na początku podanych godzin" in note for note in body["notes"])
+
+
+def test_plan_items_carry_program_and_quarter_profile_for_simulation(home):
+    # ZP-113: symulacja wykonuje plan z tych pól, więc profil ma pokrywać [start, end) i mieć energię pozycji.
+    owner = _owner(home)
+    assert _put(owner, {"devices": [
+        {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))},
+        {"device_id": "dev_ev_01", "enabled": True, "windows": _windows(("18:00", "07:00")), "energy_kwh": 5},
+    ]}).status_code == 200
+
+    items = _items(_create(owner))
+
+    washer, ev = items["dev_wm_01"], items["dev_ev_01"]
+    assert (washer["program_id"], ev["program_id"]) == ("cotton_60", None)
+    for item in items.values():
+        quarters = (_local(item["end"]) - _local(item["start"])) / SLOT
+        assert len(item["profile_kwh"]) == quarters, item["action_id"]
+        assert round(sum(item["profile_kwh"]), 2) == item["energy_kwh"], item["action_id"]
+    assert 0.0 in ev["profile_kwh"] or ev["charging"] is None  # Przerwy w ładowaniu to zera w profilu.
+
+
+def test_plan_items_carry_profile_without_plan_for_bill_comparison(home):
+    # Bojler bez planu to termostat: inne kwadranse grzania i inna energia niż w planie, ale ten sam pobór wody.
+    owner = _owner(home)
+    assert _put(owner, {"devices": [
+        {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))},
+        {"device_id": "dev_wh_01", "enabled": True, "ready_times": ["07:00", "19:00"]},
+    ]}).status_code == 200
+
+    items = _items(_create(owner))
+
+    for item in items.values():
+        quarters = (_local(item["original_end"]) - _local(item["original_start"])) / SLOT
+        assert len(item["original_profile_kwh"]) == quarters, item["action_id"]
+    washer, heater = items["dev_wm_01"], items["dev_wh_01"]
+    assert washer["original_profile_kwh"] == washer["profile_kwh"]  # Ten sam program, inna godzina.
+    assert any(heater["original_profile_kwh"]) and heater["original_profile_kwh"] != heater["profile_kwh"]

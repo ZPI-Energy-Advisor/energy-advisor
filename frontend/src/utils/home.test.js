@@ -35,11 +35,13 @@ describe("home utils", () => {
     expect(deviceStateLabel(device({ state: "unreachable", power_kw: null }))).toBe("Brak połączenia");
   });
 
-  it("oznacza przebieg według planu, ale produkcja PV ma pierwszeństwo", () => {
-    const run = { ref: "act_1", started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" };
+  it("odróżnia przebieg planu od historii, a produkcja PV ma pierwszeństwo", () => {
+    const planned = { ref: null, started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" };
+    const history = { ...planned, ref: "act_1" };
 
-    expect(deviceStateLabel(device({ state: "running", power_kw: 0.06, run }))).toBe("Według planu");
-    expect(deviceStateLabel(device({ state: "running", power_kw: -2.5, run }))).toBe("Produkuje");
+    expect(deviceStateLabel(device({ state: "running", power_kw: 0.06, run: planned }))).toBe("Według planu");
+    expect(deviceStateLabel(device({ state: "running", power_kw: 2.0, run: history }))).toBe("Jak w historii");
+    expect(deviceStateLabel(device({ state: "running", power_kw: -2.5, run: history }))).toBe("Produkuje");
   });
 
   it("nie pozwala sterować urządzeniem bez połączenia albo po awarii", () => {

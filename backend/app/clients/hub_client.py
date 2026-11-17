@@ -6,9 +6,12 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.schemas.smart_home import (
+    MAX_BATCH_COMMANDS,
     CommandResult,
     DeviceCommand,
     HubClock,
+    HubCommand,
+    HubCommandResult,
     HubDevice,
     HubDevicesStatus,
     RegisteredDevice,
@@ -20,9 +23,12 @@ API_KEY_HEADER = "X-Hub-Api-Key"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 # Hub odpowiada na PUT /home/devices dopiero po uruchomieniu wszystkich mikroserwisów.
 REGISTRY_TIMEOUT_SECONDS = 60.0
-# Ponawiać można tylko żądania, których powtórzenie niczego nie zmienia. Komenda mogła dojść do huba
-# mimo timeoutu, a hub nie rozpoznaje powtórzeń, więc ponowiona mogłaby się wykonać drugi raz.
-RETRYABLE_METHODS = ("GET", "PUT")
+# Partia komend: komendy „teraz” hub przekazuje urządzeniom (do 3 s każda), a jednego urządzenia po kolei.
+BATCH_TIMEOUT_SECONDS = 30.0
+# Ponawiać można tylko żądania, których powtórzenie niczego nie zmienia (DELETE kolejki drugi raz nie ma
+# już czego skasować). Komenda mogła dojść do huba mimo timeoutu, a hub nie rozpoznaje powtórzeń, więc
+# ponowiona mogłaby się wykonać drugi raz.
+RETRYABLE_METHODS = ("GET", "PUT", "DELETE")
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -51,7 +57,7 @@ class HubError(Exception):
 class HubUnavailableError(HubError):
     """Hub nie odpowiedział (timeout, brak połączenia) albo zwrócił 5xx.
 
-    `retryable` mówi, czy żądanie można bezpiecznie ponowić (tylko GET i PUT).
+    `retryable` mówi, czy żądanie można bezpiecznie ponowić (tylko GET, PUT i DELETE).
     """
 
     def __init__(
@@ -107,6 +113,32 @@ class HubClient:
         )
         return self._parse(CommandResult, data)
 
+    def send_commands(self, commands: list[HubCommand]) -> list[HubCommandResult]:
+        """Komendy jednym żądaniem (POST /home/commands); wyniki w kolejności `commands`.
+
+        Hub obsługuje całą partię pod jedną blokadą zegara, a odrzucenie jednej komendy nie zatrzymuje
+        pozostałych. Jak każdy POST nie jest ponawiany: hub mógł przyjąć partię mimo braku odpowiedzi.
+        """
+        if not 1 <= len(commands) <= MAX_BATCH_COMMANDS:
+            raise ValueError(f"Partia musi mieć od 1 do {MAX_BATCH_COMMANDS} komend, a ma {len(commands)}")
+        data = self._request(
+            "POST",
+            "/home/commands",
+            json={"commands": [command.model_dump(mode="json", exclude_none=True) for command in commands]},
+            timeout=BATCH_TIMEOUT_SECONDS,
+        )
+        results = [self._parse(HubCommandResult, item) for item in self._field(data, "results")]
+        if len(results) != len(commands):
+            raise HubError(f"Hub zwrócił {len(results)} wyników dla {len(commands)} komend")
+        return results
+
+    def cancel_scheduled(self) -> int:
+        """Kasuje wszystkie zaplanowane komendy (DELETE /home/commands); zwraca ich liczbę."""
+        cancelled = self._request("DELETE", "/home/commands").get("cancelled")
+        if not isinstance(cancelled, int):
+            raise HubError("Hub nie podał liczby skasowanych komend")
+        return cancelled
+
     def get_clock(self) -> HubClock:
         return self._parse(HubClock, self._request("GET", "/home/clock"))
 
@@ -116,18 +148,26 @@ class HubClient:
         running: bool | None = None,
         speed: float | None = None,
         restart: bool = False,
+        stop_at: datetime | None = None,
+        clear_stop_at: bool = False,
     ) -> HubClock:
         """Zmienia podane pola zegara; pominięte zostają bez zmian.
 
         `restart` zaczyna nową symulację także wtedy, gdy `sim_time` jest równy bieżącemu.
+        `stop_at` to chwila, w której zegar sam stanie, a `clear_stop_at` kasuje takie zatrzymanie.
         """
+        if stop_at is not None and clear_stop_at:
+            raise ValueError("Podaj stop_at albo clear_stop_at, nie oba")
         payload = {
             "sim_time": sim_time.isoformat() if sim_time else None,
             "restart": True if restart else None,
             "running": running,
             "speed": speed,
+            "stop_at": stop_at.isoformat() if stop_at else None,
         }
         payload = {key: value for key, value in payload.items() if value is not None}
+        if clear_stop_at:
+            payload["stop_at"] = None  # Jawny null: hub kasuje zatrzymanie, a brak pola zostawiłby je.
         return self._parse(HubClock, self._request("PUT", "/home/clock", json=payload))
 
     def _request(self, method: str, path: str, json: dict | None = None, timeout=httpx.USE_CLIENT_DEFAULT) -> dict:
