@@ -22,6 +22,11 @@ class PlanRunRepository:
             select(PlanRun).where(PlanRun.user_id == user_id).order_by(PlanRun.started_at.desc()).limit(1)
         ).scalar_one_or_none()
 
+    def latest_runs(self, user_id: UUID, limit: int) -> list[PlanRun]:
+        return list(self.db.execute(
+            select(PlanRun).where(PlanRun.user_id == user_id).order_by(PlanRun.started_at.desc()).limit(limit)
+        ).scalars())
+
     def get(self, user_id: UUID, run_id: UUID) -> PlanRun | None:
         return self.db.execute(
             select(PlanRun).where(PlanRun.id == run_id, PlanRun.user_id == user_id)

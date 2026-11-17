@@ -49,6 +49,13 @@ class PlanRunActionOut(BaseModel):
     status: HubCommandStatus
     code: str | None = None
     detail: str | None = None
+    # Do rachunku przed i po (ZP-114); None w przebiegach sprzed niego. `command_id` z wyniku huba łączy
+    # akcję z jej device_started: start urządzenia z innym command_id to ręczne włączenie.
+    command_id: str | None = None
+    # Energia i koszt bez planu (start bazowy z planu) i koszt według planu, cenami kwadransów planu.
+    energy_before_kwh: float | None = None
+    cost_before: float | None = None
+    planned_cost: float | None = None
 
 
 class PlanRunDeviceOut(BaseModel):
@@ -70,6 +77,102 @@ class PlanRunErrorOut(BaseModel):
     sim_time: datetime
     code: str
     message: str
+
+
+class PlanRunCostDeviceOut(BaseModel):
+    """Urządzenie z planu w porównaniu: bez planu (start bazowy) i z planem (zmierzone w symulacji)."""
+
+    device_id: str
+    device_name: str
+    kind: str
+    energy_before_kwh: float
+    energy_after_kwh: float
+    cost_before: float
+    # Koszt według planu i koszt zmierzony; różnią się, gdy urządzenie zużyło inaczej niż w planie.
+    planned_cost: float
+    cost_after: float
+    saving: float
+
+
+class PlanRunDeviceRefOut(BaseModel):
+    device_id: str
+    device_name: str
+
+
+class PlanRunManualDeviceOut(BaseModel):
+    """Urządzenie włączane ręcznie z „Mój dom” (urządzenia stałe): poza porównaniem."""
+
+    device_id: str
+    device_name: str
+    energy_kwh: float
+    cost: float
+
+
+class PlanRunPvOut(BaseModel):
+    """Produkcja PV przebiegu, poza porównaniem: ile zużył dom w tym samym kwadransie i ile z tego plan."""
+
+    production_kwh: float
+    self_consumption_kwh: float
+    # Część autokonsumpcji przypadająca na urządzenia z planu (w proporcji do ich zużycia w kwadransie).
+    plan_from_pv_kwh: float
+    plan_kwh: float
+
+
+DeviationKind = Literal["rejected", "device_error", "interrupted", "manual_start", "energy_mismatch", "grid_limit"]
+
+
+class PlanRunDeviationOut(BaseModel):
+    """Odchylenie od planu; `excluded` – urządzenie z tego powodu wypada z porównania."""
+
+    kind: DeviationKind
+    device_id: str | None = None
+    device_name: str | None = None
+    sim_time: datetime | None = None
+    end: datetime | None = None
+    message: str
+    excluded: bool = False
+
+
+class PlanRunCostOut(BaseModel):
+    """Rachunek przed i po planie (ZP-114).
+
+    Porównujemy tylko urządzenia z planu, tak jak oszczędność na ekranie planu, i tylko te, których wszystkie
+    akcje skończyły się do `until` bez ingerencji (ręczne włączenie lub wyłączenie, awaria, odrzucona komenda).
+    Urządzenia stałe i PV są osobno. `complete` – przebieg doszedł do końca planu; inaczej raport jest niepełny
+    i urządzenia z akcjami po `until` są w `pending`.
+    """
+
+    complete: bool
+    until: datetime
+    cost_before: float
+    cost_after: float
+    planned_cost: float
+    saving: float
+    # Oszczędność w procentach kosztu bez planu; None, gdy nie ma czego porównać.
+    saving_percent: float | None = None
+    devices: list[PlanRunCostDeviceOut]
+    excluded: list[PlanRunDeviceRefOut] = []
+    pending: list[PlanRunDeviceRefOut] = []
+    manual: list[PlanRunManualDeviceOut] = []
+    manual_cost: float = 0.0
+    pv: PlanRunPvOut | None = None
+    deviations: list[PlanRunDeviationOut] = []
+
+
+class PlanRunSummaryOut(BaseModel):
+    """Przebieg na liście historii: rachunek z zapisanego raportu (None w trakcie i sprzed ZP-114)."""
+
+    id: UUID
+    plan_date: date
+    status: Literal["running", "completed", "ended", "superseded"]
+    started_at: datetime
+    ended_at: datetime | None = None
+    complete: bool | None = None
+    cost_before: float | None = None
+    cost_after: float | None = None
+    saving: float | None = None
+    saving_percent: float | None = None
+    deviations: int | None = None
 
 
 class PlanRunOut(BaseModel):
@@ -94,3 +197,5 @@ class PlanRunOut(BaseModel):
     devices: list[PlanRunDeviceOut]
     # Najnowsze najpierw, najwyżej kilkadziesiąt.
     errors: list[PlanRunErrorOut] = []
+    # Rachunek przed i po (ZP-114); None w przebiegach sprzed niego.
+    cost: PlanRunCostOut | None = None

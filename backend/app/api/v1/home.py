@@ -12,7 +12,7 @@ from app.api.v1.deps import (
     require_hub_api_key,
 )
 from app.models.User import User
-from app.schemas.plan_run import PlanRunOut, PlanRunRequest
+from app.schemas.plan_run import PlanRunOut, PlanRunRequest, PlanRunSummaryOut
 from app.schemas.smart_home import (
     CommandResult,
     DeviceCommand,
@@ -120,8 +120,28 @@ def get_latest_plan_run(
     owner: User = Depends(get_home_owner),
     service: PlanRunService = Depends(get_plan_run_service),
 ):
-    """Ostatni przebieg planu: status, energia urządzeń z planu (plan i symulacja) oraz awarie urządzeń."""
+    """Ostatni przebieg planu: status, energia urządzeń z planu (plan i symulacja), awarie urządzeń
+    i rachunek przed i po planie (ZP-114)."""
     return service.latest(owner)
+
+
+@router.get("/plan-runs", response_model=list[PlanRunSummaryOut])
+def list_plan_runs(
+    owner: User = Depends(get_home_owner),
+    service: PlanRunService = Depends(get_plan_run_service),
+):
+    """Historia przebiegów od najnowszego z rachunkiem z zapisanego raportu (ZP-114)."""
+    return service.history(owner)
+
+
+@router.get("/plan-runs/{run_id}", response_model=PlanRunOut)
+def get_plan_run(
+    run_id: UUID,
+    owner: User = Depends(get_home_owner),
+    service: PlanRunService = Depends(get_plan_run_service),
+):
+    """Raport jednego przebiegu, np. z historii przebiegów."""
+    return service.get(owner, run_id)
 
 
 @router.post("/plan-runs/{run_id}/end", response_model=PlanRunOut)

@@ -5,6 +5,7 @@ import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
 import PlanRunCard from "../components/home/PlanRunCard";
+import PlanRunHistory from "../components/home/PlanRunHistory";
 import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
@@ -103,11 +104,18 @@ function HomeLive() {
   );
 }
 
-// Ekran „Mój dom”: podłączenie domu, zegar symulacji, bilans i urządzenia z huba Smart Home.
+const TABS = [
+  { id: "simulation", label: "Symulacja" },
+  { id: "reports", label: "Raporty" },
+];
+
+// Ekran „Mój dom”: zakładka „Symulacja” (podłączenie domu, zegar, bilans i urządzenia z huba Smart Home)
+// i „Raporty” z poprzednich przebiegów planu, dostępne bez działającej symulacji.
 // Tylko dla właściciela domu (HUB_HOME_USER_EMAIL); pozostałe konta wracają na dashboard.
 function HomePage() {
   const { me, isReady, loadError } = useCurrentUser();
   const [connection, setConnection] = useState(null);
+  const [tab, setTab] = useState("simulation");
 
   if (!isReady) {
     return (
@@ -132,9 +140,32 @@ function HomePage() {
         <p className="text-sm text-gray-600 mt-1">Symulacja urządzeń z Twoich plików: co pracuje, ile zużywa i ile kosztuje.</p>
       </div>
 
-      <HomeConnectionPanel onStatusChange={setConnection} />
+      <div className="flex gap-1 border-b border-gray-200" role="tablist" aria-label="Mój dom">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            onClick={() => setTab(item.id)}
+            className={`px-4 py-2 -mb-px border-b-2 text-sm font-medium ${
+              tab === item.id
+                ? "border-emerald-600 text-emerald-700"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-      {connection?.connected && <HomeLive />}
+      {/* Zakładka symulacji zostaje zamontowana (ukryta), żeby podłączenie domu nie pytało API od nowa
+          przy każdym przełączeniu; raporty pobierają się przy otwarciu zakładki. */}
+      <div className="space-y-6" hidden={tab !== "simulation"}>
+        <HomeConnectionPanel onStatusChange={setConnection} />
+        {connection?.connected && <HomeLive />}
+      </div>
+      {tab === "reports" && <PlanRunHistory />}
     </div>
   );
 }

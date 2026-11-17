@@ -28,6 +28,16 @@ class DeviceErrorEvent:
 
 
 @dataclass(frozen=True)
+class DeviceActionEvent:
+    """device_started albo device_finished: `data` z `command_id`, `ref`, `interrupted` (kontrakt huba)."""
+
+    device_id: str
+    type: str
+    sim_time: datetime
+    data: dict
+
+
+@dataclass(frozen=True)
 class SimulationPosition:
     simulation_id: str
     sim_time: datetime
@@ -115,6 +125,25 @@ class HomeEventRepository:
             DeviceErrorEvent(device_id, sim_time, str(data.get("code") or ""), str(data.get("message") or ""))
             for device_id, sim_time, data in rows
         ]
+
+    def device_actions(
+        self, user_id: UUID, simulation_id: str, device_ids: list[str], until: datetime,
+    ) -> list[DeviceActionEvent]:
+        """Starty i końce urządzeń przebiegu do chwili `until` włącznie, od najstarszego."""
+        if not device_ids:
+            return []
+        rows = self.db.execute(
+            select(HomeEvent.device_id, HomeEvent.type, HomeEvent.sim_time, HomeEvent.data)
+            .where(
+                HomeEvent.user_id == user_id,
+                HomeEvent.simulation_id == simulation_id,
+                HomeEvent.type.in_([HomeEvent.DEVICE_STARTED, HomeEvent.DEVICE_FINISHED]),
+                HomeEvent.device_id.in_(device_ids),
+                HomeEvent.sim_time <= until,
+            )
+            .order_by(HomeEvent.sim_time, HomeEvent.id)
+        ).all()
+        return [DeviceActionEvent(device_id, kind, sim_time, data or {}) for device_id, kind, sim_time, data in rows]
 
     def last_sim_time(self, user_id: UUID, simulation_id: str) -> datetime | None:
         """Najpóźniejszy czas symulacji w zdarzeniach przebiegu (gdy hub zaczął już inny przebieg)."""

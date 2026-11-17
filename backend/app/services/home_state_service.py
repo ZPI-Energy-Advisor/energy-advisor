@@ -43,6 +43,10 @@ class DayEnergy:
 
     by_slot: dict[datetime, float] = field(default_factory=lambda: defaultdict(float))
     by_device: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+    # Urządzenie -> kwadrans -> kWh: wycena urządzenia cenami kwadransów (rachunek przebiegu planu, ZP-114).
+    by_device_slot: dict[str, dict[datetime, float]] = field(
+        default_factory=lambda: defaultdict(lambda: defaultdict(float)),
+    )
     consumption_kwh: float = 0.0
     production_kwh: float = 0.0
 
@@ -70,6 +74,7 @@ def day_energy(steps: list[EnergyStep], start: datetime, end: datetime) -> DayEn
                 share = step.energy_kwh * overlap.total_seconds() / span
                 energy.by_slot[slot] += share
                 energy.by_device[step.device_id] += share
+                energy.by_device_slot[step.device_id][slot] += share
                 if share > 0:
                     energy.consumption_kwh += share
                 else:

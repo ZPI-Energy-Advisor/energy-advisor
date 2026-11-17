@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FiAlertTriangle, FiSquare } from "react-icons/fi";
 import { formatKwh, formatSimDate, formatSimTime } from "../../utils/home";
+import PlanRunCost, { DeviationList } from "./PlanRunCost";
 import { CARD, SECONDARY_BUTTON } from "./styles";
 
 const STATUS = {
@@ -54,9 +55,11 @@ function HistoryDevices({ run }) {
   );
 }
 
-// Przebieg zatwierdzonego planu w symulacji (ZP-113): postęp, energia urządzeń z planu i awarie.
+// Przebieg zatwierdzonego planu w symulacji (ZP-113): postęp, energia urządzeń z planu i awarie. Od ZP-114
+// w trakcie przebiegu na żywo odchylenia od planu (awarie są wśród nich), a po zakończeniu rachunek bez planu
+// i z planem: w trakcie liczyłby się co chwilę od nowa i tylko zaśmiecał kartę.
 // „Zakończ” kasuje zaplanowane komendy przebiegu (plan i historię), zatrzymuje zegar i zamyka przebieg;
-// do chwilowej przerwy służy Pauza.
+// do chwilowej przerwy służy Pauza. Bez `onEnd` (przebieg z historii) karta jest tylko do odczytu.
 function PlanRunCard({ run, disabled, onEnd }) {
   const [isEnding, setIsEnding] = useState(false);
   const status = STATUS[run.status] ?? STATUS.ended;
@@ -85,7 +88,7 @@ function PlanRunCard({ run, disabled, onEnd }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${status.tone}`}>{status.label}</span>
-          {running && (
+          {running && onEnd && (
             <button type="button" className={SECONDARY_BUTTON} disabled={disabled || isEnding} onClick={end}>
               <FiSquare aria-hidden="true" /> {isEnding ? "Kończenie..." : "Zakończ"}
             </button>
@@ -125,6 +128,11 @@ function PlanRunCard({ run, disabled, onEnd }) {
         ))}
       </ul>
 
+      {run.cost && !running && <PlanRunCost cost={run.cost} />}
+      {run.cost && running && (
+        <p className="mt-3 text-sm text-gray-600">Rachunek bez planu i z planem pojawi się po zakończeniu planu.</p>
+      )}
+
       <HistoryDevices run={run} />
 
       {running && (
@@ -134,7 +142,18 @@ function PlanRunCard({ run, disabled, onEnd }) {
         </p>
       )}
 
-      {run.errors.length > 0 && (
+      {run.cost && running && run.cost.deviations.length > 0 && (
+        <div className="mt-4 p-3 rounded border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <FiAlertTriangle aria-hidden="true" /> Odchylenia od planu
+          </p>
+          <div className="mt-1">
+            <DeviationList deviations={run.cost.deviations} />
+          </div>
+        </div>
+      )}
+
+      {!run.cost && run.errors.length > 0 && (
         <div className="mt-4 p-3 rounded border border-red-200 bg-red-50" role="alert">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-red-800">
             <FiAlertTriangle aria-hidden="true" /> Awarie urządzeń

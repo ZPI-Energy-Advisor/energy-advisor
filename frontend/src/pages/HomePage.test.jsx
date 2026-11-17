@@ -102,11 +102,46 @@ const PLAN_RUN = {
   }],
 };
 
-const mockApi = ({ connection = CONNECTED, states = [STATE], planRun = null } = {}) => {
+// Rachunek przed i po (ZP-114) w kształcie PlanRunCostOut.
+const COST = {
+  complete: true,
+  until: "2026-10-20T06:00:00+02:00",
+  cost_before: 6.4,
+  cost_after: 1.9,
+  planned_cost: 1.78,
+  saving: 4.5,
+  saving_percent: 70.3,
+  devices: [{
+    device_id: "dev_wm_01", device_name: "Pralka Bosch", kind: "program", energy_before_kwh: 1.4,
+    energy_after_kwh: 1.4, cost_before: 1.2, planned_cost: 0.4, cost_after: 0.42, saving: 0.78,
+  }],
+  excluded: [{ device_id: "dev_ev_01", device_name: "Ładowarka EV" }],
+  pending: [],
+  manual: [{ device_id: "dev_lamp_01", device_name: "Lampa salon", energy_kwh: 0.2, cost: 0.12 }],
+  manual_cost: 0.12,
+  pv: { production_kwh: 6.4, self_consumption_kwh: 3.1, plan_from_pv_kwh: 0.9, plan_kwh: 1.4 },
+  deviations: [
+    {
+      kind: "interrupted", device_id: "dev_ev_01", device_name: "Ładowarka EV", sim_time: "2026-10-19T23:00:00+02:00",
+      end: null, message: "Wyłączone ręcznie w trakcie pracy.", excluded: true,
+    },
+    {
+      kind: "grid_limit", device_id: null, device_name: null, sim_time: "2026-10-19T19:00:00+02:00",
+      end: "2026-10-19T19:30:00+02:00", message: "Pobór z sieci do 4,40 kW, a limit przyłącza to 3,00 kW.",
+      excluded: false,
+    },
+  ],
+};
+
+const mockApi = ({ connection = CONNECTED, states = [STATE], planRun = null, history = [], reports = {} } = {}) => {
   let calls = 0;
   return vi.spyOn(apiClient, "get").mockImplementation((url) => {
     if (url === "/home") return Promise.resolve({ data: connection });
     if (url === "/home/plan-runs/latest") return Promise.resolve({ data: planRun });
+    if (url === "/home/plan-runs") return Promise.resolve({ data: history });
+    if (url.startsWith("/home/plan-runs/") && reports[url.split("/").pop()]) {
+      return Promise.resolve({ data: reports[url.split("/").pop()] });
+    }
     if (url === "/home/state") {
       const next = states[Math.min(calls, states.length - 1)];
       calls += 1;
@@ -318,6 +353,107 @@ describe("HomePage", () => {
     // PV na plusie, z dopiskiem „produkcji”.
     expect(history.textContent).toContain("Instalacja PV: 1,20 kWh z 6,40 kWh produkcji");
     expect(history.textContent).toContain("Pompa ciepła: 4,10 kWh z 9,50 kWh");
+  });
+
+  it("po zakończeniu pokazuje rachunek bez planu i z planem, sumy spoza porównania i odchylenia pod „Więcej”", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "completed", cost: COST } });
+    renderPage();
+
+    const cost = await screen.findByRole("region", { name: "Rachunek przed i po" });
+    expect(cost.textContent).toContain("Bez planu6,40 zł");
+    expect(cost.textContent).toContain("Z planem1,90 zł");
+    expect(cost.textContent).toContain("według planu 1,78 zł");
+    expect(cost.textContent).toContain("Oszczędność4,50 zł70,3% kosztu bez planu");
+    expect(within(cost).queryByText("niepełny")).toBeNull();
+    const row = within(cost).getByRole("row", { name: /Pralka Bosch/ });
+    expect(row.textContent).toContain("1,20 zł");
+    expect(row.textContent).toContain("0,78 zł");
+    const facts = cost.querySelector("dl");
+    expect(facts.textContent).toContain("Poza porównaniemŁadowarka EV");
+    expect(facts.textContent).toContain("Włączone ręcznie0,12 zł");
+    expect(facts.textContent).toContain("PV6,40 kWh, z tego plan 0,90 kWh");
+    expect(facts.textContent).toContain("Odchylenia2");
+    const more = cost.querySelector("details");
+    expect(more.textContent).toContain("Włączone ręcznie: Lampa salon 0,20 kWh (0,12 zł).");
+    expect(more.textContent).toContain(
+      "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64% ich zużycia).",
+    );
+    const deviations = within(cost).getByRole("list", { name: "Odchylenia od planu", hidden: true });
+    expect(deviations.textContent).toContain("23:00 Wyłączone ręcznie – Ładowarka EV: Wyłączone ręcznie w trakcie pracy. (poza porównaniem)");
+    expect(deviations.textContent).toContain("19:00–19:30 Limit przyłącza: Pobór z sieci do 4,40 kW");
+    // Awarie są wśród odchyleń, więc nie ma osobnego alertu.
+    const card = screen.getByRole("region", { name: "Przebieg planu" });
+    expect(within(card).queryByRole("alert")).toBeNull();
+  });
+
+  it("raport po „Zakończ” ma plakietkę „niepełny” z godziną w podpowiedzi", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "ended", cost: {
+      ...COST, complete: false, until: "2026-10-19T14:00:00+02:00", excluded: [],
+      pending: [{ device_id: "dev_ev_01", device_name: "Ładowarka EV" }],
+    } } });
+    renderPage();
+
+    const cost = await screen.findByRole("region", { name: "Rachunek przed i po" });
+    const badge = within(cost).getByText("niepełny");
+    expect(badge.getAttribute("title")).toBe("Porównane są urządzenia, które skończyły pracę do 14:00.");
+    expect(cost.textContent).toContain("Nie skończyły pracyŁadowarka EV");
+    expect(cost.textContent).not.toContain("14:00");
+  });
+
+  it("w trakcie przebiegu nie pokazuje rachunku, tylko odchylenia na żywo", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, cost: { ...COST, complete: false } } });
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(within(card).queryByRole("region", { name: "Rachunek przed i po" })).toBeNull();
+    expect(card.textContent).toContain("Rachunek bez planu i z planem pojawi się po zakończeniu planu.");
+    const alert = within(card).getByRole("alert");
+    expect(alert.textContent).toContain("Odchylenia od planu");
+    expect(alert.textContent).toContain("19:00–19:30 Limit przyłącza: Pobór z sieci do 4,40 kW");
+  });
+
+  it("zakładka „Raporty” pokazuje przebiegi i otwiera raport wybranego", async () => {
+    const previous = {
+      id: "run-0", plan_date: "2026-10-18", status: "completed", started_at: "2026-11-14T10:00:00Z",
+      ended_at: "2026-11-14T10:06:00Z", complete: true, cost_before: 6.4, cost_after: 1.9, saving: 4.5,
+      saving_percent: 70.3, deviations: 2,
+    };
+    const get = mockApi({
+      planRun: PLAN_RUN,
+      history: [{ ...previous, id: "run-1", plan_date: "2026-10-19", status: "running", saving: null }, previous],
+      reports: { "run-0": { ...PLAN_RUN, id: "run-0", plan_date: "2026-10-18", status: "completed", cost: COST } },
+    });
+    renderPage();
+
+    // Na zakładce symulacji historii nie ma.
+    await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(screen.queryByRole("region", { name: "Historia przebiegów" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Raporty" }));
+
+    const history = await screen.findByRole("region", { name: "Historia przebiegów" });
+    expect(within(history).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(history).getByRole("listitem", { name: /19 października/ }).textContent).toContain("rachunek po zakończeniu");
+    const entry = within(history).getByRole("listitem", { name: /18 października/ });
+    expect(entry.textContent).toContain("wykonany");
+    expect(entry.textContent).toContain("oszczędność 4,50 zł (70,3%) · odchylenia: 2");
+
+    fireEvent.click(within(entry).getByRole("button", { name: "Pokaż raport" }));
+
+    const report = await within(entry).findByRole("region", { name: "Rachunek przed i po" });
+    expect(report.textContent).toContain("Oszczędność4,50 zł");
+    expect(get).toHaveBeenCalledWith("/home/plan-runs/run-0");
+    // Raport z historii jest tylko do odczytu.
+    expect(within(entry).queryByRole("button", { name: "Zakończ" })).toBeNull();
+  });
+
+  it("raporty są dostępne bez podłączonego domu", async () => {
+    mockApi({ connection: DISCONNECTED });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Raporty" }));
+
+    const history = await screen.findByRole("region", { name: "Historia przebiegów" });
+    expect(history.textContent).toContain("Nie ma jeszcze raportów.");
   });
 
   it("podaje dzień przy urządzeniu, gdy urządzenia mają różne dni referencyjne, i nie pokazuje -0", async () => {
