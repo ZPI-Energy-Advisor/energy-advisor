@@ -195,7 +195,7 @@ def test_get_file_data(db):
     assert body["results"]["tariffs"]["G11"]["estimated_cost_pln"] == 72.0
     assert body["results"]["pricing"] == {
         "operator": "PGE", "from_profile": False, "profile_tariff": "G11",
-        "tariff_key": "G11", "tariff_label": "G11", "note": None,
+        "tariff_key": "G11", "tariff_label": "G11", "note": None, "all_tariffs": True,
     }
 
 
@@ -1252,3 +1252,15 @@ def test_aggregate_costs_are_priced_at_read_time(db):
     assert results["tariffs"]["G11"]["energy_cost_pln"] == 48.0
     assert results["tariffs"]["G11"]["monthly_fees_pln"] == 0.0
     assert results["chart_daily"][0]["cost_G11"] == 24.0
+
+
+def test_dashboard_can_ask_only_for_profile_tariff(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    profile_only = _get_data(user, energy_file, "?tariffs=profile").json()["results"]
+    everything = _all_data(user, "?tariffs=all").json()["results"]
+
+    assert list(profile_only["tariffs"]) == ["G11"] and profile_only["pricing"]["all_tariffs"] is False
+    assert everything["pricing"]["all_tariffs"] is True
+    assert _get_data(user, energy_file, "?tariffs=some").status_code == 422

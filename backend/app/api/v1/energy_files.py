@@ -1,4 +1,5 @@
 from datetime import date
+from enum import Enum
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -40,25 +41,38 @@ DATE_FROM_QUERY = Query(None, alias="from", description="Początek zakresu (RRRR
 DATE_TO_QUERY = Query(None, alias="to", description="Koniec zakresu (RRRR-MM-DD), włącznie.")
 
 
+class TariffScope(str, Enum):
+    PROFILE = "profile"
+    ALL = "all"
+
+
+TARIFFS_QUERY = Query(
+    TariffScope.ALL,
+    description="Koszty: profile = tylko taryfa kosztów (z profilu), all = wszystkie taryfy operatora z profilu.",
+)
+
+
 # Musi być zarejestrowany przed /{file_id}/data, inaczej "all" trafiłoby do walidacji UUID.
 @router.get(f"/{ALL_FILES_SOURCE_ID}/data", response_model=EnergyDataFileDataResponse)
 def get_all_files_data(
     date_from: date | None = DATE_FROM_QUERY,
     date_to: date | None = DATE_TO_QUERY,
+    tariffs: TariffScope = TARIFFS_QUERY,
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
-    return service.get_all_files_data(user.id, EnergyDataFile.SOURCE_METER, date_from, date_to)
+    return service.get_all_files_data(user.id, EnergyDataFile.SOURCE_METER, date_from, date_to, tariffs == TariffScope.ALL)
 
 
 @router.get(f"/{ALL_DEVICE_FILES_SOURCE_ID}/data", response_model=EnergyDataFileDataResponse)
 def get_all_device_files_data(
     date_from: date | None = DATE_FROM_QUERY,
     date_to: date | None = DATE_TO_QUERY,
+    tariffs: TariffScope = TARIFFS_QUERY,
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
-    return service.get_all_files_data(user.id, EnergyDataFile.SOURCE_DEVICES, date_from, date_to)
+    return service.get_all_files_data(user.id, EnergyDataFile.SOURCE_DEVICES, date_from, date_to, tariffs == TariffScope.ALL)
 
 
 @router.get("/{file_id}/data", response_model=EnergyDataFileDataResponse)
@@ -66,10 +80,11 @@ def get_energy_file_data(
     file_id: UUID,
     date_from: date | None = DATE_FROM_QUERY,
     date_to: date | None = DATE_TO_QUERY,
+    tariffs: TariffScope = TARIFFS_QUERY,
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
-    return service.get_file_data(file_id, user.id, date_from, date_to)
+    return service.get_file_data(file_id, user.id, date_from, date_to, tariffs == TariffScope.ALL)
 
 
 @router.get("/{source_id}/devices/usage", response_model=DeviceUsageResponse)

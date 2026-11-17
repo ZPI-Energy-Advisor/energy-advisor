@@ -190,7 +190,7 @@ def test_profile_tariff_is_marked_and_selected():
     assert [key for key, item in costs.tariffs.items() if item["is_profile"]] == ["G13"]
     assert costs.pricing == {
         "operator": "TAURON", "from_profile": True, "profile_tariff": "G13",
-        "tariff_key": "G13", "tariff_label": "G13", "note": None,
+        "tariff_key": "G13", "tariff_label": "G13", "note": None, "all_tariffs": True,
     }
 
 
@@ -312,3 +312,26 @@ def test_offer_available_later_than_period_start_is_left_out_like_in_calculation
 
     assert offer["estimated_cost_pln"] is None
     assert offer["note"] == "Oferta dynamiczna: oferta dostępna od 01.02.2026, a okres zaczyna się 10.01.2026."
+
+
+def test_only_profile_tariff_is_priced_when_others_are_not_needed():
+    usage = _usage(date(2026, 2, 1), 10)
+
+    everything = _costs(_profile("G13"), usage)
+    service = TariffCostService(
+        FlatTariffRepository(_definitions(), _periods()), market_prices=DynamicMarketPriceResolver(_MarketRepository())
+    )
+    only_profile = service.usage_costs(PricingProfile.from_saved(_profile("G13")), usage, all_tariffs=False)
+
+    assert list(only_profile.tariffs) == ["G13"] and list(only_profile.slot_prices) == ["G13"]
+    assert only_profile.tariffs["G13"] == everything.tariffs["G13"]
+    assert only_profile.pricing == {**everything.pricing, "all_tariffs": False}
+
+
+def test_only_fallback_tariff_is_priced_when_profile_tariff_has_no_rates():
+    service = TariffCostService(FlatTariffRepository(_definitions(), _periods()))
+
+    costs = service.usage_costs(PricingProfile.from_saved(_profile("G12w")), _usage(date(2026, 2, 1), 3), all_tariffs=False)
+
+    assert list(costs.tariffs) == ["G11"]
+    assert costs.pricing["tariff_key"] == "G11" and "G12w" in costs.pricing["note"]

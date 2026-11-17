@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
@@ -57,14 +57,19 @@ function TariffValues({ payload, metricType, labels }) {
 
 function ResultsPage() {
   const { profileTariff } = useCurrentUser();
-  const { isReady, results, isLoadingData } = useEnergyFiles();
+  const { isReady, results, isLoadingData, requireAllTariffs } = useEnergyFiles();
+
+  useEffect(() => {
+    requireAllTariffs(true);
+    return () => requireAllTariffs(false);
+  }, [requireAllTariffs]);
 
   const [timeResolution, setTimeResolution] = useState("1h");
   const [metricType, setMetricType] = useState("cost");
 
   const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9", "#ec4899", "#84cc16"];
 
-  if (!isReady) {
+  if (!isReady || (results?.pricing?.all_tariffs === false && isLoadingData)) {
     return (
       <div className="p-10 text-gray-500">Kalkulowanie opłacalności...</div>
     );

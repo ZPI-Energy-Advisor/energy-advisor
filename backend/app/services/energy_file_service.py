@@ -69,14 +69,16 @@ class EnergyFileService:
         self.home_service = home_service
         self.tariff_costs = tariff_costs
 
-    def _priced_results(self, user_id: UUID, results: dict, date_from: date, date_to: date) -> dict:
+    def _priced_results(
+        self, user_id: UUID, results: dict, date_from: date, date_to: date, all_tariffs: bool = True
+    ) -> dict:
         """Wykresy, statystyki i koszty taryf operatora z profilu dla dni [date_from, date_to], z cenami
         policzonymi teraz z cennika (nie zapisanymi przy imporcie)."""
         usage = CalculationService.usage_in_range(results["usage_15min"], date_from, date_to)
         if self.tariff_costs is None:
             slot_prices, tariffs, pricing = {}, {}, None
         else:
-            costs = self.tariff_costs.usage_costs(self.tariff_costs.profile(user_id), usage)
+            costs = self.tariff_costs.usage_costs(self.tariff_costs.profile(user_id), usage, all_tariffs)
             slot_prices, tariffs, pricing = costs.slot_prices, costs.tariffs, costs.pricing
         summary = CalculationService.summarize_usage(
             usage, slot_prices, source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
@@ -128,6 +130,7 @@ class EnergyFileService:
         user_id: UUID,
         date_from: date | None = None,
         date_to: date | None = None,
+        all_tariffs: bool = True,
     ) -> EnergyDataFileDataResponse:
         energy_file = self._get_own_file(file_id, user_id)
 
@@ -149,7 +152,7 @@ class EnergyFileService:
             date_from, date_to = energy_file.data_start, energy_file.data_end
         else:
             date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
-        results = self._priced_results(user_id, results, date_from, date_to)
+        results = self._priced_results(user_id, results, date_from, date_to, all_tariffs)
 
         return EnergyDataFileDataResponse(
             status="success",
@@ -168,6 +171,7 @@ class EnergyFileService:
         source_type: str = EnergyDataFile.SOURCE_METER,
         date_from: date | None = None,
         date_to: date | None = None,
+        all_tariffs: bool = True,
     ) -> EnergyDataFileDataResponse:
         """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
 
@@ -236,7 +240,7 @@ class EnergyFileService:
             file=source,
             date_from=date_from,
             date_to=date_to,
-            results=public_results(self._priced_results(user_id, merged_results, date_from, date_to)),
+            results=public_results(self._priced_results(user_id, merged_results, date_from, date_to, all_tariffs)),
         )
 
     def _readings_in_range(self, file_id: UUID, date_from: date, date_to: date) -> list:

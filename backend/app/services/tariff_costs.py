@@ -249,14 +249,16 @@ class TariffCostService:
             market_price=market_price, prosumer=profile.prosumer, fee_parameters=fee_parameters,
         )
 
-    def usage_costs(self, profile: PricingProfile, usage: dict[str, list[float | None]]) -> UsageCosts:
+    def usage_costs(
+        self, profile: PricingProfile, usage: dict[str, list[float | None]], all_tariffs: bool = True
+    ) -> UsageCosts:
         """Ceny kwadransów (do wykresów) i rachunek każdej taryfy dla serii {dzień: [96 kWh | None]}.
 
         Rachunek liczymy jak Wyniki kalkulacji: w każdym cyklu rozliczeniowym energia z cen kwadransów
         plus opłaty miesięczne za dni okresu, zaokrąglone do grosza."""
         days = sorted(day for day, slots in usage.items() if any(kwh is not None for kwh in slots))
         if not days:
-            return UsageCosts({}, {}, self._pricing(profile, None, None))
+            return UsageCosts({}, {}, self._pricing(profile, None, None, all_tariffs))
         first, last = date.fromisoformat(days[0]), date.fromisoformat(days[-1])
         notes = []
         data_start = self.tariff_repository.first_valid_from(operator=profile.operator)
@@ -267,7 +269,7 @@ class TariffCostService:
                     f"Koszty u operatora {operator} liczymy od {polish_date(data_start)}, a wybrany okres obejmuje "
                     f"tylko wcześniejsze dni ({polish_date(first)} – {polish_date(last)})."
                 )
-                return UsageCosts({}, {}, self._pricing(profile, None, note))
+                return UsageCosts({}, {}, self._pricing(profile, None, note, all_tariffs))
             notes.append(
                 f"Okres zaczyna się {polish_date(first)}, a stawki taryfowe mamy od {polish_date(data_start)}. "
                 f"Dni przed {polish_date(data_start)} nie liczymy — koszty obejmują "
@@ -283,6 +285,8 @@ class TariffCostService:
         annual_kwh = Decimal(str(round(total_kwh * DAYS_IN_YEAR / ((last - first).days + 1), 3)))
         selected, selection_note = self.select(profile, options)
         notes.append(selection_note)
+        if not all_tariffs:
+            options = [selected] if selected else []
 
         slot_prices, tariffs, slot_keys = {}, {}, {}
         for option in options:
@@ -321,7 +325,7 @@ class TariffCostService:
                 **self._bill(profile, months, usage, by_slot, quarters.monthly_fees, first, last),
             }
         note = " ".join(item for item in notes if item) or None
-        return UsageCosts(slot_prices, tariffs, self._pricing(profile, selected, note))
+        return UsageCosts(slot_prices, tariffs, self._pricing(profile, selected, note, all_tariffs))
 
     @staticmethod
     def by_local_slot(quarters: QuarterPrices, days=(), keys=None) -> dict[tuple[str, int], KwhPrice]:
@@ -353,7 +357,9 @@ class TariffCostService:
         return None if price is None else round(float(price.gross), 5)
 
     @staticmethod
-    def _pricing(profile: PricingProfile, selected: TariffOption | None, note: str | None) -> dict[str, Any]:
+    def _pricing(
+        profile: PricingProfile, selected: TariffOption | None, note: str | None, all_tariffs: bool = True
+    ) -> dict[str, Any]:
         return {
             "operator": profile.operator.value,
             "from_profile": profile.from_profile,
@@ -361,6 +367,7 @@ class TariffCostService:
             "tariff_key": selected.key if selected else None,
             "tariff_label": selected.label if selected else None,
             "note": note,
+            "all_tariffs": all_tariffs,
         }
 
     @staticmethod
