@@ -34,6 +34,7 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | Ekran „Mój dom”, sterowanie urządzeniami i zegarem przez backend, opis urządzeń w stanie | ZP-97 |
 | Przebieg z własnym profilem (`POST /run`, `run_profile`), `restart` zegara | ZP-96 |
 | Komendy wsadowe (`POST /home/commands`, `DELETE /home/commands`), `stop_at` zegara, wykonanie planu dnia z PV z dnia referencyjnego (`/api/v1/home/plan-runs`) | ZP-113 |
+| Pomieszczenie urządzenia (`room`) w rejestrze i w stanie domu | ZP-109 |
 
 ## Zasady ogólne
 
@@ -99,7 +100,7 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 404 | `program_not_found` | `program_id` spoza programów urządzenia |
 | 409 | `invalid_state` | Polecenie niemożliwe w obecnym stanie (np. start programu, gdy inny trwa) |
 | 409 | `stale_tick` | `sim_time` ticka wcześniejszy niż ostatni |
-| 409 | `config_requires_restart` | `PUT /config` zmienia pole inne niż nazwa lub kategoria |
+| 409 | `config_requires_restart` | `PUT /config` zmienia pole inne niż nazwa, kategoria lub pomieszczenie |
 | 409 | `port_pool_exhausted` | Rejestr nie mieści się w puli portów 9101–9150 |
 | 409 | `clock_running` | Zmiana `sim_time`, gdy zegar działa |
 | 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`, czas bez strefy albo poza pełnym kwadransem) |
@@ -113,12 +114,14 @@ Bazowy adres: `HUB_URL` (`http://hub:9100` w docker-compose). Wszystkie żądani
 
 ### `PUT /home/devices` – rejestr urządzeń domu
 
-Pełny rejestr domu, w tym samym kształcie co `devices` w pliku urządzeń. Semantyka **zastąpienia**:
+Pełny rejestr domu, w tym samym kształcie co `devices` w pliku urządzeń. Backend zawsze podaje `room`:
+pomieszczenie z pliku albo domyślne według typu (ZP-109); hub je przechowuje, a na pracę urządzenia nie wpływa.
+Semantyka **zastąpienia**:
 
 - nowe `device_id` – hub uruchamia mikroserwis i przydziela port,
 - zmiana typu, mocy, programów albo `flexibility` – hub restartuje mikroserwis na tym samym
   porcie; restart kasuje stan urządzenia, w tym trwający program i liczniki energii,
-- zmiana tylko nazwy albo kategorii – hub wywołuje `PUT /config` bez restartu,
+- zmiana tylko nazwy, kategorii albo pomieszczenia – hub wywołuje `PUT /config` bez restartu,
 - bez zmian – mikroserwis działa dalej bez przerwy,
 - brakujące w żądaniu – hub zatrzymuje mikroserwis i usuwa urządzenie z rejestru.
 
@@ -132,6 +135,7 @@ Pełny rejestr domu, w tym samym kształcie co `devices` w pliku urządzeń. Sem
       "device_name": "Pralka Bosch",
       "device_type": "washing_machine",
       "device_category": "AGD",
+      "room": "bathroom",
       "flexibility": {
         "mode": "shiftable",
         "allowed_window": { "from": "07:00", "to": "22:00" }
@@ -339,7 +343,7 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 |---|---|---|
 | `GET /health` | Czy mikroserwis żyje | `200 {"status": "ok", "device_id": "dev_wm_01"}` |
 | `GET /config` | Bieżąca konfiguracja | `200` – obiekt urządzenia jak w `PUT /home/devices` |
-| `PUT /config` | Zmiana `device_name` lub `device_category` bez restartu | `200` – zapisana konfiguracja; `409 config_requires_restart` dla innych pól |
+| `PUT /config` | Zmiana `device_name`, `device_category` lub `room` bez restartu | `200` – zapisana konfiguracja; `409 config_requires_restart` dla innych pól |
 | `GET /status` | Stan urządzenia | `200` – patrz niżej |
 | `POST /on` | Włączenie | `200` – stan; `409 invalid_state`, gdy trwa program |
 | `POST /off` | Wyłączenie, kończy akcję | `200` – stan |
@@ -634,6 +638,7 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
       "device_name": "Pralka Bosch",
       "device_type": "washing_machine",
       "device_category": "AGD",
+      "room": "bathroom",
       "flexibility_mode": "shiftable",
       "programs": [{ "program_id": "cotton_60", "program_name": "Bawełna 60°C", "duration_min": 120 }],
       "state": "running",
@@ -661,7 +666,7 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
 |---|---|
 | `hub_available` | `false`, gdy hub nie odpowiedział: wtedy `clock` i `power` mają `null`, `devices` jest puste, a `today` dotyczy ostatniego przebiegu ze zdarzeń w bazie (do czasu jego ostatniego zdarzenia) |
 | `power` | Suma bieżącej mocy urządzeń: pobór, produkcja PV i bilans (ujemny = oddawanie do sieci) |
-| `devices[].device_type`, `device_category`, `flexibility_mode`, `programs` | Opis urządzenia z rejestru w bazie (programy bez profilu). `null` i pusta lista, gdy hub ma urządzenie spoza rejestru, np. przy zaległej wysyłce |
+| `devices[].device_type`, `device_category`, `room`, `flexibility_mode`, `programs` | Opis urządzenia z rejestru w bazie (programy bez profilu). `room` to pomieszczenie z pliku albo domyślne według typu (słownik w `docs/devices-file-format.md`). `null` i pusta lista, gdy hub ma urządzenie spoza rejestru, np. przy zaległej wysyłce |
 | `devices[].energy_today_kwh` | Energia urządzenia od początku doby ze zdarzeń, odporna na restart mikroserwisu |
 | `today` | Od północy doby symulacji (strefa domu, doba ze zmianą czasu ma 23 albo 25 h) do `clock.sim_time`, tylko bieżący przebieg (`simulation_id`) |
 | `today.grid_import_kwh` | Suma dodatnich bilansów kwadransów: produkcja PV w tym samym kwadransie pokrywa zużycie domu |

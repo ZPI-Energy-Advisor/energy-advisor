@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   DEVICE_TYPE_LABELS,
   FLEXIBILITY_LABELS,
+  ROOM_LABELS,
   deviceStateLabel,
   deviceStateTone,
   durationLabel,
@@ -101,6 +102,16 @@ function DeviceControls({ device, disabled, onCommand }) {
 function DeviceRow({ device, disabled, onCommand }) {
   const flexibility = FLEXIBILITY_LABELS[device.flexibility_mode];
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type];
+  // Opis pod nazwą: typ · pomieszczenie · tryb; każda część tylko, gdy ją znamy.
+  const details = [
+    typeLabel && <span key="type">{typeLabel}</span>,
+    ROOM_LABELS[device.room] && <span key="room">{ROOM_LABELS[device.room]}</span>,
+    flexibility && (
+      <span key="flexibility" title={flexibility.hint}>
+        {flexibility.label}
+      </span>
+    ),
+  ].filter(Boolean);
   const program = device.state === "running" && device.program_id;
 
   return (
@@ -113,9 +124,12 @@ function DeviceRow({ device, disabled, onCommand }) {
           </span>
         </div>
         <p className="mt-0.5 text-xs text-gray-500">
-          {typeLabel && <span>{typeLabel}</span>}
-          {typeLabel && flexibility && <span aria-hidden="true"> · </span>}
-          {flexibility && <span title={flexibility.hint}>{flexibility.label}</span>}
+          {details.map((part, index) => (
+            <span key={part.key}>
+              {index > 0 && <span aria-hidden="true"> · </span>}
+              {part}
+            </span>
+          ))}
           {program && (
             <span className="block text-gray-600">
               {programName(device, device.program_id)}

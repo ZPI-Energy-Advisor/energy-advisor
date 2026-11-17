@@ -55,6 +55,7 @@ def _washing_machine() -> HubDevice:
         "device_name": "Pralka Bosch",
         "device_type": "washing_machine",
         "device_category": "AGD",
+        "room": "laundry",
         "max_power_kw": 2.2,
         "flexibility": {"mode": "shiftable", "allowed_window": {"from": "07:00", "to": "22:00"}},
         "programs": [{
@@ -80,7 +81,7 @@ def test_put_devices_sends_registry_and_returns_ports():
     assert request.url == f"{HUB_URL}/home/devices"
     body = json.loads(request.content)
     device = body["devices"][0]
-    assert device["device_id"] == "dev_wm_01"
+    assert (device["device_id"], device["room"]) == ("dev_wm_01", "laundry")
     # Okno ma w JSON nazwę "from" jak w pliku urządzeń, nie pythonowe "from_".
     assert device["flexibility"]["allowed_window"] == {"from": "07:00", "to": "22:00"}
     assert device["programs"][0]["profile_kwh"] == [0.55, 0.5]

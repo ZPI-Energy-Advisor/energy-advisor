@@ -322,10 +322,11 @@ def test_update_config_changes_name_without_touching_work():
     driver.tick(START)
     driver.start_program("cotton_60")
 
-    driver.update_config({"device_name": "Pralka w łazience", "device_category": "Inne"})
+    driver.update_config({"device_name": "Pralka w łazience", "device_category": "Inne", "room": "bathroom"})
 
     assert driver.config.device_name == "Pralka w łazience"
     assert driver.config.device_category == "Inne"
+    assert driver.config.room == "bathroom"
     assert driver.status()["state"] == RUNNING
 
 

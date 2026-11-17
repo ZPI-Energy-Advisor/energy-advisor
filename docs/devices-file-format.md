@@ -124,6 +124,7 @@ akcji w środku okresu oznacza „nic nie pracowało”, a nie brak danych.
 | `device_name` | string | tak | Nazwa widoczna w UI, np. „Pralka Bosch” |
 | `device_type` | string | tak | Typ ze słownika poniżej |
 | `device_category` | string | tak | Kategoria ze słownika poniżej |
+| `room` | string | nie | Pomieszczenie ze słownika poniżej, do widoku budynku. Bez pola: pomieszczenie domyślne według typu |
 | `max_power_kw` | liczba, kW | gdy brak `programs` | Moc maksymalna (znamionowa). Dla PV: moc falownika |
 | `tank_liters` | liczba, l | nie, tylko bojler | Pojemność zbiornika bojlera (`water_heater`), 30–500 l. Plan na jutro liczy z niej temperaturę wody; bez pola bierze typową pojemność dla liczby osób z profilu |
 | `flexibility` | obiekt | tak | Co optymalizacja może zrobić z akcjami urządzenia |
@@ -151,6 +152,28 @@ Tylko urządzenia z kategorii `OZE` mogą mieć ujemną energię (produkcja).
 | `coffee_machine` | Ekspres do kawy | `ev_charger` | Ładowarka EV |
 | `vacuum_cleaner` | Odkurzacz | `hair_dryer` | Suszarka do włosów |
 | `other` | Inne urządzenie | | |
+
+### Pomieszczenia (`room`)
+
+| Pomieszczenie | Etykieta w UI | Domyślne dla typów (gdy plik nie podaje `room`) |
+|---|---|---|
+| `kitchen` | Kuchnia | `fridge`, `freezer`, `induction_hob`, `oven`, `microwave`, `kettle`, `coffee_machine`, `dishwasher` |
+| `living_room` | Salon | `tv`, `electric_heater` |
+| `bedroom` | Sypialnia | – |
+| `bathroom` | Łazienka | `washing_machine`, `tumble_dryer`, `water_heater`, `hair_dryer` |
+| `laundry` | Pralnia | – |
+| `office` | Gabinet | `computer` |
+| `technical` | Pomieszczenie techniczne | `heat_pump`, `router`, `ventilation` |
+| `garage` | Garaż | `ev_charger` |
+| `roof` | Dach | `pv_inverter` |
+| `other` | Inne | `vacuum_cleaner`, `other` |
+
+Oświetlenie (`light`) bez `room` dostaje pomieszczenie z nazwy: „kuchni”, „salon”, „sypialn”, „łazien”,
+„praln”, „gabinet”/„biur”, „techniczn”/„kotłown”, „garaż” (także bez polskich znaków i po angielsku), np.
+„Oświetlenie kuchnia” → `kitchen`. Bez dopasowania (np. „Oświetlenie ogród”) → `other`.
+
+Pomieszczenie domyślne nie jest zapisywane: plik bez `room` (także wgrany przed dodaniem pola) dostaje je
+przy odczycie, więc zmiana reguł działa też dla wcześniej wgranych plików.
 
 ### `flexibility`
 
@@ -240,8 +263,8 @@ schematu reguły z kodu nie są sprawdzane, bo wynikałyby z tych samych błęd�
 
 1. `period.start` i `period.end` mają strefę czasową, `start` < `end`.
 2. `device_id` i `action_id` są unikalne.
-3. `devices` zawiera co najmniej jedno urządzenie; `device_type` i `device_category` pochodzą
-   ze słowników.
+3. `devices` zawiera co najmniej jedno urządzenie; `device_type`, `device_category` i `room`
+   (jeśli jest) pochodzą ze słowników.
 4. `flexibility.mode` jest jednym z trybów i zawiera tylko pola dozwolone dla tego trybu;
    godziny `allowed_window` mają format `HH:MM` w pełnym kwadransie.
 5. Urządzenie bez `programs` ma `max_power_kw`; urządzenie `fixed` nie ma `programs`;

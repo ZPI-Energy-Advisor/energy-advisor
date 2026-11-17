@@ -62,6 +62,8 @@ class DeviceConfig(BaseModel):
     device_name: str
     device_type: str
     device_category: str
+    # Pomieszczenie z rejestru backendu (ZP-109), dla widoku budynku; na pracę urządzenia nie wpływa.
+    room: str | None = None
     max_power_kw: float | None = None
     flexibility: Flexibility
     programs: list[Program] = []

@@ -362,6 +362,18 @@ def test_state_describes_devices_with_registry_data(home):
         {"program_id": "quick_30", "program_name": "Szybkie 30°C", "duration_min": 30},
     ]
     assert (unknown["device_category"], unknown["flexibility_mode"], unknown["programs"]) == (None, None, [])
+    # Plik bez pola room: pomieszczenie domyślne według typu, a urządzenie spoza rejestru bez pomieszczenia.
+    assert (washer["room"], lamp["room"], unknown["room"]) == ("bathroom", "other", None)
+
+
+def test_state_shows_room_from_file(home):
+    washer_in_kitchen = {**WASHER, "device": {**WASHER["device"], "room": "kitchen"}}
+    assert _upload(home.owner, _devices_file(washer_in_kitchen)).status_code == 200
+    home.hub.devices = [_device("dev_wm_01", state="off", power_kw=0.0, name="Pralka Bosch")]
+
+    devices = client.get("/api/v1/home/state", headers=_headers(home.owner)).json()["devices"]
+
+    assert devices[0]["room"] == "kitchen"
 
 
 # Przebieg z własnym profilem (ZP-96)
