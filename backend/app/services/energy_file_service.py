@@ -25,6 +25,7 @@ from app.services.pricing_strategies import SLOT_MINUTES
 from app.services.scheduling import INTERRUPTIBLE, SLOT, actions_from_devices, load_from_devices, schedule
 from app.services.schedule_prices import SchedulePriceService
 from app.services.schedule_bill import grid_limit_note, padded_readings, shifted_readings
+from app.services.tariff_costs import TariffCostService
 from app.schemas.energy_file import (
     ALL_DEVICE_FILES_SOURCE_ID,
     ALL_DEVICE_FILES_SOURCE_NAME,
@@ -58,6 +59,7 @@ class EnergyFileService:
         schedule_prices: SchedulePriceService,
         calculations_service=None,
         home_service: HomeService | None = None,
+        tariff_costs: TariffCostService | None = None,
     ):
         self.file_repository = file_repository
         self.simulation_repository = simulation_repository
@@ -65,6 +67,25 @@ class EnergyFileService:
         self.schedule_prices = schedule_prices
         self.calculations_service = calculations_service
         self.home_service = home_service
+        self.tariff_costs = tariff_costs
+
+    def _priced_results(
+        self, user_id: UUID, results: dict, date_from: date, date_to: date, all_tariffs: bool = True
+    ) -> dict:
+        """Wykresy, statystyki i koszty taryf operatora z profilu dla dni [date_from, date_to], z cenami
+        policzonymi teraz z cennika (nie zapisanymi przy imporcie)."""
+        usage = CalculationService.usage_in_range(results["usage_15min"], date_from, date_to)
+        if self.tariff_costs is None:
+            slot_prices, tariffs, pricing = {}, {}, None
+        else:
+            costs = self.tariff_costs.usage_costs(self.tariff_costs.profile(user_id), usage, all_tariffs)
+            slot_prices, tariffs, pricing = costs.slot_prices, costs.tariffs, costs.pricing
+        summary = CalculationService.summarize_usage(
+            usage, slot_prices, source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
+        )
+        summary["tariffs"] = tariffs
+        summary["pricing"] = pricing
+        return summary
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:
         items, total = self.file_repository.list_by_user_id(
@@ -109,6 +130,7 @@ class EnergyFileService:
         user_id: UUID,
         date_from: date | None = None,
         date_to: date | None = None,
+        all_tariffs: bool = True,
     ) -> EnergyDataFileDataResponse:
         energy_file = self._get_own_file(file_id, user_id)
 
@@ -120,17 +142,17 @@ class EnergyFileService:
             )
 
         results = simulation.results
+        if not has_usage_series(results):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ten plik został wgrany w starszej wersji aplikacji, która nie zapisywała zużycia w kwadransach. "
+                "Wgraj go ponownie, aby zobaczyć wykresy i koszty.",
+            )
         if date_from is None and date_to is None:
             date_from, date_to = energy_file.data_start, energy_file.data_end
         else:
             date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
-            if not has_usage_series(results):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Ten plik został wgrany przed wprowadzeniem filtrowania po datach. "
-                    "Wgraj go ponownie, aby móc wybrać zakres.",
-                )
-            results = CalculationService.calculate_for_range(results, date_from, date_to)
+        results = self._priced_results(user_id, results, date_from, date_to, all_tariffs)
 
         return EnergyDataFileDataResponse(
             status="success",
@@ -149,6 +171,7 @@ class EnergyFileService:
         source_type: str = EnergyDataFile.SOURCE_METER,
         date_from: date | None = None,
         date_to: date | None = None,
+        all_tariffs: bool = True,
     ) -> EnergyDataFileDataResponse:
         """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
 
@@ -176,15 +199,9 @@ class EnergyFileService:
             )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
-        # Ceny stałe bierzemy z najnowszego importu (aktualny zestaw taryf), a ceny
-        # dynamiczne łączymy po dniach, bo każdy plik ma ceny tylko dla swojego okresu.
-        slot_prices = CalculationService.merge_slot_prices([source["slot_prices"] for source in sources])
         resolutions = [source_resolution(source) for source in sources]
         common_resolution = resolutions[0] if len(set(resolutions)) == 1 else None
-        merged_results = {
-            "slot_prices": slot_prices,
-            "statistics": {"resolution_minutes": common_resolution},
-        }
+        merged_results = {"statistics": {"resolution_minutes": common_resolution}}
         if source_type == EnergyDataFile.SOURCE_DEVICES:
             usage, actions_per_day, contributions = self._merge_device_files(merged_files, sources)
             merged_results[ACTIONS_PER_DAY_KEY] = actions_per_day
@@ -223,7 +240,7 @@ class EnergyFileService:
             file=source,
             date_from=date_from,
             date_to=date_to,
-            results=public_results(CalculationService.calculate_for_range(merged_results, date_from, date_to)),
+            results=public_results(self._priced_results(user_id, merged_results, date_from, date_to, all_tariffs)),
         )
 
     def _readings_in_range(self, file_id: UUID, date_from: date, date_to: date) -> list:
@@ -358,6 +375,7 @@ class EnergyFileService:
             date_from=date_from,
             date_to=date_to,
             pricing=pricing.description,
+            price_breakdown=getattr(pricing, "breakdown", None),
             pv_note=pricing.pv_note,
             max_grid_kw=pricing.max_grid_kw,
             grid_limit_note=grid_limit_note(readings, pricing.max_grid_kw),

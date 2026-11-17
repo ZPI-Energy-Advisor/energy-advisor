@@ -56,10 +56,10 @@ def test_protected_endpoint_requires_valid_access_token(anonymous_client, make_t
     assert response.status_code == 401
 
 
-
 SAMPLE_RESULTS = {
     "tariffs": {"G11": {"type": "stala", "total_usage_kwh": 1.0, "estimated_cost_pln": 1.0}},
     "chart_daily": [{"date": "2024-11-03", "kwh": 1.0}],
+    "usage_15min": {"2024-11-03": [0.25] * 4 + [None] * 92},
     "statistics": {"records_count": 3, "data_start": "2024-11-03", "data_end": "2024-11-05"},
 }
 
@@ -146,3 +146,6 @@ def test_lists_and_aggregates_show_only_own_data(db, user_a, client_b):
         "status": "no_data", "simulation_id": None, "created_at": None, "results": None,
     }
     assert client_b.get("/api/v1/energy-files/all/data").status_code == 409
+
+
+pytestmark = pytest.mark.usefixtures("flat_tariffs")

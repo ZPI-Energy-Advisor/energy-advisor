@@ -8,12 +8,13 @@ from sqlalchemy import text
 
 from app.database import SessionLocal, engine
 from app.models.RcePriceObservation import RcePriceObservation
-from app.models.Tariff import Tariff
 from app.providers.prices.base import PricePoint, local_day_bounds_utc
 from app.repositories.dynamic_price_repository import DynamicPriceRepository
-from app.repositories.tariff_repository import TariffRepository
 from app.schemas.dynamic_price import PriceResolution
+from app.schemas.other import TariffTypeEnum
 from app.services.dynamic_price_service import DynamicPriceService, DynamicTariffNotFoundError
+from app.services.tariff_costs import TariffCostService
+from tariff_helpers import TEST_YEARS, FlatTariffRepository, flat_definition, period
 
 
 try:
@@ -49,22 +50,19 @@ def _day_points(source, day, price_for_slot, slots=None):
     ]
 
 
-class _FakeTariffRepository:
-    def __init__(self, tariff):
-        self.tariff = tariff
-
-    def get_first_by_type(self, tariff_type):
-        return self.tariff if self.tariff and self.tariff.type == tariff_type else None
+def _offer(margin="0", group=TariffTypeEnum.G11):
+    item = flat_definition(TariffTypeEnum.DYNAMIC, energy=(margin,), distribution_group=group)
+    item.name = "Oferta dynamiczna"
+    return item
 
 
-def _tariff(markup="0", vat="0"):
-    return SimpleNamespace(name="Dynamiczna", type="dynamiczna", markup_pln_kwh=Decimal(markup), vat_rate=Decimal(vat))
-
-
-def _service(db, tariff=None):
-    # Domyślnie taryfa bez narzutu i VAT: cena w taryfie = RCE / 1000, co upraszcza oczekiwane wartości.
-    tariff = tariff if tariff is not None else _tariff()
-    return DynamicPriceService(DynamicPriceRepository(db), source=db.test_source, tariff_repository=_FakeTariffRepository(tariff))
+def _service(db, definitions=None, vat="0", profile=None):
+    # Domyślnie oferta bez marży, dystrybucji i VAT: cena brutto = RCE / 1000, co upraszcza oczekiwane wartości.
+    repository = FlatTariffRepository(
+        [_offer()] if definitions is None else definitions, [period(vat=vat, valid=TEST_YEARS)]
+    )
+    users = SimpleNamespace(get_profile=lambda user_id: profile)
+    return DynamicPriceService(DynamicPriceRepository(db), source=db.test_source, tariff_costs=TariffCostService(repository, users))
 
 
 def _seed(db):
@@ -191,44 +189,69 @@ def test_range_without_data_returns_gaps_not_zeros(db):
     assert history.days.missing == [date(2024, 12, 1), date(2024, 12, 2)]
 
 
-def test_prices_include_tariff_markup_and_vat(db):
+def test_prices_include_margin_distribution_fees_and_vat(db):
     _seed(db)
+    offer = flat_definition(TariffTypeEnum.DYNAMIC, energy=("0.40",), network=("0.20",))
+    periods = [period(quality="0.01", renewable="0.02", vat="0.23", valid=TEST_YEARS)]
+    users = SimpleNamespace(get_profile=lambda user_id: None)
+    service = DynamicPriceService(
+        DynamicPriceRepository(db), source=db.test_source,
+        tariff_costs=TariffCostService(FlatTariffRepository([offer], periods), users),
+    )
 
     rce_only = _service(db).get_history(DAY_1, DAY_2, PriceResolution.DAY)
-    with_markup = _service(db, _tariff("0.40", "0.23")).get_history(DAY_1, DAY_2, PriceResolution.DAY)
+    full = service.get_history(DAY_1, DAY_2, PriceResolution.DAY)
 
     def to_consumer(price):
-        return pytest.approx((price + 0.40) * 1.23, abs=1e-5)
+        return pytest.approx((price + 0.40 + 0.20 + 0.03) * 1.23, abs=1e-5)
 
-    assert with_markup.tariff_name == "Dynamiczna"
-    assert with_markup.markup_pln_kwh == 0.40 and with_markup.vat_rate == pytest.approx(0.23)
-    assert with_markup.points[0].price_pln_kwh == to_consumer(rce_only.points[0].price_pln_kwh)
-    assert with_markup.average_price_pln_kwh == to_consumer(rce_only.average_price_pln_kwh)
-    assert with_markup.min_price_pln_kwh == to_consumer(rce_only.min_price_pln_kwh)
-    assert with_markup.max_price_pln_kwh == to_consumer(rce_only.max_price_pln_kwh)
-    assert with_markup.days == rce_only.days
+    assert (full.operator, full.distribution_group, full.from_profile) == ("PGE", "G11", False)
+    assert full.points[0].price_pln_kwh == to_consumer(rce_only.points[0].price_pln_kwh)
+    assert full.average_price_pln_kwh == to_consumer(rce_only.average_price_pln_kwh)
+    assert full.min_price_pln_kwh == to_consumer(rce_only.min_price_pln_kwh)
+    assert full.max_price_pln_kwh == to_consumer(rce_only.max_price_pln_kwh)
+    assert full.days == rce_only.days
+    parts = full.price_breakdown
+    assert parts.distribution == pytest.approx(0.20) and parts.fees == pytest.approx(0.03)
+    assert parts.energy == pytest.approx(rce_only.average_price_pln_kwh + 0.40, abs=1e-5)
+    assert parts.energy + parts.distribution + parts.fees + parts.vat == pytest.approx(full.average_price_pln_kwh, abs=1e-4)
 
 
-def test_history_without_dynamic_tariff_raises(db):
+def test_offer_follows_distribution_group_from_profile(db):
     _seed(db)
-    service = DynamicPriceService(DynamicPriceRepository(db), source=db.test_source, tariff_repository=_FakeTariffRepository(None))
+    profile = SimpleNamespace(
+        base_info={
+            "type_of_property": "apartment", "year_of_construction": 2000, "heating_area_m2": 60,
+            "number_of_residents": 2, "town": "Wrocław", "postal_code": "50-370", "distribution_operator": "TAURON",
+            "phase_type": "1_phase", "contracted_power_kw": 5, "billing_cycle": 2,
+            "billing_period_start_date": "2025-01-01",
+        },
+        consumption_and_tariff={"tariff_type": "G12", "dynamic_price": False},
+        pv_config={"mode": "none"},
+    )
+    g12 = _offer("0.10", TariffTypeEnum.G12)
+    g12.distribution_group = TariffTypeEnum.G12
+
+    history = _service(db, [_offer(), g12], profile=profile).get_history(DAY_1, DAY_1, PriceResolution.DAY, user_id="u")
+
+    assert (history.operator, history.distribution_group, history.from_profile, history.note) == ("TAURON", "G12", True, None)
+    assert history.average_price_pln_kwh == pytest.approx(0.2)
+
+
+def test_operator_without_dynamic_offer_raises(db):
+    _seed(db)
 
     with pytest.raises(DynamicTariffNotFoundError):
-        service.get_history(DAY_1, DAY_1, PriceResolution.DAY)
+        _service(db, [flat_definition()]).get_history(DAY_1, DAY_1, PriceResolution.DAY)
 
 
-def test_tariff_repository_finds_tariff_by_type(db):
-    tariff_type = f"test_{uuid.uuid4().hex[:8]}"
-    first = Tariff(name="Pierwsza", type=tariff_type, markup_pln_kwh=Decimal("0.40"), vat_rate=Decimal("0.23"))
-    second = Tariff(name="Druga", type=tariff_type)
-    db.add_all([first, second])
-    db.commit()
-    try:
-        found = TariffRepository(db).get_first_by_type(tariff_type)
+def test_days_before_offer_have_no_price_and_note(db):
+    _seed(db)
+    offer = _offer()
+    offer.valid_from = DAY_2
 
-        assert found.id == first.id
-        assert found.markup_pln_kwh == Decimal("0.4000")
-        assert TariffRepository(db).get_first_by_type(f"{tariff_type}_brak") is None
-    finally:
-        db.query(Tariff).filter(Tariff.type == tariff_type).delete()
-        db.commit()
+    history = _service(db, [offer]).get_history(DAY_1, DAY_4, PriceResolution.DAY)
+
+    assert history.points[0].price_pln_kwh is None and history.points[0].complete is True
+    assert history.points[1].price_pln_kwh == 0.3
+    assert history.note == "Pełną cenę kWh tej oferty liczymy od 07.01.2025, więc wcześniejsze dni nie mają ceny na wykresie."

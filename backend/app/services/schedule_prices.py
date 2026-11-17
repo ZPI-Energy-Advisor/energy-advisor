@@ -20,6 +20,7 @@ from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import PVBalancingEngine
 from app.services.quarter_prices import quarter_prices
+from app.services.tariff_costs import price_parts
 
 SLOT = timedelta(minutes=15)
 
@@ -34,6 +35,8 @@ class SchedulePrices:
     pv_note: str | None = None
     # Umowa z ceną dynamiczną: ceny kolejnych dni pojawiają się dopiero po publikacji RCE.
     dynamic: bool = False
+    # Średnia cena kWh z sieci w okresie w częściach (energia, dystrybucja, opłaty za kWh, VAT).
+    breakdown: dict[str, float] | None = None
 
 
 class SchedulePriceService:
@@ -95,7 +98,19 @@ class SchedulePriceService:
         return SchedulePrices(
             prices=prices, description=description,
             max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note, dynamic=dynamic,
+            breakdown=self._breakdown(quarters.prices.values()),
         )
+
+    @staticmethod
+    def _breakdown(prices) -> dict[str, float] | None:
+        prices = list(prices)
+        if not prices:
+            return None
+        totals = {}
+        for price in prices:
+            for name, value in price_parts(price).items():
+                totals[name] = totals.get(name, 0.0) + float(value)
+        return {name: round(value / len(prices), 5) for name, value in totals.items()}
 
     def _surplus_price(self, slot: datetime, grid_price: float, profile: UserProfile) -> float:
         """Kwadrans z nadwyżką PV: dodatkowe zużycie zmniejsza oddanie do sieci, więc kosztuje utraconą wartość

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
+import { CurrentUserContext } from "./currentUserContext";
 import { EnergyFileContext } from "./energyFileContext";
 import { aggregateIdForSourceType, getApiErrorMessage } from "../utils/energyFiles";
 
@@ -57,6 +58,13 @@ export function EnergyFileProvider({ children }) {
 
   const latestRequestRef = useRef(0);
   const latestPageRequestRef = useRef(0);
+  // Domyślnie backend liczy koszty tylko taryfy z profilu; wszystkie taryfy operatora potrzebuje Analiza taryf.
+  const allTariffsRef = useRef(false);
+  const [needsAllTariffs, setNeedsAllTariffs] = useState(false);
+  const requireAllTariffs = useCallback((required) => {
+    allTariffsRef.current = required;
+    setNeedsAllTariffs(required);
+  }, []);
 
   // Stan ustawiany jest dopiero po odpowiedzi API, więc można to wywołać prosto z efektu.
   // Przy błędzie zostaje poprzednio wyświetlona strona.
@@ -105,7 +113,10 @@ export function EnergyFileProvider({ children }) {
     setRangeError(null);
     try {
       const { data } = await apiClient.get(`/energy-files/${fileId}/data`, {
-        params: range ? { from: range.from, to: range.to } : undefined,
+        params: {
+          ...(range ? { from: range.from, to: range.to } : {}),
+          tariffs: allTariffsRef.current ? "all" : "profile",
+        },
       });
       if (requestId !== latestRequestRef.current) return false;
       setFileData(data);
@@ -224,6 +235,37 @@ export function EnergyFileProvider({ children }) {
     }
   }, [initialize]);
 
+  // Koszty liczone są przy odczycie z taryfy w profilu: po jego zmianie pobieramy ponownie ten sam plik i zakres.
+  const userVersion = useContext(CurrentUserContext)?.version ?? 0;
+  const seenUserVersionRef = useRef(null);
+  const shownRangeKey = fileData?.date_from && fileData?.date_to ? `${fileData.date_from}|${fileData.date_to}` : null;
+  useEffect(() => {
+    const previous = seenUserVersionRef.current;
+    seenUserVersionRef.current = userVersion;
+    if (!previous || previous === userVersion || !selectedFileId) return;
+    const [from, to] = shownRangeKey ? shownRangeKey.split("|") : [];
+    loadFileData(selectedFileId, from ? { from, to } : null, (error) =>
+      setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
+    );
+  }, [userVersion, selectedFileId, shownRangeKey, loadFileData]);
+
+  // Wynik z samą taryfą z profilu nie wystarcza Analizie taryf: dociągamy wszystkie dla tego samego zakresu.
+  const hasOnlyProfileTariff = fileData?.results?.pricing?.all_tariffs === false;
+  useEffect(() => {
+    if (!needsAllTariffs || !hasOnlyProfileTariff || !selectedFileId) return undefined;
+    const [from, to] = shownRangeKey ? shownRangeKey.split("|") : [];
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      loadFileData(selectedFileId, from ? { from, to } : null, (error) =>
+        setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsAllTariffs, hasOnlyProfileTariff, selectedFileId, shownRangeKey, loadFileData]);
+
   // Nowe pliki trafiają na początek listy, więc odświeżenie wraca na 1. stronę.
   const refreshFiles = useCallback(() => fetchFilesPage(1), [fetchFilesPage]);
 
@@ -261,6 +303,7 @@ export function EnergyFileProvider({ children }) {
       applyDateRange,
       rangeError,
       clearRangeError: () => setRangeError(null),
+      requireAllTariffs,
 
       isReady,
     }),
@@ -286,6 +329,7 @@ export function EnergyFileProvider({ children }) {
       pendingFileId,
       dataError,
       selectFile,
+      requireAllTariffs,
       isReady,
     ],
   );

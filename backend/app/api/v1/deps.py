@@ -35,6 +35,7 @@ from app.services.price_sync_service import PriceSyncService
 from app.services.pricing_strategies import build_pricing_strategies
 from app.services.simulation_service import SimulationService
 from app.services.tariff_catalog_service import TariffCatalogService
+from app.services.tariff_costs import TariffCostService
 from app.services.upload_service import UploadService
 from app.services.user_service import UserService
 from app.services.pv_service import DynamicMarketPriceResolver
@@ -69,10 +70,9 @@ def get_tariff_definition_repository(db: Session = Depends(get_db)) -> TariffDef
 
 def get_user_service(
     repository: UserRepository = Depends(get_user_repository),
-    tariff_repository: TariffRepository = Depends(get_tariff_repository),
     definition_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
 ) -> UserService:
-    return UserService(repository, tariff_repository, definition_repository)
+    return UserService(repository, definition_repository)
 
 
 def get_tariff_catalog_service(
@@ -125,11 +125,19 @@ def get_new_calculations_service(
     )
 
 
+def get_tariff_cost_service(
+    user_repository: UserRepository = Depends(get_user_repository),
+    tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> TariffCostService:
+    return TariffCostService(tariff_repository, user_repository, DynamicMarketPriceResolver(dynamic_price_repository))
+
+
 def get_dynamic_price_service(
     repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
-    tariff_repository: TariffRepository = Depends(get_tariff_repository),
+    tariff_costs: TariffCostService = Depends(get_tariff_cost_service),
 ) -> DynamicPriceService:
-    return DynamicPriceService(repository, source=PseRcePriceProvider.source, tariff_repository=tariff_repository)
+    return DynamicPriceService(repository, source=PseRcePriceProvider.source, tariff_costs=tariff_costs)
 
 
 def get_price_sync_service(db: Session = Depends(get_db)) -> Iterator[PriceSyncService]:
@@ -251,10 +259,11 @@ def get_energy_file_service(
     schedule_prices: SchedulePriceService = Depends(get_schedule_price_service),
     calculations_service: CalculationsService = Depends(get_new_calculations_service),
     home_service: HomeService = Depends(get_home_service),
+    tariff_costs: TariffCostService = Depends(get_tariff_cost_service),
 ) -> EnergyFileService:
     return EnergyFileService(
         file_repository, simulation_repository, device_repository, schedule_prices, calculations_service,
-        home_service=home_service,
+        home_service=home_service, tariff_costs=tariff_costs,
     )
 
 
@@ -263,15 +272,14 @@ def get_device_usage_service(
     simulation_repository: SimulationRepository = Depends(get_simulation_repository),
     device_repository: DeviceRepository = Depends(get_device_repository),
     energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
-    user_repository: UserRepository = Depends(get_user_repository),
-    tariff_repository: TariffRepository = Depends(get_tariff_repository),
+    tariff_costs: TariffCostService = Depends(get_tariff_cost_service),
 ) -> DeviceUsageService:
     return DeviceUsageService(
         file_repository,
         simulation_repository,
         device_repository,
         energy_reading_repository,
-        UserService(user_repository, tariff_repository),
+        tariff_costs,
     )
 
 

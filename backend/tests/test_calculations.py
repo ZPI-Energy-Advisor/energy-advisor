@@ -108,7 +108,9 @@ def test_results_contain_usage_series_for_ranges():
     assert list(results["usage_15min"]) == ["2024-05-01", "2024-05-02", "2024-05-03"]
     assert all(len(slots) == 96 and None not in slots for slots in results["usage_15min"].values())
     assert results["slot_prices"]["G11"] == {"type": "stala", "prices": [1.0] * 96}
-    assert public_results(results).keys() == {"tariffs", "chart_15min", "chart_hourly", "chart_daily", "statistics"}
+    assert public_results(results).keys() == {
+        "tariffs", "total_usage_kwh", "chart_15min", "chart_hourly", "chart_daily", "statistics",
+    }
 
 
 def test_full_range_matches_import_results():
@@ -348,19 +350,6 @@ def test_summary_without_any_dynamic_prices_has_no_cost():
 
     assert dynamic["estimated_cost_pln"] is None
     assert dynamic["price_coverage"] == 0.0
-
-
-def test_merge_slot_prices_combines_dynamic_days_from_all_files():
-    older = _dynamic_slot_prices({"2025-01-01": [1.0] * 96, "2025-01-02": [1.0] * 96})
-    newer = _dynamic_slot_prices({"2025-01-02": [2.0] * 48 + [None] * 48, "2025-01-03": [3.0] * 96})
-    newer["G11"] = {"type": "stala", "prices": [1.5] * 96}
-
-    merged = CalculationService.merge_slot_prices([older, newer])
-
-    assert merged["G11"] == {"type": "stala", "prices": [1.5] * 96}
-    by_day = merged["Dynamiczna"]["prices_by_day"]
-    assert list(by_day) == ["2025-01-01", "2025-01-02", "2025-01-03"]
-    assert by_day["2025-01-02"] == [2.0] * 48 + [1.0] * 48
 
 
 def test_calculate_all_tariffs_uses_registered_strategy_per_tariff_type():

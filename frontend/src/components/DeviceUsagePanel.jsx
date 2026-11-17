@@ -17,6 +17,7 @@ import {
   totals,
   usageQuery,
 } from "../utils/deviceUsage";
+import { describeBreakdown } from "../utils/tariffs";
 
 const RESOLUTION_PREFIX = { "15m": "Średnio o", "1h": "Średnio o", "1d": "Dzień" };
 const LEVEL_NAMES = ["kategorii", "typów", "urządzeń", "urządzenia"];
@@ -122,7 +123,8 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
   // Przy fotowoltaice zużycie urządzeń obejmuje energię zużytą od razu na miejscu, a pobór z sieci nie.
   const withPv = Boolean(production) && !source.meter && Boolean(gridImport);
   const selfConsumption = withPv ? Math.max(sum.kwh - gridImport.kwh, 0) : null;
-  const gridCost = gridImport?.cost != null && gridImport.tariff === data?.tariff.name ? gridImport.cost : null;
+  const gridCost = gridImport?.cost != null && gridImport.tariff === data?.tariff.key ? gridImport.cost : null;
+  const breakdown = data ? describeBreakdown(data.cost_breakdown, formatPln) : null;
 
   const select = (item) => {
     if (item.clickable) setPath([...path, { key: item.key, label: item.label }]);
@@ -143,10 +145,16 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
     <div className={`transition-opacity ${isLoading ? "opacity-60" : ""}`} aria-busy={isLoading}>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
         <Card
-          label={`${withPv ? "Koszt zużycia urządzeń bez fotowoltaiki" : "Koszt"}${selection} (taryfa ${data.tariff.name})`}
+          label={`${withPv ? "Koszt zużycia urządzeń bez fotowoltaiki" : "Koszt"}${selection} (taryfa ${data.tariff.label})`}
           value={formatPln(sum.cost)}
           hint={data.tariff.note}
-        />
+        >
+          {breakdown && sum.cost > 0 && (
+            <p className="mt-1 text-xs text-gray-500">
+              Pełna cena kWh brutto, w tym: {breakdown}. Bez opłat miesięcznych.
+            </p>
+          )}
+        </Card>
         <Card label={`Zużycie urządzeń${selection}`} value={formatKwh(sum.kwh)}>
           {withPv && (
             <CardLine
@@ -234,7 +242,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
         )}
         {data.missing_price_slots > 0 && (
           <p className="mb-4 text-xs md:text-sm text-gray-500">
-            Część kwadransów nie ma ceny w taryfie {data.tariff.name}, więc koszt jest niepełny.
+            Część kwadransów nie ma ceny w taryfie {data.tariff.label}, więc koszt jest niepełny.
           </p>
         )}
 

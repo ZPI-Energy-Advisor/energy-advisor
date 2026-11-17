@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
+from app.schemas.dynamic_price import PriceBreakdownOut
+
 
 class ChargingPeriodOut(BaseModel):
     start: datetime
@@ -40,6 +42,8 @@ class ScheduleResponse(BaseModel):
     date_to: date
     # Taryfa, według której liczone są ceny kwadransów (operator, grupa, umowa dynamiczna).
     pricing: str = ""
+    # Średnia cena kWh z sieci w okresie w częściach: energia, dystrybucja, opłaty za kWh i VAT (zł/kWh).
+    price_breakdown: PriceBreakdownOut | None = None
     cost_before: float
     cost_after: float
     # Pełny rachunek taryfy z profilu (do zapłaty brutto) dla okresu: przed = jak w Wynikach kalkulacji,

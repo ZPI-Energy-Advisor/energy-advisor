@@ -1,4 +1,5 @@
 import { countDays, formatDate } from "./energyFiles";
+import { describeBreakdown } from "./tariffs";
 
 // Limity zgodne z backendem (MAX_HISTORY_DAYS) 
 export const PRICE_RESOLUTIONS = [
@@ -47,11 +48,13 @@ const axisFormatter = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 2,
 export const formatPrice = (value) => (value == null ? "—" : `${priceFormatter.format(value)} zł/kWh`);
 export const formatAxisPrice = (value) => axisFormatter.format(value);
 
-const percentFormatter = new Intl.NumberFormat("pl-PL", { style: "percent", maximumFractionDigits: 1 });
-export const formatPercent = (value) => percentFormatter.format(value);
-
 export const describeTariffPrice = (history) =>
-  `Rynkowa cena energii (RCE) + narzut ${formatPrice(history.markup_pln_kwh)} netto + VAT ${formatPercent(history.vat_rate)}`;
+  `${history.operator}, dystrybucja ${history.distribution_group}: cena RCE z marżą sprzedawcy, dystrybucja, opłaty za kWh i VAT`;
+
+export const describeAveragePrice = (history) => {
+  const parts = describeBreakdown(history.price_breakdown, formatPrice);
+  return parts ? `Średnio w okresie: ${parts}` : null;
+};
 
 export const pointDate = (start) => start.slice(0, 10);
 const pointTime = (start) => start.slice(11, 16);
