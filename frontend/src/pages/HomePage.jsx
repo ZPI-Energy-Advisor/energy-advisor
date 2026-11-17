@@ -4,20 +4,22 @@ import apiClient from "../api/client";
 import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
-import PlanRunCard from "../components/home/PlanRunCard";
+import PlanRunBar from "../components/home/PlanRunBar";
+import { DeviationList } from "../components/home/PlanRunCost";
 import PlanRunHistory from "../components/home/PlanRunHistory";
 import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
 import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
+import { planBadges } from "../utils/home";
 
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
 
 // Stan i sterowanie podłączonego domu. Montowany tylko przy podłączonym domu, więc odłączenie
 // kończy odpytywanie i czyści stan, a ponowne podłączenie zaczyna od świeżego pobrania.
-function HomeLive() {
+function HomeLive({ onShowReport }) {
   const { state, error, isLoading, refresh } = useHomeState();
   const [actionError, setActionError] = useState(null);
   const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
@@ -56,6 +58,11 @@ function HomeLive() {
     );
 
   const hubDown = state?.hub_available === false;
+  const running = planRun.run?.status === "running";
+  // Odchylenia z rachunku; przebieg bez rachunku (sprzed ZP-114 albo jeszcze bez zdarzeń) ma tylko awarie.
+  const deviations = planRun.run?.cost
+    ? planRun.run.cost.deviations
+    : (planRun.run?.errors ?? []).map((error) => ({ ...error, kind: "device_error", end: null, excluded: false }));
 
   return (
     <>
@@ -89,15 +96,32 @@ function HomeLive() {
 
       {state && (
         <>
-          <SimulationClock clock={state.clock} disabled={hubDown} onUpdate={updateClock} />
-          {planRun.run && <PlanRunCard run={planRun.run} disabled={hubDown} onEnd={endPlanRun} />}
+          <SimulationClock
+            clock={state.clock}
+            disabled={hubDown}
+            onUpdate={updateClock}
+            plan={planRun.run && (
+              <PlanRunBar run={planRun.run} disabled={hubDown} onEnd={endPlanRun} onShowReport={onShowReport} />
+            )}
+          />
+          {running && deviations.length > 0 && (
+            <section
+              className={`${NOTICE} border-amber-200 bg-amber-50 text-amber-900`}
+              role="alert"
+              aria-label="Odchylenia od planu"
+            >
+              <DeviationList deviations={deviations} />
+            </section>
+          )}
           {planRun.error && (
             <p className={ERROR_NOTICE} role="alert">
               {planRun.error}
             </p>
           )}
           <HomeSummary power={state.power} today={state.today} />
-          {!hubDown && <HomeDeviceList devices={state.devices} onCommand={sendCommand} />}
+          {!hubDown && (
+            <HomeDeviceList devices={state.devices} onCommand={sendCommand} planBadges={planBadges(planRun.run)} />
+          )}
         </>
       )}
     </>
@@ -116,6 +140,17 @@ function HomePage() {
   const { me, isReady, loadError } = useCurrentUser();
   const [connection, setConnection] = useState(null);
   const [tab, setTab] = useState("simulation");
+  // Raport do otwarcia po „Zobacz raport”. Ręczne przełączenie zakładki go czyści, żeby „Raporty” nie
+  // otwierały wciąż tego samego raportu.
+  const [reportToOpen, setReportToOpen] = useState(null);
+  const showReport = (run) => {
+    setReportToOpen(run.id);
+    setTab("reports");
+  };
+  const switchTab = (id) => {
+    setReportToOpen(null);
+    setTab(id);
+  };
 
   if (!isReady) {
     return (
@@ -147,7 +182,7 @@ function HomePage() {
             type="button"
             role="tab"
             aria-selected={tab === item.id}
-            onClick={() => setTab(item.id)}
+            onClick={() => switchTab(item.id)}
             className={`px-4 py-2 -mb-px border-b-2 text-sm font-medium ${
               tab === item.id
                 ? "border-emerald-600 text-emerald-700"
@@ -163,9 +198,9 @@ function HomePage() {
           przy każdym przełączeniu; raporty pobierają się przy otwarciu zakładki. */}
       <div className="space-y-6" hidden={tab !== "simulation"}>
         <HomeConnectionPanel onStatusChange={setConnection} />
-        {connection?.connected && <HomeLive />}
+        {connection?.connected && <HomeLive onShowReport={showReport} />}
       </div>
-      {tab === "reports" && <PlanRunHistory />}
+      {tab === "reports" && <PlanRunHistory openId={reportToOpen} />}
     </div>
   );
 }

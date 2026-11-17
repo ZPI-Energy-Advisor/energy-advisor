@@ -39,6 +39,11 @@ export function DeviationList({ deviations }) {
 const pvShare = (pv) =>
   pv.plan_kwh > 0 ? ` (${formatNumber((pv.plan_from_pv_kwh / pv.plan_kwh) * 100, 0)}% ich zużycia)` : "";
 
+// Koszt według planu tylko wtedy, gdy różni się od zmierzonego (o co najmniej grosz): przy planie wykonanym
+// co do kWh to ta sama kwota drugi raz.
+const plannedHint = (cost) =>
+  Math.abs(cost.cost_after - cost.planned_cost) >= 0.01 ? `według planu ${formatPln(cost.planned_cost)}` : null;
+
 function Amount({ label, value, hint, accent = false }) {
   return (
     <div className={`p-3 rounded border ${accent ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}>
@@ -80,7 +85,7 @@ function PlanRunCost({ cost }) {
 
       <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Amount label="Bez planu" value={formatPln(cost.cost_before)} />
-        <Amount label="Z planem" value={formatPln(cost.cost_after)} hint={`według planu ${formatPln(cost.planned_cost)}`} />
+        <Amount label="Z planem" value={formatPln(cost.cost_after)} hint={plannedHint(cost)} />
         <Amount label="Oszczędność" value={formatPln(cost.saving)} hint={percent} accent />
       </div>
 

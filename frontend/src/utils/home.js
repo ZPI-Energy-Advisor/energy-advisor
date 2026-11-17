@@ -38,17 +38,45 @@ export const FLEXIBILITY_LABELS = {
   interruptible: { label: "Przerywalny", hint: "Optymalizacja może rozłożyć pracę na kwadranse" },
 };
 
-// Tempo zegara huba: sekundy symulacji na sekundę rzeczywistą.
-export const SPEED_OPTIONS = [
-  { value: 60, label: "1 h w minutę" },
-  { value: 288, label: "Doba w 5 min" },
-  { value: 1440, label: "Doba w minutę" },
+// Tempo zegara huba: sekundy symulacji na sekundę rzeczywistą. Progi suwaka od wolnego (oglądanie jednego
+// programu) do „doba w minutę”; szybciej kwadrans symulacji trwałby dla huba ułamek sekundy.
+export const SPEED_STEPS = [
+  { value: 15, label: "kwadrans w minutę" },
+  { value: 30, label: "pół godziny w minutę" },
+  { value: 60, label: "godzina w minutę" },
+  { value: 120, label: "doba w 12 min" },
+  { value: 288, label: "doba w 5 min" },
+  { value: 480, label: "doba w 3 min" },
+  { value: 720, label: "doba w 2 min" },
+  { value: 1440, label: "doba w minutę" },
 ];
 
-export const speedOptions = (current) =>
-  current == null || SPEED_OPTIONS.some((option) => option.value === current)
-    ? SPEED_OPTIONS
-    : [...SPEED_OPTIONS, { value: current, label: `${formatNumber(current, 0)}× szybciej` }].sort((a, b) => a.value - b.value);
+/** Próg suwaka najbliższy tempu (w skali logarytmicznej), także dla tempa ustawionego poza ekranem. */
+export const nearestSpeedStep = (speed) => {
+  if (speed == null || speed <= 0) return SPEED_STEPS.findIndex((step) => step.value === 288);
+  let best = 0;
+  SPEED_STEPS.forEach((step, index) => {
+    if (Math.abs(Math.log(step.value / speed)) < Math.abs(Math.log(SPEED_STEPS[best].value / speed))) best = index;
+  });
+  return best;
+};
+
+/** Podpis tempa: nazwa progu albo, dla tempa spoza progów, „doba w X min”. */
+export const speedLabel = (speed) => {
+  const step = SPEED_STEPS.find((item) => item.value === speed);
+  if (step) return step.label;
+  const seconds = 86400 / speed;
+  return seconds < 60 ? `doba w ${Math.round(seconds)} s` : `doba w ${formatNumber(seconds / 60, 0)} min`;
+};
+
+/** Czas rzeczywisty jako „ok. 40 s”, „ok. 6 min” albo „ok. 1 h 10 min”. */
+export const realDuration = (seconds) => {
+  if (seconds < 60) return `ok. ${Math.max(1, Math.round(seconds))} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `ok. ${minutes} min`;
+  const rest = minutes % 60;
+  return `ok. ${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ""}`;
+};
 
 const isProducing = (device) => device.power_kw != null && device.power_kw < 0;
 
@@ -131,16 +159,92 @@ const dateFormat = new Intl.DateTimeFormat("pl-PL", {
   month: "long",
   year: "numeric",
 });
-const isoDateFormat = new Intl.DateTimeFormat("en-CA", { timeZone: HOME_TIMEZONE });
 
 export const formatSimTime = (iso) => timeFormat.format(new Date(iso));
 export const formatSimDate = (iso) => dateFormat.format(new Date(iso));
-/** Doba symulacji jako RRRR-MM-DD w strefie domu (wartość pola daty). */
-export const simDay = (iso) => isoDateFormat.format(new Date(iso));
 
 export const durationLabel = (minutes) => {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   if (!hours) return `${rest} min`;
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
+};
+
+// Doba RRRR-MM-DD (doba planu, dzień referencyjny) słowami; południe UTC to ten sam dzień w strefie domu.
+// Bez dnia tygodnia tam, gdzie po „na” / „jak” wymagałby odmiany („w niedzielę”), której Intl nie daje.
+const noon = (day) => new Date(`${day}T12:00:00Z`);
+const shortDayFormat = new Intl.DateTimeFormat("pl-PL", { timeZone: HOME_TIMEZONE, day: "numeric", month: "long" });
+const fullDayFormat = new Intl.DateTimeFormat("pl-PL", {
+  timeZone: HOME_TIMEZONE, day: "numeric", month: "long", year: "numeric",
+});
+/** „19 października” */
+export const shortDay = (day) => shortDayFormat.format(noon(day));
+/** „19 października 2026” */
+export const fullDay = (day) => fullDayFormat.format(noon(day));
+/** „niedziela, 19 października 2026” */
+export const weekdayDay = (day) => dateFormat.format(noon(day));
+
+/**
+ * Oszczędność przebiegu planu, jednakowo w pasku zegara i na liście raportów: „oszczędność 7,22 zł (43,4%)”,
+ * z dopiskiem „niepełny” dla raportu sprzed końca planu. Przyjmuje rachunek albo wiersz historii.
+ */
+export const savingSummary = ({ saving, saving_percent: percent, complete }) =>
+  `oszczędność ${formatPln(saving)}${percent == null ? "" : ` (${formatNumber(percent, 1)}%)`}${complete ? "" : ", niepełny"}`;
+
+const planWindow = (actions) => actions.map((action) => `${formatSimTime(action.start)}–${formatSimTime(action.end)}`).join(", ");
+
+/** Stan pozycji planu względem czasu symulacji; `actions` bez odrzuconych (te się nie wykonają). */
+const planState = (actions, now) => {
+  if (!now) return { state: "zaplanowane", tone: "neutral" };
+  // „wykonane”, a nie „gotowe”: „Gotowe” to już stan urządzenia czekającego na program.
+  if (actions.every((action) => new Date(action.end) <= now)) return { state: "wykonane", tone: "ready" };
+  if (actions.some((action) => new Date(action.start) <= now && now < new Date(action.end))) {
+    return { state: "w trakcie", tone: "active" };
+  }
+  return { state: "czeka", tone: "neutral" };
+};
+
+/**
+ * Urządzenia z planu, które przestały go wykonywać: device_id -> „awaria” albo „przerwane ręcznie”. Z odchyleń
+ * rachunku, a w przebiegu bez rachunku z awarii urządzeń. Awaria ma pierwszeństwo przed ręcznym wyłączeniem.
+ */
+const stoppedDevices = (run) => {
+  const stopped = {};
+  const deviations = run.cost?.deviations ?? (run.errors ?? []).map((error) => ({ ...error, kind: "device_error" }));
+  for (const deviation of deviations) {
+    if (deviation.kind === "device_error") stopped[deviation.device_id] = "awaria";
+    else if (deviation.kind === "interrupted" && !stopped[deviation.device_id]) {
+      stopped[deviation.device_id] = "przerwane ręcznie";
+    }
+  }
+  return stopped;
+};
+
+/**
+ * Plakietki przy urządzeniach z planu w trakcie przebiegu (ZP-114): device_id -> { text, tone }.
+ * Godziny i stan („czeka”, „w trakcie”, „wykonane”) liczymy z akcji, które hub przyjął; urządzenie z samymi
+ * odrzuconymi komendami dostaje „odrzucone”, a po awarii lub ręcznym wyłączeniu „awaria” / „przerwane ręcznie”
+ * zamiast stanu z zegara. Urządzenia z historii (PV, pompa spoza planu) plakietki nie mają:
+ * ich stan („Jak w historii”, „Produkuje”) jest już na liście, a dzień referencyjny w raporcie.
+ */
+export const planBadges = (run) => {
+  if (!run || run.status !== "running") return {};
+  const now = run.sim_time ? new Date(run.sim_time) : null;
+  const stopped = stoppedDevices(run);
+  const badges = {};
+  for (const device of run.devices) {
+    if (!device.actions.length) continue;
+    const accepted = device.actions.filter((action) => action.status !== "rejected");
+    if (!accepted.length) {
+      badges[device.device_id] = { text: `Plan ${planWindow(device.actions)} · odrzucone`, tone: "error" };
+      continue;
+    }
+    if (stopped[device.device_id]) {
+      badges[device.device_id] = { text: `Plan ${planWindow(accepted)} · ${stopped[device.device_id]}`, tone: "error" };
+      continue;
+    }
+    const { state, tone } = planState(accepted, now);
+    badges[device.device_id] = { text: `Plan ${planWindow(accepted)} · ${state}`, tone };
+  }
+  return badges;
 };

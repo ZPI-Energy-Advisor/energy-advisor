@@ -1,4 +1,4 @@
-import { formatKw, formatKwh, formatPln, formatSimTime } from "../../utils/home";
+import { formatKw, formatKwh, formatPln } from "../../utils/home";
 
 function Stat({ label, value, hint, tone = "default" }) {
   const color = { default: "text-gray-900", production: "text-emerald-700", export: "text-sky-700" }[tone];
@@ -31,7 +31,7 @@ function HomeSummary({ power, today }) {
         <Stat
           label="Zużycie dziś"
           value={formatKwh(today?.consumption_kwh)}
-          hint={today ? `od północy do ${formatSimTime(today.until)}` : "Brak danych z tej doby"}
+          hint={today ? null : "Brak danych z tej doby"}
         />
         <Stat label="Produkcja dziś" value={formatKwh(today?.production_kwh)} tone="production" />
         <Stat label="Pobrane z sieci" value={formatKwh(today?.grid_import_kwh)} />

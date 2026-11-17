@@ -284,30 +284,44 @@ describe("HomePage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(put).toHaveBeenCalledWith("/home/clock", { running: true }));
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Tempo" }), { target: { value: "1440" } });
+    const slider = screen.getByRole("slider", { name: /Tempo/ });
+    expect(slider.getAttribute("aria-valuetext")).toBe("doba w 5 min");
+    // Przeciąganie przez kilka progów wysyła jedno polecenie, z tempem z ostatniego progu.
+    fireEvent.change(slider, { target: { value: "6" } });
+    fireEvent.change(slider, { target: { value: "7" } });
+    expect(slider.getAttribute("aria-valuetext")).toBe("doba w minutę");
     await waitFor(() => expect(put).toHaveBeenCalledWith("/home/clock", { speed: 1440 }));
+    expect(put.mock.calls.filter(([, body]) => body.speed)).toHaveLength(1);
   });
 
-  it("zaczyna wybraną dobę od północy, a przy działającym zegarze blokuje zmianę doby", async () => {
-    mockApi();
+  it("przy tempie spoza progów puszczenie suwaka wybiera próg, na którym stoi", async () => {
+    mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, speed: 100 } }] });
     const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: {} });
     renderPage();
 
-    const dayInput = await screen.findByLabelText("Doba symulacji");
-    expect(dayInput.value).toBe("2026-10-19");
-    fireEvent.change(dayInput, { target: { value: "2026-10-25" } });
-    fireEvent.click(screen.getByRole("button", { name: "Zacznij dobę od północy" }));
+    const slider = await screen.findByRole("slider", { name: /Tempo/ });
+    expect(slider.getAttribute("aria-valuetext")).toBe("doba w 14 min");
+    fireEvent.pointerUp(slider);
 
-    await waitFor(() => expect(put).toHaveBeenCalledWith("/home/clock", { day: "2026-10-25" }));
+    expect(slider.getAttribute("aria-valuetext")).toBe("doba w 12 min");
+    await waitFor(() => expect(put).toHaveBeenCalledWith("/home/clock", { speed: 120 }));
   });
 
-  it("przy działającym zegarze nie pozwala zmienić doby", async () => {
-    mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, running: true } }] });
+  it("przy końcu planu w zegarze podaje, ile to potrwa naprawdę", async () => {
+    mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, running: true, stop_at: "2026-10-20T06:00:00+02:00" } }] });
     renderPage();
 
-    expect(await screen.findByRole("button", { name: "Pauza" })).toBeTruthy();
-    expect(screen.getByLabelText("Doba symulacji").disabled).toBe(true);
-    expect(screen.getByRole("button", { name: "Zacznij dobę od północy" }).disabled).toBe(true);
+    // 18 h symulacji przy dobie w 5 min (288×) to 225 s.
+    expect(await screen.findByText("koniec planu za ok. 4 min")).toBeTruthy();
+  });
+
+  it("nie ma ręcznego wyboru doby: dobę ustawia uruchomienie planu", async () => {
+    mockApi();
+    renderPage();
+
+    expect(await screen.findByTestId("sim-time")).toBeTruthy();
+    expect(screen.queryByLabelText("Doba symulacji")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Zacznij dobę od północy" })).toBeNull();
   });
 
   it("przy niedostępnym hubie pokazuje ostatnie zużycie bez sterowania", async () => {
@@ -335,81 +349,94 @@ describe("HomePage", () => {
     expect(screen.queryByRole("region", { name: "Przebieg planu" })).toBeNull();
   });
 
-  it("pokazuje przebieg planu: energię z planu i symulacji, odrzucone komendy i awarie", async () => {
-    mockApi({ planRun: PLAN_RUN });
+  it("w trakcie przebiegu pokazuje plan w zegarze, a godziny planu przy urządzeniach", async () => {
+    mockApi({
+      states: [{ ...STATE, devices: [LAMP, WASHER, { ...LAMP, device_id: "dev_pv_01", device_name: "Instalacja PV" }] }],
+      planRun: PLAN_RUN,
+    });
     renderPage();
 
-    const card = await screen.findByRole("region", { name: "Przebieg planu" });
-    expect(within(card).getByText("Plan w trakcie")).toBeTruthy();
-    expect(card.textContent).toContain("Urządzenia z planu zużyły 0,60 kWh z 6,40 kWh według planu.");
-    const washer = within(card).getByRole("listitem", { name: "Pralka Bosch" });
-    expect(washer.textContent).toContain("0,60 kWh / 1,40 kWh");
-    expect(washer.textContent).toContain("Bawełna 60°C: Zaplanowane na 11:45–12:30");
-    const ev = within(card).getByRole("listitem", { name: "Ładowarka EV" });
-    expect(ev.textContent).toContain("Odrzucone: Nie ma urządzenia w rejestrze");
-    expect(within(card).getByRole("alert").textContent).toContain("08:15 Lampa salon: Brak odpowiedzi urządzenia");
-    const history = within(card).getByRole("region", { name: "Z dnia referencyjnego" });
-    expect(history.textContent).toContain("Pracują same, tak jak 12 października 2026:");
-    // PV na plusie, z dopiskiem „produkcji”.
-    expect(history.textContent).toContain("Instalacja PV: 1,20 kWh z 6,40 kWh produkcji");
-    expect(history.textContent).toContain("Pompa ciepła: 4,10 kWh z 9,50 kWh");
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(bar.textContent).toContain("Plan na 19 października · w trakcie, do 06:00 następnego dnia");
+    expect(within(bar).getByRole("button", { name: "Zakończ" })).toBeTruthy();
+    // Czas jest tylko w zegarze: bez osobnej karty planu i bez drugiej godziny zatrzymania.
+    expect(screen.queryByText(/Zegar sam stanie/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "Rachunek przed i po" })).toBeNull();
+
+    const list = await screen.findByRole("region", { name: "Urządzenia" });
+    // Pralka pracuje: zegar 12:00, plan 11:45–12:30.
+    expect(within(list).getByRole("listitem", { name: "Pralka Bosch" }).textContent).toContain("Plan 11:45–12:30 · w trakcie");
+    // Urządzenia z historii bez plakietki planu: ich stan jest na liście, a dzień referencyjny w raporcie.
+    expect(within(list).getByRole("listitem", { name: "Instalacja PV" }).textContent).not.toContain("października");
+    // Urządzenia stałe bez plakietki, z przyciskiem do ręcznego włączenia.
+    const lamp = within(list).getByRole("listitem", { name: "Lampa salon" });
+    expect(lamp.textContent).not.toContain("Plan");
+    expect(within(lamp).getByRole("button", { name: "Włącz: Lampa salon" })).toBeTruthy();
   });
 
-  it("po zakończeniu pokazuje rachunek bez planu i z planem, sumy spoza porównania i odchylenia pod „Więcej”", async () => {
-    mockApi({ planRun: { ...PLAN_RUN, status: "completed", cost: COST } });
-    renderPage();
-
-    const cost = await screen.findByRole("region", { name: "Rachunek przed i po" });
-    expect(cost.textContent).toContain("Bez planu6,40 zł");
-    expect(cost.textContent).toContain("Z planem1,90 zł");
-    expect(cost.textContent).toContain("według planu 1,78 zł");
-    expect(cost.textContent).toContain("Oszczędność4,50 zł70,3% kosztu bez planu");
-    expect(within(cost).queryByText("niepełny")).toBeNull();
-    const row = within(cost).getByRole("row", { name: /Pralka Bosch/ });
-    expect(row.textContent).toContain("1,20 zł");
-    expect(row.textContent).toContain("0,78 zł");
-    const facts = cost.querySelector("dl");
-    expect(facts.textContent).toContain("Poza porównaniemŁadowarka EV");
-    expect(facts.textContent).toContain("Włączone ręcznie0,12 zł");
-    expect(facts.textContent).toContain("PV6,40 kWh, z tego plan 0,90 kWh");
-    expect(facts.textContent).toContain("Odchylenia2");
-    const more = cost.querySelector("details");
-    expect(more.textContent).toContain("Włączone ręcznie: Lampa salon 0,20 kWh (0,12 zł).");
-    expect(more.textContent).toContain(
-      "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64% ich zużycia).",
-    );
-    const deviations = within(cost).getByRole("list", { name: "Odchylenia od planu", hidden: true });
-    expect(deviations.textContent).toContain("23:00 Wyłączone ręcznie – Ładowarka EV: Wyłączone ręcznie w trakcie pracy. (poza porównaniem)");
-    expect(deviations.textContent).toContain("19:00–19:30 Limit przyłącza: Pobór z sieci do 4,40 kW");
-    // Awarie są wśród odchyleń, więc nie ma osobnego alertu.
-    const card = screen.getByRole("region", { name: "Przebieg planu" });
-    expect(within(card).queryByRole("alert")).toBeNull();
-  });
-
-  it("raport po „Zakończ” ma plakietkę „niepełny” z godziną w podpowiedzi", async () => {
-    mockApi({ planRun: { ...PLAN_RUN, status: "ended", cost: {
-      ...COST, complete: false, until: "2026-10-19T14:00:00+02:00", excluded: [],
-      pending: [{ device_id: "dev_ev_01", device_name: "Ładowarka EV" }],
-    } } });
-    renderPage();
-
-    const cost = await screen.findByRole("region", { name: "Rachunek przed i po" });
-    const badge = within(cost).getByText("niepełny");
-    expect(badge.getAttribute("title")).toBe("Porównane są urządzenia, które skończyły pracę do 14:00.");
-    expect(cost.textContent).toContain("Nie skończyły pracyŁadowarka EV");
-    expect(cost.textContent).not.toContain("14:00");
-  });
-
-  it("w trakcie przebiegu nie pokazuje rachunku, tylko odchylenia na żywo", async () => {
+  it("w trakcie przebiegu odchylenia są paskiem pod zegarem", async () => {
     mockApi({ planRun: { ...PLAN_RUN, cost: { ...COST, complete: false } } });
     renderPage();
 
-    const card = await screen.findByRole("region", { name: "Przebieg planu" });
-    expect(within(card).queryByRole("region", { name: "Rachunek przed i po" })).toBeNull();
-    expect(card.textContent).toContain("Rachunek bez planu i z planem pojawi się po zakończeniu planu.");
-    const alert = within(card).getByRole("alert");
-    expect(alert.textContent).toContain("Odchylenia od planu");
+    const alert = await screen.findByRole("alert", { name: "Odchylenia od planu" });
     expect(alert.textContent).toContain("19:00–19:30 Limit przyłącza: Pobór z sieci do 4,40 kW");
+  });
+
+  it("po zakończeniu planu zegar pokazuje wynik, a „Zobacz raport” otwiera go w zakładce „Raporty”", async () => {
+    const done = { ...PLAN_RUN, status: "completed", cost: COST };
+    const get = mockApi({
+      planRun: done,
+      history: [{ id: "run-1", plan_date: "2026-10-19", status: "completed", started_at: "2026-11-15T10:00:00Z",
+        ended_at: "2026-11-15T10:06:00Z", complete: true, cost_before: 6.4, cost_after: 1.9, saving: 4.5,
+        saving_percent: 70.3, deviations: 2 }],
+      reports: { "run-1": done },
+    });
+    renderPage();
+
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(bar.textContent).toContain("Plan na 19 października wykonany · oszczędność 4,50 zł (70,3%)");
+    expect(within(bar).queryByRole("button", { name: "Zakończ" })).toBeNull();
+    // Po końcu planu bez plakietek przy urządzeniach i bez paska odchyleń.
+    expect((await screen.findByRole("region", { name: "Urządzenia" })).textContent).not.toContain("Plan 11:45");
+    expect(screen.queryByRole("alert", { name: "Odchylenia od planu" })).toBeNull();
+
+    fireEvent.click(within(bar).getByRole("button", { name: "Zobacz raport" }));
+
+    expect(screen.getByRole("tab", { name: "Raporty" }).getAttribute("aria-selected")).toBe("true");
+    const report = await screen.findByRole("region", { name: "Rachunek przed i po" });
+    expect(report.textContent).toContain("Oszczędność4,50 zł");
+    expect(get).toHaveBeenCalledWith("/home/plan-runs/run-1");
+
+    // Ręczny powrót do „Raportów” nie otwiera znowu tego samego raportu.
+    fireEvent.click(screen.getByRole("tab", { name: "Symulacja" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Raporty" }));
+    const history = await screen.findByRole("region", { name: "Historia przebiegów" });
+    expect(within(history).getByRole("button", { name: "Pokaż raport" })).toBeTruthy();
+    expect(within(history).queryByRole("region", { name: "Rachunek przed i po" })).toBeNull();
+  });
+
+  it("po „Zakończ” pasek mówi, że rachunek jest niepełny", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "ended", cost: { ...COST, complete: false } } });
+    renderPage();
+
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(bar.textContent).toContain("zakończony przed czasem · oszczędność 4,50 zł (70,3%), niepełny");
+  });
+
+  it("przebieg bez rachunku pokazuje awarie urządzeń w pasku pod zegarem", async () => {
+    mockApi({ planRun: PLAN_RUN });
+    renderPage();
+
+    const alert = await screen.findByRole("alert", { name: "Odchylenia od planu" });
+    expect(alert.textContent).toContain("08:15 Awaria – Lampa salon: Brak odpowiedzi urządzenia");
+  });
+
+  it("przerwany przebieg mówi, że symulacja zaczęła inną dobę", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "superseded" } });
+    renderPage();
+
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
+    expect(bar.textContent).toContain("Plan na 19 października przerwany: symulacja zaczęła inną dobę.");
   });
 
   it("zakładka „Raporty” pokazuje przebiegi i otwiera raport wybranego", async () => {
@@ -442,8 +469,47 @@ describe("HomePage", () => {
     const report = await within(entry).findByRole("region", { name: "Rachunek przed i po" });
     expect(report.textContent).toContain("Oszczędność4,50 zł");
     expect(get).toHaveBeenCalledWith("/home/plan-runs/run-0");
-    // Raport z historii jest tylko do odczytu.
+    // Rozwinięty raport nie powtarza streszczenia z wiersza.
+    expect(entry.textContent).not.toContain("oszczędność 4,50 zł (70,3%)");
+    // Raport jest tylko do odczytu.
     expect(within(entry).queryByRole("button", { name: "Zakończ" })).toBeNull();
+  });
+
+  it("błąd jednego raportu znika po otwarciu innego", async () => {
+    const entry = (id, day) => ({
+      id, plan_date: day, status: "completed", started_at: "2026-11-14T10:00:00Z", ended_at: "2026-11-14T10:06:00Z",
+      complete: true, cost_before: 6.4, cost_after: 1.9, saving: 4.5, saving_percent: 70.3, deviations: 0,
+    });
+    mockApi({
+      history: [entry("run-a", "2026-10-18"), entry("run-b", "2026-10-17")],
+      reports: { "run-b": { ...PLAN_RUN, id: "run-b", status: "completed", cost: COST } },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Raporty" }));
+    const history = await screen.findByRole("region", { name: "Historia przebiegów" });
+
+    // Raportu run-a nie ma w API: błąd.
+    fireEvent.click(within(within(history).getByRole("listitem", { name: /18 października/ })).getByRole("button", { name: "Pokaż raport" }));
+    expect(await within(history).findByRole("alert")).toBeTruthy();
+
+    fireEvent.click(within(within(history).getByRole("listitem", { name: /17 października/ })).getByRole("button", { name: "Pokaż raport" }));
+    expect(await within(history).findByRole("region", { name: "Rachunek przed i po" })).toBeTruthy();
+    expect(within(history).queryByText("Nie udało się pobrać raportu przebiegu.")).toBeNull();
+  });
+
+  it("„Zobacz raport” przebiegu spoza listy mówi, że go nie ma", async () => {
+    mockApi({
+      planRun: { ...PLAN_RUN, status: "completed", cost: COST },
+      history: [{ id: "run-0", plan_date: "2026-10-18", status: "completed", started_at: "2026-11-14T10:00:00Z",
+        ended_at: null, complete: true, cost_before: 1, cost_after: 1, saving: 0, saving_percent: 0, deviations: 0 }],
+    });
+    renderPage();
+
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
+    fireEvent.click(within(bar).getByRole("button", { name: "Zobacz raport" }));
+
+    const history = await screen.findByRole("region", { name: "Historia przebiegów" });
+    expect((await within(history).findByRole("alert")).textContent).toBe("Nie ma tego przebiegu na liście raportów.");
   });
 
   it("raporty są dostępne bez podłączonego domu", async () => {
@@ -456,46 +522,20 @@ describe("HomePage", () => {
     expect(history.textContent).toContain("Nie ma jeszcze raportów.");
   });
 
-  it("podaje dzień przy urządzeniu, gdy urządzenia mają różne dni referencyjne, i nie pokazuje -0", async () => {
-    const [pv, heatPump] = PLAN_RUN.replayed_devices;
-    mockApi({ planRun: { ...PLAN_RUN, replayed_devices: [
-      { ...pv, history_day: "2026-10-18", actual_kwh: -0 },
-      heatPump,
-    ] } });
-    renderPage();
-
-    const history = await screen.findByRole("region", { name: "Z dnia referencyjnego" });
-    expect(history.textContent).toContain("Pracują same, tak jak w dniu referencyjnym:");
-    expect(history.textContent).toContain("Instalacja PV (jak 18 października 2026): 0,00 kWh z 6,40 kWh produkcji");
-    expect(history.textContent).toContain("Pompa ciepła (jak 12 października 2026)");
-    expect(history.textContent).not.toContain("-0,00");
-  });
-
-  it("w trakcie przebiegu planu lista pokazuje cały dom, żeby włączać urządzenia stałe ręcznie", async () => {
-    mockApi({ states: [{ ...STATE, devices: [LAMP, WASHER] }], planRun: PLAN_RUN });
-    renderPage();
-
-    const card = await screen.findByRole("region", { name: "Przebieg planu" });
-    expect(card.textContent).toContain("Urządzenia stałe (światło, czajnik, TV…) włącza się ręcznie na liście niżej");
-    const list = await screen.findByRole("region", { name: "Urządzenia" });
-    expect(within(list).getByRole("listitem", { name: "Lampa salon" })).toBeTruthy();
-    expect(within(list).getByRole("listitem", { name: "Pralka Bosch" })).toBeTruthy();
-  });
-
   it("„Zakończ” zamyka przebieg planu i odświeża stan domu", async () => {
     const get = mockApi({ planRun: PLAN_RUN });
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({
-      data: { ...PLAN_RUN, status: "ended", ended_at: "2026-11-15T10:05:00Z" },
+      data: { ...PLAN_RUN, status: "ended", ended_at: "2026-11-15T10:05:00Z", cost: { ...COST, complete: false } },
     });
     renderPage();
 
-    const card = await screen.findByRole("region", { name: "Przebieg planu" });
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
     const stateCalls = get.mock.calls.filter(([url]) => url === "/home/state").length;
-    fireEvent.click(within(card).getByRole("button", { name: "Zakończ" }));
+    fireEvent.click(within(bar).getByRole("button", { name: "Zakończ" }));
 
-    expect(await within(card).findByText("Zakończony")).toBeTruthy();
+    expect(await within(bar).findByText(/zakończony przed czasem/)).toBeTruthy();
     expect(post).toHaveBeenCalledWith("/home/plan-runs/run-1/end");
-    expect(within(card).queryByRole("button", { name: "Zakończ" })).toBeNull();
+    expect(within(bar).queryByRole("button", { name: "Zakończ" })).toBeNull();
     await waitFor(() =>
       expect(get.mock.calls.filter(([url]) => url === "/home/state").length).toBeGreaterThan(stateCalls));
   });

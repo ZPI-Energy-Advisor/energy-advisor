@@ -1,12 +1,79 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FiPause, FiPlay } from "react-icons/fi";
-import { formatSimDate, formatSimTime, simDay, speedOptions } from "../../utils/home";
+import { SPEED_STEPS, formatSimDate, formatSimTime, nearestSpeedStep, realDuration, speedLabel } from "../../utils/home";
 import { CARD, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./styles";
 
-// Zegar huba: start, pauza, tempo i wybór doby. Doba zaczyna nową symulację (hub resetuje urządzenia),
-// więc hub pozwala ją zmienić tylko przy zatrzymanym zegarze.
-function SimulationClock({ clock, disabled, onUpdate }) {
-  const [day, setDay] = useState("");
+const SEND_DELAY_MS = 400;
+
+// Suwak tempa: progi od „kwadrans w minutę” do „doba w minutę”. Podpis zmienia się od razu, a tempo idzie do huba
+// chwilę po ostatnim ruchu, żeby przeciąganie nie wysyłało serii poleceń. Podgląd trzyma się, dopóki hub ma
+// jeszcze stare tempo (stan domu odświeża się z opóźnieniem), a po nieudanym poleceniu wraca do tempa huba.
+function SpeedSlider({ clock, disabled, onChange }) {
+  const [preview, setPreview] = useState(null); // { index, base }: base to tempo huba w chwili ruchu
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const speed = clock?.speed;
+  // Tempo huba w chwili wysyłki (stan domu odświeża się w tle), a nie z chwili ruchu suwakiem.
+  const hubSpeed = useRef(speed);
+  useEffect(() => {
+    hubSpeed.current = speed;
+  }, [speed]);
+  const pending = preview && preview.base === speed ? preview.index : null;
+  const index = pending ?? nearestSpeedStep(speed);
+  const label = pending != null ? SPEED_STEPS[pending].label : speed ? speedLabel(speed) : "—";
+  const remaining = clock?.running && clock.stop_at && speed
+    ? (new Date(clock.stop_at) - new Date(clock.sim_time)) / 1000 / speed
+    : null;
+
+  const select = (next) => {
+    setPreview({ index: next, base: speed });
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      if (SPEED_STEPS[next].value === hubSpeed.current) return;
+      if (!(await onChange(SPEED_STEPS[next].value))) setPreview(null);
+    }, SEND_DELAY_MS);
+  };
+  const change = (event) => select(Number(event.target.value));
+  // Tempo huba spoza progów (np. ustawione przez API): suwak stoi na najbliższym progu, więc kliknięcie w to
+  // samo miejsce nie zmienia wartości i nie wywołuje onChange. Puszczenie suwaka wybiera wtedy ten próg.
+  const offStep = speed != null && !SPEED_STEPS.some((step) => step.value === speed);
+  const release = () => {
+    if (offStep && pending == null) select(index);
+  };
+
+  return (
+    <div className="w-full md:max-w-md">
+      <label htmlFor="sim-speed" className="block text-sm font-medium text-gray-700">
+        Tempo: <span className="font-normal text-gray-900">{label}</span>
+      </label>
+      <input
+        id="sim-speed"
+        type="range"
+        min={0}
+        max={SPEED_STEPS.length - 1}
+        step={1}
+        value={index}
+        disabled={disabled}
+        onChange={change}
+        onPointerUp={release}
+        onKeyUp={release}
+        aria-valuetext={label}
+        className="mt-2 w-full accent-emerald-600 cursor-pointer disabled:cursor-not-allowed"
+      />
+      <div className="flex justify-between text-xs text-gray-500">
+        <span>wolniej</span>
+        {remaining != null && remaining > 0 && <span>koniec planu za {realDuration(remaining)}</span>}
+        <span>szybciej</span>
+      </div>
+    </div>
+  );
+}
+
+// Zegar huba: start, pauza i tempo. Dobę ustawia uruchomienie planu („Uruchom symulację” na stronie planu),
+// więc ręcznego wyboru doby tu nie ma: przerwałby przebieg planu. `plan`: pasek przebiegu planu (PlanRunBar),
+// który sam mówi, do której trwa plan, więc wtedy nie powtarzamy godziny zatrzymania zegara.
+function SimulationClock({ clock, disabled, onUpdate, plan = null }) {
   const [isBusy, setIsBusy] = useState(false);
   const locked = disabled || isBusy || !clock;
 
@@ -17,12 +84,6 @@ function SimulationClock({ clock, disabled, onUpdate }) {
     } finally {
       setIsBusy(false);
     }
-  };
-
-  const selectedDay = day || (clock ? simDay(clock.sim_time) : "");
-  const startDay = async (event) => {
-    event.preventDefault();
-    if (await update({ day: selectedDay })) setDay("");
   };
 
   return (
@@ -36,7 +97,7 @@ function SimulationClock({ clock, disabled, onUpdate }) {
                 {formatSimTime(clock.sim_time)}
               </p>
               <p className="text-sm text-gray-600 first-letter:uppercase">{formatSimDate(clock.sim_time)}</p>
-              {clock.stop_at && (
+              {clock.stop_at && !plan && (
                 <p className="mt-1 text-xs text-gray-500">
                   Zegar sam stanie o {formatSimTime(clock.stop_at)}, na końcu planu dnia.
                 </p>
@@ -68,45 +129,11 @@ function SimulationClock({ clock, disabled, onUpdate }) {
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col md:flex-row md:items-end gap-4">
-        <label className="text-sm text-gray-700">
-          <span className="block font-medium mb-1">Tempo</span>
-          <select
-            className="w-full md:w-48 border border-gray-300 rounded px-3 py-2 bg-white disabled:bg-gray-50"
-            value={clock?.speed ?? ""}
-            disabled={locked}
-            onChange={(event) => update({ speed: Number(event.target.value) })}
-          >
-            {speedOptions(clock?.speed).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      {plan}
 
-        <form className="flex flex-col sm:flex-row sm:items-end gap-2" onSubmit={startDay}>
-          <label className="text-sm text-gray-700">
-            <span className="block font-medium mb-1">Doba symulacji</span>
-            <input
-              type="date"
-              required
-              className="w-full sm:w-44 border border-gray-300 rounded px-3 py-2 disabled:bg-gray-50"
-              value={selectedDay}
-              disabled={locked || clock?.running}
-              onChange={(event) => setDay(event.target.value)}
-            />
-          </label>
-          <button type="submit" className={SECONDARY_BUTTON} disabled={locked || clock?.running || !selectedDay}>
-            Zacznij dobę od północy
-          </button>
-        </form>
+      <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col md:flex-row md:items-end gap-4">
+        <SpeedSlider clock={clock} disabled={locked} onChange={(speed) => update({ speed })} />
       </div>
-      <p className="mt-2 text-xs text-gray-500">
-        {clock?.running
-          ? "Dobę można zmienić po zatrzymaniu zegara."
-          : "Nowa doba zaczyna symulację od nowa: urządzenia wracają do stanu wyłączonego, a zużycie liczy się od zera."}
-      </p>
     </section>
   );
 }

@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import apiClient from "../../api/client";
 import { getApiErrorMessage } from "../../utils/energyFiles";
-import { formatNumber, formatPln, formatSimDate } from "../../utils/home";
+import { savingSummary, weekdayDay } from "../../utils/home";
 import PlanRunCard from "./PlanRunCard";
 import { CARD, SECONDARY_BUTTON } from "./styles";
 
@@ -12,18 +12,15 @@ const STATUS_TEXT = {
   superseded: "przerwany",
 };
 
-// Doba RRRR-MM-DD słowami; południe UTC to ten sam dzień w strefie domu.
-const dayText = (day) => formatSimDate(`${day}T12:00:00Z`);
-
 const savingText = (run) => {
   if (run.saving == null) return run.status === "running" ? "rachunek po zakończeniu" : "bez rachunku";
-  const percent = run.saving_percent == null ? "" : ` (${formatNumber(run.saving_percent, 1)}%)`;
-  return `oszczędność ${formatPln(run.saving)}${percent}${run.complete ? "" : ", niepełny"}`;
+  return savingSummary(run);
 };
 
 // Raporty z symulacji (ZP-114), zakładka „Raporty” na „Mój dom”: przebiegi planu z rachunkiem z zapisanego
 // raportu, a po kliknięciu cały raport. Raporty są w bazie, więc lista nie potrzebuje huba ani zegara.
-function PlanRunHistory() {
+// `openId`: raport otwarty od razu, np. po „Zobacz raport” na zakładce „Symulacja”.
+function PlanRunHistory({ openId = null }) {
   const [loaded, setLoaded] = useState(false);
   const [runs, setRuns] = useState([]);
   const [error, setError] = useState(null);
@@ -50,20 +47,43 @@ function PlanRunHistory() {
     };
   }, []);
 
-  const toggle = async (run) => {
-    if (open === run.id) {
-      setOpen(null);
-      return;
-    }
-    setOpen(run.id);
+  // Numer ostatniego żądania raportu: odpowiedź (albo błąd) wcześniejszego nie zamyka raportu otwartego później.
+  const request = useRef(0);
+  const show = useCallback(async (runId) => {
+    const current = ++request.current;
+    setOpen(runId);
     setReport(null);
+    setError(null); // Błąd poprzedniego raportu nie zostaje przy udanym otwarciu kolejnego.
     try {
-      setReport((await apiClient.get(`/home/plan-runs/${run.id}`)).data);
+      const { data } = await apiClient.get(`/home/plan-runs/${runId}`);
+      if (current === request.current) setReport(data);
     } catch (err) {
+      if (current !== request.current) return;
       setOpen(null);
       setError(getApiErrorMessage(err, "Nie udało się pobrać raportu przebiegu."));
     }
+  }, []);
+
+  const toggle = (run) => {
+    if (open !== run.id) return show(run.id);
+    request.current += 1; // Zwinięty raport nie otworzy się po spóźnionej odpowiedzi.
+    setOpen(null);
   };
+
+  // Raport z „Zobacz raport” otwieramy po wczytaniu listy i tylko wtedy, gdy przebieg na niej jest: inaczej
+  // pobrany raport nie miałby gdzie się pokazać. Bez listy błąd jej pobrania jest już na ekranie.
+  const opened = useRef(null);
+  useEffect(() => {
+    if (!openId || !loaded || opened.current === openId) return;
+    opened.current = openId;
+    if (runs.some((run) => run.id === openId)) {
+      // show ustawia stan po odpowiedzi API, a nie synchronicznie w efekcie.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      show(openId);
+    } else if (runs.length) {
+      setError("Nie ma tego przebiegu na liście raportów.");
+    }
+  }, [openId, loaded, runs, show]);
 
   if (!loaded) {
     return (
@@ -88,15 +108,18 @@ function PlanRunHistory() {
       )}
       <ul className="mt-2 divide-y divide-gray-100">
         {runs.map((run) => (
-          <li key={run.id} className="py-2" aria-label={`Przebieg ${dayText(run.plan_date)}`}>
+          <li key={run.id} className="py-2" aria-label={`Przebieg ${weekdayDay(run.plan_date)}`}>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
               <div>
-                <span className="font-medium text-gray-900">{dayText(run.plan_date)}</span>
+                <span className="font-medium text-gray-900">{weekdayDay(run.plan_date)}</span>
                 <span className="text-gray-600"> · {STATUS_TEXT[run.status] ?? run.status}</span>
-                <p className="text-gray-600">
-                  {savingText(run)}
-                  {run.deviations ? ` · odchylenia: ${run.deviations}` : ""}
-                </p>
+                {/* Streszczenie tylko przy zwiniętym raporcie: rozwinięty pokazuje te same liczby pod spodem. */}
+                {open !== run.id && (
+                  <p className="text-gray-600">
+                    {savingText(run)}
+                    {run.deviations ? ` · odchylenia: ${run.deviations}` : ""}
+                  </p>
+                )}
               </div>
               <button type="button" className={SECONDARY_BUTTON} onClick={() => toggle(run)} aria-expanded={open === run.id}>
                 {open === run.id ? "Ukryj raport" : "Pokaż raport"}
