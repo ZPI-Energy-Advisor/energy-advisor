@@ -250,17 +250,6 @@ class ReplaySlot:
     kwh: float
 
 
-@dataclass(frozen=True)
-class ReplaySlot:
-    """Kwadrans akcji z bazy: urządzenie, akcja (id w bazie i action_id z pliku), początek w UTC, energia."""
-
-    device_id: str
-    action_id: int
-    ref: str
-    slot_start: datetime
-    kwh: float
-
-
 class HomeClockUpdate(BaseModel):
     """Zmiana zegara z ekranu domu; pominięte pola zostają bez zmian.
 
