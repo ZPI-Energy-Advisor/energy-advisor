@@ -74,7 +74,9 @@ class HomeRepository:
         return [self._hub_device(instance, programs[instance.id]) for instance in instances]
 
     def device_descriptions(self, user_id: UUID) -> dict[str, dict]:
-        """Opis urządzeń do stanu domu (typ, kategoria, tryb, programy) według device_id.
+        """Opis urządzeń do stanu domu (nazwa, typ, kategoria, pomieszczenie, tryb, programy) według device_id.
+
+        `room` to wartość z pliku (None bez pola); domyślne pomieszczenie dopisuje HomeStateService.
 
         Bez profili programów: stan domu jest odpytywany co kilka sekund, a profile nie są w nim potrzebne.
         """
@@ -82,8 +84,10 @@ class HomeRepository:
             select(
                 DeviceInstance.id,
                 DeviceInstance.source_device_id,
+                DeviceInstance.name,
                 DeviceInstance.device_type,
                 DeviceInstance.device_category,
+                DeviceInstance.room,
                 DeviceInstance.flexibility_mode,
             ).where(DeviceInstance.user_id == user_id)
         ).all()
@@ -110,6 +114,8 @@ class HomeRepository:
             device.source_device_id: {
                 "device_type": device.device_type,
                 "device_category": device.device_category,
+                "device_name": device.name,
+                "room": device.room,
                 "flexibility_mode": device.flexibility_mode,
                 "programs": programs[device.id],
             }
@@ -200,6 +206,7 @@ class HomeRepository:
             device_name=instance.name,
             device_type=instance.device_type,
             device_category=instance.device_category,
+            room=instance.room,
             max_power_kw=instance.max_power_kw,
             flexibility=HubFlexibility(
                 mode=instance.flexibility_mode,

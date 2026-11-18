@@ -322,10 +322,11 @@ def test_update_config_changes_name_without_touching_work():
     driver.tick(START)
     driver.start_program("cotton_60")
 
-    driver.update_config({"device_name": "Pralka w łazience", "device_category": "Inne"})
+    driver.update_config({"device_name": "Pralka w łazience", "device_category": "Inne", "room": "bathroom"})
 
     assert driver.config.device_name == "Pralka w łazience"
     assert driver.config.device_category == "Inne"
+    assert driver.config.room == "bathroom"
     assert driver.status()["state"] == RUNNING
 
 
@@ -357,6 +358,13 @@ def test_update_config_rejects_fields_requiring_restart(changes):
 def test_update_config_rejects_invalid_values():
     with pytest.raises(DeviceError) as error:
         _washing_machine().update_config({"device_name": None})
+
+    assert (error.value.status_code, error.value.code) == (422, "validation_error")
+
+
+def test_update_config_rejects_unknown_room():
+    with pytest.raises(DeviceError) as error:
+        _washing_machine().update_config({"room": "attic"})
 
     assert (error.value.status_code, error.value.code) == (422, "validation_error")
 

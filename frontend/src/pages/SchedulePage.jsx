@@ -11,6 +11,14 @@ import { SOURCE_TYPE_DEVICES, getApiErrorMessage, isAggregateSource } from "../u
 import { daySummaries, fixedDevices, flexibleActions } from "../utils/historicalSchedule";
 import { describeBreakdown } from "../utils/tariffs";
 import {
+  choiceLabel,
+  dynamicAllowed,
+  flatTariffNote,
+  isNetMetering,
+  profileChoice,
+  sameChoice,
+} from "../utils/tariffChoice";
+import {
   afterRanges,
   clockRange,
   conflictText,
@@ -38,6 +46,74 @@ function StatTile({ label, value, hint, accent = false }) {
       <p className="text-xs md:text-sm font-medium text-gray-500 mb-1">{label}</p>
       <div className={`text-lg md:text-2xl font-bold ${accent ? "text-emerald-700" : "text-gray-900"}`}>{value}</div>
       {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
+    </div>
+  );
+}
+
+// Taryfa do sprawdzenia: grupa operatora z profilu i umowa zwykła albo z ceną dynamiczną. Domyślnie taryfa z profilu.
+function TariffPicker({ options, choice, fromProfile, netMetering, onChange }) {
+  const groups = options.tariffs.map((item) => item.code);
+  if (!groups.includes(choice.group)) groups.unshift(choice.group);
+  const canBeDynamic = dynamicAllowed(options, choice.group, netMetering);
+  const dynamicBlocked = netMetering
+    ? "Przy net-meteringu nie liczymy ceny dynamicznej: system opustów bilansuje strefy, a cena dynamiczna wymaga kwadransów."
+    : `Cena dynamiczna nie jest dostępna z grupą ${choice.group}.`;
+  const contractClass = (active) =>
+    `px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${
+      active ? "bg-emerald-600 text-white" : "bg-white text-gray-700 hover:bg-gray-50"
+    }`;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-gray-700">Taryfa</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label="Grupa taryfowa"
+          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm"
+          value={choice.group}
+          onChange={(event) => {
+            const group = event.target.value;
+            onChange({ group, dynamic: choice.dynamic && dynamicAllowed(options, group, netMetering) });
+          }}
+        >
+          {groups.map((group) => (
+            <option key={group} value={group}>
+              {group}
+              {group === fromProfile.group ? " (z profilu)" : ""}
+            </option>
+          ))}
+        </select>
+        <div className="inline-flex overflow-hidden rounded-md border border-gray-300" role="group" aria-label="Umowa">
+          <button
+            type="button"
+            className={contractClass(!choice.dynamic)}
+            aria-pressed={!choice.dynamic}
+            onClick={() => onChange({ ...choice, dynamic: false })}
+          >
+            Zwykła
+          </button>
+          <button
+            type="button"
+            className={`${contractClass(choice.dynamic)} border-l border-gray-300`}
+            aria-pressed={choice.dynamic}
+            disabled={!canBeDynamic}
+            title={canBeDynamic ? undefined : dynamicBlocked}
+            onClick={() => onChange({ ...choice, dynamic: true })}
+          >
+            Z ceną dynamiczną
+          </button>
+        </div>
+      </div>
+      {sameChoice(choice, fromProfile) ? (
+        <p className="text-xs text-gray-500">Taryfa z Twojego profilu. Wybierz inną, żeby sprawdzić, ile dałaby optymalizacja.</p>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Sprawdzasz inną taryfę niż w profilu ({choiceLabel(fromProfile)}).{" "}
+          <button type="button" className="underline hover:text-gray-800" onClick={() => onChange(fromProfile)}>
+            Wróć do taryfy z profilu
+          </button>
+        </p>
+      )}
     </div>
   );
 }
@@ -237,6 +313,28 @@ function SchedulePage() {
   const [dayIndex, setDayIndex] = useState(0);
   const browserRef = useRef(null);
   const resultsRef = useRef(null);
+  // Taryfa z profilu i taryfy operatora do wyboru; bez nich ekran liczy według profilu, bez wyboru taryfy.
+  const [tariffs, setTariffs] = useState(null);
+  const [choice, setChoice] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    apiClient
+      .get("/users/me/profile")
+      .then(async ({ data: profile }) => {
+        const fromProfile = profileChoice(profile);
+        const operator = profile?.base_info?.distribution_operator;
+        if (!fromProfile || !operator) return;
+        const { data: options } = await apiClient.get("/tariffs/options", { params: { operator } });
+        if (active) setTariffs({ fromProfile, options, netMetering: isNetMetering(profile) });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const tariffChoice = choice ?? tariffs?.fromProfile ?? null;
 
   // Po policzeniu przewijamy do wyników, żeby było widać, że pojawiły się pod kalendarzem.
   useEffect(() => {
@@ -254,12 +352,12 @@ function SchedulePage() {
 
   const changeRange = (changes) => setRange({ fileId: selectedFile.id, from: dateFrom, to: dateTo, ...changes });
 
-  const loadSchedule = async () => {
+  const loadSchedule = async (tariff = tariffChoice) => {
     setIsLoading(true);
     setError(null);
     try {
       const { data } = await apiClient.get(`/energy-files/${selectedFile.id}/schedule`, {
-        params: { from: dateFrom, to: dateTo },
+        params: { from: dateFrom, to: dateTo, ...(tariff ? { tariff: tariff.group, dynamic: tariff.dynamic } : {}) },
       });
       setSchedule({ ...data, fileId: selectedFile.id });
       setDayIndex(0);
@@ -289,6 +387,21 @@ function SchedulePage() {
   const missingPrices = shown ? missingPricesNote(shown.missing_price_actions, shown.missing_price_days) : null;
   const days = shown ? visibleDays(shown.date_from, shown.date_to, flexible) : [];
   const summaries = shown ? daySummaries(shown.actions, shown.date_from, shown.date_to) : [];
+  const shownChoice = shown?.tariff_group ? { group: shown.tariff_group, dynamic: shown.tariff_dynamic } : null;
+  const shownFromProfile = !tariffs || !shownChoice || sameChoice(shownChoice, tariffs.fromProfile);
+  // Taryfę dynamiczną podpowiadamy z przyciskiem tylko wtedy, gdy da się ją policzyć (sprzedawca, bez net-meteringu).
+  const canTryDynamic = Boolean(
+    shown && tariffs && dynamicAllowed(tariffs.options, shown.tariff_group, tariffs.netMetering),
+  );
+  const flatNote = flatTariffNote(shown, !tariffs || canTryDynamic);
+  const resultLabel = shown
+    ? [shownChoice ? choiceLabel(shownChoice) : null, rangeText(shown.date_from, shown.date_to)].filter(Boolean).join(" · ")
+    : "";
+  const tryDynamic = () => {
+    const dynamicChoice = { group: shown.tariff_group, dynamic: true };
+    setChoice(dynamicChoice);
+    loadSchedule(dynamicChoice);
+  };
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -349,9 +462,18 @@ function SchedulePage() {
                     Wybrany okres: <span className="font-semibold">{rangeText(dateFrom, dateTo)}</span>
                   </p>
                 )}
+                {tariffs && tariffChoice && (
+                  <TariffPicker
+                    options={tariffs.options}
+                    choice={tariffChoice}
+                    fromProfile={tariffs.fromProfile}
+                    netMetering={tariffs.netMetering}
+                    onChange={setChoice}
+                  />
+                )}
                 <button
                   type="button"
-                  onClick={loadSchedule}
+                  onClick={() => loadSchedule()}
                   disabled={isLoading || !dateFrom || !dateTo}
                   className="w-full sm:w-auto bg-emerald-600 text-white px-5 py-2.5 rounded-md font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
                 >
@@ -367,18 +489,41 @@ function SchedulePage() {
 
           {shown && (
             <>
-              <div ref={resultsRef} className="grid grid-cols-1 sm:grid-cols-3 gap-3 scroll-mt-4">
+              <div ref={resultsRef} className="scroll-mt-4 space-y-2">
+                <p className="text-sm text-gray-700">
+                  Wynik dla: <span className="font-semibold">{resultLabel}</span>
+                  {shownChoice && shownFromProfile ? " (taryfa z profilu)" : ""}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <StatTile label={hasBills ? "Rachunek przed" : "Koszt akcji przed"} value={formatPln(before)} />
                 <StatTile label={hasBills ? "Rachunek po" : "Koszt akcji po"} value={formatPln(after)} />
                 <StatTile label="Oszczędność" value={formatPln(saved)} hint={percent(saved, before)} accent />
               </div>
+
+              {flatNote && (
+                <div className={NOTE} role="note">
+                  <p>{flatNote}</p>
+                  {canTryDynamic && (
+                    <button
+                      type="button"
+                      className="mt-2 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 border border-amber-300 hover:bg-amber-100 disabled:opacity-50"
+                      disabled={isLoading}
+                      onClick={tryDynamic}
+                    >
+                      Sprawdź z ceną dynamiczną
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="text-xs text-gray-500 space-y-1">
                 <p>
                   {hasBills
                     ? `Rachunek do zapłaty za ${rangeText(shown.date_from, shown.date_to)}${shown.bill_until ? ` z dokończeniem akcji do ${formatMoment(shown.bill_until)}` : ""}`
                     : `${shown.bill_note ?? ""} Koszt akcji urządzeń`}{" "}
-                  przed i po przesunięciu urządzeń, według taryfy z profilu{shown.pricing ? `: ${shown.pricing}` : ""}.
+                  przed i po przesunięciu urządzeń, według taryfy {shownFromProfile ? "z profilu" : "wybranej zamiast tej z profilu"}
+                  {shown.pricing ? `: ${shown.pricing}` : ""}.
                   {shown.max_grid_kw != null && (
                     <>
                       {" "}Limit poboru z sieci: {String(shown.max_grid_kw).replace(".", ",")} kW (moc umowna z{" "}

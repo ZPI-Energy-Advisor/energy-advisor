@@ -9,6 +9,7 @@
       "device_name": "Pralka Bosch",
       "device_type": "washing_machine",
       "device_category": "AGD",
+      "room": "bathroom",
       "flexibility": {
         "mode": "shiftable",
         "allowed_window": { "from": "07:00", "to": "22:00" }
@@ -33,6 +34,7 @@
       "device_name": "Suszarka do ubrań Electrolux",
       "device_type": "tumble_dryer",
       "device_category": "AGD",
+      "room": "bathroom",
       "flexibility": {
         "mode": "shiftable",
         "allowed_window": { "from": "07:00", "to": "22:00" }
@@ -51,6 +53,7 @@
       "device_name": "Zmywarka Siemens",
       "device_type": "dishwasher",
       "device_category": "AGD",
+      "room": "kitchen",
       "flexibility": {
         "mode": "shiftable",
         "allowed_window": { "from": "19:00", "to": "07:00" }
@@ -69,6 +72,7 @@
       "device_name": "Ładowarka EV",
       "device_type": "ev_charger",
       "device_category": "Pojazd elektryczny",
+      "room": "garage",
       "max_power_kw": 3.7,
       "flexibility": {
         "mode": "interruptible",
@@ -80,6 +84,7 @@
       "device_name": "Pompa ciepła Panasonic",
       "device_type": "heat_pump",
       "device_category": "Ogrzewanie",
+      "room": "technical",
       "max_power_kw": 4.5,
       "flexibility": {
         "mode": "shiftable",
@@ -91,6 +96,7 @@
       "device_name": "Rekuperator",
       "device_type": "ventilation",
       "device_category": "Ogrzewanie",
+      "room": "technical",
       "max_power_kw": 0.08,
       "flexibility": { "mode": "fixed" }
     },
@@ -99,6 +105,7 @@
       "device_name": "Lodówka Samsung",
       "device_type": "fridge",
       "device_category": "AGD",
+      "room": "kitchen",
       "max_power_kw": 0.15,
       "flexibility": { "mode": "fixed" }
     },
@@ -107,6 +114,7 @@
       "device_name": "Płyta indukcyjna",
       "device_type": "induction_hob",
       "device_category": "AGD",
+      "room": "kitchen",
       "max_power_kw": 7.2,
       "flexibility": { "mode": "fixed" }
     },
@@ -115,6 +123,7 @@
       "device_name": "Piekarnik elektryczny",
       "device_type": "oven",
       "device_category": "AGD",
+      "room": "kitchen",
       "max_power_kw": 3.0,
       "flexibility": { "mode": "fixed" }
     },
@@ -123,6 +132,7 @@
       "device_name": "Kuchenka mikrofalowa",
       "device_type": "microwave",
       "device_category": "AGD",
+      "room": "kitchen",
       "max_power_kw": 1.2,
       "flexibility": { "mode": "fixed" }
     },
@@ -131,6 +141,7 @@
       "device_name": "Czajnik elektryczny",
       "device_type": "kettle",
       "device_category": "AGD",
+      "room": "kitchen",
       "max_power_kw": 2.2,
       "flexibility": { "mode": "fixed" }
     },
@@ -139,6 +150,7 @@
       "device_name": "Ekspres do kawy",
       "device_type": "coffee_machine",
       "device_category": "AGD",
+      "room": "kitchen",
       "max_power_kw": 1.5,
       "flexibility": { "mode": "fixed" }
     },
@@ -147,6 +159,7 @@
       "device_name": "Oświetlenie salon",
       "device_type": "light",
       "device_category": "Oświetlenie",
+      "room": "living_room",
       "max_power_kw": 0.12,
       "flexibility": { "mode": "fixed" }
     },
@@ -155,6 +168,7 @@
       "device_name": "Oświetlenie kuchnia",
       "device_type": "light",
       "device_category": "Oświetlenie",
+      "room": "kitchen",
       "max_power_kw": 0.08,
       "flexibility": { "mode": "fixed" }
     },
@@ -163,6 +177,7 @@
       "device_name": "Oświetlenie sypialnia",
       "device_type": "light",
       "device_category": "Oświetlenie",
+      "room": "bedroom",
       "max_power_kw": 0.06,
       "flexibility": { "mode": "fixed" }
     },
@@ -171,6 +186,7 @@
       "device_name": "Oświetlenie łazienka",
       "device_type": "light",
       "device_category": "Oświetlenie",
+      "room": "bathroom",
       "max_power_kw": 0.04,
       "flexibility": { "mode": "fixed" }
     },
@@ -179,6 +195,7 @@
       "device_name": "Oświetlenie przedpokój",
       "device_type": "light",
       "device_category": "Oświetlenie",
+      "room": "other",
       "max_power_kw": 0.03,
       "flexibility": { "mode": "fixed" }
     },
@@ -187,6 +204,7 @@
       "device_name": "Oświetlenie ogród",
       "device_type": "light",
       "device_category": "Oświetlenie",
+      "room": "other",
       "max_power_kw": 0.05,
       "flexibility": { "mode": "fixed" }
     },
@@ -195,6 +213,7 @@
       "device_name": "Telewizor salon",
       "device_type": "tv",
       "device_category": "RTV/IT",
+      "room": "living_room",
       "max_power_kw": 0.15,
       "flexibility": { "mode": "fixed" }
     },
@@ -203,6 +222,7 @@
       "device_name": "Komputer gabinet",
       "device_type": "computer",
       "device_category": "RTV/IT",
+      "room": "office",
       "max_power_kw": 0.25,
       "flexibility": { "mode": "fixed" }
     },
@@ -211,6 +231,7 @@
       "device_name": "Router Wi-Fi",
       "device_type": "router",
       "device_category": "RTV/IT",
+      "room": "technical",
       "max_power_kw": 0.012,
       "flexibility": { "mode": "fixed" }
     },
@@ -219,6 +240,7 @@
       "device_name": "Odkurzacz",
       "device_type": "vacuum_cleaner",
       "device_category": "Inne",
+      "room": "other",
       "max_power_kw": 1.6,
       "flexibility": { "mode": "fixed" }
     },
@@ -227,6 +249,7 @@
       "device_name": "Suszarka do włosów",
       "device_type": "hair_dryer",
       "device_category": "Inne",
+      "room": "bathroom",
       "max_power_kw": 2.0,
       "flexibility": { "mode": "fixed" }
     },
@@ -235,6 +258,7 @@
       "device_name": "Inne urządzenia",
       "device_type": "other",
       "device_category": "Inne",
+      "room": "other",
       "max_power_kw": 3.3,
       "flexibility": { "mode": "fixed" }
     }

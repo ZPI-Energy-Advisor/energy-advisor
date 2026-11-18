@@ -1,4 +1,5 @@
-"""Ceny kwadransów dla optymalizacji harmonogramu z nowego cennika, według taryfy z profilu użytkownika.
+"""Ceny kwadransów dla optymalizacji harmonogramu z nowego cennika, według taryfy z profilu użytkownika
+albo taryfy wybranej na ekranie (`TariffChoice`).
 
 Cena kwadransa to wszystko, co na rachunku zależy od zużytej kWh: energia (cena strefy albo cena rynkowa z marżą przy
 umowie z ceną dynamiczną), akcyza, dystrybucja zmienna strefy, opłaty jakościowa, OZE i kogeneracyjna, z VAT.
@@ -16,6 +17,7 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from app.parsers.devices import LOCAL_TIMEZONE
+from app.schemas.calculation import TariffChoice
 from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import PVBalancingEngine
@@ -35,6 +37,9 @@ class SchedulePrices:
     pv_note: str | None = None
     # Umowa z ceną dynamiczną: ceny kolejnych dni pojawiają się dopiero po publikacji RCE.
     dynamic: bool = False
+    # Policzona grupa taryfowa i czy profil ma instalację PV (ekran wyjaśnia wtedy wynik taryfy G11).
+    group: TariffTypeEnum | None = None
+    prosumer: bool = False
     # Średnia cena kWh z sieci w okresie w częściach (energia, dystrybucja, opłaty za kWh, VAT).
     breakdown: dict[str, float] | None = None
 
@@ -47,13 +52,14 @@ class SchedulePriceService:
         self.market_prices = market_prices
 
     def for_user(
-        self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None
+        self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None,
+        tariff: TariffChoice | None = None,
     ) -> SchedulePrices:
-        """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh)."""
+        """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh).
+        `tariff`: taryfa wybrana na ekranie; bez niej taryfa z profilu. Operator zawsze z profilu."""
         profile = self._profile(user_id)
         operator = profile.base_info.distribution_operator
-        group = profile.consumption_and_tariff.tariff_type
-        dynamic = profile.consumption_and_tariff.dynamic_price
+        group, dynamic = (tariff or TariffChoice()).resolve(profile)
         prosumer = profile.pv_config.mode != "none"
         first_day = start_utc.astimezone(LOCAL_TIMEZONE).date()
         last_day = (end_utc - SLOT).astimezone(LOCAL_TIMEZONE).date()
@@ -98,6 +104,7 @@ class SchedulePriceService:
         return SchedulePrices(
             prices=prices, description=description,
             max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note, dynamic=dynamic,
+            group=group, prosumer=prosumer,
             breakdown=self._breakdown(quarters.prices.values()),
         )
 

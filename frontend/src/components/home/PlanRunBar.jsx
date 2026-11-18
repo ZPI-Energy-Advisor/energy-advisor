@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { FiAlertTriangle, FiArrowRight, FiCheckCircle, FiLoader, FiSquare } from "react-icons/fi";
+import { FiAlertTriangle, FiArrowRight, FiCheckCircle, FiLoader, FiRotateCcw, FiSquare } from "react-icons/fi";
 import { formatSimTime, savingSummary, shortDay } from "../../utils/home";
 import { SECONDARY_BUTTON } from "./styles";
 
 const LINK = "inline-flex items-center gap-1 font-medium text-emerald-700 hover:text-emerald-900 hover:underline";
 
 // Przebieg planu w karcie zegara (ZP-114): w trakcie dzień planu i „Zakończ”, a po końcu jedna linijka
-// z wynikiem i przejściem do raportu w zakładce „Raporty”. Godziny planu są przy urządzeniach na liście.
-function PlanRunBar({ run, disabled, onEnd, onShowReport }) {
+// z wynikiem, przejściem do raportu w zakładce „Raporty” i ponownym uruchomieniem tego samego planu od północy.
+// Godziny planu są przy urządzeniach na liście.
+function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
   const [isEnding, setIsEnding] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const day = shortDay(run.plan_date);
 
   const end = async () => {
@@ -20,10 +22,25 @@ function PlanRunBar({ run, disabled, onEnd, onShowReport }) {
     }
   };
 
+  const restart = async () => {
+    setIsRestarting(true);
+    try {
+      await onRestart(run);
+    } finally {
+      setIsRestarting(false);
+    }
+  };
+
   const report = (
-    <button type="button" className={LINK} onClick={() => onShowReport(run)}>
-      Zobacz raport <FiArrowRight aria-hidden="true" />
-    </button>
+    <div className="flex flex-wrap items-center gap-3">
+      <button type="button" className={LINK} onClick={() => onShowReport(run)}>
+        Zobacz raport <FiArrowRight aria-hidden="true" />
+      </button>
+      <button type="button" className={SECONDARY_BUTTON} disabled={disabled || isRestarting} onClick={restart}>
+        {isRestarting ? <FiLoader aria-hidden="true" className="animate-spin" /> : <FiRotateCcw aria-hidden="true" />}
+        {isRestarting ? "Uruchamianie..." : "Uruchom ponownie"}
+      </button>
+    </div>
   );
 
   let content;

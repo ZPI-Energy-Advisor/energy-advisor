@@ -32,6 +32,20 @@ export const DEVICE_TYPE_LABELS = {
   other: "Inne urządzenie",
 };
 
+// Pomieszczenia (`room`) jak w docs/devices-file-format.md; backend podaje pomieszczenie z pliku albo domyślne.
+export const ROOM_LABELS = {
+  kitchen: "Kuchnia",
+  living_room: "Salon",
+  bedroom: "Sypialnia",
+  bathroom: "Łazienka",
+  laundry: "Pralnia",
+  office: "Gabinet",
+  technical: "Pomieszczenie techniczne",
+  garage: "Garaż",
+  roof: "Dach",
+  other: "Inne",
+};
+
 export const FLEXIBILITY_LABELS = {
   fixed: { label: "Stały", hint: "O pracy decyduje domownik albo słońce" },
   shiftable: { label: "Przesuwalny", hint: "Optymalizacja może przesunąć start" },

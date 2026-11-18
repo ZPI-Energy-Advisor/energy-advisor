@@ -51,6 +51,12 @@
       "enum": ["AGD", "Ogrzewanie", "OZE", "Oświetlenie", "RTV/IT", "Pojazd elektryczny", "Inne"],
       "x-message": "nieznana device_category {value!r}"
     },
+    "room": {
+      "enum": [
+        "kitchen", "living_room", "bedroom", "bathroom", "laundry", "office", "technical", "garage", "roof", "other"
+      ],
+      "x-message": "nieznane pomieszczenie room {value!r}"
+    },
     "flexibility": {
       "type": "object",
       "required": ["mode"],
@@ -116,6 +122,7 @@
         "device_name": { "type": "string" },
         "device_type": { "$ref": "#/$defs/device_type" },
         "device_category": { "$ref": "#/$defs/device_category" },
+        "room": { "$ref": "#/$defs/room" },
         "max_power_kw": {
           "type": "number",
           "exclusiveMinimum": 0,

@@ -161,6 +161,19 @@ def test_name_change_does_not_restart_device(client):
     assert httpx.get(f"http://127.0.0.1:{port}/config").json()["device_name"] == "Lampa w salonie"
 
 
+def test_room_change_does_not_restart_device(client):
+    _put(client, [{**_lamp(), "room": "living_room"}])
+    pid = _pid(client, "dev_lt_01")
+    client.post("/home/devices/dev_lt_01/commands", json={"command": "on"})
+
+    _put(client, [{**_lamp(), "room": "bedroom"}])
+
+    assert _pid(client, "dev_lt_01") == pid
+    assert _device_status(client, "dev_lt_01")["state"] == "running"
+    port = client.app.state.supervisor.devices["dev_lt_01"].port
+    assert httpx.get(f"http://127.0.0.1:{port}/config").json()["room"] == "bedroom"
+
+
 def test_unchanged_registry_keeps_processes(client):
     _put(client, [_lamp()])
     pid = _pid(client, "dev_lt_01")
@@ -330,6 +343,14 @@ def test_command_to_dead_device_returns_502(client):
 
     assert response.status_code == 502
     assert response.json()["code"] == "device_unreachable"
+
+
+def test_registry_with_unknown_room_is_rejected(client):
+    response = _put(client, [{**_lamp(), "room": "attic"}])
+
+    # Jak nieznana komenda: wartość spoza słownika to niepoprawne żądanie.
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_request"
 
 
 def test_registry_with_duplicate_ids_is_rejected(client):

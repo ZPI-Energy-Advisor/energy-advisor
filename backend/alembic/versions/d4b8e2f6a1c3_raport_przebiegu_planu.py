@@ -1,7 +1,7 @@
 """Rachunek przed i po planie w przebiegu symulacji (ZP-114): migawka cen planu i zapisany raport.
 
 Revision ID: d4b8e2f6a1c3
-Revises: c6f2a9d4e8b1
+Revises: d3a8c5e1f7b2
 """
 from typing import Sequence, Union
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "d4b8e2f6a1c3"
-down_revision: Union[str, Sequence[str], None] = "c6f2a9d4e8b1"
+down_revision: Union[str, Sequence[str], None] = "d3a8c5e1f7b2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

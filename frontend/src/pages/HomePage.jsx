@@ -12,7 +12,7 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
 import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
-import { planBadges } from "../utils/home";
+import { planBadges, shortDay } from "../utils/home";
 
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
@@ -57,8 +57,22 @@ function HomeLive({ onShowReport }) {
       (err) => getApiErrorMessage(err, "Nie udało się zakończyć przebiegu planu."),
     );
 
+  // Ten sam plan jeszcze raz od północy jego doby; odpowiedź to już nowy przebieg.
+  const restartPlanRun = (run) =>
+    perform(
+      async () => planRun.replace((await apiClient.post("/home/plan-runs", { plan_id: run.plan_id })).data),
+      (err) => getApiErrorMessage(err, "Nie udało się uruchomić planu ponownie."),
+    );
+
   const hubDown = state?.hub_available === false;
   const running = planRun.run?.status === "running";
+  // Po końcu planu ta symulacja nie ma już nic do zrobienia: zegar szedłby dalej bez planu i bez PV.
+  // Inna symulacja (np. hub po restarcie) nie jest blokowana.
+  const finishedHere =
+    planRun.run && !running && planRun.run.simulation_id === state?.simulation_id;
+  const startBlocked = finishedHere
+    ? `Plan na ${shortDay(planRun.run.plan_date)} się skończył. Żeby go powtórzyć, kliknij „Uruchom ponownie”.`
+    : null;
   // Odchylenia z rachunku; przebieg bez rachunku (sprzed ZP-114 albo jeszcze bez zdarzeń) ma tylko awarie.
   const deviations = planRun.run?.cost
     ? planRun.run.cost.deviations
@@ -100,8 +114,15 @@ function HomeLive({ onShowReport }) {
             clock={state.clock}
             disabled={hubDown}
             onUpdate={updateClock}
+            startBlocked={startBlocked}
             plan={planRun.run && (
-              <PlanRunBar run={planRun.run} disabled={hubDown} onEnd={endPlanRun} onShowReport={onShowReport} />
+              <PlanRunBar
+                run={planRun.run}
+                disabled={hubDown}
+                onEnd={endPlanRun}
+                onRestart={restartPlanRun}
+                onShowReport={onShowReport}
+              />
             )}
           />
           {running && deviations.length > 0 && (

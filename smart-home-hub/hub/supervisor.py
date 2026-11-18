@@ -376,7 +376,7 @@ class DeviceSupervisor:
             await self._start_device(device)
 
     async def _update_running_config(self, device: ManagedDevice) -> bool:
-        changes = {"device_name": device.config.device_name, "device_category": device.config.device_category}
+        changes = {field: getattr(device.config, field) for field in EDITABLE_FIELDS}
         try:
             response = await self._client.put(f"{device.url}/config", json=changes)
         except httpx.HTTPError:

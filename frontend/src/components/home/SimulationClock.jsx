@@ -73,7 +73,8 @@ function SpeedSlider({ clock, disabled, onChange }) {
 // Zegar huba: start, pauza i tempo. Dobę ustawia uruchomienie planu („Uruchom symulację” na stronie planu),
 // więc ręcznego wyboru doby tu nie ma: przerwałby przebieg planu. `plan`: pasek przebiegu planu (PlanRunBar),
 // który sam mówi, do której trwa plan, więc wtedy nie powtarzamy godziny zatrzymania zegara.
-function SimulationClock({ clock, disabled, onUpdate, plan = null }) {
+// `startBlocked`: powód, dla którego „Start” nic by nie dał (plan tej symulacji już się skończył), albo null.
+function SimulationClock({ clock, disabled, onUpdate, plan = null, startBlocked = null }) {
   const [isBusy, setIsBusy] = useState(false);
   const locked = disabled || isBusy || !clock;
 
@@ -122,12 +123,19 @@ function SimulationClock({ clock, disabled, onUpdate, plan = null }) {
               <FiPause aria-hidden="true" /> Pauza
             </button>
           ) : (
-            <button type="button" className={PRIMARY_BUTTON} disabled={locked} onClick={() => update({ running: true })}>
+            <button
+              type="button"
+              className={PRIMARY_BUTTON}
+              disabled={locked || Boolean(startBlocked)}
+              title={startBlocked ?? undefined}
+              onClick={() => update({ running: true })}
+            >
               <FiPlay aria-hidden="true" /> Start
             </button>
           )}
         </div>
       </div>
+      {startBlocked && !clock?.running && <p className="mt-2 text-xs text-gray-500">{startBlocked}</p>}
 
       {plan}
 

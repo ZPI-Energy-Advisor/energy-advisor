@@ -40,6 +40,8 @@ class HubDevice(BaseModel):
     device_name: str
     device_type: str
     device_category: str
+    # Z pliku; HomeService przed wysyłką uzupełnia brak domyślnym (device_rooms), więc hub dostaje je zawsze.
+    room: str | None = None
     max_power_kw: float | None = None
     flexibility: HubFlexibility
     programs: list[HubProgram] = []
@@ -281,6 +283,8 @@ class HomeDeviceState(BaseModel):
     # (np. zaległa wysyłka po usunięciu pliku).
     device_type: str | None = None
     device_category: str | None = None
+    # Pomieszczenie z pliku albo domyślne według typu (ZP-109); None jak typ, gdy rejestr nie zna urządzenia.
+    room: str | None = None
     flexibility_mode: str | None = None
     programs: list[HomeDeviceProgram] = []
     state: DeviceState

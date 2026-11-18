@@ -23,6 +23,7 @@ from app.services.calculation_service import (
 from app.schemas.schedule import ChargingPeriodOut, ScheduledActionOut, SchedulePriceOut, ScheduleResponse
 from app.services.pricing_strategies import SLOT_MINUTES
 from app.services.scheduling import INTERRUPTIBLE, SLOT, actions_from_devices, load_from_devices, schedule
+from app.schemas.calculation import TariffChoice
 from app.services.schedule_prices import SchedulePriceService
 from app.services.schedule_bill import grid_limit_note, padded_readings, shifted_readings
 from app.services.tariff_costs import TariffCostService
@@ -265,31 +266,34 @@ class EnergyFileService:
             if reading.measured_at.date() <= date_to or reading.measured_at < tail_end
         ]
 
-    def _bills(self, user_id: UUID, file_id: UUID, readings: list, actions) -> dict:
-        """Pełny rachunek taryfy z profilu przed i po przesunięciu akcji (ten sam silnik co Wyniki kalkulacji)."""
+    def _bills(self, user_id: UUID, file_id: UUID, readings: list, actions, tariff: TariffChoice | None = None) -> dict:
+        """Pełny rachunek taryfy przed i po przesunięciu akcji (ten sam silnik co Wyniki kalkulacji).
+        Taryfa z profilu albo wybrana na ekranie (`tariff`)."""
         if self.calculations_service is None or not readings:
             return {}
         readings = padded_readings(readings, actions)
         try:
             before = self.calculations_service.perform_tariff_calculations(
-                user_id, file_id, readings, selected_only=True
+                user_id, file_id, readings, selected_only=True, tariff=tariff,
             )
             after = self.calculations_service.perform_tariff_calculations(
-                user_id, file_id, shifted_readings(readings, actions), selected_only=True
+                user_id, file_id, shifted_readings(readings, actions), selected_only=True, tariff=tariff,
             )
         except HTTPException as error:
             return {"bill_note": f"Nie udało się policzyć rachunku: {error.detail}"}
         if before.tariff_calculation is None or after.tariff_calculation is None:
-            return {"bill_note": "Taryfy z profilu nie da się policzyć dla tego okresu, więc pokazujemy koszt akcji."}
+            return {"bill_note": "Tej taryfy nie da się policzyć dla tego okresu, więc pokazujemy koszt akcji."}
         return {
             "bill_before": round(float(before.tariff_calculation["payable_gross"]), 2),
             "bill_after": round(float(after.tariff_calculation["payable_gross"]), 2),
         }
 
     def get_file_schedule(
-        self, file_id: UUID, user_id: UUID, date_from: date | None, date_to: date | None
+        self, file_id: UUID, user_id: UUID, date_from: date | None, date_to: date | None,
+        tariff: TariffChoice | None = None,
     ) -> ScheduleResponse:
-        """Najtańsze rozmieszczenie akcji pliku urządzeń przy cenach kwadransów taryfy z profilu (nowy cennik)."""
+        """Najtańsze rozmieszczenie akcji pliku urządzeń przy cenach kwadransów taryfy z profilu (nowy cennik)
+        albo taryfy wybranej na ekranie (`tariff`, operator zawsze z profilu)."""
         energy_file = self._get_own_file(file_id, user_id)
         date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
         start = datetime.combine(date_from, time(), LOCAL_TIMEZONE).astimezone(timezone.utc)
@@ -324,7 +328,7 @@ class EnergyFileService:
             for reading in readings
             if reading.exported_kwh and reading.exported_kwh > 0
         }
-        pricing = self.schedule_prices.for_user(user_id, start, end + timedelta(days=1), exports)
+        pricing = self.schedule_prices.for_user(user_id, start, end + timedelta(days=1), exports, tariff)
         prices = pricing.prices
         result = schedule(actions + load_from_devices(neighbours), prices, max_grid_kw=pricing.max_grid_kw)
 
@@ -348,7 +352,9 @@ class EnergyFileService:
         def local(moment: datetime) -> datetime:
             return moment.astimezone(LOCAL_TIMEZONE)
 
-        bills = self._bills(user_id, energy_file.id, self._bill_readings(readings_with_tail, date_to, latest_end), result.actions)
+        bills = self._bills(
+            user_id, energy_file.id, self._bill_readings(readings_with_tail, date_to, latest_end), result.actions, tariff,
+        )
         if "bill_before" in bills and latest_end > end:
             # Ogon rachunku sięga najwyżej końca doby po okresie (tyle odczytów bierze `_bill_readings`).
             bills["bill_until"] = local(min(latest_end, end + timedelta(days=1)))
@@ -375,6 +381,9 @@ class EnergyFileService:
             date_from=date_from,
             date_to=date_to,
             pricing=pricing.description,
+            tariff_group=pricing.group.value if pricing.group else None,
+            tariff_dynamic=pricing.dynamic,
+            prosumer=pricing.prosumer,
             price_breakdown=getattr(pricing, "breakdown", None),
             pv_note=pricing.pv_note,
             max_grid_kw=pricing.max_grid_kw,

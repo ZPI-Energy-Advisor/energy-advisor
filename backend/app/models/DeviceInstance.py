@@ -46,3 +46,5 @@ class DeviceInstance(Base):
     max_shift_min = Column(Integer, nullable=True)
     # Tylko bojler (water_heater): pojemność zbiornika z pliku, potrzebna planowi grzania wody (ZP-112).
     tank_liters = Column(Float, nullable=True)
+    # Pomieszczenie z pliku (ZP-109); NULL, gdy plik go nie podaje, a domyślne liczy device_rooms przy odczycie.
+    room = Column(String(20), nullable=True)

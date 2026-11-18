@@ -415,6 +415,32 @@ describe("HomePage", () => {
     expect(within(history).queryByRole("region", { name: "Rachunek przed i po" })).toBeNull();
   });
 
+  it("po końcu planu „Start” jest wyłączony, a „Uruchom ponownie” zaczyna ten sam plan od nowa", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "completed", cost: COST } });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { ...PLAN_RUN, id: "run-2" } });
+    renderPage();
+
+    const bar = await screen.findByRole("region", { name: "Przebieg planu" });
+    const start = screen.getByRole("button", { name: "Start" });
+    expect(start.disabled).toBe(true);
+    expect(screen.getByText(/Plan na 19 października się skończył/)).toBeTruthy();
+
+    fireEvent.click(within(bar).getByRole("button", { name: "Uruchom ponownie" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/home/plan-runs", { plan_id: "plan-1" }));
+    // Nowy przebieg trwa: pasek ma znowu „Zakończ”.
+    expect(await within(bar).findByRole("button", { name: "Zakończ" })).toBeTruthy();
+  });
+
+  it("„Start” działa, gdy hub ma już inną symulację niż zakończony plan", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "completed", simulation_id: "sim_old", cost: COST } });
+    renderPage();
+
+    await screen.findByRole("region", { name: "Przebieg planu" });
+
+    expect(screen.getByRole("button", { name: "Start" }).disabled).toBe(false);
+  });
+
   it("po „Zakończ” pasek mówi, że rachunek jest niepełny", async () => {
     mockApi({ planRun: { ...PLAN_RUN, status: "ended", cost: { ...COST, complete: false } } });
     renderPage();

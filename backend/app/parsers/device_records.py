@@ -35,5 +35,7 @@ class DeviceRecord:
     max_shift_min: int | None = None
     # Tylko bojler (water_heater): pojemność zbiornika w litrach.
     tank_liters: float | None = None
+    # Pomieszczenie z pliku (pole `room`); bez niego domyślne liczy app/services/device_rooms.py.
+    room: str | None = None
     programs: list[ProgramRecord] = field(default_factory=list)
     actions: list[ActionRecord] = field(default_factory=list)

@@ -1,6 +1,6 @@
 import math
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
@@ -9,6 +9,11 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validat
 # Ten sam limit ma backend (app/schemas/smart_home.py); oba wynikają z kontraktu w docs/smart-home-api.md.
 MAX_RUN_QUARTERS = 7 * 96
 
+
+# Słownik pomieszczeń z pliku urządzeń backendu (room w backend/app/parsers/devices_file.schema.json).
+Room = Literal[
+    "kitchen", "living_room", "bedroom", "bathroom", "laundry", "office", "technical", "garage", "roof", "other",
+]
 
 MAX_REF_LENGTH = 100  # Jak action_id z pliku urządzeń (source_action_id w backendzie).
 
@@ -62,6 +67,8 @@ class DeviceConfig(BaseModel):
     device_name: str
     device_type: str
     device_category: str
+    # Pomieszczenie z rejestru backendu (ZP-109), dla widoku budynku; na pracę urządzenia nie wpływa.
+    room: Room | None = None
     max_power_kw: float | None = None
     flexibility: Flexibility
     programs: list[Program] = []
