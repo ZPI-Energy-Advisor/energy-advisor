@@ -19,6 +19,16 @@ const QUICK = { program_id: "quick_30", program_name: "Szybkie 30°C", duration_
 const ECO = { program_id: "eco", program_name: "Eco", duration_min: 180 };
 
 describe("HomeDeviceList", () => {
+  it("pokazuje pomieszczenie między typem a trybem, a bez pomieszczenia sam typ i tryb", () => {
+    const inLaundry = { ...washer([]), room: "laundry" };
+    const fridge = { ...washer([]), device_id: "dev_fr_01", device_name: "Lodówka", device_type: "fridge", flexibility_mode: "fixed" };
+
+    render(<HomeDeviceList devices={[inLaundry, fridge]} onCommand={vi.fn()} />);
+
+    expect(screen.getByRole("listitem", { name: "Pralka" }).textContent).toContain("Pralka · Pralnia · Przesuwalny");
+    expect(screen.getByRole("listitem", { name: "Lodówka" }).textContent).toContain("Lodówka · Stały");
+  });
+
   it("po zmianie programów urządzenia nie wysyła programu, którego już nie ma", () => {
     const onCommand = vi.fn().mockResolvedValue(true);
     const { rerender } = render(<HomeDeviceList devices={[washer([COTTON, QUICK])]} onCommand={onCommand} />);

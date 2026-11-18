@@ -10,6 +10,7 @@ from app.models.HomeConnection import HomeConnection
 from app.models.User import User
 from app.repositories.home_repository import HomeRepository
 from app.schemas.smart_home import HomeStatus, HomeSync, HomeSyncStatus, HubDevice
+from app.services.device_rooms import device_room
 
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,12 @@ class HomeService:
 
     def _desired_registry(self, home: HomeConnection, owner: User) -> list[HubDevice]:
         # Po zmianie HUB_HOME_USER_EMAIL dom poprzedniego właściciela przestaje być podłączony.
-        return self.repository.registry(owner.id) if home.user_id == owner.id else []
+        if home.user_id != owner.id:
+            return []
+        return [
+            device.model_copy(update={"room": device_room(device.room, device.device_type, device.device_name)})
+            for device in self.repository.registry(owner.id)
+        ]
 
     @staticmethod
     def _in_sync(home: HomeConnection, digest: str, devices: list[HubDevice]) -> bool:

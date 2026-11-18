@@ -44,9 +44,12 @@ FIXED = {"mode": "fixed"}
 DAYTIME_WINDOW = {"from": "07:00", "to": "22:00"}
 
 
-def device(device_id, name, device_type, category, flexibility, max_power_kw=None, programs=None,
+def device(device_id, name, device_type, category, room, flexibility, max_power_kw=None, programs=None,
            tank_liters=None) -> dict:
-    result = {"device_id": device_id, "device_name": name, "device_type": device_type, "device_category": category}
+    result = {
+        "device_id": device_id, "device_name": name, "device_type": device_type, "device_category": category,
+        "room": room,
+    }
     if max_power_kw is not None:
         result["max_power_kw"] = max_power_kw
     if tank_liters is not None:
@@ -63,43 +66,43 @@ def program(program_id, name, profile_kwh) -> dict:
 
 
 DEVICES = [
-    device("dev_wm_01", "Pralka Bosch", "washing_machine", "AGD",
+    device("dev_wm_01", "Pralka Bosch", "washing_machine", "AGD", "bathroom",
            {"mode": "shiftable", "allowed_window": DAYTIME_WINDOW},
            programs=[program("cotton_60", "Bawełna 60°C", [0.45, 0.45, 0.30, 0.10, 0.10, 0.15, 0.20, 0.20]),
                      program("quick_40", "Szybkie 40°C", [0.35, 0.25, 0.10, 0.10])]),
-    device("dev_td_01", "Suszarka do ubrań Electrolux", "tumble_dryer", "AGD",
+    device("dev_td_01", "Suszarka do ubrań Electrolux", "tumble_dryer", "AGD", "bathroom",
            {"mode": "shiftable", "allowed_window": DAYTIME_WINDOW},
            programs=[program("cotton_dry", "Bawełna do szafy", [0.30, 0.35, 0.35, 0.35, 0.30, 0.25, 0.15, 0.05])]),
-    device("dev_dw_01", "Zmywarka Siemens", "dishwasher", "AGD",
+    device("dev_dw_01", "Zmywarka Siemens", "dishwasher", "AGD", "kitchen",
            {"mode": "shiftable", "allowed_window": {"from": "19:00", "to": "07:00"}},
            programs=[program("eco", "Eco",
                              [0.15, 0.15, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03, 0.12, 0.12, 0.06, 0.05])]),
-    device("dev_ev_01", "Ładowarka EV", "ev_charger", "Pojazd elektryczny",
+    device("dev_ev_01", "Ładowarka EV", "ev_charger", "Pojazd elektryczny", "garage",
            {"mode": "interruptible", "allowed_window": {"from": "17:00", "to": "07:00"}}, max_power_kw=3.7),
-    device("dev_hp_01", "Pompa ciepła Panasonic", "heat_pump", "Ogrzewanie",
+    device("dev_hp_01", "Pompa ciepła Panasonic", "heat_pump", "Ogrzewanie", "technical",
            {"mode": "shiftable", "max_shift_min": 60}, max_power_kw=4.5),
-    device("dev_pv_01", "Instalacja PV 6 kWp", "pv_inverter", "OZE", FIXED, max_power_kw=6.0),
+    device("dev_pv_01", "Instalacja PV 6 kWp", "pv_inverter", "OZE", "roof", FIXED, max_power_kw=6.0),
     # Tylko z --with-water-heater: pliki demo i przykład w aplikacji go nie mają (ZP-112).
-    device("dev_wh_01", "Bojler elektryczny 80 l", "water_heater", "Ogrzewanie",
+    device("dev_wh_01", "Bojler elektryczny 80 l", "water_heater", "Ogrzewanie", "bathroom",
            {"mode": "shiftable", "max_shift_min": 120}, max_power_kw=2.0, tank_liters=80),
-    device("dev_vent_01", "Rekuperator", "ventilation", "Ogrzewanie", FIXED, max_power_kw=0.08),
-    device("dev_fr_01", "Lodówka Samsung", "fridge", "AGD", FIXED, max_power_kw=0.15),
-    device("dev_hob_01", "Płyta indukcyjna", "induction_hob", "AGD", FIXED, max_power_kw=7.2),
-    device("dev_ov_01", "Piekarnik elektryczny", "oven", "AGD", FIXED, max_power_kw=3.0),
-    device("dev_mw_01", "Kuchenka mikrofalowa", "microwave", "AGD", FIXED, max_power_kw=1.2),
-    device("dev_kt_01", "Czajnik elektryczny", "kettle", "AGD", FIXED, max_power_kw=2.2),
-    device("dev_cm_01", "Ekspres do kawy", "coffee_machine", "AGD", FIXED, max_power_kw=1.5),
-    device("dev_lt_01", "Oświetlenie salon", "light", "Oświetlenie", FIXED, max_power_kw=0.12),
-    device("dev_lt_02", "Oświetlenie kuchnia", "light", "Oświetlenie", FIXED, max_power_kw=0.08),
-    device("dev_lt_03", "Oświetlenie sypialnia", "light", "Oświetlenie", FIXED, max_power_kw=0.06),
-    device("dev_lt_04", "Oświetlenie łazienka", "light", "Oświetlenie", FIXED, max_power_kw=0.04),
-    device("dev_lt_05", "Oświetlenie przedpokój", "light", "Oświetlenie", FIXED, max_power_kw=0.03),
-    device("dev_lt_06", "Oświetlenie ogród", "light", "Oświetlenie", FIXED, max_power_kw=0.05),
-    device("dev_tv_01", "Telewizor salon", "tv", "RTV/IT", FIXED, max_power_kw=0.15),
-    device("dev_pc_01", "Komputer gabinet", "computer", "RTV/IT", FIXED, max_power_kw=0.25),
-    device("dev_rt_01", "Router Wi-Fi", "router", "RTV/IT", FIXED, max_power_kw=0.012),
-    device("dev_vc_01", "Odkurzacz", "vacuum_cleaner", "Inne", FIXED, max_power_kw=1.6),
-    device("dev_hd_01", "Suszarka do włosów", "hair_dryer", "Inne", FIXED, max_power_kw=2.0),
+    device("dev_vent_01", "Rekuperator", "ventilation", "Ogrzewanie", "technical", FIXED, max_power_kw=0.08),
+    device("dev_fr_01", "Lodówka Samsung", "fridge", "AGD", "kitchen", FIXED, max_power_kw=0.15),
+    device("dev_hob_01", "Płyta indukcyjna", "induction_hob", "AGD", "kitchen", FIXED, max_power_kw=7.2),
+    device("dev_ov_01", "Piekarnik elektryczny", "oven", "AGD", "kitchen", FIXED, max_power_kw=3.0),
+    device("dev_mw_01", "Kuchenka mikrofalowa", "microwave", "AGD", "kitchen", FIXED, max_power_kw=1.2),
+    device("dev_kt_01", "Czajnik elektryczny", "kettle", "AGD", "kitchen", FIXED, max_power_kw=2.2),
+    device("dev_cm_01", "Ekspres do kawy", "coffee_machine", "AGD", "kitchen", FIXED, max_power_kw=1.5),
+    device("dev_lt_01", "Oświetlenie salon", "light", "Oświetlenie", "living_room", FIXED, max_power_kw=0.12),
+    device("dev_lt_02", "Oświetlenie kuchnia", "light", "Oświetlenie", "kitchen", FIXED, max_power_kw=0.08),
+    device("dev_lt_03", "Oświetlenie sypialnia", "light", "Oświetlenie", "bedroom", FIXED, max_power_kw=0.06),
+    device("dev_lt_04", "Oświetlenie łazienka", "light", "Oświetlenie", "bathroom", FIXED, max_power_kw=0.04),
+    device("dev_lt_05", "Oświetlenie przedpokój", "light", "Oświetlenie", "other", FIXED, max_power_kw=0.03),
+    device("dev_lt_06", "Oświetlenie ogród", "light", "Oświetlenie", "other", FIXED, max_power_kw=0.05),
+    device("dev_tv_01", "Telewizor salon", "tv", "RTV/IT", "living_room", FIXED, max_power_kw=0.15),
+    device("dev_pc_01", "Komputer gabinet", "computer", "RTV/IT", "office", FIXED, max_power_kw=0.25),
+    device("dev_rt_01", "Router Wi-Fi", "router", "RTV/IT", "technical", FIXED, max_power_kw=0.012),
+    device("dev_vc_01", "Odkurzacz", "vacuum_cleaner", "Inne", "other", FIXED, max_power_kw=1.6),
+    device("dev_hd_01", "Suszarka do włosów", "hair_dryer", "Inne", "bathroom", FIXED, max_power_kw=2.0),
 ]
 PV_DEVICE = "dev_pv_01"
 WATER_HEATER_DEVICE = "dev_wh_01"
@@ -638,7 +641,7 @@ def generate_from_meter(meter_path: str, seed: int, device_set: str) -> str:
         if d["device_id"] not in (PV_DEVICE, WATER_HEATER_DEVICE)
         and (device_set == "full" or d["device_id"] not in FULL_ONLY)
     }
-    devices[OTHER_DEVICE_ID] = device(OTHER_DEVICE_ID, "Inne urządzenia", "other", "Inne", FIXED, max_power_kw=0.1)
+    devices[OTHER_DEVICE_ID] = device(OTHER_DEVICE_ID, "Inne urządzenia", "other", "Inne", "other", FIXED, max_power_kw=0.1)
     house = MeterHouse(start, end, meter, devices)
     split_meter(house, random.Random(seed))
     return dump(build_document(house), decimals=METER_DECIMALS) + "\n"

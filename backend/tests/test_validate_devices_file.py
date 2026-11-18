@@ -47,6 +47,7 @@ INVALID_CASES = {
     "missing_device_field": (lambda d: device(d, "dev_fr_01").pop("device_category"), "brak pola device_category"),
     "duplicate_device_id": (lambda d: device(d, "dev_td_01").update(device_id="dev_wm_01"), "zduplikowane device_id"),
     "unknown_device_type": (lambda d: device(d, "dev_kt_01").update(device_type="toaster"), "nieznany device_type"),
+    "unknown_room": (lambda d: device(d, "dev_kt_01").update(room="attic"), "dev_kt_01: nieznane pomieszczenie room 'attic'"),
     "unknown_category": (lambda d: device(d, "dev_kt_01").update(device_category="Kuchnia"),
                          "nieznana device_category"),
     "unknown_mode": (lambda d: device(d, "dev_kt_01").update(flexibility={"mode": "smart"}), "nieznany tryb"),

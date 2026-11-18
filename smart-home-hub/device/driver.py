@@ -11,7 +11,7 @@ QUARTER_SECONDS = 900
 QUARTER_HOURS = 0.25
 PV_DEVICE_TYPE = "pv_inverter"
 # Pola, które nie wpływają na pracę urządzenia; reszta zmienia się przez restart 
-EDITABLE_FIELDS = {"device_name", "device_category"}
+EDITABLE_FIELDS = {"device_name", "device_category", "room"}
 
 OFF = "off"
 IDLE = "idle"

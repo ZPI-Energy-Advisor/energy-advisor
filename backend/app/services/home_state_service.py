@@ -26,6 +26,7 @@ from app.schemas.smart_home import (
     HubClock,
     HubDevicesStatus,
 )
+from app.services.device_rooms import device_room
 from app.services.home_service import require_connected
 from app.services.schedule_prices import SchedulePriceService
 
@@ -186,8 +187,14 @@ class HomeStateService:
         )
 
     def _descriptions(self, owner: User, devices: HubDevicesStatus) -> dict[str, dict]:
-        """Opis urządzeń z bazy (typ, kategoria, tryb, programy), którego hub nie zwraca w stanie."""
-        return self.home_repository.device_descriptions(owner.id) if devices.devices else {}
+        """Opis urządzeń z bazy (typ, kategoria, pomieszczenie, tryb, programy), którego hub nie zwraca w stanie."""
+        if not devices.devices:
+            return {}
+        descriptions = self.home_repository.device_descriptions(owner.id)
+        for description in descriptions.values():
+            name = description.pop("device_name")
+            description["room"] = device_room(description["room"], description["device_type"], name)
+        return descriptions
 
     @staticmethod
     def _devices(

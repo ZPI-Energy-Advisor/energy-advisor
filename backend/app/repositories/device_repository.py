@@ -26,6 +26,8 @@ DEVICE_SETTINGS = (
     "name", "device_type", "device_category", "max_power_kw",
     "flexibility_mode", "allowed_window_from", "allowed_window_to", "max_shift_min", "tank_liters",
 )
+# Pola nadpisywane tylko wtedy, gdy nowy plik je podaje: plik bez `room` nie kasuje pomieszczenia z wcześniejszego.
+DEVICE_OPTIONAL_SETTINGS = ("room",)
 PROGRAM_SETTINGS = ("name", "duration_min", "profile_kwh")
 
 
@@ -299,6 +301,7 @@ class DeviceRepository:
                 allowed_window_to=instance.allowed_window_to,
                 max_shift_min=instance.max_shift_min,
                 tank_liters=instance.tank_liters,
+                room=instance.room,
             )
             for instance in instances
         }
@@ -418,13 +421,20 @@ class DeviceRepository:
                 "allowed_window_to": device.allowed_window_to,
                 "max_shift_min": device.max_shift_min,
                 "tank_liters": device.tank_liters,
+                "room": device.room,
             }
             for device in devices
         ]
         statement = upsert(DeviceInstance)
         statement = statement.on_conflict_do_update(
             constraint="uq_device_instance_user_device",
-            set_={column: statement.excluded[column] for column in DEVICE_SETTINGS},
+            set_={
+                **{column: statement.excluded[column] for column in DEVICE_SETTINGS},
+                **{
+                    column: func.coalesce(statement.excluded[column], getattr(DeviceInstance, column))
+                    for column in DEVICE_OPTIONAL_SETTINGS
+                },
+            },
         ).returning(DeviceInstance.source_device_id, DeviceInstance.id)
         return dict(self.db.execute(statement, rows).all())
 
