@@ -23,7 +23,15 @@ class HomeEvent(Base):
         Index("ix_home_events_user_received", "user_id", "id"),
         # Awarie przebiegu w raporcie planu (ZP-113): rzadkie, a zdarzeń energii są tysiące na dobę.
         Index("ix_home_events_errors", "simulation_id", postgresql_where="type = 'device_error'"),
+        # Starty i końce urządzeń w rachunku przebiegu (ZP-114): ręczne włączenia i przerwane akcje.
+        Index(
+            "ix_home_events_actions", "simulation_id",
+            postgresql_where="type IN ('device_started', 'device_finished')",
+        ),
     )
+
+    DEVICE_STARTED = "device_started"
+    DEVICE_FINISHED = "device_finished"
 
     ENERGY_REPORT = "energy_report"
     DEVICE_ERROR = "device_error"

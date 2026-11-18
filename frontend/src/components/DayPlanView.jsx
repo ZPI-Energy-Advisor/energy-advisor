@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
 import Dialog from "./Dialog";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
@@ -8,6 +8,15 @@ import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDat
 import { afterRanges, clockOf, conflictText, formatPln, isConflict } from "../utils/schedule";
 
 const CARD = "bg-white border border-gray-200 rounded-lg p-4 md:p-5 shadow-sm";
+// Miejsce przycisku głównego: „Zatwierdź plan”, a po zatwierdzeniu „Uruchom symulację”. Stała szerokość,
+// żeby po zatwierdzeniu przycisk i przyciski obok nie przeskakiwały, a podpis łamał się pod przyciskiem.
+const PRIMARY_SLOT = "w-full sm:w-64 sm:shrink-0";
+// Przycisk główny: wciśnięcie widać (lekkie zmniejszenie i ciemniejszy kolor), a w trakcie żądania kręci się ikona.
+const PRIMARY_BUTTON =
+  "w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white " +
+  "shadow-sm transition duration-150 hover:bg-emerald-700 active:scale-[0.97] active:bg-emerald-800 " +
+  "disabled:opacity-60 disabled:cursor-wait disabled:active:scale-100";
+const SPINNER = <FiLoader aria-hidden="true" className="animate-spin" />;
 const SECONDARY_BUTTON =
   "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 
@@ -151,14 +160,14 @@ function DayPlanView({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         {!approved && (
-          <div>
+          <div className={PRIMARY_SLOT}>
             <button
               type="button"
-              className="w-full sm:w-auto rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className={PRIMARY_BUTTON}
               onClick={onApprove}
               disabled={isApproving}
             >
-              {isApproving ? "Zatwierdzanie..." : "Zatwierdź plan"}
+              {isApproving ? <>{SPINNER} Zatwierdzanie...</> : "Zatwierdź plan"}
             </button>
             <p className="mt-1 text-xs text-gray-500">
               {onRun
@@ -167,22 +176,27 @@ function DayPlanView({
             </p>
           </div>
         )}
-        {approved && (
-          <p className="flex items-center gap-1.5 py-3 text-sm font-medium text-emerald-700" role="status">
+        {/* Przycisk główny zostaje w tym samym miejscu: „Zatwierdź plan”, a po zatwierdzeniu „Uruchom symulację”
+            z godziną zatwierdzenia pod spodem. */}
+        {approved && !onRun && (
+          <p className={`${PRIMARY_SLOT} flex items-center gap-1.5 py-3 text-sm font-medium text-emerald-700`} role="status">
             <FiCheckCircle aria-hidden="true" /> Plan zatwierdzony o {clockOf(plan.approved_at)}.
           </p>
         )}
         {approved && onRun && (
-          <div>
+          <div className={`${PRIMARY_SLOT} animate-fade-in`}>
             <button
               type="button"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className={PRIMARY_BUTTON}
               onClick={onRun}
               disabled={isStartingRun}
             >
-              <FiPlay aria-hidden="true" /> {isStartingRun ? "Uruchamianie..." : "Uruchom symulację"}
+              {isStartingRun ? <>{SPINNER} Uruchamianie...</> : <><FiPlay aria-hidden="true" /> Uruchom symulację</>}
             </button>
-            <p className="mt-1 text-xs text-gray-500">Symulacja zacznie dobę planu od północy w „Mój dom”.</p>
+            <p className="mt-1 text-xs text-gray-500" role="status">
+              <FiCheckCircle aria-hidden="true" className="inline mr-1 -mt-0.5 text-emerald-700" />
+              Plan zatwierdzony o {clockOf(plan.approved_at)}. Symulacja zacznie dobę planu od północy w „Mój dom”.
+            </p>
           </div>
         )}
         <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>

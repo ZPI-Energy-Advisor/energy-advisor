@@ -56,3 +56,9 @@ class PlanRun(Base):
     ended_at = Column(DateTime(timezone=True), nullable=True)
     # Czas symulacji, na którym przebieg się skończył (koniec planu albo chwila „Zakończ”).
     ended_sim_time = Column(DateTime(timezone=True), nullable=True)
+    # Migawka z planu do rachunku przed i po (ZP-114): {"max_grid_kw", "prices": [{"start", "price_pln_kwh"}]}.
+    # NULL w przebiegach sprzed ZP-114: te nie mają rachunku.
+    tariff = Column(JSONB, nullable=True)
+    # Rachunek przed i po w kształcie PlanRunCostOut, zapisany przy zamknięciu przebiegu (przez chwilę po nim
+    # jeszcze przeliczany, bo hub dosyła zdarzenia z opóźnieniem).
+    report = Column(JSONB, nullable=True)

@@ -34,6 +34,7 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | Ekran „Mój dom”, sterowanie urządzeniami i zegarem przez backend, opis urządzeń w stanie | ZP-97 |
 | Przebieg z własnym profilem (`POST /run`, `run_profile`), `restart` zegara | ZP-96 |
 | Komendy wsadowe (`POST /home/commands`, `DELETE /home/commands`), `stop_at` zegara, wykonanie planu dnia z PV z dnia referencyjnego (`/api/v1/home/plan-runs`) | ZP-113 |
+| Rachunek przed i po planie w przebiegu (`cost`), historia przebiegów | ZP-114 |
 | Pomieszczenie urządzenia (`room`) w rejestrze i w stanie domu | ZP-109 |
 
 ## Zasady ogólne
@@ -582,6 +583,8 @@ wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_UR
 | `POST /api/v1/home/plan-runs` | Uruchamia zatwierdzony plan dnia w symulacji ([niżej](#wykonanie-planu-dnia)) |
 | `GET /api/v1/home/plan-runs/latest` | Ostatni przebieg planu z raportem albo `null` |
 | `POST /api/v1/home/plan-runs/{run_id}/end` | „Zakończ”: kasuje zaplanowane komendy przebiegu, zatrzymuje zegar i zamyka przebieg |
+| `GET /api/v1/home/plan-runs` | Historia: do 30 ostatnich przebiegów z rachunkiem z zapisanego raportu |
+| `GET /api/v1/home/plan-runs/{run_id}` | Raport jednego przebiegu, jak `…/latest` |
 
 `GET /api/v1/home`, `POST /api/v1/home/connect` i `DELETE /api/v1/home` odpowiadają `200` ze stanem podłączenia:
 
@@ -771,6 +774,46 @@ w połowie programu, PV w trakcie produkcji), po Starcie się dokończy; wyłąc
 zawiedzie po drodze, przebieg zostaje `running` z zatrzymaniem o końcu planu, a ponowne „Zakończ” robi
 wszystko jeszcze raz. Zakończony przebieg zostaje bez zmian.
 Do chwilowej przerwy służy pauza zegara, a ponowne uruchomienie zaczyna plan od północy.
+
+#### Rachunek przed i po
+
+Pole `cost` przebiegu (ZP-114; `null` w przebiegach sprzed niego) porównuje urządzenia z planu bez planu
+i z planem. Drugiej symulacji „bez planu” nie ma: plan ma dla każdej akcji start bazowy (zwykła godzina
+z historii, ładowanie od podłączenia, termostat bojlera, bloki pompy z historii), a backend przy
+uruchomieniu wycenia go cenami kwadransów planu i zapisuje razem z cenami w przebiegu (ponowne ułożenie
+planu nadpisuje jego wiersz). Z planem to energia zmierzona w symulacji (`energy_report`) razy te same
+ceny. Bez odchyleń oszczędność jest równa oszczędności planu.
+
+```json
+"cost": {
+  "complete": true, "until": "2026-10-13T06:00:00+02:00",
+  "cost_before": 6.4, "cost_after": 1.78, "planned_cost": 1.78, "saving": 4.62, "saving_percent": 72.2,
+  "devices": [{ "device_id": "dev_wm_01", "device_name": "Pralka Bosch", "kind": "program",
+                "energy_before_kwh": 1.4, "energy_after_kwh": 1.4, "cost_before": 1.2, "planned_cost": 0.4,
+                "cost_after": 0.4, "saving": 0.8 }],
+  "excluded": [], "pending": [],
+  "manual": [{ "device_id": "dev_lamp_01", "device_name": "Lampa", "energy_kwh": 0.2, "cost": 0.12 }],
+  "manual_cost": 0.12,
+  "pv": { "production_kwh": 6.4, "self_consumption_kwh": 3.1, "plan_from_pv_kwh": 0.9, "plan_kwh": 6.4 },
+  "deviations": [{ "kind": "grid_limit", "device_id": null, "device_name": null,
+                   "sim_time": "2026-10-12T19:00:00+02:00", "end": "2026-10-12T19:30:00+02:00",
+                   "message": "Pobór z sieci do 4,40 kW, a limit przyłącza to 3,00 kW.", "excluded": false }]
+}
+```
+
+- Porównanie jest per urządzenie. Urządzenie wypada z niego (`excluded`), gdy hub odrzucił jego komendę,
+  zgłosiło awarię, zostało ręcznie wyłączone w trakcie pracy (`device_finished` z `interrupted: true`)
+  albo ręcznie włączone poza planem (`device_started` z `command_id` spoza komend przebiegu).
+- Inne zużycie niż w planie (ponad 1%) i pobór z sieci ponad `max_grid_kw` planu (plan razem z ręcznymi
+  włączeniami, sąsiednie kwadranse razem) są w `deviations`, ale nie wykluczają.
+- Urządzenia stałe włączane ręcznie (`manual`) i PV (`pv`) są poza oszczędnością. Koszty to energia razy cena
+  kwadransu, bez bilansowania z PV, tak jak w planie; `pv` podaje autokonsumpcję w kwadransie i jej część
+  przypadającą na urządzenia z planu (w proporcji do ich zużycia).
+- Przed końcem planu (`running`, `ended`, `superseded`) raport jest niepełny (`complete: false`):
+  porównuje urządzenia, których akcje skończyły się do `until`, a resztę podaje w `pending`.
+- Raport zapisuje się przy zamknięciu przebiegu i przez 5 minut jeszcze się przelicza, bo hub dosyła
+  zdarzenia z kolejki z opóźnieniem. Potem `GET` zwraca zapisany raport, a historia przebiegów
+  (`GET …/plan-runs`) podaje z niego `complete`, koszty, oszczędność i liczbę odchyleń.
 
 Błędy huba:
 

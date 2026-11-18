@@ -17,6 +17,10 @@ widać wtedy, jak plan i ręczne włączenia razem obciążają przyłącze.
 Zegar rusza ze `stop_at` na koniec planu, więc hub sam staje o 06:00 następnego dnia. Hub jest jedynym
 źródłem czasu i stanu, więc status przebiegu sprawdzamy przy odczycie: hub z innym `simulation_id` zaczął
 nową symulację (`superseded`), a zegar na końcu planu kończy przebieg (`completed`).
+
+Rachunek przed i po (ZP-114, `plan_run_report`): przy starcie zapisujemy ceny kwadransów planu i koszt każdej
+akcji bez planu, bo ponowne ułożenie planu nadpisuje jego wiersz. Raport zapisujemy przy zamknięciu przebiegu
+i jeszcze przez `REPORT_SETTLE` przeliczamy go przy odczycie: hub dosyła zdarzenia z kolejki z opóźnieniem.
 """
 
 import logging
@@ -38,11 +42,13 @@ from app.repositories.plan_run_repository import PlanRunRepository
 from app.schemas.day_plan import PlanItemOut
 from app.schemas.plan_run import (
     PlanRunActionOut,
+    PlanRunCostOut,
     PlanRunDeviceOut,
     PlanRunErrorOut,
     PlanRunHistoryDeviceOut,
     PlanRunOut,
     PlanRunReplay,
+    PlanRunSummaryOut,
 )
 from app.schemas.smart_home import CommandType, HubClock, HubCommand, HubCommandResult, HubCommandStatus
 from app.services.home_control_service import (
@@ -54,8 +60,9 @@ from app.services.home_control_service import (
     update_hub_clock,
 )
 from app.services.home_replay import ReplayRun, moved_runs, replay_commands, replay_runs, replay_summary
-from app.services.home_state_service import day_energy
+from app.services.home_state_service import DayEnergy, day_energy
 from app.services.plan_history import local_day
+from app.services.plan_run_report import RunEnergy, cost_report, profile_cost
 from app.services.planning_service import HEAT_PUMP_TYPE, WATER_HEATER_TYPE
 
 
@@ -72,6 +79,10 @@ PV_TYPE = "pv_inverter"
 # Urządzenia pracujące same na termostacie, gdy plan ich nie układa: odtwarzamy je z historii jak PV.
 THERMOSTAT_TYPES = (HEAT_PUMP_TYPE, WATER_HEATER_TYPE)
 MAX_REPORTED_ERRORS = 50
+# Tyle po zamknięciu przebiegu raport jeszcze się przelicza: hub wysyła zdarzenia partiami z kolejki i ponawia je,
+# gdy backend nie odpowiada, więc ostatnie kwadranse mogą dojść po końcu planu.
+REPORT_SETTLE = timedelta(minutes=5)
+HISTORY_LIMIT = 30
 
 
 def _kwh(value: float) -> float:
@@ -111,6 +122,8 @@ class PlanRunService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PLAN_NOT_APPROVED_MESSAGE)
         items = [PlanItemOut.model_validate(item) for item in plan.result["items"]]
         planned = self._plan_commands(items)
+        tariff = {"max_grid_kw": plan.result.get("max_grid_kw"), "prices": plan.result["prices"]}
+        prices = _prices(tariff)
         horizon_start = datetime.fromisoformat(plan.result["horizon_start"])
         horizon_end = datetime.fromisoformat(plan.result["horizon_end"])
         history_days, runs = self._history(owner, plan, {item.device_id for item in items})
@@ -143,11 +156,12 @@ class PlanRunService:
             # Najnowszy z dni referencyjnych urządzeń (zwykle wszystkie mają ten sam).
             history_day=max((date.fromisoformat(entry["history_day"]) for entry in replayed), default=None),
             items=[
-                self._action(item, result).model_dump(mode="json")
+                self._action(item, result, prices).model_dump(mode="json")
                 for (item, _), result in zip(planned, plan_results, strict=True)
             ],
             replay=replay_summary(runs, replay_results).model_dump(mode="json"),
             replayed_devices=replayed,
+            tariff=tariff,
             started_at=now,
         ))
         # Zegar sam stanie o końcu planu: później nie ma już czego symulować.
@@ -223,7 +237,15 @@ class PlanRunService:
         ]
 
     @staticmethod
-    def _action(item: PlanItemOut, result: HubCommandResult) -> PlanRunActionOut:
+    def _action(item: PlanItemOut, result: HubCommandResult, prices: dict[datetime, float]) -> PlanRunActionOut:
+        """Pozycja planu z wynikiem komendy i kosztami do rachunku: bez planu (od startu bazowego) i według planu.
+
+        Koszty liczymy cenami kwadransów planu z pełną dokładnością (w planie są zaokrąglone do grosza);
+        bez ceny któregoś kwadransu zostaje koszt z planu.
+        """
+        original = item.original_profile_kwh or []
+        cost_before = profile_cost(original, item.original_start, prices)
+        planned_cost = profile_cost(item.profile_kwh or [], item.start, prices)
         return PlanRunActionOut(
             action_id=item.action_id,
             device_id=item.device_id,
@@ -236,6 +258,10 @@ class PlanRunService:
             status=result.status,
             code=result.code,
             detail=result.detail,
+            command_id=result.command_id,
+            energy_before_kwh=sum(original),
+            cost_before=item.cost_before if cost_before is None else cost_before,
+            planned_cost=item.cost_after if planned_cost is None else planned_cost,
         )
 
     # --- odczyt i zakończenie ---
@@ -245,10 +271,41 @@ class PlanRunService:
         run = self.run_repository.latest(owner.id)
         if run is None:
             return None
+        return self._read(owner, run)
+
+    def get(self, owner: User, run_id: UUID) -> PlanRunOut:
+        run = self.run_repository.get(owner.id, run_id)
+        if run is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RUN_NOT_FOUND_MESSAGE)
+        return self._read(owner, run)
+
+    def history(self, owner: User) -> list[PlanRunSummaryOut]:
+        """Przebiegi od najnowszego z rachunkiem z zapisanego raportu; status ostatni znany, bez pytania huba."""
+        summaries = []
+        for run in self.run_repository.latest_runs(owner.id, HISTORY_LIMIT):
+            report = PlanRunCostOut.model_validate(run.report) if run.report else None
+            summaries.append(PlanRunSummaryOut(
+                id=run.id,
+                plan_date=run.plan_date,
+                status=run.status,
+                started_at=run.started_at,
+                ended_at=run.ended_at,
+                complete=report.complete if report else None,
+                cost_before=report.cost_before if report else None,
+                cost_after=report.cost_after if report else None,
+                saving=report.saving if report else None,
+                saving_percent=report.saving_percent if report else None,
+                deviations=len(report.deviations) if report else None,
+            ))
+        return summaries
+
+    def _read(self, owner: User, run: PlanRun) -> PlanRunOut:
+        """Raport przebiegu; status sprawdzamy w hubie, a bez huba zostaje ostatni znany."""
         clock = self._read_clock()
-        if self._refresh(owner, run, clock):
-            self.run_repository.commit()
-        return self._out(owner, run, clock)
+        self._refresh(owner, run, clock)
+        out = self._out(owner, run, clock)
+        self.run_repository.commit()  # Zmieniony status albo przeliczony raport.
+        return out
 
     def end(self, owner: User, run_id: UUID) -> PlanRunOut:
         """„Zakończ”: kasuje zaplanowane komendy przebiegu (plan i historię), zatrzymuje zegar i zamyka przebieg.
@@ -279,8 +336,9 @@ class PlanRunService:
                 raise hub_http_error(error) from error
             clock = update_hub_clock(hub_client, running=False, clear_stop_at=True)
             self._close(owner, run, PlanRun.ENDED, datetime.now(timezone.utc), sim_time=clock.sim_time)
+        out = self._out(owner, run, clock)
         self.run_repository.commit()
-        return self._out(owner, run, clock)
+        return out
 
     def _read_clock(self) -> HubClock | None:
         if self.hub_client is None:
@@ -309,6 +367,16 @@ class PlanRunService:
         run.ended_at = now
         # Hub zaczął inną symulację: przebieg skończył się na ostatnim zdarzeniu, jakie z niego mamy.
         run.ended_sim_time = sim_time or self.event_repository.last_sim_time(owner.id, run.simulation_id)
+        # Raport od razu: przebiegu zamkniętego przez nowe „Uruchom” nikt może już nie otworzyć, a lista
+        # historii pokazuje rachunek z zapisanego raportu.
+        if run.tariff is not None and run.ended_sim_time is not None:
+            until = min(run.ended_sim_time, run.horizon_end)
+            run.report = self._cost(owner, run, until, self._energy(owner, run, until)).model_dump(mode="json")
+
+    @staticmethod
+    def _settled(run: PlanRun) -> bool:
+        """Raport zamkniętego przebiegu już się nie zmieni: zdarzenia huba zdążyły dojść."""
+        return run.ended_at is not None and datetime.now(timezone.utc) - run.ended_at > REPORT_SETTLE
 
     # --- raport ---
 
@@ -323,12 +391,12 @@ class PlanRunService:
             by_device[action.device_id].append(action)
         history = {entry["device_id"]: entry for entry in run.replayed_devices}
         actual = defaultdict(float)
-        if sim_time is not None and (by_device or history):
+        cost = None
+        if sim_time is not None:
             until = min(sim_time, run.horizon_end)
-            steps = self.event_repository.energy_steps(
-                owner.id, run.simulation_id, run.horizon_start, until, device_ids=[*by_device, *history],
-            )
-            actual = day_energy(steps, run.horizon_start, until).by_device
+            energy = self._energy(owner, run, until)
+            actual = energy.by_device
+            cost = self._report(owner, run, until, energy)
         devices = [
             PlanRunDeviceOut(
                 device_id=device_id,
@@ -379,4 +447,48 @@ class PlanRunService:
             actual_kwh=_kwh(sum(device.actual_kwh for device in devices)),
             devices=devices,
             errors=errors,
+            cost=cost,
         )
+
+    def _energy(self, owner: User, run: PlanRun, until: datetime) -> DayEnergy:
+        """Energia wszystkich urządzeń przebiegu od początku planu do `until`: plan, historia i ręczne włączenia."""
+        steps = self.event_repository.energy_steps(owner.id, run.simulation_id, run.horizon_start, until)
+        return day_energy(steps, run.horizon_start, until)
+
+    def _report(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> PlanRunCostOut | None:
+        """Rachunek przebiegu: zapisany, gdy już się nie zmieni, a inaczej przeliczony (i zapisany po zamknięciu)."""
+        if run.tariff is None:
+            return None
+        if run.report is not None and self._settled(run):
+            return PlanRunCostOut.model_validate(run.report)
+        report = self._cost(owner, run, until, energy)
+        if run.status != PlanRun.RUNNING:
+            run.report = report.model_dump(mode="json")
+        return report
+
+    def _cost(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> PlanRunCostOut:
+        actions = [PlanRunActionOut.model_validate(item) for item in run.items]
+        pv_devices = set(self.home_repository.device_ids_of_types(owner.id, (PV_TYPE,)))
+        return cost_report(RunEnergy(
+            actions=actions,
+            prices=_prices(run.tariff),
+            max_grid_kw=run.tariff.get("max_grid_kw"),
+            energy=energy,
+            events=self.event_repository.device_actions(
+                owner.id, run.simulation_id, sorted({action.device_id for action in actions}), until,
+            ),
+            errors=self.event_repository.device_errors(owner.id, run.simulation_id, MAX_REPORTED_ERRORS),
+            names=self.home_repository.device_names(owner.id),
+            background={entry["device_id"] for entry in run.replayed_devices} | pv_devices,
+            pv_devices=pv_devices,
+            until=until,
+            complete=run.status == PlanRun.COMPLETED,
+        ))
+
+
+def _prices(tariff: dict) -> dict[datetime, float]:
+    """Ceny kwadransów z migawki planu po początku kwadransu w UTC (jak kwadranse energii)."""
+    return {
+        datetime.fromisoformat(entry["start"]).astimezone(timezone.utc): entry["price_pln_kwh"]
+        for entry in tariff["prices"]
+    }
