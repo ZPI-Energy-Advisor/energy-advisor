@@ -13,6 +13,7 @@ import {
   choiceLabel,
   dynamicAllowed,
   flatTariffNote,
+  isNetMetering,
   profileChoice,
   sameChoice,
 } from "../utils/tariffChoice";
@@ -49,10 +50,13 @@ function StatTile({ label, value, hint, accent = false }) {
 }
 
 // Taryfa do sprawdzenia: grupa operatora z profilu i umowa zwykła albo z ceną dynamiczną. Domyślnie taryfa z profilu.
-function TariffPicker({ options, choice, fromProfile, onChange }) {
+function TariffPicker({ options, choice, fromProfile, netMetering, onChange }) {
   const groups = options.tariffs.map((item) => item.code);
   if (!groups.includes(choice.group)) groups.unshift(choice.group);
-  const canBeDynamic = dynamicAllowed(options, choice.group);
+  const canBeDynamic = dynamicAllowed(options, choice.group, netMetering);
+  const dynamicBlocked = netMetering
+    ? "Przy net-meteringu nie liczymy ceny dynamicznej: system opustów bilansuje strefy, a cena dynamiczna wymaga kwadransów."
+    : `Cena dynamiczna nie jest dostępna z grupą ${choice.group}.`;
   const contractClass = (active) =>
     `px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${
       active ? "bg-emerald-600 text-white" : "bg-white text-gray-700 hover:bg-gray-50"
@@ -68,7 +72,7 @@ function TariffPicker({ options, choice, fromProfile, onChange }) {
           value={choice.group}
           onChange={(event) => {
             const group = event.target.value;
-            onChange({ group, dynamic: choice.dynamic && dynamicAllowed(options, group) });
+            onChange({ group, dynamic: choice.dynamic && dynamicAllowed(options, group, netMetering) });
           }}
         >
           {groups.map((group) => (
@@ -92,7 +96,7 @@ function TariffPicker({ options, choice, fromProfile, onChange }) {
             className={`${contractClass(choice.dynamic)} border-l border-gray-300`}
             aria-pressed={choice.dynamic}
             disabled={!canBeDynamic}
-            title={canBeDynamic ? undefined : `Cena dynamiczna nie jest dostępna z grupą ${choice.group}.`}
+            title={canBeDynamic ? undefined : dynamicBlocked}
             onClick={() => onChange({ ...choice, dynamic: true })}
           >
             Z ceną dynamiczną
@@ -321,7 +325,7 @@ function SchedulePage() {
         const operator = profile?.base_info?.distribution_operator;
         if (!fromProfile || !operator) return;
         const { data: options } = await apiClient.get("/tariffs/options", { params: { operator } });
-        if (active) setTariffs({ fromProfile, options });
+        if (active) setTariffs({ fromProfile, options, netMetering: isNetMetering(profile) });
       })
       .catch(() => {});
     return () => {
@@ -382,11 +386,16 @@ function SchedulePage() {
   const missingPrices = shown ? missingPricesNote(shown.missing_price_actions, shown.missing_price_days) : null;
   const days = shown ? visibleDays(shown.date_from, shown.date_to, flexible) : [];
   const summaries = shown ? daySummaries(shown.actions, shown.date_from, shown.date_to) : [];
-  const flatNote = flatTariffNote(shown);
   const shownChoice = shown?.tariff_group ? { group: shown.tariff_group, dynamic: shown.tariff_dynamic } : null;
   const shownFromProfile = !tariffs || !shownChoice || sameChoice(shownChoice, tariffs.fromProfile);
-  // Podpowiedź taryfy dynamicznej z przyciskiem, gdy sprzedawca dopuszcza ją z tą grupą.
-  const canTryDynamic = Boolean(flatNote && tariffs && dynamicAllowed(tariffs.options, shown.tariff_group));
+  // Taryfę dynamiczną podpowiadamy z przyciskiem tylko wtedy, gdy da się ją policzyć (sprzedawca, bez net-meteringu).
+  const canTryDynamic = Boolean(
+    shown && tariffs && dynamicAllowed(tariffs.options, shown.tariff_group, tariffs.netMetering),
+  );
+  const flatNote = flatTariffNote(shown, !tariffs || canTryDynamic);
+  const resultLabel = shown
+    ? [shownChoice ? choiceLabel(shownChoice) : null, rangeText(shown.date_from, shown.date_to)].filter(Boolean).join(" · ")
+    : "";
   const tryDynamic = () => {
     const dynamicChoice = { group: shown.tariff_group, dynamic: true };
     setChoice(dynamicChoice);
@@ -457,6 +466,7 @@ function SchedulePage() {
                     options={tariffs.options}
                     choice={tariffChoice}
                     fromProfile={tariffs.fromProfile}
+                    netMetering={tariffs.netMetering}
                     onChange={setChoice}
                   />
                 )}
@@ -478,7 +488,13 @@ function SchedulePage() {
 
           {shown && (
             <>
-              <div ref={resultsRef} className="grid grid-cols-1 sm:grid-cols-3 gap-3 scroll-mt-4">
+              <div ref={resultsRef} className="scroll-mt-4 space-y-2">
+                <p className="text-sm text-gray-700">
+                  Wynik dla: <span className="font-semibold">{resultLabel}</span>
+                  {shownChoice && shownFromProfile ? " (taryfa z profilu)" : ""}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <StatTile label={hasBills ? "Rachunek przed" : "Koszt akcji przed"} value={formatPln(before)} />
                 <StatTile label={hasBills ? "Rachunek po" : "Koszt akcji po"} value={formatPln(after)} />
                 <StatTile label="Oszczędność" value={formatPln(saved)} hint={percent(saved, before)} accent />

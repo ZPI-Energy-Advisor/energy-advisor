@@ -8,7 +8,8 @@ from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.repositories.device_repository import DeviceRepository
 from app.services.energy_file_service import EnergyFileService
 from app.schemas.other import TariffTypeEnum as T
-from app.services.schedule_prices import SchedulePrices, TariffChoice
+from app.schemas.calculation import TariffChoice
+from app.services.schedule_prices import SchedulePrices
 from app.services.scheduling import SLOT
 from main import app
 
@@ -319,7 +320,11 @@ class _ChosenTariffPrices(_Prices):
 def test_tariff_chosen_on_screen_is_used_for_prices_and_bills(db, user_a, client_a, monkeypatch):
     energy_file = create_devices_file(db, user_a)
     bill_tariffs = []
-    monkeypatch.setattr(EnergyFileService, "_bills", lambda *args: bill_tariffs.append(args[-1]) or {})
+    def fake_bills(self, user_id, file_id, readings, actions, tariff=None):
+        bill_tariffs.append(tariff)
+        return {}
+
+    monkeypatch.setattr(EnergyFileService, "_bills", fake_bills)
     _ChosenTariffPrices.received = []
 
     body = get_schedule(client_a, energy_file, _ChosenTariffPrices, tariff="G11", dynamic="false").json()

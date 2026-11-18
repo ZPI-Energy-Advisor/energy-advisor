@@ -12,13 +12,13 @@ from app.schemas.energy_file import (
     EnergyDataFileDataResponse,
     EnergyDataFileListResponse,
 )
+from app.schemas.calculation import TariffChoice
 from app.schemas.device_usage import DeviceUsageGroupBy, DeviceUsageResolution, DeviceUsageResponse
 from app.schemas.other import TariffTypeEnum
 from app.schemas.schedule import ScheduleResponse
 from app.services.device_usage_service import DeviceUsageService
 from app.services.dynamic_price_service import DynamicTariffNotFoundError
 from app.services.energy_file_service import EnergyFileService
-from app.services.schedule_prices import TariffChoice
 
 
 

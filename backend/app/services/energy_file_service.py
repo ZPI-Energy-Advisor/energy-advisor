@@ -23,7 +23,8 @@ from app.services.calculation_service import (
 from app.schemas.schedule import ChargingPeriodOut, ScheduledActionOut, SchedulePriceOut, ScheduleResponse
 from app.services.pricing_strategies import SLOT_MINUTES
 from app.services.scheduling import INTERRUPTIBLE, SLOT, actions_from_devices, load_from_devices, schedule
-from app.services.schedule_prices import SchedulePriceService, TariffChoice
+from app.schemas.calculation import TariffChoice
+from app.services.schedule_prices import SchedulePriceService
 from app.services.schedule_bill import grid_limit_note, padded_readings, shifted_readings
 from app.schemas.energy_file import (
     ALL_DEVICE_FILES_SOURCE_ID,

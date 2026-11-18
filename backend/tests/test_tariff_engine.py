@@ -6,11 +6,10 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.NewModels import TariffDefinition
-from app.schemas.calculation import CalculationDetails, PVDetails, TariffData
+from app.schemas.calculation import CalculationDetails, PVDetails, TariffChoice, TariffData
 from app.schemas.other import DistributionOperatorEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
 from app.services.new_calculations_service import CalculationsService
 from app.services.pv_service import PVBalancingEngine
-from app.services.schedule_prices import TariffChoice
 from app.services.tariff_engine import (
     BillingContext,
     FinancialSettlement,
@@ -966,3 +965,21 @@ def test_selected_only_bills_tariff_chosen_instead_of_profile():
     # Profil ma G12, a optymalizacja sprawdza G11: tylko ten rachunek, dystrybucja 2 × 0,30.
     assert set(result.tariff_calculations) == {"G11"}
     assert result.tariff_calculation["cycles"][0]["variable_network_net"] == pytest.approx(0.60)
+
+
+def test_selected_only_dynamic_with_net_metering_names_the_reason():
+    definitions = [
+        _definition(TariffTypeEnum.G11, ["0.50"], ["0.30"]),
+        _definition(TariffTypeEnum.DYNAMIC, ["0.10"], ["0.30"], required_billing_cycle_months=1),
+    ]
+    service = _service([(_at(FRIDAY, "10:00"), 2.0)], definitions, [_period()], prices=_Prices("400"),
+                       pv_config={"mode": "net_metering", "power_of_pv_kwp": 5})
+
+    with pytest.raises(HTTPException) as error:
+        service.perform_tariff_calculations(
+            None, None, selected_only=True, tariff=TariffChoice(group=TariffTypeEnum.G11, dynamic=True),
+        )
+
+    # Bez rachunku, ale z powodem zamiast samego „Brak kompletnych danych taryfowych”.
+    assert error.value.status_code == 409
+    assert "net-meteringu" in error.value.detail

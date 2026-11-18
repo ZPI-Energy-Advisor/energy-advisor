@@ -18,6 +18,7 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from app.parsers.devices import LOCAL_TIMEZONE
+from app.schemas.calculation import TariffChoice
 from app.schemas.other import TariffTypeEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import PVBalancingEngine
@@ -25,21 +26,6 @@ from app.services.tariff_engine import decimal, dynamic_energy_price, zone_energ
 from app.services.tariff_zones import ZoneSchedule, covers
 
 SLOT = timedelta(minutes=15)
-
-
-@dataclass(frozen=True)
-class TariffChoice:
-    """Taryfa wybrana na ekranie optymalizacji zamiast tej z profilu; pole None bierze wartość z profilu."""
-
-    group: TariffTypeEnum | None = None
-    dynamic: bool | None = None
-
-    def resolve(self, profile: UserProfile) -> tuple[TariffTypeEnum, bool]:
-        """Grupa taryfowa i umowa z ceną dynamiczną: wybór z ekranu, a brakujące pola z profilu."""
-        tariff = profile.consumption_and_tariff
-        group = self.group or tariff.tariff_type
-        dynamic = tariff.dynamic_price if self.dynamic is None else self.dynamic
-        return group, dynamic
 
 
 @dataclass(frozen=True)

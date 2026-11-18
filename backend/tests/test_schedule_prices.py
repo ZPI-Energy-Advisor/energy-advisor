@@ -10,7 +10,8 @@ from fastapi import HTTPException
 
 from app.schemas.other import TariffTypeEnum as T
 from app.schemas.other import TypeOfMarketEnergyEnum
-from app.services.schedule_prices import SchedulePriceService, TariffChoice
+from app.schemas.calculation import TariffChoice
+from app.services.schedule_prices import SchedulePriceService
 from tariff_helpers import HOURS, definition, period
 
 WARSAW = ZoneInfo("Europe/Warsaw")

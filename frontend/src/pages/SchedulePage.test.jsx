@@ -163,9 +163,9 @@ describe("SchedulePage: taryfa", () => {
   };
   const G11_RESULT = { ...SCHEDULE, tariff_group: "G11", tariff_dynamic: false, prosumer: false, cost_before: 3.1, cost_after: 3.1 };
 
-  const mockApi = (schedule) =>
+  const mockApi = (schedule, profile = PROFILE) =>
     vi.spyOn(apiClient, "get").mockImplementation(async (url) => {
-      if (url === "/users/me/profile") return { data: PROFILE };
+      if (url === "/users/me/profile") return { data: profile };
       if (url === "/tariffs/options") return { data: OPTIONS };
       return { data: schedule };
     });
@@ -221,5 +221,34 @@ describe("SchedulePage: taryfa", () => {
     expect(get).toHaveBeenLastCalledWith("/energy-files/f1/schedule", {
       params: { from: "2026-10-19", to: "2026-10-19", tariff: "G11", dynamic: true },
     });
+  });
+
+  it("wynik jest podpisany taryfą i okresem", async () => {
+    mockApi({ ...SCHEDULE, tariff_group: "G12", tariff_dynamic: false });
+    renderPage();
+    await screen.findByLabelText("Grupa taryfowa");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pokaż wynik" }));
+
+    expect(await screen.findByText(/^G12 · /)).toBeTruthy();
+    expect(screen.getByText(/\(taryfa z profilu\)/)).toBeTruthy();
+  });
+
+  it("net-metering: bez ceny dynamicznej w wyborze i w podpowiedzi G11", async () => {
+    const netMetering = {
+      ...PROFILE,
+      consumption_and_tariff: { tariff_type: "G11", dynamic_price: false },
+      pv_config: { mode: "net_metering", power_of_pv_kwp: 5 },
+    };
+    mockApi({ ...G11_RESULT, prosumer: true }, netMetering);
+    renderPage();
+    await screen.findByLabelText("Grupa taryfowa");
+
+    expect(screen.getByRole("button", { name: "Z ceną dynamiczną" }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Pokaż wynik" }));
+
+    const note = await screen.findByText(/W taryfie G11 prąd z sieci kosztuje tyle samo/);
+    expect(note.textContent).not.toMatch(/ceną dynamiczną/);
+    expect(screen.queryByRole("button", { name: "Sprawdź z ceną dynamiczną" })).toBeNull();
   });
 });
