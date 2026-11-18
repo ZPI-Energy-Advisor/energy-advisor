@@ -4,6 +4,8 @@ W bazie (`device_instances.room`) jest tylko wartość z pliku. Domyślne liczym
 stan domu), więc urządzenia wgrane przed polem `room` też mają pomieszczenie, a zmiana reguł działa od razu.
 """
 
+import re
+
 from app.parsers.device_validation import SCHEMA
 
 # Słownik ze schematu pliku urządzeń, jedno źródło dla walidacji i reguł domyślnych.
@@ -36,24 +38,29 @@ DEFAULT_ROOMS = {
     "other": OTHER,
 }
 
-# Oświetlenie według nazwy, np. „Oświetlenie kuchnia”: rdzenie słów, żeby pasowały też odmiany („w kuchni”).
+# Oświetlenie według nazwy, np. „Oświetlenie kuchnia”. Początki słów, żeby pasowały odmiany i przymiotniki
+# („w kuchni”, „kuchenne”, „łazienkowa”), ale nie fragmenty innych słów („biurko” to nie biuro).
 LIGHT_NAME_ROOMS = (
-    (("kuchni", "kitchen"), "kitchen"),
-    (("salon", "living"), "living_room"),
-    (("sypialn", "bedroom"), "bedroom"),
+    (("kuch", "kitchen"), "kitchen"),
+    (("salon", "living", "lounge"), "living_room"),
+    (("sypial", "bedroom"), "bedroom"),
     (("łazien", "lazien", "bathroom"), "bathroom"),
     (("praln", "laundry"), "laundry"),
-    (("gabinet", "biur", "office"), "office"),
-    (("techniczn", "kotłown", "kotlown"), "technical"),
-    (("garaż", "garaz", "garage"), "garage"),
+    (("gabinet", "biuro", "biura", "biurz", "biurow", "office"), "office"),
+    (("techn", "kotłown", "kotlown"), "technical"),
+    (("garaż", "garaz", "garag"), "garage"),
 )
+WORD = re.compile(r"\w+")
 
 
 def default_room(device_type: str, device_name: str) -> str:
     """Pomieszczenie urządzenia bez pola `room`: według typu, a oświetlenie według nazwy."""
     if device_type == LIGHT_TYPE:
-        name = device_name.casefold()
-        return next((room for words, room in LIGHT_NAME_ROOMS if any(word in name for word in words)), OTHER)
+        words = WORD.findall(device_name.casefold())
+        return next(
+            (room for stems, room in LIGHT_NAME_ROOMS if any(word.startswith(stems) for word in words)),
+            OTHER,
+        )
     return DEFAULT_ROOMS.get(device_type, OTHER)
 
 

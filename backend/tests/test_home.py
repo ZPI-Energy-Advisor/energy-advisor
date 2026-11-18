@@ -243,6 +243,27 @@ def test_registry_sends_room_from_file_before_default(home):
     assert (lamp["room"], washer["room"]) == ("bedroom", "bathroom")
 
 
+def test_file_without_room_keeps_room_from_earlier_file(home):
+    lamp_in_bedroom = {**LAMP, "device": {**LAMP["device"], "room": "bedroom"}}
+    _upload(home.owner, _devices_file(lamp_in_bedroom))
+    _upload(home.owner, _devices_file(LAMP))
+
+    _connect(home.owner)
+
+    (lamp,) = home.hub.registries[-1]
+    assert lamp["room"] == "bedroom"
+
+
+def test_file_with_room_overrides_earlier_room(home):
+    _upload(home.owner, _devices_file({**LAMP, "device": {**LAMP["device"], "room": "bedroom"}}))
+    _upload(home.owner, _devices_file({**LAMP, "device": {**LAMP["device"], "room": "office"}}))
+
+    _connect(home.owner)
+
+    (lamp,) = home.hub.registries[-1]
+    assert lamp["room"] == "office"
+
+
 def test_connect_again_resends_unchanged_registry(home):
     _upload(home.owner, _devices_file(WASHER))
     _connect(home.owner)

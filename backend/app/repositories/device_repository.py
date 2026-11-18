@@ -25,8 +25,9 @@ SLOT = timedelta(minutes=15)
 DEVICE_SETTINGS = (
     "name", "device_type", "device_category", "max_power_kw",
     "flexibility_mode", "allowed_window_from", "allowed_window_to", "max_shift_min", "tank_liters",
-    "room",
 )
+# Pola nadpisywane tylko wtedy, gdy nowy plik je podaje: plik bez `room` nie kasuje pomieszczenia z wcześniejszego.
+DEVICE_OPTIONAL_SETTINGS = ("room",)
 PROGRAM_SETTINGS = ("name", "duration_min", "profile_kwh")
 
 
@@ -427,7 +428,13 @@ class DeviceRepository:
         statement = upsert(DeviceInstance)
         statement = statement.on_conflict_do_update(
             constraint="uq_device_instance_user_device",
-            set_={column: statement.excluded[column] for column in DEVICE_SETTINGS},
+            set_={
+                **{column: statement.excluded[column] for column in DEVICE_SETTINGS},
+                **{
+                    column: func.coalesce(statement.excluded[column], getattr(DeviceInstance, column))
+                    for column in DEVICE_OPTIONAL_SETTINGS
+                },
+            },
         ).returning(DeviceInstance.source_device_id, DeviceInstance.id)
         return dict(self.db.execute(statement, rows).all())
 

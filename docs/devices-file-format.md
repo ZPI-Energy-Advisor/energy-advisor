@@ -168,9 +168,11 @@ Tylko urządzenia z kategorii `OZE` mogą mieć ujemną energię (produkcja).
 | `roof` | Dach | `pv_inverter` |
 | `other` | Inne | `vacuum_cleaner`, `other` |
 
-Oświetlenie (`light`) bez `room` dostaje pomieszczenie z nazwy: „kuchni”, „salon”, „sypialn”, „łazien”,
-„praln”, „gabinet”/„biur”, „techniczn”/„kotłown”, „garaż” (także bez polskich znaków i po angielsku), np.
-„Oświetlenie kuchnia” → `kitchen`. Bez dopasowania (np. „Oświetlenie ogród”) → `other`.
+Oświetlenie (`light`) bez `room` dostaje pomieszczenie z nazwy: słowo zaczynające się od „kuch”, „salon”,
+„sypial”, „łazien”, „praln”, „gabinet”/„biuro”, „techn”/„kotłown”, „garaż” (także bez polskich znaków i po
+angielsku: „kitchen”, „living”, „bedroom”, „bathroom”, „laundry”, „office”, „technical”, „garage”), np.
+„Oświetlenie kuchnia” i „Oświetlenie kuchenne” → `kitchen`. Liczy się początek słowa, więc „Lampka biurkowa”
+nie trafia do gabinetu. Bez dopasowania (np. „Oświetlenie ogród”) → `other`.
 
 Pomieszczenie domyślne nie jest zapisywane: plik bez `room` (także wgrany przed dodaniem pola) dostaje je
 przy odczycie, więc zmiana reguł działa też dla wcześniej wgranych plików.
