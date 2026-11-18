@@ -52,10 +52,17 @@ export const speedOptions = (current) =>
 
 const isProducing = (device) => device.power_kw != null && device.power_kw < 0;
 
+/**
+ * Przebieg z własnym profilem (`run`): akcja z historii dnia referencyjnego ma `ref` (action_id z pliku),
+ * np. PV albo pompa ciepła odznaczona w planie, a pozycja planu idzie bez `ref`.
+ */
+export const runLabel = (run) => (run.ref ? "Jak w historii" : "Według planu");
+
 export const deviceStateLabel = (device) => {
   switch (device.state) {
     case "running":
       if (isProducing(device)) return "Produkuje";
+      if (device.run) return runLabel(device.run);
       return device.program_id ? "Program w toku" : "Pracuje";
     case "idle":
       return "Gotowe";

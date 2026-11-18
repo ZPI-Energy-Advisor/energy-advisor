@@ -93,7 +93,7 @@ def test_repository_update_profile_updates_every_jsonb_section():
 
 
 def _service(user_repository):
-    return UserService(user_repository, MagicMock())
+    return UserService(user_repository)
 
 
 def test_service_creates_profile_when_it_does_not_exist():
@@ -121,7 +121,7 @@ def _service_with_rates(definitions):
     repository.get_profile.return_value = None
     definition_repository = MagicMock()
     definition_repository.list_for_operator.return_value = definitions
-    return UserService(repository, MagicMock(), definition_repository), repository
+    return UserService(repository, definition_repository), repository
 
 
 def test_service_rejects_tariff_missing_in_rates():

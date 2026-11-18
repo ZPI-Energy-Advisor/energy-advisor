@@ -10,6 +10,7 @@ import {
   formatSimTime,
   groupDevicesByCategory,
   hasControls,
+  runLabel,
   isControllable,
   programName,
 } from "../../utils/home";
@@ -119,6 +120,11 @@ function DeviceRow({ device, disabled, onCommand }) {
             <span className="block text-gray-600">
               {programName(device, device.program_id)}
               {device.program_ends_at && `, koniec ${formatSimTime(device.program_ends_at)}`}
+            </span>
+          )}
+          {device.run?.ends_at && (
+            <span className="block text-gray-600">
+              {runLabel(device.run)}, koniec {formatSimTime(device.run.ends_at)}
             </span>
           )}
         </p>

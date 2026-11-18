@@ -4,7 +4,13 @@ import apiClient from "../api/client";
 import DeviceUsagePanel from "./DeviceUsagePanel";
 
 const PERIODS = ["2026-10-01T00:00:00+02:00", "2026-10-02T00:00:00+02:00"];
-const TARIFF = { name: "G11", source: "default", note: "Profil nie wskazuje taryfy, więc koszty są w taryfie G11." };
+const TARIFF = {
+  key: "G11",
+  label: "G11",
+  operator: "PGE",
+  source: "default",
+  note: "Profil nie wskazuje taryfy, więc koszty są w taryfie G11 operatora PGE.",
+};
 
 const group = (key, label, kwh, cost) => ({
   key, label, kwh, cost_pln: cost, total_kwh: kwh[0] + kwh[1], total_cost_pln: cost[0] + cost[1], devices_count: 1,

@@ -1,15 +1,16 @@
+from datetime import date
+
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.models.Tariff import Tariff
 from app.models.User import User
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
-from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.other import TariffTypeEnum
+from app.schemas.tariff import TariffOut
 from app.schemas.user import CurrentUserResponse, ProfileTariffSummary
 from app.schemas.user_profile import UserProfile
-from app.services.tariff_service import tariff_out
+from app.services.tariff_costs import PricingProfile, TariffOption
 
 
 def _field_error(field: tuple[str, str], message: str) -> HTTPException:
@@ -21,48 +22,57 @@ class UserService:
     def __init__(
         self,
         repository: UserRepository,
-        tariff_repository: TariffRepository,
         definition_repository: TariffDefinitionRepository | None = None,
     ):
         self.repository = repository
-        self.tariff_repository = tariff_repository
         self.definition_repository = definition_repository
 
-    def get_current_user(self, user: User) -> CurrentUserResponse:
+    def get_current_user(self, user: User, today: date | None = None) -> CurrentUserResponse:
         profile = self.repository.get_profile(user.id)
-        tariff_type = self._tariff_type(profile)
-        tariff = self._find_tariff(tariff_type) if tariff_type else None
+        pricing = PricingProfile.from_saved(profile)
 
         return CurrentUserResponse(
             email=user.email,
             provider=user.provider,
-            current_tariff=tariff_out(tariff) if tariff else None,
+            current_tariff=self.current_tariff(pricing, today or date.today()) if pricing.from_profile else None,
             profile=ProfileTariffSummary(
                 exists=profile is not None,
                 needs_update=profile is not None and self._validated(profile) is None,
-                tariff_type=tariff_type,
+                tariff_type=self._tariff_type(profile),
             ),
         )
 
-    def profile_tariff(self, user_id) -> tuple[str | None, Tariff | None]:
-        """Taryfa z profilu: wartość z profilu (np. "G13") i odpowiadająca jej taryfa z cennikiem albo None."""
-        tariff_type = self._tariff_type(self.repository.get_profile(user_id))
-        return tariff_type, self._find_tariff(tariff_type) if tariff_type else None
+    def current_tariff(self, pricing: PricingProfile, today: date) -> TariffOut | None:
+        """Definicja taryfy z profilu w nowym cenniku: operator, kod (albo oferta dynamiczna z grupą) i data."""
+        if self.definition_repository is None:
+            return None
+        definitions = [
+            definition
+            for definition in self.definition_repository.list_for_operator(operator=pricing.operator)
+            if definition.tariff_code == pricing.code and definition.distribution_group == pricing.tariff_type
+        ]
+        if not definitions:
+            return None
+        valid_today = [definition for definition in definitions if definition.valid_from <= today <= definition.valid_to]
+        definition = valid_today[0] if valid_today else max(definitions, key=lambda item: item.valid_to)
+        option = TariffOption(pricing.code, pricing.tariff_type, (definition,))
+        return TariffOut(
+            code=option.key,
+            label=option.label,
+            name=definition.name,
+            operator=pricing.operator.value,
+            tariff_code=pricing.code.value,
+            distribution_group=pricing.tariff_type.value,
+            dynamic=option.dynamic,
+            valid_from=definition.valid_from,
+            valid_to=definition.valid_to,
+        )
 
     @staticmethod
     def _tariff_type(profile) -> str | None:
-        # Stary cennik (Dashboard) zna taryfę dynamiczną jako osobną taryfę.
         if not profile:
             return None
-        if profile.consumption_and_tariff.get("dynamic_price"):
-            return TariffTypeEnum.DYNAMIC.value
         return profile.consumption_and_tariff.get("tariff_type")
-
-    def _find_tariff(self, tariff_type: str) -> Tariff | None:
-        # Taryfa dynamiczna ma w tabeli tariffs inną nazwę niż wartość w profilu.
-        if tariff_type == TariffTypeEnum.DYNAMIC.value:
-            return self.tariff_repository.get_first_by_type(Tariff.TYPE_DYNAMIC)
-        return self.tariff_repository.get_by_code(tariff_type)
 
     def get_profile(self, user: User) -> UserProfile:
         profile = self.repository.get_profile(user.id)

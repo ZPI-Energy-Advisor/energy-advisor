@@ -32,6 +32,8 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | Zegar `/home/clock` | ZP-94, `simulation_id` ZP-95 |
 | Webhook `/api/v1/home/events`, stan domu `/api/v1/home/state` | ZP-95 |
 | Ekran „Mój dom”, sterowanie urządzeniami i zegarem przez backend, opis urządzeń w stanie | ZP-97 |
+| Przebieg z własnym profilem (`POST /run`, `run_profile`), `restart` zegara | ZP-96 |
+| Komendy wsadowe (`POST /home/commands`, `DELETE /home/commands`), `stop_at` zegara, wykonanie planu dnia z PV z dnia referencyjnego (`/api/v1/home/plan-runs`) | ZP-113 |
 
 ## Zasady ogólne
 
@@ -102,6 +104,7 @@ go z `GET /status`, więc komenda wysłana bezpośrednio w demo nie rozsynchroni
 | 409 | `clock_running` | Zmiana `sim_time`, gdy zegar działa |
 | 422 | `validation_error` | Dane poprawne składniowo, ale łamią reguły kontraktu (np. profil niezgodny z `duration_min`, powtórzony `device_id`, czas bez strefy albo poza pełnym kwadransem) |
 | 422 | `start_at_in_past` | `start_at` wcześniejszy niż bieżący czas symulacji |
+| 422 | `stop_at_in_past` | `stop_at` zegara nie później niż czas symulacji |
 | 502 | `device_unreachable` | Hub nie dostał odpowiedzi od mikroserwisu urządzenia |
 
 ## 1. Backend → hub
@@ -188,6 +191,7 @@ Odpowiedź `200`:
 |---|---|
 | `state` | `off`, `idle` (włączone, nic nie robi), `running` (pracuje / program trwa), `error`, `unreachable` (hub nie dostał odpowiedzi od mikroserwisu) |
 | `program_id`, `program_started_at`, `program_ends_at` | Trwający program; `null`, gdy brak |
+| `run` | Trwający przebieg z własnym profilem (`run_profile`): `ref`, `started_at`, `ends_at`; `null`, gdy brak |
 | `power_kw` | Bieżąca moc (średnia w obecnym kwadransie), ujemna dla produkcji PV; `null` przy `unreachable` |
 | `energy_kwh` | Zużycie narastająco od startu mikroserwisu; `null` przy `unreachable` |
 
@@ -203,13 +207,16 @@ zeruje licznik. Zużycie do obliczeń backend bierze ze zdarzeń `energy_report`
 { "command": "on" }
 { "command": "off" }
 { "command": "start_program", "program_id": "cotton_60", "start_at": "2026-10-19T13:00:00+02:00" }
+{ "command": "run_profile", "profile_kwh": [0.01, 0.015, 0.015, 0.01], "ref": "act_0016", "start_at": "2026-10-19T18:00:00+02:00" }
 ```
 
 | Pole | Opis |
 |---|---|
-| `command` | `on`, `off`, `start_program` |
+| `command` | `on`, `off`, `start_program`, `run_profile` |
 | `program_id` | Wymagane przy `start_program`, niedozwolone przy pozostałych |
-| `start_at` | Tylko `start_program`, pole opcjonalne: czas symulacji startu, pełny kwadrans ze strefą. Brak albo czas równy bieżącemu = od razu. Hub przechowuje zaplanowany start i wysyła `POST /programs/{program_id}/start`, gdy zegar osiągnie `start_at`: najpierw tick z `sim_time = start_at`, potem start, bo akcja zaczyna się w czasie ostatniego ticka |
+| `profile_kwh` | Wymagane przy `run_profile`, niedozwolone przy pozostałych: energia w kolejnych kwadransach (1–672, czyli do tygodnia), ujemna dla produkcji PV. Hub przekazuje je do `POST /run` urządzenia |
+| `ref` | Tylko `run_profile`, opcjonalne (1–100 znaków): identyfikator akcji, którą wykonuje przebieg (np. akcji planu). Wraca w zdarzeniach `device_started` i `device_finished` |
+| `start_at` | Tylko `start_program` i `run_profile`, pole opcjonalne: czas symulacji startu, pełny kwadrans ze strefą. Brak albo czas równy bieżącemu = od razu. Hub przechowuje zaplanowany start i wysyła go do urządzenia, gdy zegar osiągnie `start_at`: najpierw tick z `sim_time = start_at`, potem start, bo akcja zaczyna się w czasie ostatniego ticka. Przebieg kończący się o `start_at` kolejnego kończy się w tym samym ticku, więc sąsiednie akcje idą jedna po drugiej |
 
 Odpowiedź `202`:
 
@@ -231,19 +238,63 @@ Komenda `scheduled` nie ma jeszcze wyniku. Jeśli w chwili `start_at` urządzeni
 trwa inny program albo nie odpowiada), hub zapisuje zdarzenie `device_error` z kodem błędu i nie
 ponawia komendy. Usunięcie urządzenia z rejestru kasuje jego zaplanowane komendy.
 
+### `POST /home/commands` – wiele komend jednym żądaniem
+
+Komendy z treścią jak w `POST /home/devices/{device_id}/commands`, z `device_id` w każdej. Backend
+wysyła tak całą dobę planu: jego pozycje i historię dnia referencyjnego (np. produkcję PV).
+
+```json
+{ "commands": [
+  { "device_id": "dev_wm_01", "command": "start_program", "program_id": "cotton_60", "start_at": "2026-10-19T13:00:00+02:00" },
+  { "device_id": "dev_ev_01", "command": "run_profile", "profile_kwh": [0.9, 0.0, 0.925], "start_at": "2026-10-19T01:00:00+02:00" },
+  { "device_id": "dev_xx_09", "command": "on" }
+] }
+```
+
+Odpowiedź `200` z wynikiem każdej komendy w kolejności żądania:
+
+```json
+{ "results": [
+  { "device_id": "dev_wm_01", "command_id": "cmd_7f3a2c", "status": "scheduled" },
+  { "device_id": "dev_ev_01", "command_id": "cmd_91be04", "status": "scheduled" },
+  { "device_id": "dev_xx_09", "status": "rejected", "code": "device_not_found", "detail": "Nie ma urządzenia 'dev_xx_09' w rejestrze" }
+] }
+```
+
+- `status`: `accepted` i `scheduled` jak przy pojedynczej komendzie, `rejected` z `code` i `detail`
+  błędu tej komendy (`device_not_found`, `program_not_found`, `start_at_in_past`, `invalid_state`,
+  `device_unreachable`…). Odrzucenie jednej komendy nie zatrzymuje pozostałych.
+- Hub obsługuje całą partię pod jedną blokadą zegara: wszystkie komendy widzą ten sam czas symulacji,
+  a tick nie wypada w połowie partii.
+- Komendy „teraz” idą do urządzeń równolegle, a komendy jednego urządzenia po kolei, w kolejności
+  z żądania (np. `on`, potem `off`).
+- Partia ma od 1 do 1000 komend. Komenda łamiąca reguły kontraktu (np. `start_at` przy `on`) to błąd
+  całej partii: `422 validation_error` (brak `device_id` albo zły typ: `400 invalid_request`), a hub nie
+  wykonuje z niej niczego.
+- Odpowiedź nie podaje stanu urządzeń (`state`): po partii backend odczytuje go z `GET /home/devices`.
+
+### `DELETE /home/commands` – skasowanie zaplanowanych komend
+
+Kasuje wszystkie komendy czekające na `start_at` (pod blokadą zegara, więc żadna nie wystartuje
+w trakcie) i odpowiada `200` z ich liczbą: `{ "cancelled": 12 }`. To, co urządzenia już wykonują
+(program, przebieg, praca po `on`), trwa dalej; zegar, urządzenia i `simulation_id` zostają bez zmian.
+Powtórzenie jest bezpieczne (`{ "cancelled": 0 }`). Backend wysyła je przy „Zakończ” planu dnia.
+
 ### `GET /home/clock`, `PUT /home/clock` – zegar symulacji
 
 ```json
-{ "sim_time": "2026-10-19T09:45:00+02:00", "running": true, "speed": 288.0, "simulation_id": "sim_4f1c…" }
+{ "sim_time": "2026-10-19T09:45:00+02:00", "running": true, "speed": 288.0, "stop_at": null, "simulation_id": "sim_4f1c…" }
 ```
 
-`PUT` przyjmuje dowolny podzbiór pól `sim_time`, `running`, `speed`. Odpowiedź `200` z pełnym stanem zegara.
+`PUT` przyjmuje dowolny podzbiór pól `sim_time`, `running`, `speed`, `stop_at`, a do tego `restart`. Odpowiedź `200` z pełnym stanem zegara.
 
 | Pole | Opis |
 |---|---|
 | `sim_time` | Bieżący czas symulacji w strefie domu (`Europe/Warsaw`), pełny kwadrans z lat 1970–2100. W `PUT` dowolna strefa, tylko gdy zegar stoi; inaczej `409 clock_running` |
+| `restart` | Tylko w `PUT`, opcjonalne, wymaga `sim_time`: `true` zaczyna nową symulację także przy czasie równym bieżącemu. Backend wysyła je przy każdym ustawieniu doby, więc ta sama doba drugi raz też zaczyna od wyłączonych urządzeń i pustej kolejki |
 | `running` | `true` start, `false` pauza. Pauza zatrzymuje ticki, więc energia przestaje rosnąć |
 | `speed` | Ile sekund symulacji na sekundę rzeczywistą, `> 0`. Doba w 5 minut to `288` (domyślnie) |
+| `stop_at` | Chwila, w której zegar sam stanie: w ticku, który do niej dojdzie, `running` zmienia się na `false`, a `stop_at` na `null`. Pełny kwadrans ze strefą, późniejszy niż czas symulacji (po zmianie `sim_time` w tym samym `PUT`: niż nowy czas), inaczej `422 stop_at_in_past`. W `PUT` `null` kasuje zatrzymanie, a brak pola zostawia je bez zmian. Nowa symulacja (`sim_time`) zawsze je kasuje. Backend ustawia je na koniec planu dnia |
 | `simulation_id` | Tylko do odczytu. Identyfikator przebiegu symulacji: nowy po każdym ustawieniu `sim_time` i po restarcie huba. Niosą go zdarzenia webhooka, więc dwa przebiegi tej samej doby się nie sumują |
 
 Hub startuje z zatrzymanym zegarem ustawionym na północ bieżącego dnia. Zegar i zaplanowane komendy
@@ -252,7 +303,8 @@ są tylko w pamięci, więc restart huba ustawia je od nowa.
 **Ustawienie `sim_time` zaczyna nową symulację**: hub wysyła urządzeniom `POST /reset` i kasuje
 zaplanowane komendy. Dzięki temu tę samą dobę można puścić drugi raz, także po cofnięciu zegara.
 Dlatego kolejność jest stała: najpierw `sim_time`, potem komendy ze `start_at`, na końcu
-`running: true`. `PUT` z czasem równym bieżącemu niczego nie zmienia, więc można go ponawiać.
+`running: true`. `PUT` z czasem równym bieżącemu niczego nie zmienia, więc można go ponawiać;
+z `restart: true` zaczyna nową symulację mimo to.
 
 Gdy któreś urządzenie nie wykona resetu, `PUT` zwraca `502 device_unreachable`, a czas, `running`,
 `speed` i zaplanowane komendy zostają bez zmian. Urządzenia, które zdążyły się zresetować, tracą
@@ -292,13 +344,16 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 | `POST /on` | Włączenie | `200` – stan; `409 invalid_state`, gdy trwa program |
 | `POST /off` | Wyłączenie, kończy akcję | `200` – stan |
 | `POST /programs/{program_id}/start` | Start programu | `200` – stan; `404 program_not_found`, `409 invalid_state` |
+| `POST /run` | Przebieg z własnym profilem: `{"profile_kwh": [...], "command_id": "…", "ref": "…"}` | `200` – stan; `409 invalid_state`, gdy trwa program albo inny przebieg; `400 invalid_request` dla pustego lub zbyt długiego profilu |
 | `POST /reset` | Powrót do stanu po uruchomieniu: `off`, zerowe liczniki, brak czasu symulacji i zdarzeń | `200` – stan |
 | `GET /energy` | Zużycie energii | `200` – patrz niżej |
 | `POST /tick` | Krok czasu symulacji od huba | `200` – patrz niżej; `409 stale_tick`; `422 validation_error` dla czasu bez strefy |
 
 `POST /on` i `POST /programs/{program_id}/start` przyjmują opcjonalną treść `{"command_id": "cmd_7f3a2c"}`.
 Hub podaje w niej identyfikator polecenia, a urządzenie zwraca go w `data.command_id` zdarzenia
-`device_started` tej akcji (`null`, gdy akcję zaczęto bez `command_id`).
+`device_started` tej akcji (`null`, gdy akcję zaczęto bez `command_id`). `POST /run` ma `command_id`
+i `ref` w swojej treści; `ref` wraca w `data.ref` zdarzeń `device_started` i `device_finished`
+(`null` dla akcji spoza przebiegu, np. ręcznego włączenia).
 
 ### Zachowanie urządzenia
 
@@ -316,8 +371,16 @@ Urządzenie startuje w stanie `off`.
   akcją, a energia sumuje się w `total_kwh`.
 - Moc programu w kwadransie to wartość z profilu podzielona przez 0,25 h. Urządzenie bez programów
   zużywa w kwadransie najwyżej `max_power_kw × 0,25 h`.
-- PV produkuje stale `-max_power_kw` niezależnie od pory dnia. To uproszczenie na ten sprint;
-  realistyczna produkcja (profil z akcji PV z pliku urządzeń) wejdzie w ZP-96.
+- PV po `POST /on` produkuje stale `-max_power_kw`. Realistyczną produkcję daje przebieg
+  `POST /run` z profilem produkcji (ujemne wartości).
+- `POST /run` służy akcjom bez programu, które mają własny profil: ładowanie EV z przerwami, grzanie
+  bojlera albo pompy ciepła w wybranych kwadransach, produkcja PV. Pracuje według `profile_kwh` (moc w kwadransie: wartość z profilu przez 0,25 h, ze
+  znakiem z profilu) i kończy się po ostatnim kwadransie. Urządzenie bez programów wraca wtedy do
+  `off`, a z programami do `idle`.
+- Przebieg przejmuje pracę stałą mocą po `POST /on`: tamta akcja kończy się (`interrupted: false`),
+  a zaczyna przebieg. Program albo inny przebieg blokują `POST /run` (`409 invalid_state`), a w trakcie
+  przebiegu `POST /on` i start programu też dostają `409`. `POST /off` przerywa przebieg
+  (`interrupted: true`, energia do tej chwili).
 
 ### `GET /status`
 
@@ -328,13 +391,15 @@ Urządzenie startuje w stanie `off`.
   "program_id": "cotton_60",
   "program_started_at": "2026-10-19T09:30:00+02:00",
   "program_ends_at": "2026-10-19T11:30:00+02:00",
+  "run": null,
   "power_kw": 1.8,
   "energy_kwh": 0.45,
   "sim_time": "2026-10-19T09:45:00+02:00"
 }
 ```
 
-`sim_time` to czas ostatniego ticka (`null` przed pierwszym).
+`sim_time` to czas ostatniego ticka (`null` przed pierwszym). `run` opisuje trwający przebieg
+z `POST /run`: `{"ref": "act_0016", "started_at": "…", "ends_at": "…"}`, a poza nim ma `null`.
 
 ### `GET /energy`
 
@@ -454,10 +519,14 @@ do backendu jedną partią na tick, w którym coś zaszło. Urządzenie zwraca `
 
 | `type` | Kiedy | `data` |
 |---|---|---|
-| `device_started` | Urządzenie zaczęło pracę / program | `program_id` (`null` dla urządzeń bez programów), `command_id` (`null`, gdy start bez polecenia huba) |
-| `device_finished` | Koniec programu albo wyłączenie w trakcie | `program_id`, `started_at`, `energy_kwh` cyklu, `interrupted` |
+| `device_started` | Urządzenie zaczęło pracę / program / przebieg | `program_id` (`null` dla urządzeń bez programów), `command_id` (`null`, gdy start bez polecenia huba), `ref` (akcja przebiegu przy `run_profile`, inaczej `null`) |
+| `device_finished` | Koniec programu albo przebiegu, wyłączenie w trakcie | `program_id`, `started_at`, `energy_kwh` cyklu, `interrupted`, `ref` |
 | `energy_report` | Po każdym ticku z niezerową energią urządzenia (zwykle co kwadrans) | `interval_start`, `energy_kwh` kroku `[interval_start, sim_time)`, ujemna dla PV |
 | `device_error` | Urządzenie nie odpowiada na tick, nie wykonało zaplanowanej komendy albo wyczerpało limit restartów (`code: restart_limit_exceeded`) | `code`, `message` |
+
+Ręczne przełączenie urządzenia w trakcie przebiegu jest w zdarzeniach osobnymi akcjami:
+przebieg kończy się `device_finished` z `ref` i `interrupted: true`, a ręczne włączenie zaczyna
+`device_started` z `ref: null`.
 
 **Energia.** Zużycie to suma `energy_report`; jest ich tyle, ile ticków z energią, a ich suma dla
 urządzenia równa się energii urządzenia (`total_kwh`, suma `energy_kwh` jego cykli `device_finished`).
@@ -505,6 +574,9 @@ wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_UR
 | `DELETE /api/v1/home` | Odłącza dom: hub dostaje pusty rejestr i zatrzymuje mikroserwisy urządzeń |
 | `POST /api/v1/home/devices/{device_id}/commands` | Polecenie dla urządzenia ([niżej](#sterowanie-domem)) |
 | `PUT /api/v1/home/clock` | Start, pauza, tempo i doba zegara symulacji ([niżej](#sterowanie-domem)) |
+| `POST /api/v1/home/plan-runs` | Uruchamia zatwierdzony plan dnia w symulacji ([niżej](#wykonanie-planu-dnia)) |
+| `GET /api/v1/home/plan-runs/latest` | Ostatni przebieg planu z raportem albo `null` |
+| `POST /api/v1/home/plan-runs/{run_id}/end` | „Zakończ”: kasuje zaplanowane komendy przebiegu, zatrzymuje zegar i zamyka przebieg |
 
 `GET /api/v1/home`, `POST /api/v1/home/connect` i `DELETE /api/v1/home` odpowiadają `200` ze stanem podłączenia:
 
@@ -604,10 +676,11 @@ Oba endpointy działają tylko dla podłączonego domu (odłączony: `409`) i pr
 (`POST /home/devices/{device_id}/commands`, `PUT /home/clock`), który jest jedynym źródłem stanu.
 
 `POST /api/v1/home/devices/{device_id}/commands` przyjmuje treść jak komenda huba (`on`, `off`,
-`start_program` z `program_id`, opcjonalnie `start_at`) i odpowiada `202` z wynikiem huba.
+`start_program` z `program_id`, `run_profile` z `profile_kwh` i `ref`, opcjonalnie `start_at`)
+i odpowiada `202` z wynikiem huba.
 
 `PUT /api/v1/home/clock` przyjmuje dowolny niepusty podzbiór pól i odpowiada `200` ze stanem zegara
-(`sim_time`, `running`, `speed`):
+(`sim_time`, `running`, `speed`, `stop_at`):
 
 ```json
 { "day": "2026-10-25", "running": false, "speed": 288 }
@@ -615,9 +688,83 @@ Oba endpointy działają tylko dla podłączonego domu (odłączony: `409`) i pr
 
 | Pole | Opis |
 |---|---|
-| `day` | Doba `RRRR-MM-DD`: backend ustawia `sim_time` na północ tej doby w strefie domu, co zaczyna nową symulację. Tylko przy zatrzymanym zegarze (inaczej `409` z huba). Backend liczy przesunięcie strefy, bo zależy ono od daty |
+| `day` | Doba `RRRR-MM-DD`: backend ustawia `sim_time` na północ tej doby w strefie domu, co zaczyna nową symulację (z `restart: true`, więc także dla doby, na której zegar już stoi). Tylko przy zatrzymanym zegarze (inaczej `409` z huba). Backend liczy przesunięcie strefy, bo zależy ono od daty |
 | `running` | `true` start, `false` pauza |
 | `speed` | Tempo `> 0`, sekundy symulacji na sekundę rzeczywistą |
+
+#### Wykonanie planu dnia
+
+`POST /api/v1/home/plan-runs` z `{ "plan_id": "…" }` uruchamia **zatwierdzony** plan z ekranu „Plan na
+jutro” (szkic: `409`, plan sprzed ZP-113 bez profili: `409` z prośbą o ponowne ułożenie). Backend:
+
+1. zatrzymuje zegar, ustawia `sim_time` na północ doby planu z `restart: true`,
+2. wysyła **jednym** `POST /home/commands` całą dobę, niezależnie od liczby akcji:
+   - pozycje planu ze startem z planu w `start_at`: program jako `start_program` z `program_id`,
+     a auto, bojler i pompa ciepła jako `run_profile` z profilem z planu (zera w przerwach ładowania),
+     bez `ref`, bo z komendą łączy je `command_id`,
+   - historię **dnia referencyjnego** jako `run_profile`: produkcję PV (od niej zależy, czy plan się
+     opłaca, np. pralka w południe z paneli) oraz pompę ciepła i bojler **odznaczone w planie**, bo plan
+     zakłada, że pracują same na termostacie, i liczy na nie miejsce w limicie przyłącza.
+     Dzień referencyjny to „wczoraj” jak w planie, liczony dla każdego urządzenia osobno: dzień startu
+     jego ostatniej akcji przed dobą planu, a bez takiej (plan sprzed całej historii) ostatniej w ogóle.
+     Doba tego dnia (00:00–24:00, bez nocy po niej) trafia na te same godziny doby planu. `profile_kwh` to kwadranse akcji z `device_slot_usage`
+     (ten sam rozkład co wycena i wykresy, ujemny dla PV), a `ref` to `action_id` z pliku. Kwadranse
+     przykryte nowszym plikiem (`superseded`) są pomijane, przerwa w kwadransach akcji dzieli ją na osobne
+     przebiegi, a nachodzące na siebie przebiegi jednego urządzenia są łączone w jeden.
+
+   Urządzenia stałe (światło, TV, czajnik, piekarnik…) startują wyłączone i reagują tylko na ręczne
+   włączenie z ekranu „Mój dom”: widać wtedy, jak plan i ręczne włączenia razem obciążają przyłącze.
+   Docelowo PV pójdzie z prognozy pogody zamiast z historii,
+3. zapisuje przebieg (`plan_runs`) z migawką pozycji planu i wynikiem ich komend,
+4. uruchamia zegar z bieżącym tempem i `stop_at` na koniec planu, więc hub sam staje o 06:00.
+
+Gdy któryś krok zawiedzie, przebieg nie jest zapisywany, a ponowienie zaczyna dobę od nowa. Odrzucona
+komenda (np. `device_not_found`) nie blokuje pozostałych: przebieg rusza, a raport podaje jej powód.
+
+Odpowiedź (`201`, a w `GET …/latest` i `POST …/end` `200`):
+
+```json
+{
+  "id": "…", "plan_id": "…", "plan_date": "2026-10-12", "status": "running", "simulation_id": "sim_4f1c…",
+  "started_at": "2026-11-15T10:00:00Z", "ended_at": null, "sim_time": "2026-10-12T13:15:00+02:00",
+  "horizon_start": "2026-10-12T00:00:00+02:00", "horizon_end": "2026-10-13T06:00:00+02:00",
+  "history_day": "2026-10-05",
+  "replay": { "actions": 2, "devices": 2, "skipped_devices": [], "rejected_actions": 0 },
+  "replayed_devices": [
+    { "device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_day": "2026-10-05",
+      "history_kwh": -18.2, "actual_kwh": -7.9 },
+    { "device_id": "dev_hp_01", "device_name": "Pompa ciepła", "history_day": "2026-10-05",
+      "history_kwh": 9.5, "actual_kwh": 4.1 }
+  ],
+  "planned_kwh": 6.4, "actual_kwh": 0.6,
+  "devices": [{
+    "device_id": "dev_wm_01", "device_name": "Pralka Bosch", "kind": "program", "planned_kwh": 1.4, "actual_kwh": 0.6,
+    "actions": [{ "action_id": "dev_wm_01", "label": "Bawełna 60°C", "start": "2026-10-12T13:00:00+02:00",
+                  "end": "2026-10-12T15:00:00+02:00", "energy_kwh": 1.4, "status": "scheduled", "code": null, "detail": null }]
+  }],
+  "errors": [{ "device_id": "dev_lamp_01", "device_name": "Lampa", "sim_time": "2026-10-12T18:15:00+02:00",
+               "code": "invalid_state", "message": "Trwa przebieg urządzenia" }]
+}
+```
+
+| Pole | Opis |
+|---|---|
+| `status` | `running`; `completed`, gdy zegar przebiegu minie `horizon_end`; `ended` po „Zakończ”; `superseded`, gdy hub zaczął inną symulację (kolejny przebieg, ustawienie doby, restart huba). Backend sprawdza to w hubie przy odczycie; bez huba zostaje ostatni znany status |
+| `sim_time` | Bieżący czas przebiegu, a po jego końcu chwila, w której się skończył |
+| `devices` | Urządzenia z planu: energia według planu i zużyta w symulacji (zdarzenia `energy_report` przebiegu od początku planu do `sim_time`) |
+| `history_day` | Najnowszy z dni referencyjnych w `replayed_devices` (zwykle wszystkie urządzenia mają ten sam); `null`, gdy nie było czego odtwarzać |
+| `replay` | Przebiegi z historii: `actions` i `devices` przyjęte przez hub, `skipped_devices` spoza rejestru huba (`device_not_found`, np. przy zaległej wysyłce rejestru), `rejected_actions` odrzucone z innego powodu (np. `409 invalid_state`) |
+| `replayed_devices` | Urządzenia, których historię hub przyjął: ich dzień referencyjny (`history_day`), energia z niego (`history_kwh`) i zużyta w symulacji (`actual_kwh`), ujemne dla PV. Nie wchodzą do `planned_kwh` i `actual_kwh` przebiegu, które dotyczą tylko urządzeń planu |
+| `errors` | Do 50 ostatnich `device_error` przebiegu, np. komenda, której urządzenie nie wykonało o `start_at` |
+
+„Zakończ” najpierw kasuje kolejkę huba (`DELETE /home/commands`): wszystkie zaplanowane komendy
+przebiegu, czyli resztę planu i historii (np. PV od 10:00, kolejne bloki pompy ciepła). Potem zatrzymuje
+zegar, kasuje `stop_at` i oznacza przebieg jako `ended`. Ręczny Start później nie stanie nagle o 06:00
+ani nie uruchomi np. ładowania auta z zakończonego planu. To, co urządzenia już wykonują (pralka
+w połowie programu, PV w trakcie produkcji), po Starcie się dokończy; wyłączyć można je ręcznie. Gdy hub
+zawiedzie po drodze, przebieg zostaje `running` z zatrzymaniem o końcu planu, a ponowne „Zakończ” robi
+wszystko jeszcze raz. Zakończony przebieg zostaje bez zmian.
+Do chwilowej przerwy służy pauza zegara, a ponowne uruchomienie zaczyna plan od północy.
 
 Błędy huba:
 

@@ -42,7 +42,7 @@ def public_results(results: dict | None) -> dict | None:
 
 
 def has_usage_series(results: dict) -> bool:
-    return all(key in results for key in INTERNAL_RESULT_KEYS)
+    return "usage_15min" in results
 
 
 def source_resolution(results: dict) -> int | None:
@@ -147,11 +147,17 @@ class CalculationService:
     @classmethod
     def calculate_for_range(cls, results: dict, date_from: date, date_to: date) -> dict:
         """Przelicza wykresy, sumy i statystyki dla dni z przedziału [date_from, date_to] (oba włącznie)."""
-        start, end = date_from.isoformat(), date_to.isoformat()
-        usage = {day: slots for day, slots in results["usage_15min"].items() if start <= day <= end}
         return cls.summarize_usage(
-            usage, results["slot_prices"], source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
+            cls.usage_in_range(results["usage_15min"], date_from, date_to),
+            results["slot_prices"],
+            source_resolution(results),
+            results.get(ACTIONS_PER_DAY_KEY),
         )
+
+    @staticmethod
+    def usage_in_range(usage: dict, date_from: date, date_to: date) -> dict:
+        start, end = date_from.isoformat(), date_to.isoformat()
+        return {day: slots for day, slots in usage.items() if start <= day <= end}
 
     @staticmethod
     def _actions_per_day(devices: list[DeviceRecord]) -> dict[str, int]:
@@ -237,31 +243,6 @@ class CalculationService:
         return dict(sorted(merged.items())), contributions
 
     @staticmethod
-    def merge_slot_prices(sources: list[dict]) -> dict:
-        """Scala cenniki kilku importów (posortowanych od najstarszego).
-
-        Ceny zależne od pory dnia bierzemy z najnowszego importu. Ceny dzienne (taryfa
-        dynamiczna) łączymy po dniach - nowszy import nadpisuje starszy tylko tam, gdzie ma cenę.
-        """
-        latest = sources[-1]
-        merged = {}
-        for tariff_name, tariff in latest.items():
-            if "prices_by_day" not in tariff:
-                merged[tariff_name] = tariff
-                continue
-
-            prices_by_day = {}
-            for source in sources:
-                source_days = source.get(tariff_name, {}).get("prices_by_day", {})
-                for day, day_prices in source_days.items():
-                    current = prices_by_day.get(day, [None] * SLOTS_PER_DAY)
-                    prices_by_day[day] = [
-                        new if new is not None else old for old, new in zip(current, day_prices)
-                    ]
-            merged[tariff_name] = {**tariff, "prices_by_day": dict(sorted(prices_by_day.items()))}
-        return merged
-
-    @staticmethod
     def _price_column(tariff: dict, df_15min: pd.DataFrame) -> pd.Series:
         if "prices_by_day" in tariff:
             prices_by_day = tariff["prices_by_day"]
@@ -340,8 +321,8 @@ class CalculationService:
             df_15min['slot'] * SLOT_MINUTES, unit='m'
         )
 
-        results_dict = {"tariffs": {}}
         total_usage = float(df_15min['Wartość kWh'].sum())
+        results_dict = {"tariffs": {}, "total_usage_kwh": round(total_usage, 2)}
 
         cost_columns = []
         price_columns = []
@@ -423,6 +404,7 @@ class CalculationService:
                 tariff_name: {"type": tariff["type"], "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
                 for tariff_name, tariff in slot_prices.items()
             },
+            "total_usage_kwh": 0.0,
             "chart_15min": [],
             "chart_hourly": [],
             "chart_daily": [],

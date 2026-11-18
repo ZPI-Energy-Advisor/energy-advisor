@@ -34,6 +34,37 @@ describe("HomeDeviceList", () => {
     });
   });
 
+  it("pokazuje przebieg według planu z godziną końca", () => {
+    const boiler = {
+      ...washer([]),
+      device_name: "Bojler",
+      state: "running",
+      power_kw: 2.0,
+      run: { ref: null, started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" },
+    };
+
+    render(<HomeDeviceList devices={[boiler]} onCommand={vi.fn()} />);
+
+    expect(screen.getByText("Według planu")).toBeTruthy();
+    expect(screen.getByText("Według planu, koniec 19:00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wyłącz: Bojler" })).toBeTruthy();
+  });
+
+  it("przebieg z historii (z ref) nie udaje pozycji planu", () => {
+    const heatPump = {
+      ...washer([]),
+      device_name: "Pompa ciepła",
+      state: "running",
+      power_kw: 3.0,
+      run: { ref: "act_hp_1", started_at: "2026-10-19T12:00:00+02:00", ends_at: "2026-10-19T14:00:00+02:00" },
+    };
+
+    render(<HomeDeviceList devices={[heatPump]} onCommand={vi.fn()} />);
+
+    expect(screen.getByText("Jak w historii, koniec 14:00")).toBeTruthy();
+    expect(screen.queryByText(/Według planu/)).toBeNull();
+  });
+
   it("instalacja PV nie ma przycisków, a ładowarka EV ma", () => {
     const pv = { ...washer([]), device_id: "dev_pv_01", device_name: "Instalacja PV", device_type: "pv_inverter", device_category: "OZE" };
     const ev = { ...washer([]), device_id: "dev_ev_01", device_name: "Ładowarka EV", device_type: "ev_charger", device_category: "Pojazd elektryczny" };

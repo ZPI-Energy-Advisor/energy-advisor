@@ -1,8 +1,10 @@
+import math
+from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 
@@ -57,6 +59,14 @@ class RegisteredDevice(BaseModel):
     state: DeviceState
 
 
+class HubRun(BaseModel):
+    """Trwający przebieg z własnym profilem (run_profile), np. akcja planu; `ref` wskazuje tę akcję."""
+
+    ref: str | None = None
+    started_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
 class HubDeviceStatus(BaseModel):
     device_id: str
     device_name: str
@@ -65,6 +75,7 @@ class HubDeviceStatus(BaseModel):
     program_id: str | None = None
     program_started_at: datetime | None = None
     program_ends_at: datetime | None = None
+    run: HubRun | None = None
     # Brak wartości przy stanie unreachable: hub nie dostał odpowiedzi od urządzenia.
     power_kw: float | None = None
     energy_kwh: float | None = None
@@ -79,22 +90,50 @@ class CommandType(str, Enum):
     ON = "on"
     OFF = "off"
     START_PROGRAM = "start_program"
+    RUN_PROFILE = "run_profile"
+
+
+# Tydzień kwadransów: najdłuższy przebieg z własnym profilem. Ten sam limit ma hub
+# (smart-home-hub/device/models.py); oba wynikają z kontraktu w docs/smart-home-api.md.
+MAX_RUN_QUARTERS = 7 * 96
+
+
+def _finite(profile: list[float]) -> list[float]:
+    if not all(math.isfinite(value) for value in profile):
+        raise ValueError("profile_kwh musi zawierać skończone liczby")
+    return profile
+
+
+# Te same reguły co w hubie: 1–MAX_RUN_QUARTERS skończonych liczb i ref z 1–100 znaków.
+RunProfile = Annotated[list[float], Field(min_length=1, max_length=MAX_RUN_QUARTERS), AfterValidator(_finite)]
+ActionRef = Annotated[str, Field(min_length=1, max_length=100)]
 
 
 class DeviceCommand(BaseModel):
     command: CommandType
     program_id: str | None = None
+    # run_profile: energia w kolejnych kwadransach (ujemna dla PV) i identyfikator akcji, np. z planu.
+    profile_kwh: RunProfile | None = None
+    ref: ActionRef | None = None
     start_at: datetime | None = None
 
     @model_validator(mode="after")
-    def validate_program(self):
+    def validate_command(self):
         if self.command == CommandType.START_PROGRAM:
             if not self.program_id:
                 raise ValueError("start_program wymaga program_id")
-        elif self.program_id is not None or self.start_at is not None:
-            raise ValueError("program_id i start_at są dozwolone tylko przy start_program")
-        if self.start_at is not None and self.start_at.tzinfo is None:
-            raise ValueError("start_at musi zawierać strefę czasową")
+        elif self.program_id is not None:
+            raise ValueError("program_id jest dozwolone tylko przy start_program")
+        if self.command == CommandType.RUN_PROFILE:
+            if self.profile_kwh is None:
+                raise ValueError("run_profile wymaga profile_kwh")
+        elif self.profile_kwh is not None or self.ref is not None:
+            raise ValueError("profile_kwh i ref są dozwolone tylko przy run_profile")
+        if self.start_at is not None:
+            if self.command not in (CommandType.START_PROGRAM, CommandType.RUN_PROFILE):
+                raise ValueError("start_at jest dozwolone tylko przy start_program i run_profile")
+            if self.start_at.tzinfo is None:
+                raise ValueError("start_at musi zawierać strefę czasową")
         return self
 
 
@@ -105,12 +144,40 @@ class CommandResult(BaseModel):
     state: DeviceState
 
 
+# Ten sam limit co w hubie (smart-home-hub/hub/models.py), z kontraktu POST /home/commands.
+MAX_BATCH_COMMANDS = 1000
+
+
+class HubCommand(DeviceCommand):
+    """Komenda w POST /home/commands: jak polecenie dla urządzenia, z device_id w treści."""
+
+    device_id: str
+
+
+class HubCommandStatus(str, Enum):
+    ACCEPTED = "accepted"  # Wykonana albo przekazana do urządzenia.
+    SCHEDULED = "scheduled"  # Czeka na start_at.
+    REJECTED = "rejected"  # Odrzucona: powód w `code` i `detail`.
+
+
+class HubCommandResult(BaseModel):
+    """Wynik jednej komendy z POST /home/commands; `command_id` ma tylko komenda przyjęta albo zaplanowana."""
+
+    device_id: str
+    status: HubCommandStatus
+    command_id: str | None = None
+    code: str | None = None
+    detail: str | None = None
+
+
 class HubClock(BaseModel):
     sim_time: datetime
     running: bool
     speed: float
     # Przebieg symulacji: zmienia go ustawienie czasu i restart huba.
     simulation_id: str | None = None
+    # Chwila, w której zegar sam stanie (koniec planu dnia); None: chodzi, dopóki nikt go nie zatrzyma.
+    stop_at: datetime | None = None
 
 
 class HubEventType(str, Enum):
@@ -169,6 +236,18 @@ class HomeClockState(BaseModel):
     sim_time: datetime
     running: bool
     speed: float
+    stop_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ReplaySlot:
+    """Kwadrans akcji z bazy: urządzenie, akcja (id w bazie i action_id z pliku), początek w UTC, energia."""
+
+    device_id: str
+    action_id: int
+    ref: str
+    slot_start: datetime
+    kwh: float
 
 
 class HomeClockUpdate(BaseModel):
@@ -205,6 +284,7 @@ class HomeDeviceState(BaseModel):
     flexibility_mode: str | None = None
     programs: list[HomeDeviceProgram] = []
     state: DeviceState
+    run: HubRun | None = None
     program_id: str | None = None
     program_started_at: datetime | None = None
     program_ends_at: datetime | None = None

@@ -36,6 +36,11 @@ function SimulationClock({ clock, disabled, onUpdate }) {
                 {formatSimTime(clock.sim_time)}
               </p>
               <p className="text-sm text-gray-600 first-letter:uppercase">{formatSimDate(clock.sim_time)}</p>
+              {clock.stop_at && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Zegar sam stanie o {formatSimTime(clock.stop_at)}, na końcu planu dnia.
+                </p>
+              )}
             </>
           ) : (
             <p className="text-3xl font-bold text-gray-300">--:--</p>

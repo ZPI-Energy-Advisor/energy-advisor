@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from collections import deque
 from typing import Callable
@@ -49,6 +49,31 @@ class DynamicMarketPriceResolver:
         if type_of_market_energy == TypeOfMarketEnergyEnum.RCEm:
             return self.rcem(timestamp.date())
         return self.rce(timestamp)
+
+    def preload_rce(self, start_utc: datetime, end_utc: datetime) -> None:
+        """Wczytuje jednym zapytaniem ceny RCE wszystkich jeszcze niewczytanych miesięcy zakresu."""
+        first = start_utc.astimezone(LOCAL_TIMEZONE)
+        last = (end_utc - timedelta(minutes=15)).astimezone(LOCAL_TIMEZONE)
+        months = []
+        month = datetime(first.year, first.month, 1, tzinfo=LOCAL_TIMEZONE)
+        while month <= last:
+            if (month.year, month.month) not in self._rce_months:
+                months.append(month)
+            month += relativedelta(months=1)
+        if not months:
+            return
+        prices = self.price_repository.get_prices_between(
+            PseRcePriceProvider.source,
+            months[0].astimezone(timezone.utc),
+            (months[-1] + relativedelta(months=1)).astimezone(timezone.utc),
+        )
+        loaded = {(month.year, month.month): {} for month in months}
+        for moment, price in prices.items():
+            local = moment.astimezone(LOCAL_TIMEZONE)
+            key = (local.year, local.month)
+            if key in loaded:
+                loaded[key][moment.astimezone(timezone.utc)] = float(price) / 1000.0
+        self._rce_months.update(loaded)
 
     def rce(self, timestamp: datetime) -> float:
         local = timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=LOCAL_TIMEZONE)

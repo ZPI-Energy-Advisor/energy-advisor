@@ -113,11 +113,24 @@ class PriceHistoryDaysOut(BaseModel):
     missing: list[date] = []
 
 
+class PriceBreakdownOut(BaseModel):
+    """Średnia cena kWh w okresie w częściach (zł/kWh): energia (RCE + marża), dystrybucja i opłaty za kWh
+    netto oraz VAT; suma to średnia cena brutto."""
+
+    energy: float
+    distribution: float
+    fees: float
+    vat: float
+
+
 class PriceHistoryResponse(BaseModel):
     source: str
-    tariff_name: str
-    markup_pln_kwh: float
-    vat_rate: float
+    operator: str
+    tariff_name: str | None = None
+    distribution_group: str | None = None
+    from_profile: bool = False
+    note: str | None = None
+    price_breakdown: PriceBreakdownOut | None = None
     unit: str
     timezone: str
     resolution: PriceResolution

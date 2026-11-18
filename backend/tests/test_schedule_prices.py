@@ -109,6 +109,15 @@ def test_chosen_tariff_without_rates_is_reported():
     assert "Brak stawek taryfy G13" in error.value.detail
 
 
+def test_average_price_is_broken_into_energy_distribution_fees_and_vat():
+    result = _prices(_service())
+
+    parts = result.breakdown
+    assert parts["fees"] == pytest.approx(0.045)
+    assert parts["energy"] + parts["distribution"] + parts["fees"] == pytest.approx(parts["vat"] / 0.23, abs=1e-4)
+    assert sum(parts.values()) == pytest.approx(sum(result.prices.values()) / len(result.prices), abs=1e-4)
+
+
 def test_slots_without_market_price_are_left_out():
     def market(slot):
         if slot.astimezone(WARSAW).hour == 5:

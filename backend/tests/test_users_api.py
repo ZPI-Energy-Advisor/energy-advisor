@@ -1,44 +1,41 @@
-from datetime import time
+from datetime import date
 
 import pytest
+from fastapi import Depends
 from fastapi.testclient import TestClient
 
-from app.models.Tariff import Tariff
-from app.models.TariffRate import TariffRate
+from app.api.v1.deps import get_user_repository, get_user_service
 from app.models.UserProfile import UserProfile
 from app.schemas.other import TariffTypeEnum
-from app.services.tariff_service import to_profile_tariff_type
+from app.services.user_service import UserService
 from main import app
+from tariff_helpers import FlatTariffRepository, flat_definition
 
 
-TEST_TARIFFS = [
-    ("G11", Tariff.TYPE_FIXED, [(time(0, 0), time(23, 59, 59), 1.15)]),
-    ("G12", Tariff.TYPE_ZONED, [(time(0, 0), time(5, 59, 59), 0.75), (time(6, 0), time(23, 59, 59), 1.35)]),
-    ("Dynamiczna", Tariff.TYPE_DYNAMIC, []),
-]
+def _rates():
+    old_g12 = flat_definition(TariffTypeEnum.G12, energy=("0.4", "0.9"), network=("0", "0"))
+    old_g12.valid_from, old_g12.valid_to = date(2020, 1, 1), date(2025, 12, 31)
+    old_g12.name = "G12 do 2025"
+    new_g12 = flat_definition(TariffTypeEnum.G12, energy=("0.5", "1.0"), network=("0", "0"))
+    new_g12.valid_from = date(2026, 1, 1)
+    dynamic = flat_definition(TariffTypeEnum.DYNAMIC, energy=("0.1",), distribution_group=TariffTypeEnum.G12)
+    dynamic.name = "Prąd z ceną dynamiczną"
+    return FlatTariffRepository([flat_definition(TariffTypeEnum.G11), old_g12, new_g12, dynamic])
 
 
 @pytest.fixture
-def tariffs(db) -> dict[str, Tariff]:
-    """Taryfy z seeda; brakujące zakłada na czas testu i potem usuwa."""
-    created = []
-    result = {}
-    for name, tariff_type, rates in TEST_TARIFFS:
-        tariff = db.query(Tariff).filter(Tariff.name == name).order_by(Tariff.id).first()
-        if tariff is None:
-            tariff = Tariff(name=name, type=tariff_type, description=f"Taryfa testowa {name}")
-            tariff.rates = [TariffRate(time_start=start, time_end=end, price_per_kwh=price) for start, end, price in rates]
-            db.add(tariff)
-            db.commit()
-            created.append(tariff)
-        result[name] = tariff
-    yield result
-    for tariff in created:
-        db.delete(tariff)
-    db.commit()
+def rates():
+    repository = _rates()
+
+    def override(user_repository=Depends(get_user_repository)):
+        return UserService(user_repository, repository)
+
+    app.dependency_overrides[get_user_service] = override
+    yield repository
+    app.dependency_overrides.pop(get_user_service, None)
 
 
-def profile_payload(tariff_type="G12"):
+def profile_payload(tariff_type="G12", dynamic=False):
     return {
         "base_info": {
             "type_of_property": "apartment",
@@ -53,26 +50,12 @@ def profile_payload(tariff_type="G12"):
             "billing_cycle": 2,
             "billing_period_start_date": "2026-01-01",
         },
-        "consumption_and_tariff": {"tariff_type": tariff_type},
+        "consumption_and_tariff": {"tariff_type": tariff_type, "dynamic_price": dynamic},
         "pv_config": {"mode": "none"},
     }
 
 
-@pytest.mark.parametrize(
-    ("name", "tariff_type", "expected"),
-    [
-        ("G11", Tariff.TYPE_FIXED, TariffTypeEnum.G11),
-        ("G12W", Tariff.TYPE_ZONED, TariffTypeEnum.G12W),
-        ("g12w", Tariff.TYPE_ZONED, TariffTypeEnum.G12W),
-        ("Dynamiczna", Tariff.TYPE_DYNAMIC, TariffTypeEnum.DYNAMIC),
-        ("Nieznana", Tariff.TYPE_FIXED, None),
-    ],
-)
-def test_tariff_maps_to_profile_tariff_type(name, tariff_type, expected):
-    assert to_profile_tariff_type(Tariff(name=name, type=tariff_type)) == expected
-
-
-def test_me_without_profile_has_no_tariff(client_a, user_a):
+def test_me_without_profile_has_no_tariff(client_a, user_a, rates):
     response = client_a.get("/api/v1/users/me")
 
     assert response.status_code == 200
@@ -85,18 +68,36 @@ def test_me_without_profile_has_no_tariff(client_a, user_a):
     }
 
 
-def test_current_tariff_comes_from_profile(client_a, tariffs):
+def test_current_tariff_is_definition_of_profile_tariff_valid_today(client_a, rates):
     assert client_a.put("/api/v1/users/me/profile", json=profile_payload("G12")).status_code == 200
 
     me = client_a.get("/api/v1/users/me").json()
 
     assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G12"}
-    assert me["current_tariff"]["id"] == tariffs["G12"].id
-    assert me["current_tariff"]["code"] == "G12"
-    assert me["current_tariff"]["profile_tariff_type"] == "G12"
+    assert me["current_tariff"] == {
+        "code": "G12",
+        "label": "G12",
+        "name": None,
+        "operator": "TAURON",
+        "tariff_code": "G12",
+        "distribution_group": "G12",
+        "dynamic": False,
+        "valid_from": "2026-01-01",
+        "valid_to": "2035-12-31",
+    }
 
 
-def test_changing_profile_tariff_changes_current_tariff(client_a, tariffs):
+def test_current_tariff_depends_on_date(user_a, rates, db):
+    db.add(UserProfile(user_id=user_a.id, **profile_payload("G12")))
+    db.commit()
+
+    service = UserService(get_user_repository(db), rates)
+
+    assert service.get_current_user(user_a, today=date(2025, 6, 1)).current_tariff.name == "G12 do 2025"
+    assert service.get_current_user(user_a, today=date(2026, 6, 1)).current_tariff.valid_from == date(2026, 1, 1)
+
+
+def test_changing_profile_tariff_changes_current_tariff(client_a, rates):
     client_a.put("/api/v1/users/me/profile", json=profile_payload("G12"))
 
     client_a.put("/api/v1/users/me/profile", json=profile_payload("G11"))
@@ -104,7 +105,7 @@ def test_changing_profile_tariff_changes_current_tariff(client_a, tariffs):
     assert client_a.get("/api/v1/users/me").json()["current_tariff"]["code"] == "G11"
 
 
-def test_current_tariff_persists_across_sessions(client_a, user_a, make_token, tariffs):
+def test_current_tariff_persists_across_sessions(client_a, user_a, make_token, rates):
     client_a.put("/api/v1/users/me/profile", json=profile_payload("G12"))
 
     other_session = TestClient(app, headers={"Authorization": f"Bearer {make_token(user_a.id)}"})
@@ -112,18 +113,17 @@ def test_current_tariff_persists_across_sessions(client_a, user_a, make_token, t
     assert other_session.get("/api/v1/users/me").json()["current_tariff"]["code"] == "G12"
 
 
-def test_profile_tariff_without_prices_in_database(client_a, db, tariffs):
-    if db.query(Tariff).filter(Tariff.name.ilike("G13")).first():
-        pytest.skip("Baza zawiera taryfę G13.")
-
-    client_a.put("/api/v1/users/me/profile", json=profile_payload("G13"))
+def test_profile_tariff_without_rates_has_no_current_tariff(client_a, user_a, db, rates):
+    db.add(UserProfile(user_id=user_a.id, **profile_payload("G13")))
+    db.commit()
 
     me = client_a.get("/api/v1/users/me").json()
+
     assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G13"}
     assert me["current_tariff"] is None
 
 
-def test_outdated_profile_needs_update(client_a, user_a, db, tariffs):
+def test_outdated_profile_needs_update(client_a, user_a, db, rates):
     outdated = profile_payload("G12")
     del outdated["base_info"]["billing_period_start_date"]
     db.add(UserProfile(user_id=user_a.id, **outdated))
@@ -132,6 +132,7 @@ def test_outdated_profile_needs_update(client_a, user_a, db, tariffs):
     me = client_a.get("/api/v1/users/me").json()
 
     assert me["profile"] == {"exists": True, "needs_update": True, "tariff_type": "G12"}
+    assert me["current_tariff"] is None
     response = client_a.get("/api/v1/users/me/profile")
     assert response.status_code == 409
     detail = response.json()["detail"]
@@ -140,17 +141,19 @@ def test_outdated_profile_needs_update(client_a, user_a, db, tariffs):
     assert detail["profile"]["base_info"]["postal_code"] == outdated["base_info"]["postal_code"]
 
 
-def test_dynamic_profile_tariff_points_to_dynamic_tariff(client_a, tariffs):
-    client_a.put("/api/v1/users/me/profile", json=profile_payload("dynamic"))
+def test_dynamic_profile_points_to_dynamic_offer_of_its_group(client_a, rates):
+    assert client_a.put("/api/v1/users/me/profile", json=profile_payload("G12", dynamic=True)).status_code == 200
 
     me = client_a.get("/api/v1/users/me").json()
 
-    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "dynamic"}
-    assert me["current_tariff"]["type"] == Tariff.TYPE_DYNAMIC
-    assert me["current_tariff"]["profile_tariff_type"] == "dynamic"
+    assert me["profile"]["tariff_type"] == "G12"
+    tariff = me["current_tariff"]
+    assert (tariff["code"], tariff["label"], tariff["dynamic"]) == ("G12-dynamic", "G12 z ceną dynamiczną", True)
+    assert (tariff["tariff_code"], tariff["distribution_group"]) == ("dynamic", "G12")
+    assert tariff["name"] == "Prąd z ceną dynamiczną"
 
 
-def test_profile_is_isolated_between_users(client_a, client_b, tariffs):
+def test_profile_is_isolated_between_users(client_a, client_b, rates):
     client_a.put("/api/v1/users/me/profile", json=profile_payload("G12"))
 
     assert client_b.get("/api/v1/users/me/profile").status_code == 404
@@ -159,8 +162,8 @@ def test_profile_is_isolated_between_users(client_a, client_b, tariffs):
     assert me_b["current_tariff"] is None
 
 
-def test_tariff_cannot_be_changed_outside_profile(client_a, tariffs):
-    assert client_a.patch("/api/v1/users/me/tariff", json={"tariff_id": tariffs["G11"].id}).status_code in (404, 405)
+def test_tariff_cannot_be_changed_outside_profile(client_a, rates):
+    assert client_a.patch("/api/v1/users/me/tariff", json={"tariff_id": 1}).status_code in (404, 405)
 
 
 def test_old_profile_endpoints_are_removed(client_a):

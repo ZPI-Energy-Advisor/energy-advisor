@@ -1,15 +1,17 @@
-from pydantic import BaseModel, ConfigDict, Field
+from datetime import date
 
-from app.schemas.other import TariffTypeEnum
-
+from pydantic import BaseModel
 
 
 class TariffOut(BaseModel):
-    id: int
-    code: str = Field(validation_alias="name")
-    type: str
-    description: str | None = None
-    profile_tariff_type: TariffTypeEnum | None = None
+    """Taryfa z profilu w nowym cenniku; `code` to klucz taryfy w kosztach plików (np. G12 albo G12-dynamic)."""
 
-    model_config = ConfigDict(from_attributes=True)
-
+    code: str
+    label: str
+    name: str | None = None
+    operator: str
+    tariff_code: str
+    distribution_group: str
+    dynamic: bool
+    valid_from: date
+    valid_to: date

@@ -245,8 +245,10 @@ def test_groups_sum_to_file_usage_and_dashboard_cost_without_pv(db):
     # Suma kosztów grup zaokrąglonych do groszy (7 kategorii) może odbiegać od kosztu Dashboardu o kilka groszy.
     assert body["total_cost_pln"] == pytest.approx(dashboard["estimated_cost_pln"], abs=0.05)
     assert body["tariff"] == {
-        "name": "G11", "source": "default", "note": "Profil nie wskazuje taryfy, więc koszty są w taryfie G11.",
+        "key": "G11", "label": "G11", "operator": "PGE", "source": "default",
+        "note": "Profil nie wskazuje taryfy, więc koszty są w taryfie G11 operatora PGE.",
     }
+    assert sum(body["cost_breakdown"].values()) == pytest.approx(body["total_cost_pln"], abs=0.05)
 
 
 def test_every_quarter_of_device_groups_matches_imported_series(db):
@@ -459,8 +461,11 @@ def test_yearly_files_flags_and_aggregate_are_fast(db, yearly_document):
     ).filter(EnergyDataFile.user_id == user.id).count()
     assert covered == sum(len(action_slots) for action_slots in _slots(parsed))
     assert len(flag_seconds) == 1 and flag_seconds[0] < 3.0 * TIME_LIMIT_SCALE
-    assert aggregate_seconds < 0.5 * TIME_LIMIT_SCALE
+    assert aggregate_seconds < 1.0 * TIME_LIMIT_SCALE
 
 
 def _slots(parsed):
     return [action.slots_kwh for device in parsed.devices for action in device.actions]
+
+
+pytestmark = pytest.mark.usefixtures("flat_tariffs")

@@ -96,19 +96,6 @@ class DynamicPriceRepository:
             .one()
         )
 
-    def get_range_stats(self, source: str, date_from: date, date_to: date) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
-        return (
-            self._in_range(
-                self.db.query(
-                            func.avg(RcePriceObservation.price_pln_mwh),
-                            func.min(RcePriceObservation.price_pln_mwh),
-                            func.max(RcePriceObservation.price_pln_mwh),
-                ),
-                source, date_from, date_to,
-            )
-            .one()
-        )
-
     def get_quarter_hour_prices(self, source: str, date_from: date, date_to: date) -> list[tuple[datetime, Decimal, int]]:
         return (
             self._in_range(

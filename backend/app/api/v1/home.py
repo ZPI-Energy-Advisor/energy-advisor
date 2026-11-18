@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status
 
 from app.api.v1.deps import (
@@ -6,9 +8,11 @@ from app.api.v1.deps import (
     get_home_owner,
     get_home_service,
     get_home_state_service,
+    get_plan_run_service,
     require_hub_api_key,
 )
 from app.models.User import User
+from app.schemas.plan_run import PlanRunOut, PlanRunRequest
 from app.schemas.smart_home import (
     CommandResult,
     DeviceCommand,
@@ -23,6 +27,7 @@ from app.services.home_control_service import HomeControlService
 from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
 from app.services.home_state_service import HomeStateService
+from app.services.plan_run_service import PlanRunService
 
 
 router = APIRouter(
@@ -93,6 +98,43 @@ def update_home_clock(
 ):
     """Start, pauza i tempo zegara symulacji. `day` zaczyna symulację od północy tej doby (tylko przy pauzie)."""
     return service.update_clock(owner, update)
+
+
+@router.post("/plan-runs", status_code=status.HTTP_201_CREATED, response_model=PlanRunOut)
+def start_plan_run(
+    request: PlanRunRequest,
+    owner: User = Depends(get_home_owner),
+    service: PlanRunService = Depends(get_plan_run_service),
+):
+    """Uruchamia zatwierdzony plan dnia w symulacji od północy jego doby (ZP-113).
+
+    Hub dostaje jednym żądaniem pozycje planu i historię dnia referencyjnego (produkcja PV, pompa ciepła
+    albo bojler odznaczone w planie), a zegar rusza. Urządzenia stałe startują wyłączone. Ponowne
+    uruchomienie zaczyna dobę od nowa.
+    """
+    return service.start(owner, request.plan_id)
+
+
+@router.get("/plan-runs/latest", response_model=PlanRunOut | None)
+def get_latest_plan_run(
+    owner: User = Depends(get_home_owner),
+    service: PlanRunService = Depends(get_plan_run_service),
+):
+    """Ostatni przebieg planu: status, energia urządzeń z planu (plan i symulacja) oraz awarie urządzeń."""
+    return service.latest(owner)
+
+
+@router.post("/plan-runs/{run_id}/end", response_model=PlanRunOut)
+def end_plan_run(
+    run_id: UUID,
+    owner: User = Depends(get_home_owner),
+    service: PlanRunService = Depends(get_plan_run_service),
+):
+    """„Zakończ”: kasuje zaplanowane komendy przebiegu (plan i historię), zatrzymuje zegar i zamyka przebieg.
+
+    Zakończony przebieg zostaje bez zmian.
+    """
+    return service.end(owner, run_id)
 
 
 @router.post(

@@ -9,6 +9,7 @@ import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { randomDay, rangeText, weekdayName } from "../utils/dateRange";
 import { SOURCE_TYPE_DEVICES, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
 import { daySummaries, fixedDevices, flexibleActions } from "../utils/historicalSchedule";
+import { describeBreakdown } from "../utils/tariffs";
 import {
   choiceLabel,
   dynamicAllowed,
@@ -530,6 +531,12 @@ function SchedulePage() {
                     </>
                   )}
                 </p>
+                {shown.price_breakdown && (
+                  <p>
+                    Średnia pełna cena kWh z sieci w okresie:{" "}
+                    {describeBreakdown(shown.price_breakdown, (value) => `${value.toFixed(3).replace(".", ",")} zł`)}.
+                  </p>
+                )}
                 <details>
                   <summary className="cursor-pointer text-gray-600 hover:text-gray-900">Jak liczymy?</summary>
                   <ul className="mt-2 list-disc pl-5 space-y-1">

@@ -431,7 +431,7 @@ def test_put_clock_changes_only_given_fields(client):
 
     assert response.status_code == 200
     assert response.json() == {
-        "sim_time": "2026-10-19T12:00:00+02:00", "running": False, "speed": 60,
+        "sim_time": "2026-10-19T12:00:00+02:00", "running": False, "speed": 60, "stop_at": None,
         "simulation_id": client.app.state.supervisor.clock.simulation_id,
     }
     assert client.get("/home/clock").json() == response.json()
@@ -460,6 +460,48 @@ def test_invalid_clock_update_is_rejected(client, body):
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
     assert client.get("/home/clock").json() == before
+
+
+def test_same_sim_time_without_restart_keeps_simulation(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+    _run_profile(client, [0.01], start_at="2026-10-19T12:15:00+02:00")
+
+    _set_clock(client)  # Ponowiony PUT: niczego nie zmienia.
+
+    assert client.get("/home/clock").json()["simulation_id"] == simulation_id
+    _tick(client, 2)  # device_started zaplanowanego startu przychodzi z kolejnym tickiem.
+    assert len(_events(client, "dev_lt_01", "device_started")) == 1
+
+
+def test_restart_with_same_sim_time_starts_new_simulation_and_clears_scheduled(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+    _run_profile(client, [0.01], start_at="2026-10-19T12:15:00+02:00")
+
+    response = client.put("/home/clock", json={"sim_time": "2026-10-19T12:00:00+02:00", "restart": True})
+
+    assert response.status_code == 200
+    assert response.json()["simulation_id"] != simulation_id
+    _tick(client, 2)
+    assert _events(client, "dev_lt_01", "device_started") == []
+
+
+def test_restart_requires_sim_time(client):
+    response = client.put("/home/clock", json={"restart": True})
+
+    assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+
+
+def test_restart_is_rejected_while_clock_runs(client):
+    _set_clock(client)
+    client.put("/home/clock", json={"running": True, "speed": 1})
+
+    response = client.put("/home/clock", json={"sim_time": "2026-10-19T12:00:00+02:00", "restart": True})
+
+    assert (response.status_code, response.json()["code"]) == (409, "clock_running")
 
 
 def test_sim_time_cannot_be_changed_while_clock_runs(client):
@@ -997,11 +1039,11 @@ def test_device_started_carries_command_id(client):
     _tick(client, 13)
 
     first, second = _events(client, "dev_wm_01", "device_started")
-    assert first["data"] == {"program_id": "cotton_60", "command_id": now}
-    assert second["data"] == {"program_id": "cotton_60", "command_id": later}
+    assert first["data"] == {"program_id": "cotton_60", "command_id": now, "ref": None}
+    assert second["data"] == {"program_id": "cotton_60", "command_id": later, "ref": None}
     assert second["sim_time"] == "2026-10-19T15:00:00+02:00"
     started_lamp, = _events(client, "dev_lt_01", "device_started")
-    assert started_lamp["data"] == {"program_id": None, "command_id": lamp}
+    assert started_lamp["data"] == {"program_id": None, "command_id": lamp, "ref": None}
 
 
 def test_events_have_unique_ids_and_simulation_of_their_run(client):
@@ -1051,3 +1093,292 @@ def test_stopping_hub_sends_waiting_events(settings, backend):
         unavailable["down"] = False
 
     assert [event["type"] for event in backend.events] == ["device_started", "energy_report"]
+
+
+# Przebieg z własnym profilem (run_profile)
+
+
+def _run_profile(client: TestClient, profile: list[float], start_at: str | None = None, ref: str = "act_1",
+                 device_id: str = "dev_lt_01"):
+    body = {"command": "run_profile", "profile_kwh": profile, "ref": ref}
+    if start_at:
+        body["start_at"] = start_at
+    return client.post(f"/home/devices/{device_id}/commands", json=body)
+
+
+def test_run_profile_now_reaches_device_and_shows_in_status(client):
+    _put(client, [_lamp()])
+    _set_clock(client)
+
+    response = _run_profile(client, [0.01, 0.02])
+
+    assert (response.status_code, response.json()["status"], response.json()["state"]) == (202, "accepted", "running")
+    status = _device_status(client, "dev_lt_01")
+    assert status["power_kw"] == pytest.approx(0.04)
+    assert status["run"] == {
+        "ref": "act_1",
+        "started_at": "2026-10-19T12:00:00+02:00",
+        "ends_at": "2026-10-19T12:30:00+02:00",
+    }
+
+
+def test_scheduled_runs_follow_each_other_back_to_back(client):
+    # Dwie sąsiednie akcje jednego urządzenia: druga zaczyna się dokładnie, gdy kończy się pierwsza.
+    _put(client, [_lamp()])
+    _set_clock(client)
+    first = _run_profile(client, [0.01, 0.01], start_at="2026-10-19T12:30:00+02:00", ref="act_1")
+    second = _run_profile(client, [0.02], start_at="2026-10-19T13:00:00+02:00", ref="act_2")
+    assert [first.json()["status"], second.json()["status"]] == ["scheduled", "scheduled"]
+
+    _tick(client, 5)
+
+    assert _device_status(client, "dev_lt_01")["state"] == "off"
+    started = _events(client, "dev_lt_01", "device_started")
+    finished = _events(client, "dev_lt_01", "device_finished")
+    assert [(event["sim_time"], event["data"]["ref"]) for event in started] == [
+        ("2026-10-19T12:30:00+02:00", "act_1"), ("2026-10-19T13:00:00+02:00", "act_2"),
+    ]
+    assert [event["data"]["energy_kwh"] for event in finished] == pytest.approx([0.02, 0.02])
+    reports = sum(event["data"]["energy_kwh"] for event in _energy_reports(client, "dev_lt_01"))
+    assert reports == pytest.approx(0.04)
+
+
+def test_scheduled_run_on_busy_device_is_reported_as_device_error(client):
+    _put(client, [_washing_machine()])
+    _set_clock(client)
+    _start_program(client)
+    _run_profile(client, [0.1], start_at="2026-10-19T12:15:00+02:00", device_id="dev_wm_01")
+
+    _tick(client)
+
+    error, = _events(client, "dev_wm_01", "device_error")
+    assert error["data"]["code"] == "invalid_state"
+
+
+@pytest.mark.parametrize("body", [
+    {"command": "run_profile"},
+    {"command": "run_profile", "profile_kwh": []},
+    {"command": "run_profile", "profile_kwh": [0.1] * (7 * 96 + 1)},
+    {"command": "run_profile", "profile_kwh": [0.1], "program_id": "cotton_60"},
+    {"command": "run_profile", "profile_kwh": [0.1], "ref": ""},
+    {"command": "on", "profile_kwh": [0.1]},
+    {"command": "on", "start_at": "2026-10-19T13:00:00+02:00"},
+])
+def test_invalid_run_profile_is_rejected(client, body):
+    _put(client, [_lamp()])
+
+    response = client.post("/home/devices/dev_lt_01/commands", json=body)
+
+    assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+
+
+# Komendy wsadowe: POST /home/commands
+
+
+def _send_batch(client: TestClient, commands: list[dict]):
+    return client.post("/home/commands", json={"commands": commands})
+
+
+def _statuses(response) -> list[str]:
+    return [result["status"] for result in response.json()["results"]]
+
+
+def test_batch_returns_result_for_each_command_in_request_order(client):
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+
+    response = _send_batch(client, [
+        {"device_id": "dev_wm_01", "command": "start_program", "program_id": "cotton_60",
+         "start_at": "2026-10-19T13:00:00+02:00"},
+        {"device_id": "dev_lt_01", "command": "on"},
+    ])
+
+    assert response.status_code == 200
+    scheduled, accepted = response.json()["results"]
+    assert scheduled["device_id"] == "dev_wm_01" and scheduled["status"] == "scheduled"
+    assert accepted["device_id"] == "dev_lt_01" and accepted["status"] == "accepted"
+    assert scheduled["command_id"].startswith("cmd_") and accepted["command_id"] != scheduled["command_id"]
+    assert _device_status(client, "dev_lt_01")["state"] == "running"
+
+
+def test_rejected_command_in_batch_does_not_block_others(client):
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+
+    response = _send_batch(client, [
+        {"device_id": "dev_missing", "command": "on"},
+        {"device_id": "dev_wm_01", "command": "start_program", "program_id": "no_such",
+         "start_at": "2026-10-19T13:00:00+02:00"},
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01],
+         "start_at": "2026-10-19T11:45:00+02:00"},
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01],
+         "start_at": "2026-10-19T12:15:00+02:00"},
+    ])
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert [(result["status"], result.get("code")) for result in results] == [
+        ("rejected", "device_not_found"),
+        ("rejected", "program_not_found"),
+        ("rejected", "start_at_in_past"),
+        ("scheduled", None),
+    ]
+    assert all(result["detail"] for result in results[:3])
+    _tick(client, 2)  # Zdarzenie startu z kwadransa 12:15 wraca w odpowiedzi na kolejny tick.
+    assert len(_events(client, "dev_lt_01", "device_started")) == 1
+
+
+def test_command_refused_by_device_is_rejected_and_others_are_accepted(client):
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+    _start_program(client)
+
+    response = _send_batch(client, [
+        {"device_id": "dev_wm_01", "command": "run_profile", "profile_kwh": [0.1]},
+        {"device_id": "dev_lt_01", "command": "on"},
+    ])
+
+    refused, accepted = response.json()["results"]
+    assert (refused["status"], refused["code"]) == ("rejected", "invalid_state")
+    assert accepted["status"] == "accepted"
+
+
+@pytest.mark.parametrize(("commands", "state"), [
+    (["on", "off"], "off"),
+    (["off", "on"], "running"),
+])
+def test_commands_for_one_device_run_in_request_order(client, commands, state):
+    _put(client, [_lamp()])
+    _set_clock(client)
+
+    response = _send_batch(client, [{"device_id": "dev_lt_01", "command": command} for command in commands])
+
+    assert _statuses(response) == ["accepted", "accepted"]
+    assert _device_status(client, "dev_lt_01")["state"] == state
+
+
+@pytest.mark.parametrize("body", [
+    {"commands": []},
+    {"commands": [{"device_id": "dev_lt_01", "command": "on"}] * 1001},
+    {"commands": [
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01],
+         "start_at": "2026-10-19T12:15:00+02:00"},
+        {"device_id": "dev_lt_01", "command": "on", "start_at": "2026-10-19T12:15:00+02:00"},
+    ]},
+])
+def test_invalid_batch_is_rejected_whole_and_nothing_is_scheduled(client, body):
+    _put(client, [_lamp()])
+    _set_clock(client)
+
+    response = client.post("/home/commands", json=body)
+
+    assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+    _tick(client, 2)
+    assert _events(client, "dev_lt_01", "device_started") == []
+    assert _device_status(client, "dev_lt_01")["state"] == "off"
+
+
+def test_batch_without_device_id_is_invalid_request(client):
+    response = _send_batch(client, [{"command": "on"}])
+
+    assert (response.status_code, response.json()["code"]) == (400, "invalid_request")
+
+
+def test_plan_with_two_actions_ends_with_planned_energy(client):
+    # Plan doby jak z backendu: program pralki i przebieg z przerwą (np. ładowanie auta w dwóch tanich kwadransach).
+    _put(client, [_washing_machine(), _lamp("dev_ev_01", power=3.7)])
+    _set_clock(client, "2026-10-19T00:00:00+02:00")
+    program = _washing_machine()["programs"][0]["profile_kwh"]
+    charging = [0.9, 0.0, 0.0, 0.925]
+
+    response = _send_batch(client, [
+        {"device_id": "dev_wm_01", "command": "start_program", "program_id": "cotton_60",
+         "start_at": "2026-10-19T02:00:00+02:00"},
+        {"device_id": "dev_ev_01", "command": "run_profile", "profile_kwh": charging,
+         "start_at": "2026-10-19T01:00:00+02:00"},
+    ])
+    assert _statuses(response) == ["scheduled", "scheduled"]
+
+    _tick(client, 4 * 6)
+
+    for device_id, planned in (("dev_wm_01", sum(program)), ("dev_ev_01", sum(charging))):
+        reported = sum(event["data"]["energy_kwh"] for event in _energy_reports(client, device_id))
+        assert reported == pytest.approx(planned, rel=0.01)
+        assert _device_status(client, device_id)["state"] in ("idle", "off")
+
+
+def test_cancel_scheduled_drops_queue_and_keeps_what_already_runs(client):
+    # „Zakończ” planu: reszta planu nie wystartuje, a trwający przebieg i symulacja zostają.
+    _put(client, [_washing_machine(), _lamp()])
+    _set_clock(client)
+    simulation_id = client.get("/home/clock").json()["simulation_id"]
+    _send_batch(client, [
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01] * 8},
+        {"device_id": "dev_wm_01", "command": "start_program", "program_id": "cotton_60",
+         "start_at": "2026-10-19T12:15:00+02:00"},
+        {"device_id": "dev_lt_01", "command": "run_profile", "profile_kwh": [0.01],
+         "start_at": "2026-10-19T14:00:00+02:00"},
+    ])
+
+    response = client.delete("/home/commands")
+
+    assert (response.status_code, response.json()) == (200, {"cancelled": 2})
+    _tick(client, 2)
+    assert _events(client, "dev_wm_01", "device_started") == []
+    assert _device_status(client, "dev_lt_01")["state"] == "running"
+    assert client.get("/home/clock").json()["simulation_id"] == simulation_id
+    assert client.delete("/home/commands").json() == {"cancelled": 0}
+
+
+# Zatrzymanie zegara o zadanej chwili: stop_at
+
+
+def test_clock_stops_itself_at_stop_at(client):
+    _set_clock(client)
+
+    response = client.put("/home/clock", json={"running": True, "stop_at": "2026-10-19T12:30:00+02:00"})
+
+    assert response.json()["stop_at"] == "2026-10-19T12:30:00+02:00"
+    client.put("/home/clock", json={"running": False})  # Dalej ręcznymi tickami; stop_at działa też tak.
+    client.put("/home/clock", json={"running": True})
+    _tick(client)
+    assert client.get("/home/clock").json()["running"] is True
+    _tick(client)
+    clock = client.get("/home/clock").json()
+    assert (clock["sim_time"], clock["running"], clock["stop_at"]) == ("2026-10-19T12:30:00+02:00", False, None)
+
+
+def test_running_clock_stops_exactly_at_stop_at(client):
+    _set_clock(client)
+
+    client.put("/home/clock", json={"running": True, "speed": 36000, "stop_at": "2026-10-19T13:00:00+02:00"})
+
+    _wait_until(lambda: client.get("/home/clock").json()["running"] is False)
+    assert client.get("/home/clock").json()["sim_time"] == "2026-10-19T13:00:00+02:00"
+
+
+def test_new_day_and_null_clear_stop_at(client):
+    _set_clock(client)
+    client.put("/home/clock", json={"stop_at": "2026-10-19T13:00:00+02:00"})
+
+    cleared = client.put("/home/clock", json={"stop_at": None}).json()
+    client.put("/home/clock", json={"stop_at": "2026-10-19T13:00:00+02:00"})
+    unchanged = client.put("/home/clock", json={"speed": 60}).json()
+    new_day = client.put("/home/clock", json={"sim_time": "2026-10-19T12:00:00+02:00", "restart": True}).json()
+
+    assert (cleared["stop_at"], unchanged["stop_at"], new_day["stop_at"]) == (None, "2026-10-19T13:00:00+02:00", None)
+
+
+@pytest.mark.parametrize(("body", "code"), [
+    ({"stop_at": "2026-10-19T12:00:00+02:00"}, "stop_at_in_past"),
+    ({"sim_time": "2026-10-19T14:00:00+02:00", "stop_at": "2026-10-19T13:00:00+02:00"}, "stop_at_in_past"),
+    ({"stop_at": "2026-10-19T12:10:00+02:00"}, "validation_error"),
+])
+def test_invalid_stop_at_is_rejected_and_changes_nothing(client, body, code):
+    _set_clock(client)
+    before = client.get("/home/clock").json()
+
+    response = client.put("/home/clock", json=body)
+
+    assert (response.status_code, response.json()["code"]) == (422, code)
+    assert client.get("/home/clock").json() == before

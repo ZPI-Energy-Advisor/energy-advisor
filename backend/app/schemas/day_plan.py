@@ -18,6 +18,14 @@ class PlanItemOut(ScheduledActionOut):
     """Przydział akcji: start bazowy (`original_*`, początek przedziału) i start z planu (`start`, `end`)."""
 
     kind: Literal["program", "ev", "heat_pump", "water_heater"]
+    # Do wykonania planu w symulacji (ZP-113): program urządzenia (`kind == "program"`) i energia w kolejnych
+    # kwadransach od `start`, z zerami w przerwach. None w planach ułożonych przed ZP-113: taki plan trzeba
+    # ułożyć ponownie, żeby uruchomić go w symulacji.
+    program_id: str | None = None
+    profile_kwh: list[float] | None = None
+    # To samo bez planu, od `original_start`: podstawa porównania rachunku przed i po planie. Różni się od
+    # `profile_kwh` nie tylko startem: bojler na termostacie i auto od podłączenia zużywają energię inaczej.
+    original_profile_kwh: list[float] | None = None
 
 
 class WaterTemperatureOut(BaseModel):

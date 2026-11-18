@@ -183,7 +183,7 @@ def test_requires_valid_access_token(authorization):
 
 def test_get_file_data(db):
     user = _create_user(db)
-    energy_file = _create_file(db, user)
+    energy_file = _create_file_with_series(db, user)
 
     response = client.get(f"/api/v1/energy-files/{energy_file.id}/data", headers=_headers(user))
 
@@ -191,7 +191,22 @@ def test_get_file_data(db):
     body = response.json()
     assert body["status"] == "success"
     assert body["file"]["id"] == str(energy_file.id)
-    assert body["results"] == SAMPLE_RESULTS
+    assert body["results"]["total_usage_kwh"] == 72.0
+    assert body["results"]["tariffs"]["G11"]["estimated_cost_pln"] == 72.0
+    assert body["results"]["pricing"] == {
+        "operator": "PGE", "from_profile": False, "profile_tariff": "G11",
+        "tariff_key": "G11", "tariff_label": "G11", "note": None, "all_tariffs": True,
+    }
+
+
+def test_file_without_usage_series_has_to_be_uploaded_again(db):
+    user = _create_user(db)
+    energy_file = _create_file(db, user)
+
+    response = client.get(f"/api/v1/energy-files/{energy_file.id}/data", headers=_headers(user))
+
+    assert response.status_code == 409
+    assert "Wgraj go ponownie" in response.json()["detail"]
 
 
 def test_get_data_of_nonexistent_file(db):
@@ -898,7 +913,7 @@ REPORT = {
 def test_upload_returns_import_report_and_file_data_keeps_it(db):
     user = _create_user(db)
 
-    body = _upload(user, _StubCalculationService(result={**SAMPLE_RESULTS, "import_report": REPORT})).json()
+    body = _upload(user, _StubCalculationService(result={**SAMPLE_RESULTS_WITH_USAGE, "import_report": REPORT})).json()
 
     assert body["import_report"] == REPORT
     assert "import_report" not in body["summary"]
@@ -1182,3 +1197,70 @@ def test_all_device_files_data_without_device_files(db):
     assert response.status_code == 409
     assert response.json()["detail"] == "Nie masz jeszcze poprawnie zaimportowanych plików urządzeń."
     assert _list(user)["devices_aggregate"] is None
+
+
+pytestmark = pytest.mark.usefixtures("flat_tariffs")
+
+
+def _save_profile(db, user, tariff_type, operator="PGE"):
+    from app.models.UserProfile import UserProfile
+
+    payload = {
+        "base_info": {
+            "type_of_property": "apartment", "year_of_construction": 2000, "heating_area_m2": 60,
+            "number_of_residents": 2, "town": "Wrocław", "postal_code": "50-370", "distribution_operator": operator,
+            "phase_type": "1_phase", "contracted_power_kw": 5, "billing_cycle": 2,
+            "billing_period_start_date": "2024-11-01",
+        },
+        "consumption_and_tariff": {"tariff_type": tariff_type, "dynamic_price": False},
+        "pv_config": {"mode": "none"},
+    }
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
+    if profile is None:
+        db.add(UserProfile(user_id=user.id, **payload))
+    else:
+        profile.base_info, profile.consumption_and_tariff = payload["base_info"], payload["consumption_and_tariff"]
+    db.commit()
+
+
+def test_profile_change_changes_costs_of_already_uploaded_file(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    before = _get_data(user, energy_file).json()["results"]
+    _save_profile(db, user, "G11", operator="TAURON")
+    with_profile = _get_data(user, energy_file).json()["results"]
+    _save_profile(db, user, "G13", operator="TAURON")
+    without_rates = _get_data(user, energy_file).json()["results"]
+
+    assert before["pricing"]["from_profile"] is False and before["tariffs"]["G11"]["is_profile"] is False
+    assert with_profile["pricing"]["operator"] == "TAURON" and with_profile["pricing"]["from_profile"] is True
+    assert with_profile["tariffs"]["G11"]["is_profile"] is True
+    assert without_rates["pricing"]["tariff_key"] == "G11"
+    assert "nie ma w cenniku stawek taryfy G13" in without_rates["pricing"]["note"]
+    assert without_rates["tariffs"]["G11"]["is_profile"] is False
+
+
+def test_aggregate_costs_are_priced_at_read_time(db):
+    user = _create_user(db)
+    _create_series_file(db, user, _days("2024-06-01", 2, 0.25), name="a.csv", uploaded_at=T0)
+
+    results = _all_data(user).json()["results"]
+
+    assert results["total_usage_kwh"] == 48.0
+    assert results["tariffs"]["G11"]["estimated_cost_pln"] == 48.0
+    assert results["tariffs"]["G11"]["energy_cost_pln"] == 48.0
+    assert results["tariffs"]["G11"]["monthly_fees_pln"] == 0.0
+    assert results["chart_daily"][0]["cost_G11"] == 24.0
+
+
+def test_dashboard_can_ask_only_for_profile_tariff(db):
+    user = _create_user(db)
+    energy_file = _create_file_with_series(db, user)
+
+    profile_only = _get_data(user, energy_file, "?tariffs=profile").json()["results"]
+    everything = _all_data(user, "?tariffs=all").json()["results"]
+
+    assert list(profile_only["tariffs"]) == ["G11"] and profile_only["pricing"]["all_tariffs"] is False
+    assert everything["pricing"]["all_tariffs"] is True
+    assert _get_data(user, energy_file, "?tariffs=some").status_code == 422

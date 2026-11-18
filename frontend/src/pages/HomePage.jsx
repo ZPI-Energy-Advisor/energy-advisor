@@ -4,9 +4,11 @@ import apiClient from "../api/client";
 import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
+import PlanRunCard from "../components/home/PlanRunCard";
 import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
+import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
 
 const NOTICE = "p-3 rounded border text-sm";
@@ -17,6 +19,7 @@ const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
 function HomeLive() {
   const { state, error, isLoading, refresh } = useHomeState();
   const [actionError, setActionError] = useState(null);
+  const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
   const perform = async (request, describeError) => {
@@ -42,6 +45,13 @@ function HomeLive() {
     perform(
       () => apiClient.put("/home/clock", change),
       (err) => getApiErrorMessage(err, "Nie udało się zmienić zegara symulacji."),
+    );
+
+  // Odpowiedź „Zakończ” to już zamknięty przebieg, więc podmieniamy kartę bez kolejnego żądania.
+  const endPlanRun = (run) =>
+    perform(
+      async () => planRun.replace((await apiClient.post(`/home/plan-runs/${run.id}/end`)).data),
+      (err) => getApiErrorMessage(err, "Nie udało się zakończyć przebiegu planu."),
     );
 
   const hubDown = state?.hub_available === false;
@@ -79,6 +89,12 @@ function HomeLive() {
       {state && (
         <>
           <SimulationClock clock={state.clock} disabled={hubDown} onUpdate={updateClock} />
+          {planRun.run && <PlanRunCard run={planRun.run} disabled={hubDown} onEnd={endPlanRun} />}
+          {planRun.error && (
+            <p className={ERROR_NOTICE} role="alert">
+              {planRun.error}
+            </p>
+          )}
           <HomeSummary power={state.power} today={state.today} />
           {!hubDown && <HomeDeviceList devices={state.devices} onCommand={sendCommand} />}
         </>
