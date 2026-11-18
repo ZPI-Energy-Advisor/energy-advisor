@@ -362,6 +362,13 @@ def test_update_config_rejects_invalid_values():
     assert (error.value.status_code, error.value.code) == (422, "validation_error")
 
 
+def test_update_config_rejects_unknown_room():
+    with pytest.raises(DeviceError) as error:
+        _washing_machine().update_config({"room": "attic"})
+
+    assert (error.value.status_code, error.value.code) == (422, "validation_error")
+
+
 def test_device_without_programs_requires_power():
     with pytest.raises(ValueError, match="max_power_kw"):
         _plain_device(power=None)

@@ -40,8 +40,8 @@ class HubDevice(BaseModel):
     device_name: str
     device_type: str
     device_category: str
-    # Z pliku albo domyślne według typu (device_rooms), więc zawsze podane.
-    room: str
+    # Z pliku; HomeService przed wysyłką uzupełnia brak domyślnym (device_rooms), więc hub dostaje je zawsze.
+    room: str | None = None
     max_power_kw: float | None = None
     flexibility: HubFlexibility
     programs: list[HubProgram] = []

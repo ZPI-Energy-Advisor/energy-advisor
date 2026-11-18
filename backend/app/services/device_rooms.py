@@ -1,15 +1,13 @@
 """Pomieszczenie urządzenia dla widoku budynku: z pliku urządzeń (pole `room`) albo domyślne według typu.
 
-W bazie (`device_instances.room`) jest tylko wartość z pliku. Domyślne liczymy przy odczycie (rejestr huba,
-stan domu), więc urządzenia wgrane przed polem `room` też mają pomieszczenie, a zmiana reguł działa od razu.
+W bazie (`device_instances.room`) jest tylko wartość z pliku. Domyślne dopisują serwisy przy odczycie (rejestr huba
+w HomeService, stan domu w HomeStateService), więc urządzenia wgrane przed polem `room` też mają pomieszczenie,
+a zmiana reguł działa od razu.
 """
 
 import re
+from functools import lru_cache
 
-from app.parsers.device_validation import SCHEMA
-
-# Słownik ze schematu pliku urządzeń, jedno źródło dla walidacji i reguł domyślnych.
-ROOMS = tuple(SCHEMA["$defs"]["room"]["enum"])
 OTHER = "other"
 LIGHT_TYPE = "light"
 
@@ -53,6 +51,7 @@ LIGHT_NAME_ROOMS = (
 WORD = re.compile(r"\w+")
 
 
+@lru_cache(maxsize=1024)
 def default_room(device_type: str, device_name: str) -> str:
     """Pomieszczenie urządzenia bez pola `room`: według typu, a oświetlenie według nazwy."""
     if device_type == LIGHT_TYPE:

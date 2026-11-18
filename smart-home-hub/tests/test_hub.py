@@ -345,6 +345,14 @@ def test_command_to_dead_device_returns_502(client):
     assert response.json()["code"] == "device_unreachable"
 
 
+def test_registry_with_unknown_room_is_rejected(client):
+    response = _put(client, [{**_lamp(), "room": "attic"}])
+
+    # Jak nieznana komenda: wartość spoza słownika to niepoprawne żądanie.
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_request"
+
+
 def test_registry_with_duplicate_ids_is_rejected(client):
     response = _put(client, [_lamp(), _lamp()])
 

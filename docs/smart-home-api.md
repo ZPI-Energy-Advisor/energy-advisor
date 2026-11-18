@@ -116,6 +116,7 @@ Bazowy adres: `HUB_URL` (`http://hub:9100` w docker-compose). Wszystkie żądani
 
 Pełny rejestr domu, w tym samym kształcie co `devices` w pliku urządzeń. Backend zawsze podaje `room`:
 pomieszczenie z pliku albo domyślne według typu (ZP-109); hub je przechowuje, a na pracę urządzenia nie wpływa.
+Hub przyjmuje tylko pomieszczenia ze słownika `room` (`docs/devices-file-format.md`), inne odrzuca `400 invalid_request`.
 Semantyka **zastąpienia**:
 
 - nowe `device_id` – hub uruchamia mikroserwis i przydziela port,
@@ -343,7 +344,7 @@ Plik, a nie zmienne środowiskowe, bo listy programów z profilami nie mieszczą
 |---|---|---|
 | `GET /health` | Czy mikroserwis żyje | `200 {"status": "ok", "device_id": "dev_wm_01"}` |
 | `GET /config` | Bieżąca konfiguracja | `200` – obiekt urządzenia jak w `PUT /home/devices` |
-| `PUT /config` | Zmiana `device_name`, `device_category` lub `room` bez restartu | `200` – zapisana konfiguracja; `409 config_requires_restart` dla innych pól |
+| `PUT /config` | Zmiana `device_name`, `device_category` lub `room` bez restartu | `200` – zapisana konfiguracja; `409 config_requires_restart` dla innych pól; `422 validation_error` dla `room` spoza słownika |
 | `GET /status` | Stan urządzenia | `200` – patrz niżej |
 | `POST /on` | Włączenie | `200` – stan; `409 invalid_state`, gdy trwa program |
 | `POST /off` | Wyłączenie, kończy akcję | `200` – stan |

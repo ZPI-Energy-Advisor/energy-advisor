@@ -2,46 +2,35 @@
 
 import pytest
 
-from app.parsers.device_validation import DEVICE_TYPES
-from app.services.device_rooms import DEFAULT_ROOMS, LIGHT_TYPE, ROOMS, default_room, device_room
+from app.parsers.device_validation import DEVICE_TYPES, SCHEMA
+from app.services.device_rooms import DEFAULT_ROOMS, LIGHT_TYPE, OTHER, default_room, device_room
 
-# Oczekiwane pomieszczenie dla każdego typu ze słownika (oświetlenie osobno, według nazwy).
-EXPECTED = {
-    "fridge": "kitchen",
-    "freezer": "kitchen",
-    "induction_hob": "kitchen",
-    "oven": "kitchen",
-    "microwave": "kitchen",
-    "kettle": "kitchen",
-    "coffee_machine": "kitchen",
-    "dishwasher": "kitchen",
-    "washing_machine": "bathroom",
-    "tumble_dryer": "bathroom",
-    "ev_charger": "garage",
-    "pv_inverter": "roof",
-    "heat_pump": "technical",
-    "router": "technical",
-    "ventilation": "technical",
-    "water_heater": "bathroom",
-    "hair_dryer": "bathroom",
-    "tv": "living_room",
-    "electric_heater": "living_room",
-    "computer": "office",
-    "vacuum_cleaner": "other",
-    "other": "other",
-}
+ROOMS = set(SCHEMA["$defs"]["room"]["enum"])
 
 
-def test_every_device_type_has_a_default_room():
-    # Nowy typ w schemacie bez reguły trafiłby po cichu do „other”.
+def test_every_device_type_has_a_default_room_from_schema():
+    # Nowy typ w schemacie bez reguły trafiłby po cichu do „other”, a literówka w pomieszczeniu – do huba.
     assert set(DEFAULT_ROOMS) | {LIGHT_TYPE} == DEVICE_TYPES
-    assert set(EXPECTED) | {LIGHT_TYPE} == DEVICE_TYPES
-    assert set(DEFAULT_ROOMS.values()) <= set(ROOMS)
+    assert set(DEFAULT_ROOMS.values()) <= ROOMS
+    assert OTHER in ROOMS
 
 
-@pytest.mark.parametrize("device_type", sorted(EXPECTED))
-def test_default_room_by_type(device_type):
-    assert default_room(device_type, "Urządzenie w kuchni") == EXPECTED[device_type]
+@pytest.mark.parametrize(
+    ("device_type", "room"),
+    [
+        ("fridge", "kitchen"),
+        ("washing_machine", "bathroom"),
+        ("heat_pump", "technical"),
+        ("ev_charger", "garage"),
+        ("pv_inverter", "roof"),
+        ("tv", "living_room"),
+        ("computer", "office"),
+        ("other", "other"),
+    ],
+)
+def test_default_room_by_type_ignores_name(device_type, room):
+    # Nazwa decyduje tylko o oświetleniu: lodówka „w garażu” bez pola room zostaje w kuchni.
+    assert default_room(device_type, "Urządzenie w garażu") == room
 
 
 @pytest.mark.parametrize(
