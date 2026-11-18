@@ -11,7 +11,9 @@ from app.repositories.energy_data_file_repository import EnergyDataFileRepositor
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.calculation import AnnualConsumption, CalculationDetails, PVDetails, TariffData, UnsupportedTariffInfo
+from app.schemas.calculation import (
+    AnnualConsumption, CalculationDetails, PVDetails, TariffChoice, TariffData, UnsupportedTariffInfo,
+)
 from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import DynamicMarketPriceResolver, PVBalancingEngine
@@ -63,7 +65,8 @@ class CalculationsService:
             )
         self.settlement = settlement or FinancialSettlement()
 
-    def _load_inputs(self, user_id: UUID, file_id: UUID, readings=None):
+    def _load_inputs(self, user_id: UUID, file_id: UUID, readings=None, tariff: TariffChoice | None = None):
+        """`tariff`: grupa i umowa dynamiczna zamiast tych z profilu (optymalizacja z wyborem taryfy)."""
         profile = self.user_repository.get_profile(user_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
@@ -90,9 +93,10 @@ class CalculationsService:
             ) from exc
 
         base_info = profile_data.base_info
+        tariff_type, dynamic_price = (tariff or TariffChoice()).resolve(profile_data)
         tariff_data = TariffData(
-            tariff_type=profile_data.consumption_and_tariff.tariff_type,
-            dynamic_price=profile_data.consumption_and_tariff.dynamic_price,
+            tariff_type=tariff_type,
+            dynamic_price=dynamic_price,
             billing_cycle=base_info.billing_cycle,
             billing_period_start_date=base_info.billing_period_start_date,
             distribution_operator=base_info.distribution_operator,
@@ -130,11 +134,13 @@ class CalculationsService:
         )
 
     def perform_tariff_calculations(
-        self, user_id: UUID, file_id: UUID, readings=None, selected_only: bool = False
+        self, user_id: UUID, file_id: UUID, readings=None, selected_only: bool = False,
+        tariff: TariffChoice | None = None,
     ) -> CalculationDetails:
         """Rachunki dla pliku; `readings` zastępuje odczyty z bazy (np. zużycie po przesunięciu akcji),
-        `selected_only` liczy tylko taryfę z profilu (grupa albo grupa z ceną dynamiczną)."""
-        profile_data, tariff_data, readings = self._load_inputs(user_id, file_id, readings)
+        `selected_only` liczy tylko wybraną taryfę (grupa albo grupa z ceną dynamiczną): z profilu albo
+        z `tariff` (wybór z ekranu optymalizacji)."""
+        profile_data, tariff_data, readings = self._load_inputs(user_id, file_id, readings, tariff)
         operator = tariff_data.distribution_operator
         file_first = min(reading.measured_at for reading in readings).date()
         file_last = max(reading.measured_at for reading in readings).date()
@@ -279,10 +285,11 @@ class CalculationsService:
                 logger.warning("Skipping tariff %s for user %s: %s", tariff_name, user_id, exc)
 
         if not calculations and not dynamic_calculations:
+            # Powody pominięcia (np. cena dynamiczna przy net-meteringu) idą do komunikatu, inaczej zostaje sam ogólnik.
+            reasons = [f"{name}: {error}" for name, error in calculation_errors.items()] + list(tariff_notes.values())
             raise HTTPException(
                 status_code=409,
-                detail="Brak kompletnych danych taryfowych dla tego pliku. "
-                + " ".join(f"{name}: {error}" for name, error in calculation_errors.items()),
+                detail=" ".join(["Brak kompletnych danych taryfowych dla tego pliku.", *reasons]),
             )
         selected_group = base_details.tariff_data.tariff_type.value
         base_details.tariff_calculations = calculations

@@ -42,6 +42,10 @@ class ScheduleResponse(BaseModel):
     date_to: date
     # Taryfa, według której liczone są ceny kwadransów (operator, grupa, umowa dynamiczna).
     pricing: str = ""
+    # Policzona taryfa (z profilu albo wybrana na ekranie) i czy profil ma PV: ekran wyjaśnia wynik G11.
+    tariff_group: str | None = None
+    tariff_dynamic: bool = False
+    prosumer: bool = False
     # Średnia cena kWh z sieci w okresie w częściach: energia, dystrybucja, opłaty za kWh i VAT (zł/kWh).
     price_breakdown: PriceBreakdownOut | None = None
     cost_before: float
