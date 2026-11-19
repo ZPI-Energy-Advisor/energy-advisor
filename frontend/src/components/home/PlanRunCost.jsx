@@ -1,4 +1,4 @@
-import { formatKwh, formatNumber, formatPln, formatSimTime } from "../../utils/home";
+import { formatKwh, formatNumber, formatPln, formatSimTime, periodLabel } from "../../utils/home";
 
 const DEVIATION_LABELS = {
   rejected: "Odrzucona komenda",
@@ -66,13 +66,14 @@ function Fact({ label, children }) {
 // Rachunek przed i po planie (ZP-114) po zakończeniu przebiegu: urządzenia z planu bez planu (start bazowy
 // z planu) i z planem (zmierzone w symulacji), tymi samymi cenami. Urządzenia stałe i PV są poza oszczędnością:
 // na wierzchu tylko ich sumy, a szczegóły i odchylenia pod „Więcej”.
-function PlanRunCost({ cost }) {
+function PlanRunCost({ cost, horizonStart = null }) {
   const percent = cost.saving_percent == null ? null : `${formatNumber(cost.saving_percent, 1)}% kosztu bez planu`;
   const hasDetails = cost.manual.length > 0 || cost.pv || cost.deviations.length > 0;
+  const outsideHouse = cost.manual.length > 0 || cost.pv;
   return (
     <section className="mt-4" aria-label="Rachunek przed i po">
-      <div className="flex items-center gap-2">
-        <h4 className="text-sm font-semibold text-gray-900">Rachunek: bez planu i z planem</h4>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <h4 className="text-sm font-semibold text-gray-900">Koszt zaplanowanych urządzeń</h4>
         {!cost.complete && (
           <span
             className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"
@@ -81,7 +82,15 @@ function PlanRunCost({ cost }) {
             niepełny
           </span>
         )}
+        {horizonStart && (
+          <p className="ml-auto text-xs text-gray-500 tabular-nums">{periodLabel({ day_start: horizonStart, until: cost.until })}</p>
+        )}
       </div>
+
+      <p className="mt-1 text-xs text-gray-600">
+        Liczymy tylko te urządzenia: pracę o zwykłych godzinach z historii i o godzinach z harmonogramu, zmierzoną
+        w symulacji. Te same ceny kwadransów taryfy, bez opłat stałych i bez odliczenia energii z PV.
+      </p>
 
       <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Amount label="Bez planu" value={formatPln(cost.cost_before)} />
@@ -117,14 +126,24 @@ function PlanRunCost({ cost }) {
       <dl className="mt-3 space-y-1 text-sm" aria-label="Poza porównaniem">
         {cost.excluded.length > 0 && <Fact label="Poza porównaniem">{names(cost.excluded)}</Fact>}
         {cost.pending.length > 0 && <Fact label="Nie skończyły pracy">{names(cost.pending)}</Fact>}
-        {cost.manual.length > 0 && <Fact label="Włączone ręcznie">{formatPln(cost.manual_cost)}</Fact>}
-        {cost.pv && (
-          <Fact label="PV">
-            {formatKwh(cost.pv.production_kwh)}, z tego plan {formatKwh(cost.pv.plan_from_pv_kwh)}
-          </Fact>
-        )}
         {cost.deviations.length > 0 && <Fact label="Odchylenia">{cost.deviations.length}</Fact>}
       </dl>
+
+      {outsideHouse && (
+        <div className="mt-3 rounded border border-dashed border-gray-300 p-3 text-sm" aria-label="Reszta domu">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Reszta domu <span className="font-normal normal-case tracking-normal">· nie wchodzi do oszczędności</span>
+          </p>
+          <dl className="mt-1 space-y-1">
+            {cost.manual.length > 0 && <Fact label="Włączone ręcznie">{formatPln(cost.manual_cost)}</Fact>}
+            {cost.pv && (
+              <Fact label="PV">
+                {formatKwh(cost.pv.production_kwh)}, z tego plan {formatKwh(cost.pv.plan_from_pv_kwh)}
+              </Fact>
+            )}
+          </dl>
+        </div>
+      )}
 
       {hasDetails && (
         <details className="mt-2 text-sm text-gray-700">
