@@ -36,6 +36,8 @@ class SchedulePrices:
     pv_note: str | None = None
     # Umowa z ceną dynamiczną: ceny kolejnych dni pojawiają się dopiero po publikacji RCE.
     dynamic: bool = False
+    # Ceny oferty dynamicznej policzone na życzenie (`as_dynamic`), choć umowa z profilu ma zwykłą taryfę.
+    dynamic_instead_of_profile: bool = False
 
 
 class SchedulePriceService:
@@ -46,9 +48,13 @@ class SchedulePriceService:
         self.market_prices = market_prices
 
     def for_user(
-        self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None
+        self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None,
+        as_dynamic: bool = False,
     ) -> SchedulePrices:
-        """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh)."""
+        """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh).
+
+        `as_dynamic`: ceny oferty dynamicznej operatora także wtedy, gdy umowa z profilu ma zwykłą taryfę.
+        Dystrybucja jest wtedy z grupy z profilu, a gdy oferta jej nie obejmuje, z pierwszej grupy oferty."""
         profile = self._profile(user_id)
         operator = profile.base_info.distribution_operator
         group = profile.consumption_and_tariff.tariff_type
@@ -57,10 +63,17 @@ class SchedulePriceService:
         first_day = start_utc.astimezone(LOCAL_TIMEZONE).date()
         last_day = (end_utc - SLOT).astimezone(LOCAL_TIMEZONE).date()
 
+        available = self.tariff_repository.list_for_period(operator=operator, date_from=first_day, date_to=last_day)
+        instead_of_profile = as_dynamic and not dynamic
+        if instead_of_profile:
+            dynamic = True
+            offered = {d.distribution_group for d in available if d.tariff_code == TariffTypeEnum.DYNAMIC}
+            if offered and group not in offered:
+                group = min(offered, key=list(TariffTypeEnum).index)
         code = TariffTypeEnum.DYNAMIC if dynamic else group
         definitions = [
             definition
-            for definition in self.tariff_repository.list_for_period(operator=operator, date_from=first_day, date_to=last_day)
+            for definition in available
             if definition.tariff_code == code and definition.distribution_group == group
         ]
         label = f"{group.value} z ceną dynamiczną" if dynamic else group.value
@@ -94,6 +107,7 @@ class SchedulePriceService:
         return SchedulePrices(
             prices=prices, description=description,
             max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note, dynamic=dynamic,
+            dynamic_instead_of_profile=instead_of_profile,
         )
 
     def _surplus_price(self, slot: datetime, grid_price: float, profile: UserProfile) -> float:

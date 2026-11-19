@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
+from app.config import PRICE_PUBLICATION_TIME
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.database import SessionLocal, engine
 from app.models.PriceSyncRun import PriceSyncTrigger
@@ -23,9 +24,11 @@ from app.services.price_sync_service import SyncAlreadyRunningError
 logger = logging.getLogger("price_sync_worker")
 
 BACKFILL_CHUNK_DAYS = 31
-# PSE publikuje ceny na jutro ok. 13:45 - o 15:00 są już dostępne.
-SYNC_HOUR = 15
-SYNC_MINUTE = 0
+# PSE publikuje ceny na jutro ok. 13:45 - o 15:00 (domyślne PRICE_PUBLICATION_TIME) są już dostępne.
+SYNC_HOUR = PRICE_PUBLICATION_TIME.hour
+SYNC_MINUTE = PRICE_PUBLICATION_TIME.minute
+# RCEm pół godziny po cenach RCE.
+RCEM_SYNC_HOUR, RCEM_SYNC_MINUTE = divmod((SYNC_HOUR * 60 + SYNC_MINUTE + 30) % (24 * 60), 60)
 
 
 def wait_for_database(timeout_seconds: float = 300, interval_seconds: float = 5, sleep=time.sleep) -> bool:
@@ -125,7 +128,7 @@ def run_scheduler() -> None:
     )
     scheduler.add_job(
         run_rcem_sync,
-        CronTrigger(hour=SYNC_HOUR, minute=SYNC_MINUTE + 30, timezone=MARKET_TIMEZONE),
+        CronTrigger(hour=RCEM_SYNC_HOUR, minute=RCEM_SYNC_MINUTE, timezone=MARKET_TIMEZONE),
         id="rcem_sync_daily",
         max_instances=1,
         coalesce=True,

@@ -40,11 +40,20 @@ from app.services.user_service import UserService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.plan_service import PlanService
+from app.services.price_insights import PriceInsightsService
 from app.repositories.day_plan_repository import DayPlanRepository
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.clients.hub_client import API_KEY_HEADER, HubClient
-from app.config import HUB_API_KEY, HUB_HOME_USER_EMAIL, PRICE_SYNC_ADMIN_KEY, SECRET_KEY, SIGNATURE_ALGORITHM
+from app.config import (
+    FLAT_PRICE_SPREAD_PLN_KWH,
+    HUB_API_KEY,
+    HUB_HOME_USER_EMAIL,
+    PRICE_PUBLICATION_TIME,
+    PRICE_SYNC_ADMIN_KEY,
+    SECRET_KEY,
+    SIGNATURE_ALGORITHM,
+)
 from app.core.errors import ContractError
 
 
@@ -214,6 +223,14 @@ def get_schedule_price_service(
 ) -> SchedulePriceService:
     return SchedulePriceService(
         user_repository, tariff_repository, DynamicMarketPriceResolver(dynamic_price_repository)
+    )
+
+
+def get_price_insights_service(
+    price_service: SchedulePriceService = Depends(get_schedule_price_service),
+) -> PriceInsightsService:
+    return PriceInsightsService(
+        price_service, flat_spread_pln_kwh=FLAT_PRICE_SPREAD_PLN_KWH, publication_time=PRICE_PUBLICATION_TIME
     )
 
 

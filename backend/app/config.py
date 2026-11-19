@@ -1,4 +1,5 @@
 import os
+from datetime import time
 
 from dotenv import load_dotenv
 
@@ -25,6 +26,11 @@ CORS_ORIGINS = [
 ]
 
 PRICE_SYNC_ADMIN_KEY = os.getenv("PRICE_SYNC_ADMIN_KEY") or None
+# Godzina (Europe/Warsaw), o której worker pobiera ceny na jutro i od której są dostępne w aplikacji.
+# PSE publikuje je ok. 13:45.
+PRICE_PUBLICATION_TIME = time.fromisoformat(os.getenv("PRICE_PUBLICATION_TIME") or "15:00")
+# Ceny doby są „płaskie”, gdy najdroższy i najtańszy kwadrans różnią się o mniej niż tyle zł/kWh.
+FLAT_PRICE_SPREAD_PLN_KWH = float(os.getenv("FLAT_PRICE_SPREAD_PLN_KWH") or 0.05)
 
 HUB_URL = os.getenv("HUB_URL") or None
 HUB_API_KEY = os.getenv("HUB_API_KEY") or None

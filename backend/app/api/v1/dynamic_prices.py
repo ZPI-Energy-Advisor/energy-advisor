@@ -7,20 +7,26 @@ from pydantic import ValidationError
 from app.api.v1.deps import (
     get_authenticated_user,
     get_dynamic_price_service,
+    get_price_insights_service,
     get_price_sync_service,
     require_price_sync_admin_key,
 )
 from app.models.PriceSyncRun import PriceSyncTrigger
+from app.models.User import User
 from app.schemas.dynamic_price import (
+    INSIGHTS_WINDOW_PATTERN,
     DynamicPriceDayResponse,
     PriceHistoryQuery,
     PriceHistoryResponse,
+    PriceInsightsResponse,
     PriceResolution,
     PriceSyncRequest,
     PriceSyncRunOut,
     PriceSyncStatusResponse,
+    parse_insights_window,
 )
 from app.services.dynamic_price_service import DynamicPriceService, DynamicTariffNotFoundError
+from app.services.price_insights import PriceInsightsService
 from app.services.price_sync_service import PriceSyncService, SyncAlreadyRunningError
 
 
@@ -97,3 +103,26 @@ def get_price_history(
         return service.get_history(query.date_from, query.date_to, query.resolution)
     except DynamicTariffNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+def get_insights_window_minutes(
+    window: str = Query(
+        "2h", pattern=INSIGHTS_WINDOW_PATTERN, description="Długość okna: wielokrotność 15 minut, np. 2h albo 90min."
+    ),
+) -> int:
+    try:
+        return parse_insights_window(window)
+    except ValueError as e:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "window"), "msg": str(e), "input": window}]
+        ) from e
+
+
+@router.get("/tomorrow/insights", response_model=PriceInsightsResponse)
+def get_tomorrow_price_insights(
+    window_minutes: int = Depends(get_insights_window_minutes),
+    user: User = Depends(get_authenticated_user),
+    service: PriceInsightsService = Depends(get_price_insights_service),
+):
+    """Najtańsze i najdroższe okno cenowe jutra w cenach taryfy z profilu (tych samych, co w optymalizacji)."""
+    return service.tomorrow(user.id, window_minutes)

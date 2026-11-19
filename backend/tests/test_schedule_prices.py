@@ -142,3 +142,30 @@ def test_slot_with_pv_surplus_in_net_metering_costs_share_not_returned():
     # Oddaną energię odbiera się w 80%, więc zużycie nadwyżki od razu kosztuje 20% ceny z sieci.
     assert result.prices[_local(10)] == pytest.approx((0.60 + 0.40 + 0.045) * 1.23 * 0.2)
 
+
+def test_as_dynamic_prices_regular_profile_with_dynamic_offer_of_its_group():
+    service = _service(market=lambda slot: 0.30)
+
+    result = service.for_user(None, _local(0), _local(0) + timedelta(days=1), as_dynamic=True)
+
+    assert result.prices == _prices(_service(dynamic=True)).prices
+    assert result.description == "TAURON, G12 z ceną dynamiczną"
+    assert (result.dynamic, result.dynamic_instead_of_profile) == (True, True)
+
+
+def test_as_dynamic_falls_back_to_first_group_of_the_offer_when_profile_group_has_none():
+    dynamic_g11 = definition(T.DYNAMIC, ["0.10"], ["0.30"], market_price_floor_mwh=Decimal("0"))
+    service = _service(definitions=(G12, dynamic_g11))
+
+    result = service.for_user(None, _local(0), _local(0) + timedelta(days=1), as_dynamic=True)
+
+    assert result.prices[_local(10)] == pytest.approx((0.30 + 0.10 + 0.30 + 0.045) * 1.23)
+    assert result.description == "TAURON, G11 z ceną dynamiczną"
+    assert result.dynamic_instead_of_profile is True
+
+
+def test_as_dynamic_changes_nothing_for_profile_with_dynamic_price():
+    result = _service(dynamic=True).for_user(None, _local(0), _local(0) + timedelta(days=1), as_dynamic=True)
+
+    assert result.prices == _prices(_service(dynamic=True)).prices
+    assert result.dynamic_instead_of_profile is False
