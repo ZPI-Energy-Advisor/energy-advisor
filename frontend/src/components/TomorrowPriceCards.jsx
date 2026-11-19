@@ -80,6 +80,10 @@ function TomorrowPriceCards() {
     };
   }, [load]);
 
+  // Bez profilu prosi o niego już baner ProfileTariffNotice nad kartami, więc nie powtarzamy tej prośby.
+  // Notka zostaje, gdy profil jest, ale backend go nie przyjął (409 przy niepełnym profilu).
+  if (error?.missingProfile && profileTariff?.exists === false) return null;
+
   let content;
   if (isLoading && !insights && !error) {
     content = <p className={`${NOTE} text-gray-500`}>Sprawdzamy ceny na jutro…</p>;

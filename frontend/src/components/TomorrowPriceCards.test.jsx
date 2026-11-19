@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import apiClient from "../api/client";
@@ -37,13 +37,13 @@ const UNAVAILABLE = {
   expected_publication_at: "2026-11-16T15:00:00+01:00",
 };
 
-const renderCards = (response, { tariffType = "G11" } = {}) => {
+const renderCards = (response, { tariffType = "G11", profileExists = true } = {}) => {
   const get = vi
     .spyOn(apiClient, "get")
     .mockImplementation(() => (response instanceof Error ? Promise.reject(response) : Promise.resolve({ data: response })));
   render(
     <MemoryRouter>
-      <CurrentUserContext.Provider value={{ profileTariff: { exists: true, tariff_type: tariffType } }}>
+      <CurrentUserContext.Provider value={{ profileTariff: { exists: profileExists, tariff_type: profileExists ? tariffType : null } }}>
         <TomorrowPriceCards />
       </CurrentUserContext.Provider>
     </MemoryRouter>,
@@ -114,10 +114,21 @@ describe("TomorrowPriceCards", () => {
     expect(screen.queryByText(/To ceny taryfy dynamicznej/)).toBeNull();
   });
 
-  it("bez profilu prosi o jego uzupełnienie", async () => {
+  it("przy niepełnym profilu prosi o jego uzupełnienie", async () => {
     renderCards(Object.assign(new Error("409"), { response: { status: 409, data: { detail: "Uzupełnij profil…" } } }));
 
     expect((await screen.findByRole("link", { name: "Uzupełnij profil" })).getAttribute("href")).toBe("/profile");
+  });
+
+  it("bez profilu nic nie pokazuje, bo o profil prosi już baner nad kartami", async () => {
+    const get = renderCards(Object.assign(new Error("409"), { response: { status: 409, data: { detail: "Uzupełnij profil…" } } }), {
+      profileExists: false,
+    });
+
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/Sprawdzamy ceny na jutro/)).toBeNull());
+    expect(screen.queryByRole("region", { name: "Ceny prądu na jutro" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Uzupełnij profil" })).toBeNull();
   });
 
   it("pokazuje błąd pobrania i pozwala ponowić", async () => {
