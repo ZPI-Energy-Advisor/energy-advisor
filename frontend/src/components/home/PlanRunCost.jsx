@@ -130,7 +130,7 @@ function PlanRunCost({ cost, horizonStart = null }) {
       </dl>
 
       {outsideHouse && (
-        <div className="mt-3 rounded border border-dashed border-gray-300 p-3 text-sm" aria-label="Reszta domu">
+        <div className="mt-3 rounded border border-dashed border-gray-300 p-3 text-sm" role="group" aria-label="Reszta domu">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
             Reszta domu <span className="font-normal normal-case tracking-normal">· nie wchodzi do oszczędności</span>
           </p>
