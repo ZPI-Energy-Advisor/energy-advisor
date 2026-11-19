@@ -42,6 +42,8 @@ services:
       - HUB_API_KEY=${HUB_API_KEY:-}
       - HUB_TIMEOUT_SECONDS=${HUB_TIMEOUT_SECONDS:-5}
       - HUB_HOME_USER_EMAIL=${HUB_HOME_USER_EMAIL:-}
+      - PRICE_PUBLICATION_TIME=${PRICE_PUBLICATION_TIME:-15:00}
+      - FLAT_PRICE_SPREAD_PLN_KWH=${FLAT_PRICE_SPREAD_PLN_KWH:-0.05}
     depends_on:
       db:
         condition: service_healthy
@@ -59,6 +61,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - PRICE_PUBLICATION_TIME=${PRICE_PUBLICATION_TIME:-15:00}
     depends_on:
       db:
         condition: service_healthy

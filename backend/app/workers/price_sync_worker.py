@@ -9,7 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from app.config import PRICE_PUBLICATION_TIME
+from app.core.price_settings import PRICE_PUBLICATION_TIME
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.database import SessionLocal, engine
 from app.models.PriceSyncRun import PriceSyncTrigger
