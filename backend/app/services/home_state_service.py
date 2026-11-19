@@ -26,6 +26,7 @@ from app.schemas.smart_home import (
     HubClock,
     HubDevicesStatus,
 )
+from app.services.device_rooms import device_room
 from app.services.home_service import require_connected
 from app.services.schedule_prices import SchedulePriceService
 
@@ -43,6 +44,10 @@ class DayEnergy:
 
     by_slot: dict[datetime, float] = field(default_factory=lambda: defaultdict(float))
     by_device: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+    # Urządzenie -> kwadrans -> kWh: wycena urządzenia cenami kwadransów (rachunek przebiegu planu, ZP-114).
+    by_device_slot: dict[str, dict[datetime, float]] = field(
+        default_factory=lambda: defaultdict(lambda: defaultdict(float)),
+    )
     consumption_kwh: float = 0.0
     production_kwh: float = 0.0
 
@@ -70,6 +75,7 @@ def day_energy(steps: list[EnergyStep], start: datetime, end: datetime) -> DayEn
                 share = step.energy_kwh * overlap.total_seconds() / span
                 energy.by_slot[slot] += share
                 energy.by_device[step.device_id] += share
+                energy.by_device_slot[step.device_id][slot] += share
                 if share > 0:
                     energy.consumption_kwh += share
                 else:
@@ -124,7 +130,9 @@ class HomeStateService:
         return HomeState(
             hub_available=clock is not None,
             simulation_id=simulation_id,
-            clock=HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed) if clock else None,
+            clock=HomeClockState(
+                sim_time=clock.sim_time, running=clock.running, speed=clock.speed, stop_at=clock.stop_at,
+            ) if clock else None,
             power=self._power(devices) if devices else None,
             devices=self._devices(devices, self._descriptions(owner, devices), energy) if devices else [],
             today=today,
@@ -184,8 +192,14 @@ class HomeStateService:
         )
 
     def _descriptions(self, owner: User, devices: HubDevicesStatus) -> dict[str, dict]:
-        """Opis urządzeń z bazy (typ, kategoria, tryb, programy), którego hub nie zwraca w stanie."""
-        return self.home_repository.device_descriptions(owner.id) if devices.devices else {}
+        """Opis urządzeń z bazy (typ, kategoria, pomieszczenie, tryb, programy), którego hub nie zwraca w stanie."""
+        if not devices.devices:
+            return {}
+        descriptions = self.home_repository.device_descriptions(owner.id)
+        for description in descriptions.values():
+            name = description.pop("device_name")
+            description["room"] = device_room(description["room"], description["device_type"], name)
+        return descriptions
 
     @staticmethod
     def _devices(
@@ -200,6 +214,7 @@ class HomeStateService:
                 program_id=device.program_id,
                 program_started_at=device.program_started_at,
                 program_ends_at=device.program_ends_at,
+                run=device.run,
                 power_kw=device.power_kw,
                 energy_today_kwh=_kwh(energy.by_device.get(device.device_id, 0.0)) if energy else 0.0,
             )

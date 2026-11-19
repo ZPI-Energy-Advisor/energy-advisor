@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
@@ -11,6 +12,7 @@ from app.schemas.other import (
     TariffTypeEnum,
     TypeOfMarketEnergyEnum,
 )
+from app.schemas.user_profile import UserProfile
 
 
 
@@ -32,6 +34,21 @@ class TariffData(BaseModel):
     distribution_operator: DistributionOperatorEnum
     phase_type: PhaseTypeEnum
     contracted_power_kw: float = Field(gt=0, le=10000)
+
+
+@dataclass(frozen=True)
+class TariffChoice:
+    """Taryfa do policzenia (np. wybrana na ekranie optymalizacji) na ekranie optymalizacji zamiast tej z profilu; pole None bierze wartość z profilu."""
+
+    group: TariffTypeEnum | None = None
+    dynamic: bool | None = None
+
+    def resolve(self, profile: UserProfile) -> tuple[TariffTypeEnum, bool]:
+        """Grupa taryfowa i umowa z ceną dynamiczną: wybór z ekranu, a brakujące pola z profilu."""
+        tariff = profile.consumption_and_tariff
+        group = self.group or tariff.tariff_type
+        dynamic = tariff.dynamic_price if self.dynamic is None else self.dynamic
+        return group, dynamic
 
 
 class PVDetails(BaseModel):

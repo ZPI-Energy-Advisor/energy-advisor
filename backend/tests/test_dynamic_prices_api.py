@@ -160,12 +160,12 @@ class _StubHistoryService:
         self.calls = []
         self.error = error
 
-    def get_history(self, date_from, date_to, resolution):
-        self.calls.append((date_from, date_to, resolution))
+    def get_history(self, date_from, date_to, resolution, user_id=None):
+        self.calls.append((date_from, date_to, resolution, user_id))
         if self.error:
             raise self.error
         return PriceHistoryResponse(
-            source="pse_rce", tariff_name="Dynamiczna", markup_pln_kwh=0.4, vat_rate=0.23, unit="PLN/kWh", timezone="Europe/Warsaw", resolution=resolution,
+            source="pse_rce", operator="PGE", tariff_name="Dynamiczna", unit="PLN/kWh", timezone="Europe/Warsaw", resolution=resolution,
             date_from=date_from, date_to=date_to, available_from=None, available_to=None,
             last_updated_at=None, average_price_pln_kwh=None, min_price_pln_kwh=None, max_price_pln_kwh=None,
             points=[], days=PriceHistoryDaysOut(),
@@ -184,12 +184,12 @@ def test_history_passes_range_and_resolution(history_stub):
 
     assert response.status_code == 200
     assert response.json()["unit"] == "PLN/kWh"
-    assert history_stub.calls == [(date(2026, 10, 1), date(2026, 10, 12), PriceResolution.DAY)]
+    assert history_stub.calls == [(date(2026, 10, 1), date(2026, 10, 12), PriceResolution.DAY, "user")]
 
 
 def test_history_without_range_uses_defaults(history_stub):
     assert client.get("/api/v1/dynamic-prices/history").status_code == 200
-    assert history_stub.calls == [(None, None, PriceResolution.HOUR)]
+    assert history_stub.calls == [(None, None, PriceResolution.HOUR, "user")]
 
 
 @pytest.mark.parametrize("params", [

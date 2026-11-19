@@ -20,6 +20,24 @@ class EnergyStep:
 
 
 @dataclass(frozen=True)
+class DeviceErrorEvent:
+    device_id: str
+    sim_time: datetime
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class DeviceActionEvent:
+    """device_started albo device_finished: `data` z `command_id`, `ref`, `interrupted` (kontrakt huba)."""
+
+    device_id: str
+    type: str
+    sim_time: datetime
+    data: dict
+
+
+@dataclass(frozen=True)
 class SimulationPosition:
     simulation_id: str
     sim_time: datetime
@@ -57,10 +75,10 @@ class HomeEventRepository:
         return len(self.db.execute(statement).all())
 
     def energy_steps(
-        self, user_id: UUID, simulation_id: str, start: datetime, end: datetime,
+        self, user_id: UUID, simulation_id: str, start: datetime, end: datetime, device_ids: list[str] | None = None,
     ) -> list[EnergyStep]:
-        """Kroki energy_report przebiegu, które zachodzą na przedział [start, end)."""
-        rows = self.db.execute(
+        """Kroki energy_report przebiegu, które zachodzą na przedział [start, end); `device_ids` zawęża urządzenia."""
+        query = (
             select(HomeEvent.device_id, HomeEvent.interval_start, HomeEvent.sim_time, HomeEvent.energy_kwh)
             .where(
                 HomeEvent.user_id == user_id,
@@ -69,7 +87,10 @@ class HomeEventRepository:
                 HomeEvent.sim_time > start,
                 HomeEvent.interval_start < end,
             )
-        ).all()
+        )
+        if device_ids is not None:
+            query = query.where(HomeEvent.device_id.in_(device_ids))
+        rows = self.db.execute(query).all()
         return [EnergyStep(*row) for row in rows]
 
     def latest_position(self, user_id: UUID) -> SimulationPosition | None:
@@ -87,6 +108,49 @@ class HomeEventRepository:
             .where(HomeEvent.user_id == user_id, HomeEvent.simulation_id == simulation_id)
         ).scalar_one()
         return SimulationPosition(simulation_id, sim_time)
+
+    def device_errors(self, user_id: UUID, simulation_id: str, limit: int) -> list[DeviceErrorEvent]:
+        """Ostatnie zdarzenia device_error przebiegu, od najnowszego (np. komenda, której urządzenie nie wykonało)."""
+        rows = self.db.execute(
+            select(HomeEvent.device_id, HomeEvent.sim_time, HomeEvent.data)
+            .where(
+                HomeEvent.user_id == user_id,
+                HomeEvent.simulation_id == simulation_id,
+                HomeEvent.type == HomeEvent.DEVICE_ERROR,
+            )
+            .order_by(HomeEvent.sim_time.desc(), HomeEvent.id.desc())
+            .limit(limit)
+        ).all()
+        return [
+            DeviceErrorEvent(device_id, sim_time, str(data.get("code") or ""), str(data.get("message") or ""))
+            for device_id, sim_time, data in rows
+        ]
+
+    def device_actions(
+        self, user_id: UUID, simulation_id: str, device_ids: list[str], until: datetime,
+    ) -> list[DeviceActionEvent]:
+        """Starty i końce urządzeń przebiegu do chwili `until` włącznie, od najstarszego."""
+        if not device_ids:
+            return []
+        rows = self.db.execute(
+            select(HomeEvent.device_id, HomeEvent.type, HomeEvent.sim_time, HomeEvent.data)
+            .where(
+                HomeEvent.user_id == user_id,
+                HomeEvent.simulation_id == simulation_id,
+                HomeEvent.type.in_([HomeEvent.DEVICE_STARTED, HomeEvent.DEVICE_FINISHED]),
+                HomeEvent.device_id.in_(device_ids),
+                HomeEvent.sim_time <= until,
+            )
+            .order_by(HomeEvent.sim_time, HomeEvent.id)
+        ).all()
+        return [DeviceActionEvent(device_id, kind, sim_time, data or {}) for device_id, kind, sim_time, data in rows]
+
+    def last_sim_time(self, user_id: UUID, simulation_id: str) -> datetime | None:
+        """Najpóźniejszy czas symulacji w zdarzeniach przebiegu (gdy hub zaczął już inny przebieg)."""
+        return self.db.execute(
+            select(func.max(HomeEvent.sim_time))
+            .where(HomeEvent.user_id == user_id, HomeEvent.simulation_id == simulation_id)
+        ).scalar_one()
 
     def commit(self) -> None:
         self.db.commit()

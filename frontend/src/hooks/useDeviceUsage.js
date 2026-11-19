@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import apiClient from "../api/client";
+import { CurrentUserContext } from "../context/currentUserContext";
 import { getApiErrorMessage } from "../utils/energyFiles";
 
 /**
@@ -8,7 +9,9 @@ import { getApiErrorMessage } from "../utils/energyFiles";
  * zwracamy poprzednią odpowiedź, żeby wykres nie znikał przy zmianie poziomu albo zakresu.
  */
 export function useDeviceUsage(request) {
-  const key = request ? JSON.stringify(request) : null;
+  // Koszty zależą od profilu, więc po jego zmianie (nowa wersja konta) pobieramy dane ponownie.
+  const userVersion = useContext(CurrentUserContext)?.version ?? 0;
+  const key = request ? JSON.stringify({ ...request, userVersion }) : null;
   const [state, setState] = useState({ key: null, data: null, error: null });
 
   useEffect(() => {

@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import apiClient from "../api/client";
 import PlanningPage from "./PlanningPage";
+import { CurrentUserContext } from "../context/currentUserContext";
 
 const WASHER = {
   device_id: "dev_wm_01",
@@ -72,13 +73,21 @@ const mockGet = (body = BODY, plan = null) =>
   vi.spyOn(apiClient, "get").mockImplementation((url) =>
     Promise.resolve({ data: url === "/planning/plans/current" ? plan : body }));
 
-const renderPage = (body = BODY, plan = null) => {
+// `me.home_owner`: konto z domem Smart Home może uruchomić zatwierdzony plan w symulacji.
+const page = (me = { home_owner: false }) => (
+  <CurrentUserContext.Provider value={{ me, isReady: true, loadError: null }}>
+    <MemoryRouter initialEntries={["/plan"]}>
+      <Routes>
+        <Route path="/plan" element={<PlanningPage />} />
+        <Route path="/home" element={<p>Mój dom</p>} />
+      </Routes>
+    </MemoryRouter>
+  </CurrentUserContext.Provider>
+);
+
+const renderPage = (body = BODY, plan = null, me = undefined) => {
   const get = mockGet(body, plan);
-  render(
-    <MemoryRouter>
-      <PlanningPage />
-    </MemoryRouter>,
-  );
+  render(page(me));
   return get;
 };
 
@@ -115,11 +124,7 @@ describe("PlanningPage", () => {
 
   it("pokazuje datę ostatniego zapisu", async () => {
     mockGet({ ...BODY, saved_at: "2026-11-12T09:30:00Z" });
-    render(
-      <MemoryRouter>
-        <PlanningPage />
-      </MemoryRouter>,
-    );
+    render(page());
 
     expect(await screen.findByText(/^Ostatnio zapisano: 12\.11/)).toBeTruthy();
   });
@@ -192,11 +197,7 @@ describe("PlanningPage", () => {
     mockGet({ ...BODY, devices: [WASHER, dryer, EV] });
     vi.spyOn(apiClient, "post").mockResolvedValue({ data: PLAN });
     const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: { ...BODY, devices: [WASHER, dryer, EV] } });
-    render(
-      <MemoryRouter>
-        <PlanningPage />
-      </MemoryRouter>,
-    );
+    render(page());
     const dryerCard = await card("Suszarka");
     fireEvent.click(within(dryerCard).getByRole("checkbox", { name: "Pracuje jutro" }));
     const after = within(dryerCard).getAllByRole("combobox")[1];
@@ -264,6 +265,37 @@ describe("PlanningPage", () => {
     expect(await card("Pralka Bosch")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Wróć do planu bez zmian" }));
     expect(screen.getByText("Zatwierdzony")).toBeTruthy();
+  });
+
+  it("właściciel domu uruchamia zatwierdzony plan w symulacji i przechodzi do „Mój dom”", async () => {
+    const approved = { ...PLAN, status: "approved", approved_at: "2026-11-12T16:05:00+01:00" };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, approved, { home_owner: true });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { id: "run-1", status: "running" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Uruchom symulację" }));
+
+    expect(await screen.findByText("Mój dom")).toBeTruthy();
+    expect(post).toHaveBeenCalledWith("/home/plan-runs", { plan_id: "plan-1" });
+  });
+
+  it("pokazuje powód, gdy planu nie da się uruchomić, i zostaje przy planie", async () => {
+    const approved = { ...PLAN, status: "approved", approved_at: "2026-11-12T16:05:00+01:00" };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, approved, { home_owner: true });
+    const detail = "Ten plan ułożono, zanim można było go uruchomić w symulacji. Ułóż go ponownie i zatwierdź.";
+    vi.spyOn(apiClient, "post").mockRejectedValue({ response: { status: 409, data: { detail } } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Uruchom symulację" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(detail);
+    expect(screen.getByRole("button", { name: "Uruchom symulację" }).disabled).toBe(false);
+  });
+
+  it("bez domu Smart Home zatwierdzonego planu nie da się uruchomić w symulacji", async () => {
+    const approved = { ...PLAN, status: "approved", approved_at: "2026-11-12T16:05:00+01:00" };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, approved);
+
+    expect(await screen.findByText(/Plan zatwierdzony o 16:05/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Uruchom symulację" })).toBeNull();
   });
 
   it("bez cen na jutro pokazuje godzinę publikacji i układa plan demo na ostatni dzień z cenami", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SelectedFileBar from "../components/SelectedFileBar";
 import NoFileData from "../components/NoFileData";
 import DateRangeFilter from "../components/DateRangeFilter";
@@ -8,6 +8,7 @@ import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { hasDataInRange } from "../utils/energyFiles";
+import { describeBreakdown, formatPln, tariffEntries } from "../utils/tariffs";
 import {
   LineChart,
   Line,
@@ -19,15 +20,15 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-function TariffValues({ payload, metricType }) {
+const seriesLabel = (dataKey, labels) => `Taryfa ${labels[dataKey.replace(/^(cost|price)_/, "")] ?? dataKey}`;
+
+function TariffValues({ payload, metricType, labels }) {
   const unit = metricType === "price" ? "PLN/kWh" : "PLN";
 
   return (
     <div className="space-y-1.5 md:space-y-2">
       {payload.map((entry, index) => {
-        const cleanName = entry.name
-          .replace("cost_", "Taryfa ")
-          .replace("price_", "Taryfa ");
+        const cleanName = seriesLabel(entry.name, labels);
 
         return (
           <div
@@ -55,25 +56,30 @@ function TariffValues({ payload, metricType }) {
 }
 
 function ResultsPage() {
-  const { currentTariff: userTariff } = useCurrentUser();
-  const { isReady, results, isLoadingData } = useEnergyFiles();
+  const { profileTariff } = useCurrentUser();
+  const { isReady, results, isLoadingData, requireAllTariffs } = useEnergyFiles();
+
+  useEffect(() => {
+    requireAllTariffs(true);
+    return () => requireAllTariffs(false);
+  }, [requireAllTariffs]);
 
   const [timeResolution, setTimeResolution] = useState("1h");
   const [metricType, setMetricType] = useState("cost");
 
-  const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
+  const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9", "#ec4899", "#84cc16"];
 
-  if (!isReady) {
+  if (!isReady || (results?.pricing?.all_tariffs === false && isLoadingData)) {
     return (
       <div className="p-10 text-gray-500">Kalkulowanie opłacalności...</div>
     );
   }
 
   const fullSimulationData = results;
-  const tariffsData = Object.entries(results?.tariffs ?? {}).map(
-    ([name, tariff]) => ({ name, ...tariff }),
-  );
-  const currentTariff = userTariff?.code ?? null;
+  const tariffsData = tariffEntries(results);
+  const pricing = results?.pricing ?? null;
+  const labels = Object.fromEntries(tariffsData.map((tariff) => [tariff.key, tariff.label ?? tariff.key]));
+  const chartTariffs = tariffsData.filter((tariff) => tariff.estimated_cost_pln != null);
 
   const pricedTariffs = tariffsData.filter(
     (tariff) => tariff.estimated_cost_pln != null,
@@ -81,7 +87,7 @@ function ResultsPage() {
   const cheapestTariff =
     pricedTariffs.length > 0
       ? pricedTariffs.reduce((prev, curr) =>
-          prev.estimated_cost_pln < curr.estimated_cost_pln ? prev : curr,
+          prev.estimated_cost_pln <= curr.estimated_cost_pln ? prev : curr,
         )
       : null;
 
@@ -103,7 +109,18 @@ function ResultsPage() {
         Analiza opłacalności taryf
       </h2>
 
-      <ProfileTariffNotice missingProfile=", żebyśmy mogli oznaczyć Twoją obecną taryfę i porównać ją z pozostałymi." />
+      <ProfileTariffNotice
+        missingProfile=", żebyśmy mogli oznaczyć Twoją obecną taryfę i porównać ją z pozostałymi. Do tego czasu porównujemy taryfy operatora PGE."
+        pricingNote={pricing?.note}
+      />
+      {pricing && tariffsData.length > 0 && (
+        <p className="-mt-2 mb-4 text-xs md:text-sm text-gray-500">
+          Taryfy operatora {pricing.operator}
+          {profileTariff?.exists && !profileTariff.needs_update ? " z Twojego profilu" : ""}. Koszt to rachunek brutto jak
+          w Wynikach kalkulacji: energia, dystrybucja i opłaty za kWh z VAT oraz opłaty miesięczne (stała sieciowa,
+          abonament, mocowa, przejściowa, handlowa) za dni okresu.
+        </p>
+      )}
 
       <SelectedFileBar />
       {tariffsData.length > 0 && <DateRangeFilter />}
@@ -141,6 +158,18 @@ function ResultsPage() {
                       scope="col"
                       className="px-4 md:px-6 py-3 md:py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
                     >
+                      Za kWh
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 md:px-6 py-3 md:py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                    >
+                      Opłaty miesięczne
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 md:px-6 py-3 md:py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                    >
                       Zużycie
                     </th>
                     <th
@@ -153,12 +182,12 @@ function ResultsPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {tariffsData.map((tariff) => {
-                    const isCheapest = tariff.name === cheapestTariff.name;
-                    const isCurrent = tariff.name === currentTariff;
+                    const isCheapest = tariff.key === cheapestTariff?.key;
+                    const isCurrent = Boolean(tariff.is_profile);
 
                     return (
                       <tr
-                        key={tariff.name}
+                        key={tariff.key}
                         className={
                           isCheapest
                             ? "bg-emerald-50"
@@ -167,8 +196,9 @@ function ResultsPage() {
                       >
                         <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                            <span className="font-bold text-gray-900 text-sm md:text-base">
-                              {tariff.name}
+                            <span className="flex flex-col">
+                              <span className="font-bold text-gray-900 text-sm md:text-base">{tariff.label ?? tariff.key}</span>
+                              {tariff.name && <span className="text-[10px] md:text-xs text-gray-500">{tariff.name}</span>}
                             </span>
                             {isCurrent && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200 w-max">
@@ -194,12 +224,30 @@ function ResultsPage() {
                               </span>
                             )}
                           </div>
+                          {tariff.estimated_cost_pln == null && tariff.note && (
+                            <div className="max-w-[16rem] ml-auto whitespace-normal text-[10px] md:text-xs text-gray-500">{tariff.note}</div>
+                          )}
                           {tariff.price_coverage != null &&
                             tariff.price_coverage < 1 && (
                               <div className="text-[10px] md:text-xs text-amber-600">
                                 ceny dla {Math.round(tariff.price_coverage * 100)}% okresu
                               </div>
                             )}
+                        </td>
+                        <td
+                          className="px-4 md:px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900"
+                          title={describeBreakdown(tariff.cost_breakdown, formatPln) ?? undefined}
+                        >
+                          {formatPln(tariff.energy_cost_pln)}
+                        </td>
+                        <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                          {formatPln(tariff.monthly_fees_pln)}
+                          {tariff.monthly_fee_gross != null && (
+                            <div className="text-[10px] md:text-xs text-gray-500">
+                              {formatPln(tariff.monthly_fee_gross)} / mies.
+                              {tariff.billing_cycle_months ? `, rozliczenie co ${tariff.billing_cycle_months} mies.` : ""}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right">
                           <div className="text-gray-900 font-medium text-sm md:text-base">
@@ -241,7 +289,7 @@ function ResultsPage() {
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
-                      Koszty całkowite
+                      Koszt za kWh
                     </button>
                     <button
                       onClick={() => setMetricType("price")}
@@ -251,7 +299,7 @@ function ResultsPage() {
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
-                      Cenniki bazowe
+                      Ceny kWh brutto
                     </button>
                   </div>
 
@@ -309,7 +357,7 @@ function ResultsPage() {
                         <ChartTooltip
                           resolution={timeResolution}
                           render={(payload) => (
-                            <TariffValues payload={payload} metricType={metricType} />
+                            <TariffValues payload={payload} metricType={metricType} labels={labels} />
                           )}
                         />
                       }
@@ -320,22 +368,18 @@ function ResultsPage() {
                       iconType="circle"
                       wrapperStyle={{ fontSize: '12px' }}
                       formatter={(value) => (
-                        <span className="text-gray-700 font-medium">
-                          {value
-                            .replace("cost_", "Taryfa ")
-                            .replace("price_", "Taryfa ")}
-                        </span>
+                        <span className="text-gray-700 font-medium">{seriesLabel(value, labels)}</span>
                       )}
                     />
 
-                    {tariffsData.map((tariff, index) => {
-                      const dataKeyName = `${metricType}_${tariff.name}`;
+                    {chartTariffs.map((tariff, index) => {
+                      const dataKeyName = `${metricType}_${tariff.key}`;
                       const lineType =
                         metricType === "price" ? "stepAfter" : "monotone";
 
                       return (
                         <Line
-                          key={tariff.name}
+                          key={tariff.key}
                           type={lineType}
                           dataKey={dataKeyName}
                           name={dataKeyName}

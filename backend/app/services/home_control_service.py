@@ -6,7 +6,7 @@ urządzenia”) przechodzą bez zmian, a awarie huba i błędna konfiguracja dos
 """
 
 import logging
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from fastapi import HTTPException, status
 
@@ -14,7 +14,16 @@ from app.clients.hub_client import HubAuthError, HubClient, HubError, HubUnavail
 from app.models.User import User
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.home_repository import HomeRepository
-from app.schemas.smart_home import CommandResult, DeviceCommand, HomeClockState, HomeClockUpdate
+from app.schemas.smart_home import (
+    MAX_BATCH_COMMANDS,
+    CommandResult,
+    DeviceCommand,
+    HomeClockState,
+    HomeClockUpdate,
+    HubClock,
+    HubCommand,
+    HubCommandResult,
+)
 from app.services.home_service import AUTH_MESSAGE, DISABLED_MESSAGE, require_connected
 
 
@@ -46,9 +55,48 @@ def hub_http_error(error: HubError, unreachable_message: str = DEVICE_UNREACHABL
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=INVALID_RESPONSE_MESSAGE)
 
 
-def day_midnight(day) -> datetime:
+def day_midnight(day: date) -> datetime:
     """Północ doby w strefie domu: przesunięcie strefy zależy od daty (czas letni i zimowy)."""
     return datetime.combine(day, time(0), tzinfo=LOCAL_TIMEZONE)
+
+
+def require_hub(hub_client: HubClient | None, home_repository: HomeRepository, owner: User) -> HubClient:
+    """Klient huba do sterowania domem: symulacja włączona i dom podłączony przez właściciela."""
+    if hub_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DISABLED_MESSAGE)
+    require_connected(home_repository.get(), owner)
+    return hub_client
+
+
+def update_hub_clock(hub_client: HubClient, **changes) -> HubClock:
+    """Zmiana zegara huba; błąd huba jako odpowiedź API."""
+    try:
+        return hub_client.update_clock(**changes)
+    except HubError as error:
+        logger.warning("Hub nie zmienił zegara: %s", error)
+        raise hub_http_error(error, unreachable_message=CLOCK_RESET_FAILED_MESSAGE) from error
+
+
+def send_batch(hub_client: HubClient, commands: list[HubCommand], failure_message: str) -> list[HubCommandResult]:
+    """Komendy doby jednym żądaniem do huba (POST /home/commands), z wynikiem dla każdej.
+
+    Odrzucenie pojedynczej komendy jest w jej wyniku. Gdy zawiedzie całe żądanie (brak odpowiedzi, 5xx),
+    nie wiemy, co hub przyjął, więc odpowiadamy `failure_message`: ponowne ustawienie doby resetuje
+    urządzenia i kasuje zaplanowane komendy, więc ponowienie niczego nie wykona dwa razy.
+
+    Doba ma zwykle kilkadziesiąt komend; ponad limit kontraktu dzielimy ją na kolejne żądania. Każda
+    komenda ma bezwzględny `start_at`, więc podział nie zmienia tego, kiedy się wykona.
+    """
+    results: list[HubCommandResult] = []
+    try:
+        for first in range(0, len(commands), MAX_BATCH_COMMANDS):
+            results.extend(hub_client.send_commands(commands[first:first + MAX_BATCH_COMMANDS]))
+    except HubError as error:
+        logger.warning("Hub nie przyjął partii %d komend: %s", len(commands), error)
+        if isinstance(error, HubAuthError):
+            raise hub_http_error(error) from error
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=failure_message) from error
+    return results
 
 
 class HomeControlService:
@@ -57,10 +105,7 @@ class HomeControlService:
         self.hub_client = hub_client
 
     def _require_ready(self, owner: User) -> HubClient:
-        if self.hub_client is None:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DISABLED_MESSAGE)
-        require_connected(self.home_repository.get(), owner)
-        return self.hub_client
+        return require_hub(self.hub_client, self.home_repository, owner)
 
     def send_command(self, owner: User, device_id: str, command: DeviceCommand) -> CommandResult:
         hub_client = self._require_ready(owner)
@@ -72,13 +117,13 @@ class HomeControlService:
 
     def update_clock(self, owner: User, update: HomeClockUpdate) -> HomeClockState:
         hub_client = self._require_ready(owner)
-        try:
-            clock = hub_client.update_clock(
-                sim_time=day_midnight(update.day) if update.day else None,
-                running=update.running,
-                speed=update.speed,
-            )
-        except HubError as error:
-            logger.warning("Hub nie zmienił zegara: %s", error)
-            raise hub_http_error(error, unreachable_message=CLOCK_RESET_FAILED_MESSAGE) from error
-        return HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed)
+        clock = update_hub_clock(
+            hub_client,
+            sim_time=day_midnight(update.day) if update.day else None,
+            # Ustawienie doby zawsze zaczyna nową symulację, także gdy zegar już stoi na tej północy:
+            # urządzenia wracają do stanu wyłączonego, a zaplanowane komendy znikają.
+            restart=update.day is not None,
+            running=update.running,
+            speed=update.speed,
+        )
+        return HomeClockState(sim_time=clock.sim_time, running=clock.running, speed=clock.speed, stop_at=clock.stop_at)

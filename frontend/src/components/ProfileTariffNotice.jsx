@@ -8,8 +8,9 @@ const LINK = "font-semibold underline";
 
 // Baner o taryfie z profilu. Błąd pobrania /users/me nie może wyglądać jak brak profilu,
 // bo użytkownik z profilem dostałby wtedy prośbę o jego uzupełnienie.
-function ProfileTariffNotice({ missingProfile, missingPrices }) {
-  const { currentTariff, profileTariff, isReady, loadError, refresh } = useCurrentUser();
+// `pricingNote` to uwaga backendu o taryfie kosztów, np. gdy operator nie ma stawek taryfy z profilu w okresie pliku.
+function ProfileTariffNotice({ missingProfile, pricingNote = null }) {
+  const { profileTariff, isReady, loadError, refresh } = useCurrentUser();
 
   if (!isReady) return null;
   if (loadError) {
@@ -22,30 +23,34 @@ function ProfileTariffNotice({ missingProfile, missingPrices }) {
       </div>
     );
   }
+  const note = pricingNote ? <div className={INFO}>{pricingNote}</div> : null;
   if (!profileTariff?.exists) {
     return (
-      <div className={INFO}>
-        <Link to="/profile" className={LINK}>
-          Uzupełnij profil
-        </Link>
-        {missingProfile}
-      </div>
+      <>
+        <div className={INFO}>
+          <Link to="/profile" className={LINK}>
+            Uzupełnij profil
+          </Link>
+          {missingProfile}
+        </div>
+        {note}
+      </>
     );
   }
   if (profileTariff.needs_update) {
     return (
-      <div className={INFO}>
-        Zmienił się format profilu i część danych trzeba podać ponownie.{" "}
-        <Link to="/profile" className={LINK}>
-          Uzupełnij profil
-        </Link>
-      </div>
+      <>
+        <div className={INFO}>
+          Zmienił się format profilu i część danych trzeba podać ponownie.{" "}
+          <Link to="/profile" className={LINK}>
+            Uzupełnij profil
+          </Link>
+        </div>
+        {note}
+      </>
     );
   }
-  if (!currentTariff && missingPrices) {
-    return <div className={INFO}>{missingPrices}</div>;
-  }
-  return null;
+  return note;
 }
 
 export default ProfileTariffNotice;

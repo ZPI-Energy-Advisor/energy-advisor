@@ -25,6 +25,8 @@ class SimClock:
         self.simulation_id = self._new_simulation_id()
         self.running = False
         self.speed = DEFAULT_SPEED
+        # Chwila, w której zegar sam staje (np. koniec planu dnia); None: chodzi, dopóki nikt go nie zatrzyma.
+        self._stop_at: datetime | None = None
         self._step_left = TICK_STEP.total_seconds()
         self._changed = asyncio.Event()
 
@@ -36,6 +38,10 @@ class SimClock:
     def next_time(self) -> datetime:
         return (self._now + TICK_STEP).astimezone(SIM_TIMEZONE)
 
+    @property
+    def stop_at(self) -> datetime | None:
+        return self._stop_at.astimezone(SIM_TIMEZONE) if self._stop_at else None
+
     def is_at(self, moment: datetime) -> bool:
         """Porównuje w UTC: między strefami Python uznaje godzinę powtórzoną przy zmianie czasu za różną."""
         return moment.astimezone(timezone.utc) == self._now
@@ -45,6 +51,7 @@ class SimClock:
             "sim_time": self.sim_time.isoformat(),
             "running": self.running,
             "speed": self.speed,
+            "stop_at": self.stop_at.isoformat() if self.stop_at else None,
             "simulation_id": self.simulation_id,
         }
 
@@ -52,6 +59,7 @@ class SimClock:
         """Zaczyna nowy przebieg symulacji od `sim_time`."""
         self._now = sim_time.astimezone(timezone.utc)
         self.simulation_id = self._new_simulation_id()
+        self._stop_at = None  # Zatrzymanie należało do poprzedniego przebiegu.
         self._step_left = TICK_STEP.total_seconds()
         self._changed.set()
 
@@ -62,8 +70,16 @@ class SimClock:
             self.speed = speed
         self._changed.set()
 
+    def set_stop_at(self, stop_at: datetime | None) -> None:
+        self._stop_at = stop_at.astimezone(timezone.utc) if stop_at else None
+
     def advance(self) -> None:
+        """Kwadrans do przodu; zegar staje, gdy dojdzie do `stop_at`, a samo zatrzymanie znika."""
         self._now += TICK_STEP
+        if self._stop_at is not None and self._now >= self._stop_at:
+            self.running = False
+            self._stop_at = None
+            self._changed.set()
 
     def spend(self, seconds: float) -> None:
         """Wlicza czas ticka w kolejny krok. Zaległości nie rosną, gdy ticki trwają dłużej niż krok."""

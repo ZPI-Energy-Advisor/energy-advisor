@@ -13,7 +13,7 @@ import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import TomorrowPriceCards from "../components/TomorrowPriceCards";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { fillMissingDays, hasDataInRange } from "../utils/energyFiles";
-import { comparisonTariffCode } from "../utils/tariffs";
+import { describeBreakdown, formatPln } from "../utils/tariffs";
 import { UNAVAILABLE_NO_COMMON_DAYS, UNAVAILABLE_NO_DEVICE_FILES, deviceUsageSource } from "../utils/deviceUsage";
 import {
   BarChart,
@@ -89,20 +89,24 @@ function Dashboard() {
 
   // Wszystko poniżej wynika z danych aktualnie wybranego pliku, więc zmiana
   // pliku przełącza wykres i statystyki bez dodatkowych zapytań.
-  const tariffResults = results?.tariffs ?? {};
-  const costTariff = comparisonTariffCode(currentTariff);
-  const hasCostTariff = Boolean(tariffResults[costTariff]);
-  const simulationData =
-    results && Object.keys(tariffResults).length > 0
-      ? {
-          ...Object.values(tariffResults)[0],
-          ...tariffResults[costTariff],
-          estimated_cost_pln: tariffResults[costTariff]?.estimated_cost_pln ?? null,
-          chart_hourly: results.chart_hourly,
-          chart_15min: results.chart_15min,
-          chart_daily: results.chart_daily,
-        }
-      : null;
+  // Koszty liczy backend przy odczycie: taryfa z profilu (albo zastępcza z uwagą), a bez profilu PGE G11.
+  const pricing = results?.pricing ?? null;
+  const costTariff = pricing?.tariff_key ?? null;
+  const costTariffData = costTariff ? results?.tariffs?.[costTariff] ?? null : null;
+  const hasCostTariff = costTariffData?.estimated_cost_pln != null;
+  const simulationData = results
+    ? {
+        total_usage_kwh: results.total_usage_kwh,
+        estimated_cost_pln: costTariffData?.estimated_cost_pln ?? null,
+        energy_cost_pln: costTariffData?.energy_cost_pln ?? null,
+        monthly_fees_pln: costTariffData?.monthly_fees_pln ?? null,
+        cost_breakdown: costTariffData?.cost_breakdown ?? null,
+        chart_hourly: results.chart_hourly,
+        chart_15min: results.chart_15min,
+        chart_daily: results.chart_daily,
+      }
+    : null;
+  const tariffName = pricing?.tariff_label ?? costTariff;
 
   const getChartData = () => {
     if (!simulationData) return [];
@@ -157,8 +161,8 @@ function Dashboard() {
       </h2>
 
       <ProfileTariffNotice
-        missingProfile={`, żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy ${costTariff}.`}
-        missingPrices={`Nie mamy jeszcze cen taryfy ${profileTariff?.tariff_type} z Twojego profilu, więc koszty liczymy dla taryfy ${costTariff}.`}
+        missingProfile=", żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy G11 operatora PGE."
+        pricingNote={pricing?.note}
       />
 
       {/* Ceny na jutro nie zależą od pliku, więc karty są nad wyborem pliku i widać je też bez danych. */}
@@ -208,7 +212,7 @@ function Dashboard() {
               toolbar={toolbar}
               gridImport={{
                 kwh: simulationData.total_usage_kwh,
-                cost: simulationData.estimated_cost_pln,
+                cost: simulationData.energy_cost_pln,
                 tariff: costTariff,
               }}
             />
@@ -221,7 +225,7 @@ function Dashboard() {
                 <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
                   <p className="text-sm font-medium text-gray-500 mb-2">
                     Szacowany koszt w okresie
-                    {!currentTariff && ` (taryfa ${costTariff})`}
+                    {tariffName && ` (taryfa ${tariffName}${pricing?.from_profile ? "" : `, ${pricing?.operator}`})`}
                   </p>
                   <div className="flex items-baseline gap-2">
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
@@ -231,6 +235,12 @@ function Dashboard() {
                       PLN
                     </span>
                   </div>
+                  {hasCostTariff && (
+                    <p className="mt-2 text-xs text-gray-500" title={describeBreakdown(simulationData.cost_breakdown, formatPln) ?? undefined}>
+                      Za kWh {formatPln(simulationData.energy_cost_pln)} · opłaty miesięczne{" "}
+                      {formatPln(simulationData.monthly_fees_pln)}
+                    </p>
+                  )}
                 </div>
 
                 <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
@@ -257,7 +267,7 @@ function Dashboard() {
                   {/* Taryfę zmienia się wyłącznie w profilu - tu tylko ją pokazujemy. */}
                   <p className="text-lg md:text-xl font-bold text-gray-900">
                     {profileTariff?.tariff_type
-                      ? `Taryfa ${currentTariff?.code ?? profileTariff.tariff_type}`
+                      ? `Taryfa ${currentTariff?.label ?? profileTariff.tariff_type}${currentTariff ? ` · ${currentTariff.operator}` : ""}`
                       : userLoadError
                         ? "Nie udało się pobrać taryfy"
                         : "Nie znamy jeszcze Twojej taryfy"}
@@ -280,6 +290,11 @@ function Dashboard() {
                   {toolbar}
                 </div>
 
+                {chartMetric === "pln" && hasCostTariff && (
+                  <p className="-mt-2 mb-4 text-xs md:text-sm text-gray-500">
+                    Koszt energii, dystrybucji i opłat za kWh z VAT w taryfie {tariffName}, bez opłat miesięcznych.
+                  </p>
+                )}
                 {chartResolution === "15m" && results?.statistics?.resolution_minutes === 60 && (
                   <p className="-mt-2 mb-4 text-xs md:text-sm text-gray-500">
                     Plik zawiera odczyty godzinowe, więc wartości 15-minutowe to równy podział każdej godziny.

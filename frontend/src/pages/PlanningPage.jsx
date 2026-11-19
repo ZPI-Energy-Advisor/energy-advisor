@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { FiCheckCircle, FiPlus, FiRotateCcw, FiTrash2 } from "react-icons/fi";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import DayPlanView, { FlatTariffNote } from "../components/DayPlanView";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 import { noPricesFrom, onDay } from "../utils/dayPlan";
 import { getApiErrorMessage } from "../utils/energyFiles";
 import { formatDayMonth } from "../utils/schedule";
@@ -434,6 +435,10 @@ function PlanningPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [approveError, setApproveError] = useState(null);
+  const [isStartingRun, setIsStartingRun] = useState(false);
+  const [runError, setRunError] = useState(null);
+  const { me } = useCurrentUser();
+  const navigate = useNavigate();
   const [scrollRequest, setScrollRequest] = useState(0);
   const formRef = useRef(null);
   const topRef = useRef(null);
@@ -572,6 +577,19 @@ function PlanningPage() {
     }
   };
 
+  // Zatwierdzony plan trafia do symulacji domu; jego przebieg widać na ekranie „Mój dom”.
+  const startRun = async () => {
+    setIsStartingRun(true);
+    setRunError(null);
+    try {
+      await apiClient.post("/home/plan-runs", { plan_id: plan.id });
+      navigate("/home");
+    } catch (err) {
+      setRunError(getApiErrorMessage(err, "Nie udało się uruchomić planu w symulacji."));
+      setIsStartingRun(false);
+    }
+  };
+
   const hasErrors = Object.values(errors).some((deviceErrors) => Object.keys(deviceErrors ?? {}).length);
   const scheduled = devices.filter((device) => !AUTO_KINDS.has(device.kind));
   const automatic = devices.filter((device) => AUTO_KINDS.has(device.kind));
@@ -617,6 +635,9 @@ function PlanningPage() {
           isApproving={isApproving}
           isReplanning={isReplanning}
           approveError={approveError}
+          onRun={me?.home_owner ? startRun : null}
+          isStartingRun={isStartingRun}
+          runError={runError}
         />
       )}
 

@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { FiPower } from "react-icons/fi";
 import {
   DEVICE_TYPE_LABELS,
   FLEXIBILITY_LABELS,
+  ROOM_LABELS,
   deviceStateLabel,
   deviceStateTone,
   durationLabel,
@@ -10,10 +12,19 @@ import {
   formatSimTime,
   groupDevicesByCategory,
   hasControls,
+  runLabel,
   isControllable,
   programName,
 } from "../../utils/home";
 import { CARD, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./styles";
+
+// Plakietka planu (ZP-114): obrys zamiast wypełnienia, żeby nie mylić jej ze stanem urządzenia.
+const PLAN_BADGE = {
+  active: "border-emerald-300 text-emerald-800",
+  ready: "border-sky-300 text-sky-800",
+  error: "border-red-300 text-red-700",
+  neutral: "border-gray-300 text-gray-600",
+};
 
 const STATE_BADGE = {
   active: "bg-emerald-100 text-emerald-800",
@@ -24,16 +35,17 @@ const STATE_BADGE = {
 
 // Program wybrany w liście; domyślnie pierwszy. Wybór spoza aktualnych programów (np. po ponownym
 // imporcie pliku urządzeń) wraca do pierwszego, żeby nie wysłać komendy z nieistniejącym programem.
-function ProgramControls({ device, disabled, onCommand }) {
+// Lista, „Uruchom” i (dla czekającego urządzenia) wyłączenie stoją w jednym rzędzie.
+function ProgramControls({ device, disabled, onCommand, children = null }) {
   const [selected, setSelected] = useState(null);
   const programId = device.programs.some((program) => program.program_id === selected)
     ? selected
     : device.programs[0].program_id;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex items-center gap-2">
       <select
         aria-label={`Program: ${device.device_name}`}
-        className="min-w-0 flex-1 sm:flex-none border border-gray-300 rounded px-2 py-2 text-sm bg-white disabled:bg-gray-50"
+        className="min-w-0 flex-1 lg:flex-none lg:w-44 border border-gray-300 rounded px-2 py-2 text-sm bg-white disabled:bg-gray-50"
         value={programId}
         disabled={disabled}
         onChange={(event) => setSelected(event.target.value)}
@@ -53,6 +65,7 @@ function ProgramControls({ device, disabled, onCommand }) {
       >
         Uruchom
       </button>
+      {children}
     </div>
   );
 }
@@ -90,16 +103,37 @@ function DeviceControls({ device, disabled, onCommand }) {
   }
   if (running) return off("Przerwij program");
   return (
-    <div className="flex flex-wrap gap-2">
-      <ProgramControls device={device} disabled={disabled} onCommand={onCommand} />
-      {device.state === "idle" && off("Wyłącz")}
-    </div>
+    <ProgramControls device={device} disabled={disabled} onCommand={onCommand}>
+      {device.state === "idle" && (
+        // Wyłączenie czekającego urządzenia to rzadkie polecenie: sama ikona, żeby rząd się nie łamał.
+        <button
+          type="button"
+          className={`${SECONDARY_BUTTON} px-2.5`}
+          disabled={disabled}
+          aria-label={`Wyłącz: ${device.device_name}`}
+          title="Wyłącz"
+          onClick={() => onCommand({ command: "off" })}
+        >
+          <FiPower aria-hidden="true" />
+        </button>
+      )}
+    </ProgramControls>
   );
 }
 
-function DeviceRow({ device, disabled, onCommand }) {
+function DeviceRow({ device, plan, disabled, onCommand }) {
   const flexibility = FLEXIBILITY_LABELS[device.flexibility_mode];
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type];
+  // Opis pod nazwą: typ · pomieszczenie · tryb; każda część tylko, gdy ją znamy.
+  const details = [
+    typeLabel && <span key="type">{typeLabel}</span>,
+    ROOM_LABELS[device.room] && <span key="room">{ROOM_LABELS[device.room]}</span>,
+    flexibility && (
+      <span key="flexibility" title={flexibility.hint}>
+        {flexibility.label}
+      </span>
+    ),
+  ].filter(Boolean);
   const program = device.state === "running" && device.program_id;
 
   return (
@@ -110,15 +144,28 @@ function DeviceRow({ device, disabled, onCommand }) {
           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATE_BADGE[deviceStateTone(device.state)]}`}>
             {deviceStateLabel(device)}
           </span>
+          {plan && (
+            <span className={`px-2 py-0.5 rounded-full border text-xs font-medium ${PLAN_BADGE[plan.tone]}`}>
+              {plan.text}
+            </span>
+          )}
         </div>
         <p className="mt-0.5 text-xs text-gray-500">
-          {typeLabel && <span>{typeLabel}</span>}
-          {typeLabel && flexibility && <span aria-hidden="true"> · </span>}
-          {flexibility && <span title={flexibility.hint}>{flexibility.label}</span>}
+          {details.map((part, index) => (
+            <span key={part.key}>
+              {index > 0 && <span aria-hidden="true"> · </span>}
+              {part}
+            </span>
+          ))}
           {program && (
             <span className="block text-gray-600">
               {programName(device, device.program_id)}
               {device.program_ends_at && `, koniec ${formatSimTime(device.program_ends_at)}`}
+            </span>
+          )}
+          {device.run?.ends_at && !plan && (
+            <span className="block text-gray-600">
+              {runLabel(device.run)}, koniec {formatSimTime(device.run.ends_at)}
             </span>
           )}
         </p>
@@ -143,7 +190,8 @@ function DeviceRow({ device, disabled, onCommand }) {
 }
 
 // Urządzenia domu pogrupowane po kategorii. Polecenie blokuje przyciski tylko swojego urządzenia.
-function HomeDeviceList({ devices, disabled = false, onCommand }) {
+// `planBadges` (device_id -> { text, tone }): przy urządzeniach z planu i z historii w trakcie przebiegu planu.
+function HomeDeviceList({ devices, disabled = false, onCommand, planBadges = {} }) {
   const [pending, setPending] = useState(() => new Set());
 
   const send = async (device, command) => {
@@ -179,6 +227,7 @@ function HomeDeviceList({ devices, disabled = false, onCommand }) {
               <DeviceRow
                 key={device.device_id}
                 device={device}
+                plan={planBadges[device.device_id]}
                 disabled={disabled || pending.has(device.device_id)}
                 onCommand={(command) => send(device, command)}
               />

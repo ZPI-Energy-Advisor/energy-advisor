@@ -7,6 +7,8 @@ from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.device_records import ActionRecord, DeviceRecord, ProgramRecord
 from app.repositories.device_repository import DeviceRepository
 from app.services.energy_file_service import EnergyFileService
+from app.schemas.other import TariffTypeEnum as T
+from app.schemas.calculation import TariffChoice
 from app.services.schedule_prices import SchedulePrices
 from app.services.scheduling import SLOT
 from main import app
@@ -30,17 +32,17 @@ class _Prices:
             slot += SLOT
         return prices
 
-    def for_user(self, user_id, start, end, exports=None):
+    def for_user(self, user_id, start, end, exports=None, tariff=None):
         return SchedulePrices(prices=self.prices(start, end), description="PGE, G11")
 
 
 class _PricesWithGridLimit(_Prices):
-    def for_user(self, user_id, start, end, exports=None):
+    def for_user(self, user_id, start, end, exports=None, tariff=None):
         return SchedulePrices(prices=self.prices(start, end), description="PGE, G11", max_grid_kw=12.5)
 
 
 class _PricesWithPvNote(_Prices):
-    def for_user(self, user_id, start, end, exports=None):
+    def for_user(self, user_id, start, end, exports=None, tariff=None):
         return SchedulePrices(prices=self.prices(start, end), description="PGE, G11", pv_note="Uzupełnij PV.")
 
 
@@ -299,3 +301,57 @@ def test_bill_until_shows_tail_after_period(db, user_a, client_a, monkeypatch):
     body = get_schedule(client_a, energy_file).json()
 
     assert body["bill_until"] == "2026-10-20T01:00:00+02:00"
+
+
+class _ChosenTariffPrices(_Prices):
+    """Taryfa z ekranu: G11 bez umowy dynamicznej ma jedną cenę przez całą dobę."""
+
+    received = []
+
+    def for_user(self, user_id, start, end, exports=None, tariff=None):
+        self.received.append(tariff)
+        group, dynamic = (tariff.group or T.G12), bool(tariff.dynamic)
+        prices = self.prices(start, end)
+        if group == T.G11 and not dynamic:
+            prices = {slot: 1.0 for slot in prices}
+        return SchedulePrices(prices=prices, description=f"PGE, {group.value}", group=group, dynamic=dynamic)
+
+
+def test_tariff_chosen_on_screen_is_used_for_prices_and_bills(db, user_a, client_a, monkeypatch):
+    energy_file = create_devices_file(db, user_a)
+    bill_tariffs = []
+    def fake_bills(self, user_id, file_id, readings, actions, tariff=None):
+        bill_tariffs.append(tariff)
+        return {}
+
+    monkeypatch.setattr(EnergyFileService, "_bills", fake_bills)
+    _ChosenTariffPrices.received = []
+
+    body = get_schedule(client_a, energy_file, _ChosenTariffPrices, tariff="G11", dynamic="false").json()
+
+    assert _ChosenTariffPrices.received == [TariffChoice(group=T.G11, dynamic=False)]
+    assert bill_tariffs == [TariffChoice(group=T.G11, dynamic=False)]
+    # G11: ta sama cena o każdej porze, więc nic się nie przesuwa i oszczędność jest zerowa.
+    assert (body["tariff_group"], body["tariff_dynamic"], body["prosumer"]) == ("G11", False, False)
+    assert body["cost_before"] == body["cost_after"]
+    assert all(action["status"] == "unchanged" for action in body["actions"])
+
+
+def test_without_chosen_tariff_profile_tariff_is_used(db, user_a, client_a):
+    energy_file = create_devices_file(db, user_a)
+    _ChosenTariffPrices.received = []
+
+    body = get_schedule(client_a, energy_file, _ChosenTariffPrices).json()
+
+    assert _ChosenTariffPrices.received == [TariffChoice()]
+    assert body["tariff_group"] == "G12"
+    assert body["cost_after"] < body["cost_before"]
+
+
+def test_dynamic_is_not_a_tariff_group(db, user_a, client_a):
+    energy_file = create_devices_file(db, user_a)
+
+    response = get_schedule(client_a, energy_file, tariff="dynamic")
+
+    assert response.status_code == 422
+    assert "parametrem dynamic" in response.json()["detail"]

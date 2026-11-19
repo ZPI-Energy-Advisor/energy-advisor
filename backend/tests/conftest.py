@@ -119,3 +119,20 @@ def client_a(user_a, make_token) -> TestClient:
 @pytest.fixture
 def client_b(user_b, make_token) -> TestClient:
     return TestClient(app, headers={"Authorization": f"Bearer {make_token(user_b.id)}"})
+
+
+@pytest.fixture
+def flat_tariffs():
+    """Endpointy kosztów liczą na cenniku z `FlatTariffRepository` (G11 za 1 zł/kWh) zamiast na pustym cenniku bazy."""
+    from fastapi import Depends
+
+    from app.api.v1.deps import get_tariff_cost_service, get_user_repository
+    from app.services.tariff_costs import TariffCostService
+    from tariff_helpers import FlatTariffRepository
+
+    def override(user_repository=Depends(get_user_repository)):
+        return TariffCostService(FlatTariffRepository(), user_repository)
+
+    app.dependency_overrides[get_tariff_cost_service] = override
+    yield
+    app.dependency_overrides.pop(get_tariff_cost_service, None)

@@ -45,6 +45,7 @@ from app.models.HomeConnection import HomeConnection  # noqa: F401
 from app.models.HomeEvent import HomeEvent  # noqa: F401
 from app.models.PlanningTemplate import PlanningTemplate  # noqa: F401
 from app.models.DayPlan import DayPlan  # noqa: F401
+from app.models.PlanRun import PlanRun  # noqa: F401
 
 
 os.environ["PGCLIENTENCODING"] = "utf-8"

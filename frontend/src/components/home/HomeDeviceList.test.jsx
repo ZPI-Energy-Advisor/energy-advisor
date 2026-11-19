@@ -19,6 +19,16 @@ const QUICK = { program_id: "quick_30", program_name: "Szybkie 30°C", duration_
 const ECO = { program_id: "eco", program_name: "Eco", duration_min: 180 };
 
 describe("HomeDeviceList", () => {
+  it("pokazuje pomieszczenie między typem a trybem, a bez pomieszczenia sam typ i tryb", () => {
+    const inLaundry = { ...washer([]), room: "laundry" };
+    const fridge = { ...washer([]), device_id: "dev_fr_01", device_name: "Lodówka", device_type: "fridge", flexibility_mode: "fixed" };
+
+    render(<HomeDeviceList devices={[inLaundry, fridge]} onCommand={vi.fn()} />);
+
+    expect(screen.getByRole("listitem", { name: "Pralka" }).textContent).toContain("Pralka · Pralnia · Przesuwalny");
+    expect(screen.getByRole("listitem", { name: "Lodówka" }).textContent).toContain("Lodówka · Stały");
+  });
+
   it("po zmianie programów urządzenia nie wysyła programu, którego już nie ma", () => {
     const onCommand = vi.fn().mockResolvedValue(true);
     const { rerender } = render(<HomeDeviceList devices={[washer([COTTON, QUICK])]} onCommand={onCommand} />);
@@ -32,6 +42,37 @@ describe("HomeDeviceList", () => {
       command: "start_program",
       program_id: "eco",
     });
+  });
+
+  it("pokazuje przebieg według planu z godziną końca", () => {
+    const boiler = {
+      ...washer([]),
+      device_name: "Bojler",
+      state: "running",
+      power_kw: 2.0,
+      run: { ref: null, started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T19:00:00+02:00" },
+    };
+
+    render(<HomeDeviceList devices={[boiler]} onCommand={vi.fn()} />);
+
+    expect(screen.getByText("Według planu")).toBeTruthy();
+    expect(screen.getByText("Według planu, koniec 19:00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wyłącz: Bojler" })).toBeTruthy();
+  });
+
+  it("przebieg z historii (z ref) nie udaje pozycji planu", () => {
+    const heatPump = {
+      ...washer([]),
+      device_name: "Pompa ciepła",
+      state: "running",
+      power_kw: 3.0,
+      run: { ref: "act_hp_1", started_at: "2026-10-19T12:00:00+02:00", ends_at: "2026-10-19T14:00:00+02:00" },
+    };
+
+    render(<HomeDeviceList devices={[heatPump]} onCommand={vi.fn()} />);
+
+    expect(screen.getByText("Jak w historii, koniec 14:00")).toBeTruthy();
+    expect(screen.queryByText(/Według planu/)).toBeNull();
   });
 
   it("instalacja PV nie ma przycisków, a ładowarka EV ma", () => {

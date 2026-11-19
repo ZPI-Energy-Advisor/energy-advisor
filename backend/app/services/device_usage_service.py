@@ -1,6 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -13,6 +14,7 @@ from app.repositories.energy_data_file_repository import EnergyDataFileRepositor
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.schemas.device_usage import (
+    CostBreakdown,
     DeviceUsageGroup,
     DeviceUsageGroupBy,
     DeviceUsageResolution,
@@ -23,11 +25,11 @@ from app.schemas.device_usage import (
 )
 from app.schemas.energy_file import ALL_DEVICE_FILES_SOURCE_ID, ALL_FILES_SOURCE_ID
 from app.services.calculation_service import CalculationService, has_usage_series
-from app.services.user_service import UserService
+from app.services.quarter_prices import KwhPrice
+from app.services.tariff_costs import PartsTotal, PricingProfile, TariffCostService, TariffOption
 
 
 SLOT = timedelta(minutes=15)
-DEFAULT_TARIFF = "G11"
 # Urządzenia, których pracę można przenieść na inne godziny (pralka, zmywarka, pompa ciepła, ładowarka EV).
 FLEXIBLE_MODES = (DeviceInstance.SHIFTABLE, DeviceInstance.INTERRUPTIBLE)
 EXCEEDED_TOLERANCE_SHARE = 0.01
@@ -84,14 +86,17 @@ class _Axis:
 
 
 class _Accumulator:
-    def __init__(self, size: int):
+    def __init__(self, size: int, parts: PartsTotal | None = None):
         self.kwh = [0.0] * size
         self.cost = [0.0] * size
+        self.parts = parts
 
-    def add(self, position: int, kwh: float, price: float | None) -> None:
+    def add(self, position: int, kwh: float, price: KwhPrice | None) -> None:
         self.kwh[position] += kwh
         if price is not None:
-            self.cost[position] += kwh * price
+            self.cost[position] += kwh * float(price.gross)
+            if self.parts is not None and kwh > 0:
+                self.parts.add(Decimal(str(kwh)), price)
 
     def series(self) -> dict:
         kwh = [round(value, 6) for value in self.kwh]
@@ -102,8 +107,8 @@ class _Accumulator:
 class DeviceUsageService:
     """Zużycie i koszt urządzeń w podziale na kategorie, typy albo pojedyncze urządzenia (ZP-81).
 
-    Koszt kwadransu to jego zużycie razy cena tego kwadransu w wybranej taryfie z cennika zapisanego
-    przy imporcie (slot_prices), tak jak koszt pliku na Dashboardzie.
+    Koszt kwadransu to jego zużycie razy pełna cena brutto tego kwadransu (energia, dystrybucja, opłaty za kWh
+    i VAT) w wybranej taryfie operatora z profilu, liczona z cennika przy odczycie, tak jak na Dashboardzie.
     """
 
     def __init__(
@@ -112,13 +117,13 @@ class DeviceUsageService:
         simulation_repository: SimulationRepository,
         device_repository: DeviceRepository,
         reading_repository: EnergyReadingRepository,
-        user_service: UserService,
+        tariff_costs: TariffCostService,
     ):
         self.file_repository = file_repository
         self.simulation_repository = simulation_repository
         self.device_repository = device_repository
         self.reading_repository = reading_repository
-        self.user_service = user_service
+        self.tariff_costs = tariff_costs
 
     def get_usage(
         self,
@@ -142,9 +147,10 @@ class DeviceUsageService:
         date_from, date_to = self._range(covered_days, date_from, date_to)
         start, end = _local_midnight(date_from), _local_midnight(date_to + timedelta(days=1))
 
-        slot_prices = CalculationService.merge_slot_prices([results["slot_prices"] for results in source.results])
-        tariff_info = self._tariff(user_id, tariff, slot_prices)
-        price = self._price_lookup(slot_prices[tariff_info.name])
+        profile = self.tariff_costs.profile(user_id)
+        option, tariff_info = self._tariff(profile, tariff, self.tariff_costs.options(profile.operator, date_from, date_to))
+        price = self._price_lookup(option, start, end, profile)
+        parts = PartsTotal()
 
         rows = self.device_repository.slot_usage(file_ids, start, end, current_only=source.current_only)
         devices = {
@@ -153,7 +159,7 @@ class DeviceUsageService:
         }
 
         axis = _Axis(date_from, date_to, resolution)
-        groups, members = defaultdict(lambda: _Accumulator(len(axis.starts))), defaultdict(set)
+        groups, members = defaultdict(lambda: _Accumulator(len(axis.starts), parts)), defaultdict(set)
         production = _Accumulator(len(axis.starts))
         device_net = defaultdict(float)
         missing_price_slots = 0
@@ -179,7 +185,7 @@ class DeviceUsageService:
         rest = None
         if meter is not None:
             rest = self._rest_of_house(
-                meter, user_id, covering, device_net, start, end, date_from, date_to, axis, price
+                meter, user_id, covering, device_net, start, end, date_from, date_to, axis, price, parts
             )
         has_production = any(production.kwh)
         total_kwh = sum(group.total_kwh for group in group_out) + (rest.total_kwh if rest else 0.0)
@@ -197,6 +203,7 @@ class DeviceUsageService:
             rest_of_house=rest,
             total_kwh=round(total_kwh, 4),
             total_cost_pln=round(total_cost, 2),
+            cost_breakdown=CostBreakdown(**parts.as_dict()),
             missing_price_slots=missing_price_slots,
         )
 
@@ -256,39 +263,41 @@ class DeviceUsageService:
             )
         return date_from, date_to
 
-    def _tariff(self, user_id: UUID, requested: str | None, slot_prices: dict) -> DeviceUsageTariff:
-        names = {name.lower(): name for name in slot_prices}
+    @staticmethod
+    def _tariff(
+        profile: PricingProfile, requested: str | None, options: list[TariffOption]
+    ) -> tuple[TariffOption, DeviceUsageTariff]:
+        operator = profile.operator.value
         if requested is not None:
-            if requested.lower() not in names:
+            option = next((item for item in options if item.key.lower() == requested.lower()), None)
+            if option is None:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=f"Nieznana taryfa {requested}. Dostępne: {', '.join(sorted(slot_prices))}.",
+                    detail=f"Nieznana taryfa {requested} u operatora {operator}. "
+                    f"Dostępne: {', '.join(item.key for item in options) or 'brak'}.",
                 )
-            return DeviceUsageTariff(name=names[requested.lower()], source="query")
+            return option, DeviceUsageTariff(key=option.key, label=option.label, operator=operator, source="query")
 
-        profile_type, profile_tariff = self.user_service.profile_tariff(user_id)
-        if profile_tariff is not None and profile_tariff.name.lower() in names:
-            return DeviceUsageTariff(name=names[profile_tariff.name.lower()], source="profile")
-        note = (
-            f"Taryfa {profile_type} z profilu nie ma cennika dla tych danych, więc koszty są w taryfie G11."
-            if profile_type
-            else "Profil nie wskazuje taryfy, więc koszty są w taryfie G11."
+        option, note = TariffCostService.select(profile, options)
+        if option is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=note)
+        from_profile = profile.from_profile and option.key == profile.key
+        if not profile.from_profile:
+            note = f"Profil nie wskazuje taryfy, więc koszty są w taryfie {option.label} operatora {operator}."
+        return option, DeviceUsageTariff(
+            key=option.key, label=option.label, operator=operator,
+            source="profile" if from_profile else "default", note=note,
         )
-        if DEFAULT_TARIFF.lower() not in names:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Brak cennika taryfy G11 dla tych danych.")
-        return DeviceUsageTariff(name=names[DEFAULT_TARIFF.lower()], source="default", note=note)
 
-    @staticmethod
-    def _price_lookup(prices: dict):
-        """Cena kwadransu (PLN/kWh) z cennika zapisanego przy imporcie; None, gdy jej brak."""
-        by_slot, by_day = prices.get("prices"), prices.get("prices_by_day")
+    def _price_lookup(self, option: TariffOption, start: datetime, end: datetime, profile: PricingProfile):
+        """Cena kwadransu z rozbiciem z cennika; None, gdy jej brak (np. brak ceny RCE)."""
+        try:
+            prices = self.tariff_costs.prices(option, start, end, profile).prices
+        except (ValueError, LookupError) as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
-        def price(slot_start: datetime) -> float | None:
-            day, slot = _local_slot(slot_start)
-            if by_slot is not None:
-                return by_slot[slot]
-            day_prices = (by_day or {}).get(day)
-            return day_prices[slot] if day_prices else None
+        def price(slot_start: datetime) -> KwhPrice | None:
+            return prices.get(slot_start.astimezone(timezone.utc))
 
         return price
 
@@ -334,7 +343,7 @@ class DeviceUsageService:
         )
 
     def _rest_of_house(
-        self, meter, user_id, covering, device_net, start, end, date_from, date_to, axis, price
+        self, meter, user_id, covering, device_net, start, end, date_from, date_to, axis, price, parts=None
     ) -> RestOfHouse:
         """Reszta domu = licznik − urządzenia w każdym kwadransie dni, które mają oba źródła.
 
@@ -354,7 +363,7 @@ class DeviceUsageService:
         device_days = {day for day, _ in covering}
         common_days = sorted({day for day, _ in meter_net} & device_days)
 
-        rest = _Accumulator(len(axis.starts))
+        rest = _Accumulator(len(axis.starts), parts)
         balance_by_day, meter_by_day = defaultdict(float), defaultdict(float)
         for (day, slot), meter_kwh in meter_net.items():
             if day not in common_days:

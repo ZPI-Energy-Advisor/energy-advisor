@@ -322,10 +322,11 @@ def test_update_config_changes_name_without_touching_work():
     driver.tick(START)
     driver.start_program("cotton_60")
 
-    driver.update_config({"device_name": "Pralka w łazience", "device_category": "Inne"})
+    driver.update_config({"device_name": "Pralka w łazience", "device_category": "Inne", "room": "bathroom"})
 
     assert driver.config.device_name == "Pralka w łazience"
     assert driver.config.device_category == "Inne"
+    assert driver.config.room == "bathroom"
     assert driver.status()["state"] == RUNNING
 
 
@@ -357,6 +358,13 @@ def test_update_config_rejects_fields_requiring_restart(changes):
 def test_update_config_rejects_invalid_values():
     with pytest.raises(DeviceError) as error:
         _washing_machine().update_config({"device_name": None})
+
+    assert (error.value.status_code, error.value.code) == (422, "validation_error")
+
+
+def test_update_config_rejects_unknown_room():
+    with pytest.raises(DeviceError) as error:
+        _washing_machine().update_config({"room": "attic"})
 
     assert (error.value.status_code, error.value.code) == (422, "validation_error")
 
@@ -405,5 +413,153 @@ def test_started_event_carries_command_id():
     started, = driver.tick(_hours(0.25))["events"]
     lamp_started, = lamp.tick(START)["events"]
 
-    assert started["data"] == {"program_id": "cotton_60", "command_id": "cmd_1"}
-    assert lamp_started["data"] == {"program_id": None, "command_id": None}
+    assert started["data"] == {"program_id": "cotton_60", "command_id": "cmd_1", "ref": None}
+    assert lamp_started["data"] == {"program_id": None, "command_id": None, "ref": None}
+
+
+# Przebieg z własnym profilem (POST /run): akcja planu albo produkcja PV
+
+
+LAMP_RUN = [0.01, 0.015, 0.015, 0.01]  # Godzina pracy lampy z pliku, kWh na kwadrans.
+
+
+def test_run_follows_profile_and_turns_device_off_after_last_quarter():
+    lamp = _plain_device()
+    lamp.tick(START)
+    lamp.run_profile(LAMP_RUN, command_id="cmd_1", ref="act_0016")
+
+    assert lamp.status()["power_kw"] == pytest.approx(0.04)
+    quarters = [lamp.tick(_hours(0.25 * step))["energy_kwh"] for step in range(1, 5)]
+
+    assert quarters == pytest.approx(LAMP_RUN)
+    assert lamp.state == OFF
+    assert lamp.status()["run"] is None
+    finished = lamp.energy()["last_action"]
+    assert finished["ended_at"] == "2026-10-19T14:00:00+02:00"
+    assert finished["energy_kwh"] == pytest.approx(sum(LAMP_RUN))
+
+
+def test_run_status_and_events_carry_reference_to_history():
+    lamp = _plain_device()
+    lamp.tick(START)
+    lamp.run_profile(LAMP_RUN, command_id="cmd_1", ref="act_0016")
+
+    assert lamp.status()["run"] == {
+        "ref": "act_0016",
+        "started_at": "2026-10-19T13:00:00+02:00",
+        "ends_at": "2026-10-19T14:00:00+02:00",
+    }
+    started, finished = lamp.tick(_hours(1))["events"]
+    assert started["data"] == {"program_id": None, "command_id": "cmd_1", "ref": "act_0016"}
+    assert finished["data"]["ref"] == "act_0016"
+    assert finished["data"]["interrupted"] is False
+
+
+def test_long_tick_counts_run_only_until_its_end():
+    lamp = _plain_device()
+    lamp.tick(START)
+    lamp.run_profile(LAMP_RUN)
+
+    result = lamp.tick(_hours(3))
+
+    assert result["energy_kwh"] == pytest.approx(sum(LAMP_RUN))
+    assert lamp.state == OFF
+
+
+def test_pv_run_produces_negative_energy_with_profile_shape():
+    pv = _plain_device(device_type="pv_inverter", category="OZE", power=5.0)
+    profile = [-0.2, -0.6, -0.9, -0.4]
+    pv.tick(START)
+    pv.run_profile(profile)
+
+    assert pv.status()["power_kw"] == pytest.approx(-0.8)
+    quarters = [pv.tick(_hours(0.25 * step))["energy_kwh"] for step in range(1, 5)]
+
+    assert quarters == pytest.approx(profile)
+    assert pv.energy()["total_kwh"] == pytest.approx(-2.1)
+
+
+def test_manual_off_interrupts_run_and_keeps_energy_so_far():
+    lamp = _plain_device()
+    lamp.tick(START)
+    lamp.run_profile(LAMP_RUN, ref="act_0016")
+    lamp.tick(_hours(0.5))
+
+    lamp.turn_off()
+
+    finished = lamp.tick(_hours(0.75))["events"][-1]
+    assert finished["type"] == "device_finished"
+    assert finished["data"]["interrupted"] is True
+    assert finished["data"]["ref"] == "act_0016"
+    assert finished["data"]["energy_kwh"] == pytest.approx(0.025)
+    assert lamp.state == OFF
+
+
+def test_run_takes_over_manual_constant_power():
+    # Urządzenie włączone ręcznie przed akcją planu: od jej startu pracuje według profilu, a nie stałą mocą.
+    lamp = _plain_device(power=0.1)
+    lamp.tick(START)
+    lamp.turn_on()
+    lamp.tick(_hours(0.5))
+
+    lamp.run_profile(LAMP_RUN, ref="act_0016")
+
+    # device_started ręcznego włączenia wyszedł z poprzednim tickiem.
+    events = lamp.tick(_hours(1.5))["events"]
+    assert [event["type"] for event in events] == ["device_finished", "device_started", "device_finished"]
+    manual_finished = events[0]
+    assert (manual_finished["data"]["ref"], manual_finished["data"]["energy_kwh"]) == (None, pytest.approx(0.05))
+    assert lamp.energy()["total_kwh"] == pytest.approx(0.05 + sum(LAMP_RUN))
+
+
+def test_manual_on_during_run_is_rejected():
+    lamp = _plain_device()
+    lamp.tick(START)
+    lamp.run_profile(LAMP_RUN)
+
+    with pytest.raises(DeviceError) as error:
+        lamp.turn_on()
+
+    assert (error.value.status_code, error.value.code) == (409, "invalid_state")
+    assert error.value.detail == "Trwa przebieg urządzenia"
+
+
+def test_run_during_program_is_rejected():
+    washer = _washing_machine()
+    washer.tick(START)
+    washer.start_program("cotton_60")
+
+    with pytest.raises(DeviceError) as error:
+        washer.run_profile(LAMP_RUN)
+
+    assert (error.value.status_code, error.value.code) == (409, "invalid_state")
+
+
+def test_device_with_programs_is_idle_after_run():
+    washer = _washing_machine()
+    washer.tick(START)
+    washer.run_profile([0.3, 0.2])
+
+    washer.tick(_hours(0.5))
+
+    assert washer.state == IDLE
+
+
+def test_run_across_time_change_counts_real_quarters():
+    # 25.10 o 3:00 CEST zegar cofa się na 2:00 CET: godzina 2–3 zdarza się dwa razy.
+    lamp = _plain_device()
+    start = datetime(2026, 10, 25, 2, 0, tzinfo=ZoneInfo("Europe/Warsaw"))  # 2:00 CEST
+    lamp.tick(start)
+    lamp.run_profile([0.01] * 8)
+
+    result = lamp.tick(start + timedelta(hours=2))  # 3:00 CET, czyli dwie godziny później
+
+    assert result["energy_kwh"] == pytest.approx(0.08)
+    assert lamp.state == OFF
+
+
+def test_run_without_quarters_is_rejected():
+    with pytest.raises(DeviceError) as error:
+        _plain_device().run_profile([])
+
+    assert error.value.code == "validation_error"

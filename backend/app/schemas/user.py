@@ -8,14 +8,14 @@ class ProfileTariffSummary(BaseModel):
     exists: bool
     # Profil zapisany w starszym formacie, który trzeba ponownie zapisać na stronie profilu.
     needs_update: bool = False
-    # Taryfa zapisana w profilu (TariffTypeEnum), także gdy nie ma jej w tabeli tariffs.
+    # Taryfa zapisana w profilu (TariffTypeEnum), także gdy operator nie ma jej stawek w cenniku.
     tariff_type: str | None = None
 
 
 class CurrentUserResponse(BaseModel):
     email: str
     provider: str | None = None
-    # Taryfa z tabeli tariffs odpowiadająca taryfie z profilu; None bez profilu lub bez odpowiednika.
+    # Definicja z tariff_definitions dla operatora, taryfy i dzisiejszej daty; None bez profilu lub bez stawek.
     current_tariff: TariffOut | None = None
     profile: ProfileTariffSummary
     home_owner: bool = False
