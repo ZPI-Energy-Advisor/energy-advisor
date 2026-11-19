@@ -161,7 +161,10 @@ def parse_insights_window(value: str) -> int:
 
 class PriceInsightsStatus(str, Enum):
     AVAILABLE = "available"
+    # Brak cen RCE na jutro (PSE jeszcze nie opublikowało albo worker ich nie pobrał).
     UNAVAILABLE = "unavailable"
+    # Cennik operatora nie ma stawek na jutro (taryfy dynamicznej albo opłat regulacyjnych); publikacja RCE nie pomoże.
+    NO_TARIFF_DATA = "no_tariff_data"
 
 
 class PriceWindowOut(BaseModel):

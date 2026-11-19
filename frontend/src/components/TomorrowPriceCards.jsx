@@ -9,6 +9,9 @@ import { describeFlatPrices, describeUnavailable, describeWindow, formatWindowHo
 const CARD = "bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4";
 const NOTE = "rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm";
 const LINK = "font-semibold text-emerald-700 underline hover:text-emerald-800";
+// Cennik operatora nie obejmuje jutra: nie podajemy godziny, bo publikacja cen PSE tego nie zmieni.
+const NO_TARIFF_DATA =
+  "Nie mamy jeszcze cennika taryfy dynamicznej Twojego operatora na jutro, więc nie pokażemy, kiedy prąd będzie najtańszy.";
 
 const VARIANTS = {
   cheapest: {
@@ -98,6 +101,8 @@ function TomorrowPriceCards() {
         </button>
       </p>
     );
+  } else if (insights.status === "no_tariff_data") {
+    content = <p className={NOTE}>{NO_TARIFF_DATA}</p>;
   } else if (insights.status !== "available") {
     content = <p className={NOTE}>{describeUnavailable(insights)}</p>;
   } else if (insights.flat_prices) {
@@ -114,7 +119,8 @@ function TomorrowPriceCards() {
   return (
     <section aria-label="Ceny prądu na jutro" className="mb-6 md:mb-8">
       {content}
-      {insights && !insights.profile_dynamic && (
+      {/* Bez cennika nie ma czego porównywać, więc nie odsyłamy do analizy taryf. */}
+      {insights && !insights.profile_dynamic && insights.status !== "no_tariff_data" && (
         <p className="mt-3 text-xs md:text-sm text-gray-500">
           To ceny taryfy dynamicznej
           {profileTariff?.tariff_type ? `, a Ty masz taryfę ${profileTariff.tariff_type}` : ", której teraz nie masz"}.{" "}

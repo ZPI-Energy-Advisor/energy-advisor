@@ -105,6 +105,15 @@ describe("TomorrowPriceCards", () => {
     expect(await screen.findByText(/To ceny taryfy dynamicznej/)).toBeTruthy();
   });
 
+  it("bez cennika na jutro mówi o tym wprost, bez godziny publikacji i bez dopisku o analizie taryf", async () => {
+    renderCards({ ...UNAVAILABLE, status: "no_tariff_data", expected_publication_at: null, profile_dynamic: false });
+
+    expect(await screen.findByText(/Nie mamy jeszcze cennika taryfy dynamicznej Twojego operatora na jutro/)).toBeTruthy();
+    expect(screen.queryByText(/pojawią się/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/To ceny taryfy dynamicznej/)).toBeNull();
+  });
+
   it("bez profilu prosi o jego uzupełnienie", async () => {
     renderCards(Object.assign(new Error("409"), { response: { status: 409, data: { detail: "Uzupełnij profil…" } } }));
 

@@ -1,6 +1,6 @@
 """Ceny kwadransów dla optymalizacji: nowy cennik według taryfy z profilu (strefa, cena dynamiczna, opłaty za kWh)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from app.schemas.other import TariffTypeEnum as T
 from app.schemas.other import TypeOfMarketEnergyEnum
 from app.schemas.calculation import TariffChoice
-from app.services.schedule_prices import SchedulePriceService
+from app.services.schedule_prices import NoTariffRatesError, SchedulePriceService
 from tariff_helpers import HOURS, definition, period
 
 WARSAW = ZoneInfo("Europe/Warsaw")
@@ -39,7 +39,9 @@ class _Market:
         return self.rcem_price if type_of_market_energy == TypeOfMarketEnergyEnum.RCEm else self.price(moment)
 
 
-def _service(dynamic=False, definitions=(G12, DYNAMIC_G12), market=lambda slot: 0.30, pv_mode="none", rcem=None):
+def _service(
+    dynamic=False, definitions=(G12, DYNAMIC_G12), market=lambda slot: 0.30, pv_mode="none", rcem=None, periods=(PERIOD,),
+):
     profile = SimpleNamespace(
         base_info=BASE_INFO,
         consumption_and_tariff={"tariff_type": "G12", "dynamic_price": dynamic},
@@ -47,7 +49,7 @@ def _service(dynamic=False, definitions=(G12, DYNAMIC_G12), market=lambda slot: 
     )
     return SchedulePriceService(
         SimpleNamespace(get_profile=lambda user_id: profile),
-        SimpleNamespace(list_for_period=lambda **kwargs: list(definitions), list_regulatory_periods=lambda **kwargs: [PERIOD]),
+        SimpleNamespace(list_for_period=lambda **kwargs: list(definitions), list_regulatory_periods=lambda **kwargs: list(periods)),
         _Market(market, rcem),
     )
 
@@ -128,14 +130,40 @@ def test_slots_without_market_price_are_left_out():
 
     assert len(result.prices) == 92
     assert _local(5) not in result.prices
+    # Brak samej ceny RCE nie jest brakiem stawek: uzupełni go publikacja PSE.
+    assert result.missing_rates == ()
+
+
+def test_slots_without_regulatory_period_are_reported_as_missing_rates():
+    def market(slot):
+        if slot == _local(5):
+            raise ValueError("Brak ceny RCE")
+        return 0.30
+
+    # Okres opłat kończy się 6.11, więc 7.11 nie ma stawek; o 5:00 6.11 brakuje tylko RCE.
+    service = _service(dynamic=True, market=market, periods=(period(valid=(date(2026, 1, 1), date(2026, 11, 6))),))
+    result = service.for_user(None, _local(0), _local(0) + timedelta(days=2))
+
+    assert len(result.prices) == 95
+    assert result.missing_rates == tuple(_local(0) + timedelta(days=1, minutes=15 * i) for i in range(96))
 
 
 def test_missing_rates_for_profile_tariff_are_reported():
     with pytest.raises(HTTPException) as error:
         _prices(_service(dynamic=True, definitions=(G12,)))
 
+    assert isinstance(error.value, NoTariffRatesError)
     assert error.value.status_code == 422
     assert "G12 z ceną dynamiczną" in error.value.detail
+    assert (error.value.description, error.value.dynamic_instead_of_profile) == ("TAURON, G12 z ceną dynamiczną", False)
+
+
+def test_as_dynamic_without_dynamic_offer_reports_missing_rates_of_the_offer():
+    with pytest.raises(NoTariffRatesError) as error:
+        _service(definitions=(G12,)).for_user(None, _local(0), _local(0) + timedelta(days=1), as_dynamic=True)
+
+    assert error.value.status_code == 422
+    assert (error.value.description, error.value.dynamic_instead_of_profile) == ("TAURON, G12 z ceną dynamiczną", True)
 
 
 def test_slot_with_pv_surplus_costs_value_of_lost_export_in_net_billing():

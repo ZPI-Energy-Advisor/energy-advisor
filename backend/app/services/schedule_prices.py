@@ -44,6 +44,19 @@ class SchedulePrices:
     prosumer: bool = False
     # Średnia cena kWh z sieci w okresie w częściach (energia, dystrybucja, opłaty za kWh, VAT).
     breakdown: dict[str, float] | None = None
+    # Kwadranse bez ceny z braku stawek w cenniku (definicji taryfy albo okresu opłat regulacyjnych),
+    # a nie z braku ceny RCE — tych nie uzupełni publikacja PSE.
+    missing_rates: tuple[datetime, ...] = ()
+
+
+class NoTariffRatesError(HTTPException):
+    """Operator nie ma w cenniku żadnych stawek taryfy w okresie. Dla API to 422 jak każdy błąd stawek;
+    `description` i `dynamic_instead_of_profile` jak w `SchedulePrices`, żeby wywołujący mógł opisać taryfę."""
+
+    def __init__(self, description: str, detail: str, dynamic_instead_of_profile: bool):
+        super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
+        self.description = description
+        self.dynamic_instead_of_profile = dynamic_instead_of_profile
 
 
 class SchedulePriceService:
@@ -83,9 +96,10 @@ class SchedulePriceService:
         ]
         label = f"{group.value} z ceną dynamiczną" if dynamic else group.value
         if not definitions:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            raise NoTariffRatesError(
+                description=f"{operator.value}, {label}",
                 detail=f"Brak stawek taryfy {label} u operatora {operator.value} dla wybranego okresu.",
+                dynamic_instead_of_profile=instead_of_profile,
             )
         periods = self.tariff_repository.list_regulatory_periods(date_from=first_day, date_to=last_day)
         if dynamic:
@@ -118,6 +132,7 @@ class SchedulePriceService:
             group=group, prosumer=prosumer,
             breakdown=self._breakdown(quarters.prices.values()),
             dynamic_instead_of_profile=instead_of_profile,
+            missing_rates=quarters.missing_rates,
         )
 
     @staticmethod

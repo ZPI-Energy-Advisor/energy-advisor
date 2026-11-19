@@ -16,7 +16,7 @@ from app.services.price_insights import (
     find_price_windows,
     is_flat,
 )
-from app.services.schedule_prices import SLOT, SchedulePrices
+from app.services.schedule_prices import SLOT, NoTariffRatesError, SchedulePrices
 from main import app
 
 WARSAW = ZoneInfo("Europe/Warsaw")
@@ -145,19 +145,22 @@ def test_day_of_time_change_has_windows_of_real_duration(day, slots):
 
 
 class _Prices:
-    def __init__(self, prices, profile_dynamic=True):
+    def __init__(self, prices, profile_dynamic=True, missing_rates=(), error=None):
         self.prices, self.profile_dynamic, self.calls = prices, profile_dynamic, []
+        self.missing_rates, self.error = tuple(missing_rates), error
 
     def for_user(self, user_id, start_utc, end_utc, as_dynamic=False):
         self.calls.append((user_id, start_utc, end_utc, as_dynamic))
+        if self.error is not None:
+            raise self.error
         return SchedulePrices(
             prices=self.prices, description="TAURON, G11 z ceną dynamiczną", dynamic=True,
-            dynamic_instead_of_profile=not self.profile_dynamic,
+            dynamic_instead_of_profile=not self.profile_dynamic, missing_rates=self.missing_rates,
         )
 
 
-def _service(prices, profile_dynamic=True, today=DAY - timedelta(days=1)):
-    source = _Prices(prices, profile_dynamic)
+def _service(prices, profile_dynamic=True, today=DAY - timedelta(days=1), **source_options):
+    source = _Prices(prices, profile_dynamic, **source_options)
     service = PriceInsightsService(
         source, flat_spread_pln_kwh=0.05, publication_time=time(15, 0), now=lambda: datetime.combine(today, time(9), WARSAW)
     )
@@ -224,6 +227,44 @@ def test_missing_dynamic_prices_are_unavailable_with_expected_publication(missin
     assert result.expected_publication_at.isoformat() == "2026-11-16T15:00:00+01:00"
     assert result.intervals == len(prices) and result.expected_intervals == 96
     assert result.cheapest is None and result.most_expensive is None and result.flat_prices is None
+
+
+def test_missing_tariff_rates_are_not_reported_as_unpublished_prices():
+    # Brak okresu opłat od 18:00: tych kwadransów nie uzupełni publikacja RCE, więc nie obiecujemy godziny.
+    prices = _day_prices()
+    lacking = [slot for slot in prices if slot >= _local(18).astimezone(timezone.utc)]
+    for slot in lacking:
+        del prices[slot]
+    service, _ = _service(prices, missing_rates=lacking)
+
+    result = service.tomorrow("user-id", 120)
+
+    assert result.status == "no_tariff_data"
+    assert result.tariff == "TAURON, G11 z ceną dynamiczną"
+    assert (result.intervals, result.expected_intervals) == (72, 96)
+    assert result.expected_publication_at is None
+    assert result.cheapest is None and result.most_expensive is None and result.flat_prices is None
+
+
+def test_missing_rates_outside_tomorrow_do_not_matter():
+    service, _ = _service(_day_prices(), missing_rates=[_local(12, day=DAY + timedelta(days=1)).astimezone(timezone.utc)])
+
+    assert service.tomorrow("user-id", 120).status == "available"
+
+
+@pytest.mark.parametrize("profile_dynamic", [True, False])
+def test_operator_without_tariff_definition_for_tomorrow_has_no_tariff_data(profile_dynamic):
+    error = NoTariffRatesError(
+        description="ENEA, G11 z ceną dynamiczną", detail="Brak stawek…", dynamic_instead_of_profile=not profile_dynamic
+    )
+    service, _ = _service({}, error=error)
+
+    result = service.tomorrow("user-id", 120)
+
+    assert result.status == "no_tariff_data"
+    assert (result.tariff, result.profile_dynamic) == ("ENEA, G11 z ceną dynamiczną", profile_dynamic)
+    assert (result.intervals, result.expected_intervals) == (0, 96)
+    assert result.expected_publication_at is None
 
 
 def test_user_with_regular_tariff_gets_dynamic_offer_prices_marked_as_not_own():

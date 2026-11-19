@@ -4,6 +4,7 @@ Ceny kwadransów liczy `SchedulePriceService`, czyli dla klienta z ceną dynamic
 w optymalizacji (`GET /energy-files/{id}/schedule`): RCE z marżą, opłaty za kWh, VAT. Klient ze zwykłą taryfą
 dostaje ceny oferty dynamicznej swojego operatora (`profile_dynamic=false`), bo to o niej są komunikaty.
 Okna wyznaczamy na kwadransach w UTC, więc doba 92 i 100 kwadransów (zmiana czasu) nie wymaga osobnej obsługi.
+Brak cen RCE to `unavailable` (minie po publikacji), a brak stawek w cenniku to `no_tariff_data` (nie minie sam).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from fastapi import HTTPException, status
 
 from app.providers.prices.base import MARKET_TIMEZONE, local_day_bounds_utc
 from app.schemas.dynamic_price import PriceInsightsResponse, PriceInsightsStatus, PriceWindowOut
-from app.services.schedule_prices import SLOT, SchedulePriceService
+from app.services.schedule_prices import SLOT, NoTariffRatesError, SchedulePriceService
 
 SLOT_MINUTES = int(SLOT.total_seconds() // 60)
 # Sumy cen różniące się mniej niż o tyle traktujemy jak remis (błędy zaokrągleń float).
@@ -93,18 +94,29 @@ class PriceInsightsService:
         day = today + timedelta(days=1)
         start, end = local_day_bounds_utc(day)
         expected = int((end - start) / SLOT)
-        pricing = self.price_service.for_user(user_id, start, end, as_dynamic=True)
-        prices = {slot: price for slot, price in pricing.prices.items() if start <= slot < end}
         common = dict(
-            business_date=day,
-            timezone=MARKET_TIMEZONE.key,
-            window_minutes=window_minutes,
+            business_date=day, timezone=MARKET_TIMEZONE.key, window_minutes=window_minutes, expected_intervals=expected
+        )
+        try:
+            pricing = self.price_service.for_user(user_id, start, end, as_dynamic=True)
+        except NoTariffRatesError as e:
+            # Cennik operatora nie obejmuje jutra: publikacja RCE tego nie zmieni, więc to nie „unavailable”.
+            return PriceInsightsResponse(
+                status=PriceInsightsStatus.NO_TARIFF_DATA,
+                tariff=e.description,
+                profile_dynamic=not e.dynamic_instead_of_profile,
+                intervals=0,
+                **common,
+            )
+        prices = {slot: price for slot, price in pricing.prices.items() if start <= slot < end}
+        common.update(
             tariff=pricing.description,
             profile_dynamic=not pricing.dynamic_instead_of_profile,
             intervals=len(prices),
-            expected_intervals=expected,
         )
 
+        if any(start <= slot < end for slot in pricing.missing_rates):
+            return PriceInsightsResponse(status=PriceInsightsStatus.NO_TARIFF_DATA, **common)
         if len(prices) < expected:
             return PriceInsightsResponse(
                 status=PriceInsightsStatus.UNAVAILABLE,

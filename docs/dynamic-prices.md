@@ -168,7 +168,10 @@ Bez Dockera ten sam efekt da cron: `0 15 * * * cd backend && python -m app.worke
 - Brak kompletu cen dynamicznych na jutro: `status: "unavailable"`, bez okien, z `expected_publication_at`
   (dzisiaj o `PRICE_PUBLICATION_TIME`, domyślnie 15:00 — o tej godzinie worker pobiera ceny opublikowane
   przez PSE ok. 13:45). Godzina w przeszłości oznacza opóźnienie publikacji albo synchronizacji.
-- Kody: `401` bez tokenu, `409` bez uzupełnionego profilu, `422` przy złym `window` albo gdy operator nie ma oferty dynamicznej.
+- Brak stawek w cenniku na jutro (operator nie ma oferty dynamicznej, jej cennik nie obejmuje jutra albo brakuje
+  okresu opłat regulacyjnych): `status: "no_tariff_data"`, bez okien i bez `expected_publication_at`, bo publikacja
+  RCE tego nie zmieni. Gdy brakuje i stawek, i cen RCE, wygrywa `no_tariff_data`.
+- Kody: `401` bez tokenu, `409` bez uzupełnionego profilu, `422` przy złym `window`.
 
 Szczegóły `POST /sync`:
 

@@ -237,12 +237,14 @@ class MonthlyFeesPeriod:
 class QuarterPrices:
     """Ceny kwadransów (początek w UTC) z rozbiciem na składniki i opłaty miesięczne osobno.
 
-    `missing` to kwadranse bez ceny: bez definicji taryfy, okresu opłat regulacyjnych albo ceny RCE."""
+    `missing` to kwadranse bez ceny: bez definicji taryfy, okresu opłat regulacyjnych albo ceny RCE.
+    `missing_rates` to ta ich część, której brakuje stawek (definicji taryfy albo okresu opłat), a nie ceny RCE."""
 
     prices: dict[datetime, KwhPrice]
     monthly_fees: tuple[MonthlyFeesPeriod, ...]
     missing: tuple[datetime, ...]
     name: str | None = None
+    missing_rates: tuple[datetime, ...] = ()
 
     def gross(self, digits: int = 5) -> dict[datetime, float]:
         return {slot: float(round(price.gross, digits)) for slot, price in self.prices.items()}
@@ -268,6 +270,7 @@ def quarter_prices(
     rates: dict[tuple[int, int], TariffRates] = {}
     prices: dict[datetime, KwhPrice] = {}
     missing: list[datetime] = []
+    missing_rates: list[datetime] = []
     slot = start_utc
     current_day = definition = period = None
     while slot < end_utc:
@@ -279,6 +282,7 @@ def quarter_prices(
             period = next((item for item in periods if covers(item, day)), None)
         if definition is None or period is None:
             missing.append(slot)
+            missing_rates.append(slot)
             slot += SLOT
             continue
         key = (id(definition), id(period))
@@ -300,6 +304,7 @@ def quarter_prices(
         monthly_fees=_monthly_fee_periods(schedule.definitions, periods, start_utc, end_utc, fee_parameters),
         missing=tuple(missing),
         name=next((definition.name for definition in schedule.definitions if getattr(definition, "name", None)), None),
+        missing_rates=tuple(missing_rates),
     )
 
 
