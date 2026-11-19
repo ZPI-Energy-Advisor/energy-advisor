@@ -36,6 +36,7 @@ rejestr zastępuje poprzedni. Przypisanie domu do użytkownika należy do backen
 | Komendy wsadowe (`POST /home/commands`, `DELETE /home/commands`), `stop_at` zegara, wykonanie planu dnia z PV z dnia referencyjnego (`/api/v1/home/plan-runs`) | ZP-113 |
 | Rachunek przed i po planie w przebiegu (`cost`), historia przebiegów | ZP-114 |
 | Pomieszczenie urządzenia (`room`) w rejestrze i w stanie domu | ZP-109 |
+| Bilans stanu domu w przebiegu planu liczony od jego początku (`today.period`, `today.plan_date`) | ZP-110 |
 
 ## Zasady ogólne
 
@@ -654,6 +655,8 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
     }
   ],
   "today": {
+    "period": "day",
+    "plan_date": null,
     "day_start": "2026-10-19T00:00:00+02:00",
     "until": "2026-10-19T12:00:00+02:00",
     "consumption_kwh": 6.42,
@@ -672,7 +675,8 @@ Dla właściciela podłączonego domu; odłączony dom: `409`. Zegar, stany i mo
 | `power` | Suma bieżącej mocy urządzeń: pobór, produkcja PV i bilans (ujemny = oddawanie do sieci) |
 | `devices[].device_type`, `device_category`, `room`, `flexibility_mode`, `programs` | Opis urządzenia z rejestru w bazie (programy bez profilu). `room` to pomieszczenie z pliku albo domyślne według typu (słownik w `docs/devices-file-format.md`). `null` i pusta lista, gdy hub ma urządzenie spoza rejestru, np. przy zaległej wysyłce |
 | `devices[].energy_today_kwh` | Energia urządzenia od początku doby ze zdarzeń, odporna na restart mikroserwisu |
-| `today` | Od północy doby symulacji (strefa domu, doba ze zmianą czasu ma 23 albo 25 h) do `clock.sim_time`, tylko bieżący przebieg (`simulation_id`) |
+| `today` | Bilans całego domu od `day_start` do `clock.sim_time`, tylko bieżący przebieg (`simulation_id`). Zwykle od północy doby symulacji (strefa domu, doba ze zmianą czasu ma 23 albo 25 h) |
+| `today.period`, `today.plan_date` | `day` – od północy doby. `plan_run` – symulacja jest przebiegiem planu dnia na `plan_date`, a zegar jest w jego horyzoncie: `day_start` to `horizon_start` przebiegu (północ doby planu), także po północy drugiego dnia aż do 06:00. Ten sam okres liczy raport przebiegu, który jednak porównuje tylko urządzenia z planu. Po `horizon_end` wraca `day`. `devices[].energy_today_kwh` liczy się w tym samym okresie |
 | `today.grid_import_kwh` | Suma dodatnich bilansów kwadransów: produkcja PV w tym samym kwadransie pokrywa zużycie domu |
 | `today.cost_pln` | `grid_import_kwh` kwadransów razy ceny kwadransów taryfy z profilu właściciela (energia, dystrybucja zmienna, opłaty za kWh, VAT; te same ceny co optymalizacja harmonogramu). Bez opłat stałych i bez wartości energii oddanej do sieci, które rozlicza rachunek okresu |
 | `today.cost_error` | Powód braku kosztu (`cost_pln: null`), np. niepełny profil albo brak cen RCE dla taryfy dynamicznej |

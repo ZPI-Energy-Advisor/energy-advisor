@@ -262,3 +262,18 @@ export const planBadges = (run) => {
   }
   return badges;
 };
+
+// Doba chwili symulacji jako RRRR-MM-DD w strefie domu.
+const isoDayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: HOME_TIMEZONE });
+const simDay = (iso) => isoDayFormat.format(new Date(iso));
+
+/**
+ * Okres bilansu z `today` (GET /home/state): w zwykłej dobie od północy, w przebiegu planu od jego początku.
+ * Ta sama doba: „20 listopada, 00:00–19:00”; przebieg przez północ: „20 listopada 00:00 – 21 listopada 06:00”.
+ */
+export const periodLabel = (today) => {
+  const startDay = simDay(today.day_start);
+  const endDay = simDay(today.until);
+  if (startDay === endDay) return `${shortDay(startDay)}, ${formatSimTime(today.day_start)}–${formatSimTime(today.until)}`;
+  return `${shortDay(startDay)} ${formatSimTime(today.day_start)} – ${shortDay(endDay)} ${formatSimTime(today.until)}`;
+};

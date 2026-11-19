@@ -573,6 +573,26 @@ describe("HomePage", () => {
       expect(get.mock.calls.filter(([url]) => url === "/home/state").length).toBeGreaterThan(stateCalls));
   });
 
+  it("nad bilansem podaje okres doby i że dotyczy całego domu", async () => {
+    mockApi();
+    renderPage();
+
+    const summary = await screen.findByRole("region", { name: "Podsumowanie domu" });
+    expect(within(summary).getByRole("heading", { name: "Bilans doby · cały dom" })).toBeTruthy();
+    expect(summary.textContent).toContain("19 października, 00:00–12:00");
+    expect(summary.textContent).toContain("Cały dom: energia pobrana z sieci (po PV)");
+  });
+
+  it("w przebiegu planu po północy bilans obejmuje cały plan od jego początku", async () => {
+    const today = { ...STATE.today, period: "plan_run", plan_date: "2026-10-19", until: "2026-10-20T06:00:00+02:00" };
+    mockApi({ states: [{ ...STATE, clock: { ...STATE.clock, sim_time: "2026-10-20T06:00:00+02:00" }, today }] });
+    renderPage();
+
+    const summary = await screen.findByRole("region", { name: "Podsumowanie domu" });
+    expect(within(summary).getByRole("heading", { name: "Przebieg planu na 19 października · cały dom" })).toBeTruthy();
+    expect(summary.textContent).toContain("19 października 00:00 – 20 października 06:00");
+  });
+
   it("domyślnie pokazuje przekrój domu z licznikiem przy wejściu", async () => {
     mockApi();
     renderPage();

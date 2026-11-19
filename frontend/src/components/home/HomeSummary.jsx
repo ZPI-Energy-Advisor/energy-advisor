@@ -1,4 +1,4 @@
-import { formatKw, formatKwh, formatPln } from "../../utils/home";
+import { formatKw, formatKwh, formatPln, periodLabel, shortDay } from "../../utils/home";
 
 function Stat({ label, value, hint, tone = "default" }) {
   const color = { default: "text-gray-900", production: "text-emerald-700", export: "text-sky-700" }[tone];
@@ -11,7 +11,9 @@ function Stat({ label, value, hint, tone = "default" }) {
   );
 }
 
-// Moc chwilowa z huba i bilans doby ze zdarzeń energy_report (GET /home/state).
+// Moc chwilowa z huba i bilans ze zdarzeń energy_report (GET /home/state). Nad kafelkami bilansu stoi okres
+// (`today.period`): zwykła doba od północy albo przebieg planu od jego początku, także po północy drugiego dnia,
+// jak w raporcie przebiegu. Bilans dotyczy całego domu, a raport porównuje tylko urządzenia z planu.
 function HomeSummary({ power, today }) {
   const exporting = power != null && power.net_kw < 0;
 
@@ -27,18 +29,27 @@ function HomeSummary({ power, today }) {
         />
       </div>
 
+      {today && (
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pt-1">
+          <h3 className="text-sm font-semibold text-gray-900">
+            {today.period === "plan_run" && today.plan_date ? `Przebieg planu na ${shortDay(today.plan_date)}` : "Bilans doby"}{" "}
+            <span className="font-normal text-gray-500">· cały dom</span>
+          </h3>
+          <p className="text-xs text-gray-500 tabular-nums">{periodLabel(today)}</p>
+        </div>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat
-          label="Zużycie dziś"
+          label="Zużycie"
           value={formatKwh(today?.consumption_kwh)}
           hint={today ? null : "Brak danych z tej doby"}
         />
-        <Stat label="Produkcja dziś" value={formatKwh(today?.production_kwh)} tone="production" />
+        <Stat label="Produkcja" value={formatKwh(today?.production_kwh)} tone="production" />
         <Stat label="Pobrane z sieci" value={formatKwh(today?.grid_import_kwh)} />
         <Stat
-          label="Koszt dziś"
+          label="Koszt"
           value={formatPln(today?.cost_pln)}
-          hint={today?.cost_error ?? "Energia z sieci w cenach taryfy, bez opłat stałych"}
+          hint={today?.cost_error ?? "Cały dom: energia pobrana z sieci (po PV), w cenach taryfy, bez opłat stałych"}
         />
       </div>
     </section>

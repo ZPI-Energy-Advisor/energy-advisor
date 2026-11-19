@@ -494,3 +494,44 @@ def test_report_keeps_last_known_state_when_hub_is_down(home):
 
     assert (report.status_code, report.json()["status"], report.json()["id"]) == (200, "running", run["id"])
 
+
+
+# Bilans w stanie domu (ZP-110): przebieg planu liczy się od jego początku, także po północy drugiego dnia
+
+
+def _today(user) -> dict:
+    response = client.get("/api/v1/home/state", headers=_headers(user))
+    assert response.status_code == 200, response.text
+    return response.json()["today"]
+
+
+def test_home_state_counts_plan_run_from_its_start_also_after_midnight(home, db):
+    owner = _home_with_files(home)
+    run = _start(owner, _plan(owner)["id"]).json()
+    simulation_id = run["simulation_id"]
+    _store_events(db, owner, [
+        _report(simulation_id, "dev_wm_01", f"{PLAN_DAY}T10:00:00+02:00", 0.6),
+        _report(simulation_id, "dev_ev_01", "2026-10-13T03:00:00+02:00", 0.9),
+    ])
+    home.hub.clock_state["sim_time"] = "2026-10-13T05:00:00+02:00"
+
+    today = _today(owner)
+
+    # Po północy doba kalendarzowa miałaby tylko 0,9 kWh z nocy; bilans obejmuje cały plan, jak raport.
+    assert (today["period"], today["plan_date"]) == ("plan_run", PLAN_DAY)
+    assert (today["day_start"], today["until"]) == (run["horizon_start"], "2026-10-13T05:00:00+02:00")
+    assert today["consumption_kwh"] == pytest.approx(1.5)
+
+
+def test_home_state_after_end_of_plan_horizon_counts_ordinary_day(home, db):
+    owner = _home_with_files(home)
+    plan = _plan(owner)
+    run = _start(owner, plan["id"]).json()
+    _store_events(db, owner, [_report(run["simulation_id"], "dev_wm_01", f"{PLAN_DAY}T10:00:00+02:00", 0.6)])
+    home.hub.clock_state["sim_time"] = (datetime.fromisoformat(plan["horizon_end"]) + timedelta(hours=1)).isoformat()
+
+    today = _today(owner)
+
+    assert (today["period"], today["plan_date"]) == ("day", None)
+    assert today["day_start"] == "2026-10-13T00:00:00+02:00"
+    assert today["consumption_kwh"] == 0.0

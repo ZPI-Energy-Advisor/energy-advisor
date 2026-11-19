@@ -104,7 +104,7 @@ function HouseDevicePopover({ device, simTime, disabled, onCommand, onClose, sty
 
       <dl className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
         <Fact label={producing ? "Produkcja" : "Moc"}>{formatKw(producing ? -device.power_kw : device.power_kw)}</Fact>
-        <Fact label="Dziś">{formatKwh(device.energy_today_kwh == null ? null : Math.abs(device.energy_today_kwh))}</Fact>
+        <Fact label="Energia">{formatKwh(device.energy_today_kwh == null ? null : Math.abs(device.energy_today_kwh))}</Fact>
       </dl>
 
       {device.state === "running" && device.program_id && (

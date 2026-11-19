@@ -12,6 +12,7 @@ import {
   nearestSpeedStep,
   realDuration,
   speedLabel,
+  periodLabel,
 } from "./home";
 
 const device = (fields) => ({ device_name: "X", state: "off", power_kw: 0, programs: [], ...fields });
@@ -140,5 +141,19 @@ describe("planBadges", () => {
     expect(planBadges(run("2026-10-19T10:00:00+02:00", rejected)).dev_wm_01.tone).toBe("error");
     expect(planBadges({ ...run("2026-10-19T10:00:00+02:00", washer), status: "completed" })).toEqual({});
     expect(planBadges(null)).toEqual({});
+  });
+});
+
+describe("periodLabel", () => {
+  it("w jednej dobie podaje dzień i godziny od–do", () => {
+    expect(periodLabel({ day_start: "2026-11-19T00:00:00+01:00", until: "2026-11-19T19:00:00+01:00" })).toBe(
+      "19 listopada, 00:00–19:00",
+    );
+  });
+
+  it("przebieg planu przez północ podaje dzień przy obu końcach", () => {
+    expect(periodLabel({ day_start: "2026-11-20T00:00:00+01:00", until: "2026-11-21T06:00:00+01:00" })).toBe(
+      "20 listopada 00:00 – 21 listopada 06:00",
+    );
   });
 });
