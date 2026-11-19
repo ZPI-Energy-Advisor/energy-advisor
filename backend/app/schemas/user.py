@@ -12,6 +12,11 @@ class ProfileTariffSummary(BaseModel):
     tariff_type: str | None = None
 
 
+class DeleteAccountRequest(BaseModel):
+    # Potwierdzenie: e-mail konta wpisany przez użytkownika.
+    confirm_email: str
+
+
 class CurrentUserResponse(BaseModel):
     email: str
     provider: str | None = None
