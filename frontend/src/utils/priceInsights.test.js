@@ -1,16 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeDifference, describeUnavailable, describeWindow, formatWindowHours } from "./priceInsights";
+import { describeUnavailable, describeWindow, formatWindowHours } from "./priceInsights";
 
 describe("priceInsights", () => {
-  it("opisuje różnicę do średniej słowami, bez znaku", () => {
-    expect(describeDifference(-35.2)).toBe("35% taniej niż średnio");
-    expect(describeDifference(12.6)).toBe("13% drożej niż średnio");
-    expect(describeDifference(-0.3)).toBe("tyle samo co średnio");
-    expect(describeDifference(null)).toBeNull();
-  });
-
-  it("pokazuje ujemną cenę i pomija procent, którego nie da się policzyć", () => {
-    const window = { average_price_pln_kwh: -0.05, difference_percent: null };
+  it("pokazuje samą średnią cenę okna, także ujemną", () => {
+    const window = { average_price_pln_kwh: -0.05, difference_percent: -120.0 };
 
     expect(describeWindow(window)).toBe("średnio -0,05 zł/kWh");
   });
