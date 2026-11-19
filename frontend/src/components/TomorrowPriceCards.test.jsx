@@ -52,15 +52,15 @@ const renderCards = (response, { tariffType = "G11", profileExists = true } = {}
 };
 
 describe("TomorrowPriceCards", () => {
-  it("pokazuje dwie karty w różnych kolorach z godzinami, ceną i porównaniem do średniej", async () => {
+  it("pokazuje dwie karty w różnych kolorach z godzinami i średnią ceną", async () => {
     const get = renderCards(AVAILABLE);
 
     const cheapest = await screen.findByTestId("price-card-cheapest");
-    expect(cheapest.textContent).toBe("Jutro najtaniej10:00–12:00średnio 0,40 zł/kWh, 35% taniej niż średnio");
+    expect(cheapest.textContent).toBe("Jutro najtaniej10:00–12:00średnio 0,40 zł/kWh");
     expect(cheapest.className).toContain("emerald");
 
     const expensive = screen.getByTestId("price-card-most_expensive");
-    expect(expensive.textContent).toBe("Jutro najdrożej17:15–19:15średnio 1,23 zł/kWh, 101% drożej niż średnio");
+    expect(expensive.textContent).toBe("Jutro najdrożej17:15–19:15średnio 1,23 zł/kWh");
     expect(expensive.className).toContain("rose");
 
     expect(get).toHaveBeenCalledWith("/dynamic-prices/tomorrow/insights", { params: { window: "2h" } });
