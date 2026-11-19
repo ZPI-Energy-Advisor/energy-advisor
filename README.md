@@ -13,13 +13,14 @@ Energii (RCE) publikowaną przez PSE.
 | Baza danych | PostgreSQL 15 | `localhost:5432` |
 | Worker cen dynamicznych | APScheduler | – |
 
-Backend, baza i worker działają w kontenerach zdefiniowanych w `docker-compose.yml`.
-Frontend uruchamiany jest lokalnie przez Vite.
+Wszystkie komponenty działają w kontenerach zdefiniowanych w `docker-compose.yml`. Frontend
+w kontenerze to zbudowana wersja serwowana przez nginx; do pracy nad kodem frontendu można
+uruchomić go lokalnie przez Vite (krok 6).
 
 ## Wymagania
 
 - Docker i Docker Compose
-- Node.js 20+
+- Node.js 22+ (tylko do lokalnego uruchamiania frontendu przez Vite)
 - Python 3.11 (opcjonalnie, do uruchamiania testów poza kontenerem)
 
 ## Uruchomienie
@@ -120,11 +121,28 @@ tylko energię czynną.
 
 ### 6. Frontend
 
+**W kontenerze.** Kontener `frontend` startuje w kroku 2 razem z resztą usług. Aplikacja jest
+dostępna pod http://localhost:5173. Obraz buduje produkcyjną wersję aplikacji (`npm run build`)
+i serwuje ją przez nginx, więc zmiany w kodzie nie są widoczne na bieżąco.
+
+Zmienne `VITE_API_URL` i `VITE_GOOGLE_CLIENT_ID` są wpisywane w kod podczas budowania obrazu.
+Po ich zmianie w `.env` albo po zmianach w kodzie trzeba przebudować obraz:
+
 ```bash
+docker compose up -d --build frontend
+```
+
+**Lokalnie przez Vite (praca nad kodem).** Vite przeładowuje stronę po każdej zmianie w kodzie.
+Kontener i Vite używają tego samego portu 5173, więc najpierw trzeba zatrzymać kontener:
+
+```bash
+docker compose stop frontend
 cd frontend
 npm install
 npm run dev
 ```
+
+Powrót do wersji z kontenera: zatrzymać Vite i wykonać `docker compose start frontend`.
 
 ## Dokumentacja
 

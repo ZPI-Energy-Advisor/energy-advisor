@@ -67,6 +67,20 @@ services:
         condition: service_healthy
     command: python -m app.workers.price_sync_worker run
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Vite wpisuje te wartości w kod przy buildzie: po zmianie w .env trzeba przebudować obraz
+        - VITE_API_URL=${VITE_API_URL:-}
+        - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID:-}
+    container_name: energy_advisor_frontend
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
   hub:
     build: ./smart-home-hub
     container_name: energy_advisor_hub
