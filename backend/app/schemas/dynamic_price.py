@@ -144,3 +144,52 @@ class PriceHistoryResponse(BaseModel):
     max_price_pln_kwh: float | None = None
     points: list[PriceHistoryPointOut] = []
     days: PriceHistoryDaysOut = PriceHistoryDaysOut()
+
+
+INSIGHTS_WINDOW_PATTERN = r"^[1-9]\d{0,3}(h|min)$"
+INSIGHTS_WINDOW_STEP_MINUTES = 15
+INSIGHTS_WINDOW_MAX_MINUTES = 12 * 60
+
+
+def parse_insights_window(value: str) -> int:
+    """„2h”, „90min” -> minuty; okno to wielokrotność kwadransa, najwyżej 12 godzin."""
+    minutes = int(value[:-1]) * 60 if value.endswith("h") else int(value[:-3])
+    if minutes % INSIGHTS_WINDOW_STEP_MINUTES or not 0 < minutes <= INSIGHTS_WINDOW_MAX_MINUTES:
+        raise ValueError("Okno musi być wielokrotnością 15 minut, od 15min do 12h (np. 2h albo 90min)")
+    return minutes
+
+
+class PriceInsightsStatus(str, Enum):
+    AVAILABLE = "available"
+    # Brak cen RCE na jutro (PSE jeszcze nie opublikowało albo worker ich nie pobrał).
+    UNAVAILABLE = "unavailable"
+    # Cennik operatora nie ma stawek na jutro (taryfy dynamicznej albo opłat regulacyjnych); publikacja RCE nie pomoże.
+    NO_TARIFF_DATA = "no_tariff_data"
+
+
+class PriceWindowOut(BaseModel):
+    start: datetime
+    end: datetime
+    average_price_pln_kwh: float
+    # Względem średniej dobowej; null, gdy średnia dobowa wynosi 0.
+    difference_percent: float | None
+
+
+class PriceInsightsResponse(BaseModel):
+    status: PriceInsightsStatus
+    business_date: date
+    timezone: str
+    unit: str = "PLN/kWh"
+    window_minutes: int
+    # Opis oferty dynamicznej, której ceny pokazujemy.
+    tariff: str
+    # false: umowa z profilu ma zwykłą taryfę, a ceny są z oferty dynamicznej operatora.
+    profile_dynamic: bool
+    intervals: int
+    expected_intervals: int
+    average_price_pln_kwh: float | None = None
+    flat_prices: bool | None = None
+    cheapest: PriceWindowOut | None = None
+    most_expensive: PriceWindowOut | None = None
+    # Tylko przy status=unavailable: kiedy ceny na jutro powinny być u nas dostępne.
+    expected_publication_at: datetime | None = None

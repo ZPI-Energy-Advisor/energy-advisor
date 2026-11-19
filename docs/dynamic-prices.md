@@ -121,7 +121,7 @@ zakres dat, status, liczbę dób i rekordów oraz `error_message`.
 
 Worker działa jako osobny kontener `price-worker` w `docker-compose.yml`.
 
-- Codziennie o 15:00 Europe/Warsaw (`SYNC_HOUR` w workerze; PSE publikuje ceny na jutro ok. 13:45)
+- Codziennie o 15:00 Europe/Warsaw (`PRICE_PUBLICATION_TIME`; PSE publikuje ceny na jutro ok. 13:45)
   uzupełnia brakujące lub niepełne doby z ostatnich `CATCHUP_DAYS` (7) dni oraz jutro.
 - Przy starcie robi to samo, więc nadrabia przestój.
 - Jeśli PSE jeszcze nie opublikowało jutra, kolejne uruchomienie dociągnie tę dobę w ramach okna catch-up.
@@ -145,6 +145,33 @@ Bez Dockera ten sam efekt da cron: `0 15 * * * cd backend && python -m app.worke
 | GET | `/api/v1/dynamic-prices/sync/status` | JWT | ostatnie uruchomienie i ostatnie udane |
 | GET | `/api/v1/dynamic-prices?business_date=RRRR-MM-DD` | JWT | ceny z doby (PLN/MWh i PLN/kWh) |
 | GET | `/api/v1/dynamic-prices/history?from=&to=&resolution=` | JWT | historia cen do wykresu, średnia, kompletność dni |
+| GET | `/api/v1/dynamic-prices/tomorrow/insights?window=2h` | JWT | najtańsze i najdroższe okno cenowe jutra |
+
+### Okna cenowe na jutro
+
+`GET /tomorrow/insights` zwraca dane do prostych komunikatów („najtaniej jutro 12:00–14:00”).
+
+- `window`: długość okna, wielokrotność 15 minut od `15min` do `12h` (np. `2h`, `90min`); domyślnie `2h`.
+  Okno przesuwa się co kwadrans.
+- Ceny to zawsze ceny oferty dynamicznej operatora z profilu, liczone przez `SchedulePriceService`: RCE z marżą
+  i limitami oferty, opłaty za kWh, VAT. Dla klienta z ceną dynamiczną są takie same jak w
+  `GET /energy-files/{id}/schedule`. Klient ze zwykłą taryfą ma `profile_dynamic: false`; dystrybucja jest wtedy
+  z jego grupy, a gdy oferta dynamiczna jej nie obejmuje, z pierwszej grupy oferty (pole `tariff` ją opisuje).
+- `cheapest` i `most_expensive`: `start`, `end` (Europe/Warsaw), `average_price_pln_kwh`, `difference_percent`
+  względem średniej dobowej (`average_price_pln_kwh` odpowiedzi). Przy remisie wygrywa wcześniejsze okno.
+  Procent liczony jest względem modułu średniej, więc przy ujemnej średniej „taniej” nadal jest na minusie;
+  przy średniej równej 0 ma wartość `null`.
+- Okna liczone są na kwadransach w UTC, więc doba 92 i 100 kwadransów działa bez wyjątków
+  (`intervals`, `expected_intervals`).
+- `flat_prices: true`, gdy najdroższy i najtańszy kwadrans doby różnią się o mniej niż
+  `FLAT_PRICE_SPREAD_PLN_KWH` (domyślnie 0,05 zł/kWh). Okna są nadal zwracane.
+- Brak kompletu cen dynamicznych na jutro: `status: "unavailable"`, bez okien, z `expected_publication_at`
+  (dzisiaj o `PRICE_PUBLICATION_TIME`, domyślnie 15:00 — o tej godzinie worker pobiera ceny opublikowane
+  przez PSE ok. 13:45). Godzina w przeszłości oznacza opóźnienie publikacji albo synchronizacji.
+- Brak stawek w cenniku na jutro (operator nie ma oferty dynamicznej, jej cennik nie obejmuje jutra albo brakuje
+  okresu opłat regulacyjnych): `status: "no_tariff_data"`, bez okien i bez `expected_publication_at`, bo publikacja
+  RCE tego nie zmieni. Gdy brakuje i stawek, i cen RCE, wygrywa `no_tariff_data`.
+- Kody: `401` bez tokenu, `409` bez uzupełnionego profilu, `422` przy złym `window`.
 
 Szczegóły `POST /sync`:
 

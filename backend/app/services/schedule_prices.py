@@ -37,11 +37,26 @@ class SchedulePrices:
     pv_note: str | None = None
     # Umowa z ceną dynamiczną: ceny kolejnych dni pojawiają się dopiero po publikacji RCE.
     dynamic: bool = False
+    # Ceny oferty dynamicznej policzone na życzenie (`as_dynamic`), choć umowa z profilu ma zwykłą taryfę.
+    dynamic_instead_of_profile: bool = False
     # Policzona grupa taryfowa i czy profil ma instalację PV (ekran wyjaśnia wtedy wynik taryfy G11).
     group: TariffTypeEnum | None = None
     prosumer: bool = False
     # Średnia cena kWh z sieci w okresie w częściach (energia, dystrybucja, opłaty za kWh, VAT).
     breakdown: dict[str, float] | None = None
+    # Kwadranse bez ceny z braku stawek w cenniku (definicji taryfy albo okresu opłat regulacyjnych),
+    # a nie z braku ceny RCE — tych nie uzupełni publikacja PSE.
+    missing_rates: tuple[datetime, ...] = ()
+
+
+class NoTariffRatesError(HTTPException):
+    """Operator nie ma w cenniku żadnych stawek taryfy w okresie. Dla API to 422 jak każdy błąd stawek;
+    `description` i `dynamic_instead_of_profile` jak w `SchedulePrices`, żeby wywołujący mógł opisać taryfę."""
+
+    def __init__(self, description: str, detail: str, dynamic_instead_of_profile: bool):
+        super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
+        self.description = description
+        self.dynamic_instead_of_profile = dynamic_instead_of_profile
 
 
 class SchedulePriceService:
@@ -53,10 +68,12 @@ class SchedulePriceService:
 
     def for_user(
         self, user_id: UUID, start_utc: datetime, end_utc: datetime, exports: dict[datetime, float] | None = None,
-        tariff: TariffChoice | None = None,
+        tariff: TariffChoice | None = None, as_dynamic: bool = False,
     ) -> SchedulePrices:
         """`exports`: energia oddana do sieci w kwadransach pliku (początek w UTC -> kWh).
-        `tariff`: taryfa wybrana na ekranie; bez niej taryfa z profilu. Operator zawsze z profilu."""
+        `tariff`: taryfa wybrana na ekranie; bez niej taryfa z profilu. Operator zawsze z profilu.
+        `as_dynamic`: ceny oferty dynamicznej operatora także wtedy, gdy umowa ma zwykłą taryfę.
+        Dystrybucja jest wtedy z jej grupy, a gdy oferta dynamiczna jej nie obejmuje, z pierwszej grupy oferty."""
         profile = self._profile(user_id)
         operator = profile.base_info.distribution_operator
         group, dynamic = (tariff or TariffChoice()).resolve(profile)
@@ -64,17 +81,25 @@ class SchedulePriceService:
         first_day = start_utc.astimezone(LOCAL_TIMEZONE).date()
         last_day = (end_utc - SLOT).astimezone(LOCAL_TIMEZONE).date()
 
+        available = self.tariff_repository.list_for_period(operator=operator, date_from=first_day, date_to=last_day)
+        instead_of_profile = as_dynamic and not dynamic
+        if instead_of_profile:
+            dynamic = True
+            offered = {d.distribution_group for d in available if d.tariff_code == TariffTypeEnum.DYNAMIC}
+            if offered and group not in offered:
+                group = min(offered, key=list(TariffTypeEnum).index)
         code = TariffTypeEnum.DYNAMIC if dynamic else group
         definitions = [
             definition
-            for definition in self.tariff_repository.list_for_period(operator=operator, date_from=first_day, date_to=last_day)
+            for definition in available
             if definition.tariff_code == code and definition.distribution_group == group
         ]
         label = f"{group.value} z ceną dynamiczną" if dynamic else group.value
         if not definitions:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            raise NoTariffRatesError(
+                description=f"{operator.value}, {label}",
                 detail=f"Brak stawek taryfy {label} u operatora {operator.value} dla wybranego okresu.",
+                dynamic_instead_of_profile=instead_of_profile,
             )
         periods = self.tariff_repository.list_regulatory_periods(date_from=first_day, date_to=last_day)
         if dynamic:
@@ -106,6 +131,8 @@ class SchedulePriceService:
             max_grid_kw=profile.base_info.contracted_power_kw, pv_note=pv_note, dynamic=dynamic,
             group=group, prosumer=prosumer,
             breakdown=self._breakdown(quarters.prices.values()),
+            dynamic_instead_of_profile=instead_of_profile,
+            missing_rates=quarters.missing_rates,
         )
 
     @staticmethod
