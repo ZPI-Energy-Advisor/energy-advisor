@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import apiClient from "../api/client";
 import HomeConnectionPanel from "../components/HomeConnectionPanel";
+import SegmentedControl from "../components/SegmentedControl";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
+import HouseView from "../components/home/HouseView";
 import PlanRunBar from "../components/home/PlanRunBar";
 import { DeviationList } from "../components/home/PlanRunCost";
 import PlanRunHistory from "../components/home/PlanRunHistory";
@@ -17,11 +19,17 @@ import { planBadges, shortDay } from "../utils/home";
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
 
+const VIEW_OPTIONS = [
+  { value: "house", label: "Dom" },
+  { value: "list", label: "Lista" },
+];
+
 // Stan i sterowanie podłączonego domu. Montowany tylko przy podłączonym domu, więc odłączenie
 // kończy odpytywanie i czyści stan, a ponowne podłączenie zaczyna od świeżego pobrania.
 function HomeLive({ onShowReport }) {
   const { state, error, isLoading, refresh } = useHomeState();
   const [actionError, setActionError] = useState(null);
+  const [view, setView] = useState("house");
   const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
@@ -141,7 +149,21 @@ function HomeLive({ onShowReport }) {
           )}
           <HomeSummary power={state.power} today={state.today} />
           {!hubDown && (
-            <HomeDeviceList devices={state.devices} onCommand={sendCommand} planBadges={planBadges(planRun.run)} />
+            <>
+              <div className="flex justify-end">
+                <SegmentedControl label="Widok urządzeń" options={VIEW_OPTIONS} value={view} onChange={setView} />
+              </div>
+              {view === "house" ? (
+                <HouseView
+                  devices={state.devices}
+                  power={state.power}
+                  simTime={state.clock?.sim_time}
+                  onCommand={sendCommand}
+                />
+              ) : (
+                <HomeDeviceList devices={state.devices} onCommand={sendCommand} planBadges={planBadges(planRun.run)} />
+              )}
+            </>
           )}
         </>
       )}

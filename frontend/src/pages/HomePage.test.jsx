@@ -166,6 +166,7 @@ const renderPage = ({ me = { home_owner: true } } = {}) =>
   );
 
 const deviceRow = async (name) => screen.findByRole("listitem", { name });
+const showList = async () => fireEvent.click(await screen.findByRole("button", { name: "Lista" }));
 
 describe("HomePage", () => {
   it("przed wczytaniem konta pokazuje ładowanie", () => {
@@ -202,6 +203,7 @@ describe("HomePage", () => {
     // Bilans ujemny: dom oddaje nadwyżkę PV do sieci.
     expect(screen.getByText("Oddawanie do sieci")).toBeTruthy();
 
+    await showList();
     const washer = await deviceRow("Pralka Bosch");
     expect(within(washer).getByText("Gotowe")).toBeTruthy();
     expect(washer.textContent).toContain("Pralka · Przesuwalny");
@@ -237,6 +239,7 @@ describe("HomePage", () => {
     mockApi({ states: [STATE, { ...STATE, devices: [lampOn, WASHER] }] });
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { status: "accepted", state: "running" } });
     renderPage();
+    await showList();
 
     fireEvent.click(await screen.findByRole("button", { name: "Włącz: Lampa salon" }));
 
@@ -251,6 +254,7 @@ describe("HomePage", () => {
     mockApi();
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} });
     renderPage();
+    await showList();
 
     const washer = await deviceRow("Pralka Bosch");
     fireEvent.change(within(washer).getByRole("combobox", { name: "Program: Pralka Bosch" }), {
@@ -270,6 +274,7 @@ describe("HomePage", () => {
     mockApi();
     vi.spyOn(apiClient, "post").mockRejectedValue({ response: { data: { detail: "Trwa program urządzenia" } } });
     renderPage();
+    await showList();
 
     fireEvent.click(await screen.findByRole("button", { name: "Włącz: Lampa salon" }));
 
@@ -363,6 +368,7 @@ describe("HomePage", () => {
     expect(screen.queryByText(/Zegar sam stanie/)).toBeNull();
     expect(screen.queryByRole("region", { name: "Rachunek przed i po" })).toBeNull();
 
+    await showList();
     const list = await screen.findByRole("region", { name: "Urządzenia" });
     // Pralka pracuje: zegar 12:00, plan 11:45–12:30.
     expect(within(list).getByRole("listitem", { name: "Pralka Bosch" }).textContent).toContain("Plan 11:45–12:30 · w trakcie");
@@ -397,6 +403,7 @@ describe("HomePage", () => {
     expect(bar.textContent).toContain("Plan na 19 października wykonany · oszczędność 4,50 zł (70,3%)");
     expect(within(bar).queryByRole("button", { name: "Zakończ" })).toBeNull();
     // Po końcu planu bez plakietek przy urządzeniach i bez paska odchyleń.
+    await showList();
     expect((await screen.findByRole("region", { name: "Urządzenia" })).textContent).not.toContain("Plan 11:45");
     expect(screen.queryByRole("alert", { name: "Odchylenia od planu" })).toBeNull();
 
@@ -564,6 +571,36 @@ describe("HomePage", () => {
     expect(within(bar).queryByRole("button", { name: "Zakończ" })).toBeNull();
     await waitFor(() =>
       expect(get.mock.calls.filter(([url]) => url === "/home/state").length).toBeGreaterThan(stateCalls));
+  });
+
+  it("domyślnie pokazuje przekrój domu z licznikiem przy wejściu", async () => {
+    mockApi();
+    renderPage();
+
+    const house = await screen.findByRole("region", { name: "Dom" });
+    expect(screen.getByRole("button", { name: "Dom" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(house).getByRole("img", { name: "Licznik: Oddawanie do sieci 1,20 kW" })).toBeTruthy();
+    // Lampa i pralka bez pomieszczenia w stanie trafiają do „Inne”.
+    const other = within(house).getByRole("group", { name: "Inne" });
+    expect(within(other).getByRole("button", { name: "Lampa salon: Wyłączone" })).toBeTruthy();
+    expect(within(other).getByRole("button", { name: "Pralka Bosch: Gotowe" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Urządzenia" })).toBeNull();
+  });
+
+  it("włączenie lampy z dymku w domu wysyła polecenie, a nowy stan widać w przekroju i w dymku", async () => {
+    const lampOn = { ...LAMP, room: "living_room", state: "running", power_kw: 0.06 };
+    mockApi({ states: [{ ...STATE, devices: [{ ...LAMP, room: "living_room" }, WASHER] }, { ...STATE, devices: [lampOn, WASHER] }] });
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { status: "accepted", state: "running" } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Lampa salon: Wyłączone" }));
+    const popover = screen.getByRole("dialog", { name: "Lampa salon" });
+    fireEvent.click(within(popover).getByRole("button", { name: "Włącz: Lampa salon" }));
+
+    expect(post).toHaveBeenCalledWith("/home/devices/dev_lamp_01/commands", { command: "on" });
+    expect(await screen.findByRole("button", { name: "Lampa salon: Pracuje, 0,06 kW" })).toBeTruthy();
+    expect(within(screen.getByRole("dialog", { name: "Lampa salon" })).getByRole("button", { name: "Wyłącz: Lampa salon" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Salon, światło włączone" })).toBeTruthy();
   });
 
   it("pokazuje błąd pobrania stanu i pozwala ponowić", async () => {
