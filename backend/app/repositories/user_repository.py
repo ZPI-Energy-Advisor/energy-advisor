@@ -25,6 +25,12 @@ class UserRepository:
         self.db.refresh(user)
         return user
 
+    def delete(self, user_id: UUID) -> None:
+        """Usuwa konto; kaskady w bazie (ON DELETE CASCADE) usuwają profil, pliki, odczyty, urządzenia, plany,
+        przebiegi, zdarzenia symulacji i tokeny, a podłączenie domu dostaje NULL."""
+        self.db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
+        self.db.commit()
+
     def get_by_id(self, user_id: UUID) -> User | None:
         return self.db.query(User).filter(User.id == user_id).first()
     

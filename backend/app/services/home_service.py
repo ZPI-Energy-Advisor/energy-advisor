@@ -19,6 +19,9 @@ UNAVAILABLE_MESSAGE = "Hub Smart Home jest niedostępny. Urządzenia zostaną wy
 AUTH_MESSAGE = "Hub Smart Home odrzucił klucz HUB_API_KEY. Sprawdź konfigurację backendu i huba."
 DISABLED_MESSAGE = "Symulacja Smart Home jest wyłączona."
 NOT_CONNECTED_MESSAGE = "Dom nie jest podłączony. Podłącz dom, żeby zobaczyć jego stan."
+RELEASE_FAILED_MESSAGE = (
+    "Nie udało się odłączyć domu Smart Home, więc konto nie zostało usunięte. Spróbuj ponownie za chwilę."
+)
 
 
 def require_connected(home: HomeConnection, owner: User) -> None:
@@ -80,6 +83,23 @@ class HomeService:
             home.user_id = None
             home.connected_at = None
         return self._push_locked(home, owner, force=True)
+
+    def release_before_account_deletion(self, user: User) -> None:
+        """Odłącza dom właściciela, który usuwa konto: hub dostaje pusty rejestr i zatrzymuje urządzenia.
+
+        Bez potwierdzenia od huba konta nie usuwamy (503), bo hub zostałby z urządzeniami usuniętego konta.
+        Ponowna próba jest bezpieczna: odłączenie wysyła pusty rejestr jeszcze raz.
+        """
+        if not self.is_owner(user):
+            return
+        home = self.repository.get()
+        # Dom odłączony wcześniej, a hub potwierdził pusty rejestr: nie ma czego zatrzymywać. Po nieudanym
+        # odłączeniu dom jest już odłączony w bazie, ale hub wciąż ma urządzenia, więc wysyłamy ponownie.
+        if home.user_id != user.id and home.registry_hash == registry_hash([]):
+            return
+        result = self.disconnect(user)
+        if result.sync.status != HomeSyncStatus.SYNCED:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=RELEASE_FAILED_MESSAGE)
 
     def sync_after_change(self, user: User) -> HomeSync | None:
         if not self.is_owner(user):
