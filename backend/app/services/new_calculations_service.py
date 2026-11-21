@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import logging
 from uuid import UUID
@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from dateutil.relativedelta import relativedelta
 
+from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.tariff_definition_repository import TariffDefinitionRepository
@@ -56,6 +57,7 @@ class CalculationsService:
         market_prices = (
             DynamicMarketPriceResolver(market_price_repository) if market_price_repository is not None else None
         )
+        self.market_prices = market_prices
         self.pv_balancer = pv_balancer or PVBalancingEngine(market_prices)
         self.tariff_engine = tariff_engine or ZonedTariffCalculationStrategy()
         if market_prices is not None:
@@ -208,6 +210,19 @@ class CalculationsService:
             )
 
         base_details = self._details(profile_data, tariff_data, readings, first_day, warnings)
+        # Ceny RCE są potrzebne do ofert dynamicznych, które liczymy, i do wyceny oddania w net-billingu.
+        dynamic_needed = (
+            tariff_data.dynamic_price if selected_only
+            else any(definition.tariff_code == TariffTypeEnum.DYNAMIC for definition in definitions)
+        )
+        net_billing = base_details.pv_details is not None and base_details.pv_details.mode == PVTypeEnum.NET_BILLING
+        needs_market_prices = dynamic_needed or net_billing
+        if needs_market_prices and self.market_prices is not None:
+            # Ceny RCE całego okresu jednym zapytaniem zamiast osobnego dla każdego miesiąca.
+            self.market_prices.preload_rce(
+                datetime.combine(first_day, time(), LOCAL_TIMEZONE).astimezone(timezone.utc),
+                datetime.combine(file_last + timedelta(days=1), time(), LOCAL_TIMEZONE).astimezone(timezone.utc),
+            )
         consumption = base_details.annual_consumption
         context = BillingContext(
             regulatory_periods=regulatory_periods,
@@ -227,6 +242,7 @@ class CalculationsService:
         dynamic_calculations = {}
         calculation_errors = {}
         tariff_notes = {}
+        cycle_details_by_months: dict[int, CalculationDetails] = {}
         selected_key = (
             (TariffTypeEnum.DYNAMIC, tariff_data.tariff_type) if tariff_data.dynamic_price
             else (tariff_data.tariff_type, tariff_data.tariff_type)
@@ -253,13 +269,19 @@ class CalculationsService:
                 )
                 continue
             try:
-                details = base_details.model_copy(deep=True)
-                details.tariff_data.tariff_type = tariff_code
+                # Płytka kopia: odczyty i cykle są tylko czytane, każda taryfa zmienia jedynie własne tariff_data
+                # i podmienia (a nie modyfikuje) listy cykli.
+                details = base_details.model_copy()
+                details.tariff_data = base_details.tariff_data.model_copy(update={"tariff_type": tariff_code})
                 months = billing_cycle_months(tariff_definitions, profile_months)
                 if months != profile_months:
                     # Oferta wymaga własnego okresu (np. 1 miesiąc) niezależnie od okresu z profilu.
                     details.tariff_data.billing_cycle = BillingCycleEnum(months)
-                    cycle_details = self._details(profile_data, details.tariff_data, readings, first_day, warnings)
+                    if months not in cycle_details_by_months:
+                        cycle_details_by_months[months] = self._details(
+                            profile_data, details.tariff_data, readings, first_day, warnings
+                        )
+                    cycle_details = cycle_details_by_months[months]
                     details.used_energy_cycles = cycle_details.used_energy_cycles
                     details.pv_details = cycle_details.pv_details
                     tariff_context = BillingContext(
@@ -321,15 +343,19 @@ class CalculationsService:
         used_cycles = {}
         produced_cycles = {}
         cycle_starts = set()
+        starts_by_day: dict[date, datetime] = {}
         for reading in readings:
             timestamp = reading.measured_at
             used = float(reading.energy_kwh)
             produced = float(reading.exported_kwh)
-            cycle_start = CalculationsService._cycle_start(
-                timestamp.date(),
-                tariff_data.billing_period_start_date,
-                tariff_data.billing_cycle.value,
-            )
+            day = timestamp.date()
+            cycle_start = starts_by_day.get(day)
+            if cycle_start is None:
+                cycle_start = starts_by_day[day] = CalculationsService._cycle_start(
+                    day,
+                    tariff_data.billing_period_start_date,
+                    tariff_data.billing_cycle.value,
+                )
             cycle_starts.add(cycle_start)
             if used > 0:
                 used_cycles.setdefault(cycle_start, []).append((timestamp, used))

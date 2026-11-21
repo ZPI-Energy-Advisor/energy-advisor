@@ -137,14 +137,52 @@ class TariffCalculationResult:
 
 
 @dataclass
+class _DayEnergy:
+    """Odczyty jednego dnia: (znacznik czasu, energia, kwadrans doby albo -1 poza granicą kwadransa) i ich suma.
+
+    `prefix[q]` to energia kwadransów 0..q-1, więc energia kwadransów od a do b-1 to prefix[b] - prefix[a];
+    None, gdy dzień ma odczyt spoza granic kwadransów."""
+
+    records: list[tuple[datetime, Decimal, int]] = field(default_factory=list)
+    total: Decimal = Decimal("0")
+    prefix: list[Decimal] | None = None
+
+    def quarter_prefix(self) -> list[Decimal] | None:
+        if self.prefix is None and all(quarter >= 0 for _, _, quarter in self.records):
+            quarters = [Decimal("0")] * 96
+            for _, value, quarter in self.records:
+                quarters[quarter] += value
+            prefix = [Decimal("0")]
+            for value in quarters:
+                prefix.append(prefix[-1] + value)
+            self.prefix = prefix
+        return self.prefix
+
+
+def zone_runs(zones: tuple[int, ...]) -> tuple[tuple[int, int, int], ...]:
+    """Kolejne kwadranse doby w tej samej strefie: (strefa, pierwszy kwadrans, kwadrans za ostatnim)."""
+    runs = []
+    start = 0
+    for quarter in range(1, len(zones) + 1):
+        if quarter == len(zones) or zones[quarter] != zones[start]:
+            runs.append((zones[start], start, quarter))
+            start = quarter
+    return tuple(runs)
+
+
+@dataclass
 class _Segment:
-    """Kolejne dni cyklu z tą samą definicją taryfy i tym samym okresem opłat regulacyjnych."""
+    """Kolejne dni cyklu z tą samą definicją taryfy i tym samym okresem opłat regulacyjnych.
+
+    `energy_days` to dni odcinka z odczytami (gdy energia ma znaczniki czasu), a `energy_key` wskazuje
+    przygotowane odczyty cyklu, z których korzystają wszystkie taryfy."""
 
     definition: Any
     period: Any
     days: list[date]
     zone_energy: list[Decimal] = field(default_factory=list)
-    records: list[tuple[datetime, float]] | None = None
+    energy_days: list[tuple[date, _DayEnergy]] | None = None
+    energy_key: int | None = None
 
 
 # Składniki rachunku netto w kolejności pól TariffCycleResult.
@@ -176,11 +214,76 @@ class ZonedTariffCalculationStrategy:
     stawka miesięczna × liczba miesięcy cyklu × dni odcinka / dni cyklu.
     """
 
+    # Ile list odczytów pamiętamy przygotowanych: wystarczy na wszystkie taryfy jednego zapytania.
+    PREPARED_LIMIT = 32
+
     def __init__(self):
         self.dynamic_price_resolver = None
+        self._market_prices: dict[datetime, Decimal] = {}
+        self._prepared: dict[int, tuple[Any, dict[date, _DayEnergy]]] = {}
+        # Sumy dzienne wspólne dla taryf: energia w strefach dla danego układu stref i Σ kWh × cena RCE.
+        self._day_zones: dict[tuple, tuple[Decimal, ...]] = {}
+        self._day_market: dict[tuple, Decimal] = {}
+        self._zone_runs: dict[tuple[int, ...], tuple[tuple[int, int, int], ...]] = {}
 
     def set_dynamic_price_resolver(self, resolver):
         self.dynamic_price_resolver = resolver
+        self._market_prices = {}
+        self._day_market = {}
+
+    def _market_price(self, timestamp: datetime) -> Decimal:
+        """Cena RCE kwadransa (zł/kWh) jako Decimal; ta sama dla wszystkich ofert dynamicznych jednego zapytania."""
+        price = self._market_prices.get(timestamp)
+        if price is None:
+            price = self._market_prices[timestamp] = decimal(self.dynamic_price_resolver(timestamp))
+        return price
+
+    def _prepared_days(self, energy: Any, values: list) -> dict[date, _DayEnergy]:
+        """Odczyty cyklu pogrupowane po dniach, raz dla tej samej listy cykli we wszystkich taryfach."""
+        cached = self._prepared.get(id(energy))
+        if cached is not None and cached[0] is energy:
+            return cached[1]
+        days = prepare_days(values)
+        if len(self._prepared) >= self.PREPARED_LIMIT:
+            self._prepared.clear()
+            self._day_zones.clear()
+            self._day_market.clear()
+        self._prepared[id(energy)] = (energy, days)
+        return days
+
+    def _day_zone_energy(self, key: int, day: date, day_energy: _DayEnergy, schedule: ZoneSchedule) -> tuple[Decimal, ...]:
+        """Energia dnia w strefach; taryfy z tym samym układem stref w tym dniu dzielą wynik."""
+        zones = schedule.quarter_zones(day)
+        cache_key = (key, day, schedule.zone_count, zones)
+        totals = self._day_zones.get(cache_key)
+        if totals is None:
+            sums = [Decimal("0")] * schedule.zone_count
+            runs = self._zone_runs.get(zones)
+            if runs is None:
+                runs = self._zone_runs[zones] = zone_runs(zones)
+            prefix = day_energy.quarter_prefix()
+            if prefix is not None and all(zone for zone, _, _ in runs):
+                # Energia strefy z sum narastających: kilka odejmowań zamiast 96 dodawań (rachunek dokładny).
+                for zone, start, end in runs:
+                    sums[zone - 1] += prefix[end] - prefix[start]
+            else:
+                for timestamp, value, quarter in day_energy.records:
+                    zone = zones[quarter] if quarter >= 0 else 0
+                    sums[(zone or schedule.zone_index(timestamp)) - 1] += value
+            totals = self._day_zones[cache_key] = tuple(sums)
+        return totals
+
+    def _day_market_energy(self, key: int, day: date, day_energy: _DayEnergy, rates: TariffRates) -> Decimal:
+        """Σ kWh × cena rynkowa po ograniczeniu oferty (bez marży) w dniu; wspólne dla ofert z tymi samymi limitami."""
+        cache_key = (key, day, rates.market_limits)
+        total = self._day_market.get(cache_key)
+        if total is None:
+            market_part = rates.market_part
+            total = Decimal("0")
+            for timestamp, value, _ in day_energy.records:
+                total += value * market_part(self._market_price(timestamp))
+            self._day_market[cache_key] = total
+        return total
 
     def calculate(
         self,
@@ -268,16 +371,20 @@ class ZonedTariffCalculationStrategy:
         kwh = sum(zone_energy, Decimal("0"))
 
         if tariff_type == TariffTypeEnum.DYNAMIC:
-            if segment.records is None:
+            if segment.energy_days is None:
                 raise ValueError("Taryfa dynamiczna wymaga zużycia z zachowanymi znacznikami czasu.")
-            active = Decimal("0")
-            network = Decimal("0")
-            for timestamp, value in segment.records:
-                price = rates.price(
-                    schedule.zone_index(timestamp), self.dynamic_price_resolver(timestamp), context.prosumer
-                )
-                active += decimal(value) * price.energy
-                network += decimal(value) * price.network
+            # Σ kWh × (cena rynkowa po limitach + marża) = Σ kWh × cena rynkowa + marża × Σ kWh (rachunek dokładny).
+            market = sum(
+                (self._day_market_energy(segment.energy_key, day, day_energy, rates)
+                 for day, day_energy in segment.energy_days),
+                Decimal("0"),
+            )
+            active = market + rates.dynamic_offset(context.prosumer) * kwh
+            # Dystrybucja zależy tylko od strefy, więc liczymy ją z energii w strefach (ta sama suma co kwadransami).
+            network = sum(
+                (energy * rates.network_rates[zone] for zone, energy in enumerate(zone_energy, start=1)),
+                Decimal("0"),
+            )
         else:
             prices = [rates.price(zone) for zone in range(1, len(zone_energy) + 1)]
             active = sum((energy * price.energy for energy, price in zip(zone_energy, prices)), Decimal("0"))
@@ -350,31 +457,28 @@ class ZonedTariffCalculationStrategy:
             raise ValueError(f"Brak opłat regulacyjnych dla dni: {format_day_ranges(without_period)}.")
         return segments
 
-    @staticmethod
     def _split_energy(
+        self,
         energy: Any,
         segments: list[_Segment],
         schedule: ZoneSchedule,
         raw_records: Any,
     ) -> None:
         """Przypisuje energię cyklu do odcinków: odczyty po dniu, a energię już zbilansowaną w strefach
-        proporcjonalnie do zużycia w strefie przed bilansowaniem PV."""
+        proporcjonalnie do zużycia w strefie przed bilansowaniem PV. Odczyty spoza dni odcinków (np. przed
+        początkiem danych cennika) pomijamy."""
         values = list(energy.items()) if isinstance(energy, dict) else list(energy)
-        # Cykl bez poboru liczymy jak odczyty bez energii (taryfa dynamiczna wymaga list odczytów w odcinkach).
+        # Cykl bez poboru liczymy jak odczyty bez energii (taryfa dynamiczna wymaga odczytów w odcinkach).
         if not values or isinstance(values[0], tuple):
-            by_day = {day: segment for segment in segments for day in segment.days}
+            days = self._prepared_days(energy, values)
             for segment in segments:
-                segment.records = []
-            for timestamp, value in values:
-                if not isinstance(timestamp, datetime):
-                    raise ValueError("Odczyt energii musi mieć znacznik datetime.")
-                segment = by_day.get(timestamp.date())
-                if segment is None:
-                    # Odczyty spoza dni rozliczanych (np. przed początkiem danych cennika) pomijamy.
-                    continue
-                segment.records.append((timestamp, value))
-            for segment in segments:
-                segment.zone_energy = zone_totals(segment.records, schedule)
+                segment.energy_key = id(energy)
+                segment.energy_days = [(day, days[day]) for day in segment.days if day in days]
+                totals = [Decimal("0")] * schedule.zone_count
+                for day, day_energy in segment.energy_days:
+                    for index, value in enumerate(self._day_zone_energy(id(energy), day, day_energy, schedule)):
+                        totals[index] += value
+                segment.zone_energy = totals
             return
 
         totals = zone_totals(values, schedule)
@@ -416,6 +520,24 @@ class ZonedTariffCalculationStrategy:
     @staticmethod
     def _threshold_fee(thresholds: Iterable[Any], annual_kwh: Decimal, name: str) -> Decimal:
         return threshold_fee(thresholds, annual_kwh, name)
+
+
+def prepare_days(values: Iterable[tuple[Any, Any]]) -> dict[date, _DayEnergy]:
+    """Odczyty (znacznik czasu, energia) pogrupowane po dniach, z energią w Decimal i numerem kwadransa doby
+    (-1, gdy odczyt nie zaczyna się na granicy kwadransa)."""
+    days: dict[date, _DayEnergy] = {}
+    for timestamp, value in values:
+        if not isinstance(timestamp, datetime):
+            raise ValueError("Odczyt energii musi mieć znacznik datetime.")
+        minute = timestamp.hour * 60 + timestamp.minute
+        quarter = minute // 15 if minute % 15 == 0 else -1
+        amount = decimal(value)
+        day = days.get(timestamp.date())
+        if day is None:
+            day = days[timestamp.date()] = _DayEnergy()
+        day.records.append((timestamp, amount, quarter))
+        day.total += amount
+    return days
 
 
 def zone_totals(energy: Any, schedule: ZoneSchedule) -> list[Decimal]:

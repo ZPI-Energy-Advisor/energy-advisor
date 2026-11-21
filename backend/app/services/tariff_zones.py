@@ -36,6 +36,19 @@ class ZoneSchedule:
         self.zone_count = counts.pop()
         self.tariff_code = getattr(self.definitions[0].tariff_code, "value", self.definitions[0].tariff_code)
         self._intervals: dict[date, tuple[tuple[int, int, int], ...]] = {}
+        self._quarter_zones: dict[date, tuple[int, ...]] = {}
+        # Godzin stref nie czytamy z modelu ORM dla każdego dnia osobno: jedna kopia na definicję.
+        self._zone_hours: dict[int, tuple[tuple, ...]] = {}
+
+    def _hours(self, definition: Any) -> tuple[tuple, ...]:
+        hours = self._zone_hours.get(id(definition))
+        if hours is None:
+            hours = self._zone_hours[id(definition)] = tuple(
+                (hour.day_type, hour.season_from, hour.season_to, int(hour.start_minute), int(hour.end_minute),
+                 int(hour.zone_index))
+                for hour in definition.zone_hours
+            )
+        return hours
 
     def definition_for(self, day: date) -> Any | None:
         return next((definition for definition in self.definitions if covers(definition, day)), None)
@@ -50,9 +63,9 @@ class ZoneSchedule:
             month_day = day.strftime("%m-%d")
             rows = tuple(
                 sorted(
-                    (int(hour.start_minute), int(hour.end_minute), int(hour.zone_index))
-                    for hour in definition.zone_hours
-                    if hour.day_type == kind and season_contains((hour.season_from, hour.season_to), month_day)
+                    (start, end, zone)
+                    for day_kind, season_from, season_to, start, end, zone in self._hours(definition)
+                    if day_kind == kind and season_contains((season_from, season_to), month_day)
                 )
             )
             if not rows:
@@ -67,9 +80,25 @@ class ZoneSchedule:
             self._intervals[day] = rows
         return self._intervals[day]
 
+    def quarter_zones(self, day: date) -> tuple[int, ...]:
+        """Strefa każdego z 96 kwadransów doby (0, gdy początek kwadransa nie należy do żadnej strefy)."""
+        zones = self._quarter_zones.get(day)
+        if zones is None:
+            quarters = [0] * 96
+            # Od ostatniego przedziału do pierwszego: przy nakładaniu się wygrywa pierwszy, jak w zone_index.
+            for start, end, zone in reversed(self.intervals(day)):
+                for quarter in range(max(0, -(-start // 15)), min(96, -(-end // 15))):
+                    quarters[quarter] = zone
+            zones = self._quarter_zones[day] = tuple(quarters)
+        return zones
+
     def zone_index(self, timestamp: datetime) -> int:
         """Strefa (numerowana od 1, jak zone_index stawek) kwadransa zaczynającego się o `timestamp`."""
         minute = timestamp.hour * 60 + timestamp.minute
+        if minute % 15 == 0 and not timestamp.second and not timestamp.microsecond:
+            zone = self.quarter_zones(timestamp.date())[minute // 15]
+            if zone:
+                return zone
         for start, end, zone in self.intervals(timestamp.date()):
             if start <= minute < end:
                 return zone
