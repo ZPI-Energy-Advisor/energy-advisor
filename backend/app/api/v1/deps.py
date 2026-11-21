@@ -259,7 +259,9 @@ def get_home_state_service(
     hub_client: HubClient | None = Depends(get_hub_client),
     price_service: SchedulePriceService = Depends(get_schedule_price_service),
 ) -> HomeStateService:
-    return HomeStateService(HomeRepository(db), HomeEventRepository(db), hub_client, price_service)
+    return HomeStateService(
+        HomeRepository(db), HomeEventRepository(db), hub_client, price_service, PlanRunRepository(db),
+    )
 
 
 def get_energy_file_service(

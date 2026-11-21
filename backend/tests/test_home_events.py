@@ -343,6 +343,7 @@ def test_today_sums_energy_reports_of_current_day_and_simulation(home):
 
     today = _state(home.owner).json()["today"]
 
+    assert (today["period"], today["plan_date"]) == ("day", None)
     assert today["day_start"] == "2026-10-19T00:00:00+02:00"
     assert today["until"] == "2026-10-19T12:00:00+02:00"
     assert today["consumption_kwh"] == pytest.approx(0.915)

@@ -177,7 +177,7 @@ function DeviceRow({ device, plan, disabled, onCommand }) {
           <dd className="font-medium tabular-nums">{formatKw(device.power_kw)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-gray-500">Dziś</dt>
+          <dt className="text-xs text-gray-500">Energia</dt>
           <dd className="font-medium tabular-nums">{formatKwh(device.energy_today_kwh)}</dd>
         </div>
       </dl>

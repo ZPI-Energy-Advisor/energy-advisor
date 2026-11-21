@@ -76,7 +76,7 @@ const COST = {
 };
 
 describe("PlanRunCard (raport przebiegu)", () => {
-  it("na wierzchu ma rachunek bez planu i z planem, sumy spoza porównania, a szczegóły pod „Więcej”", () => {
+  it("na wierzchu ma koszt bez planu i z planem z okresem i opisem, resztę domu osobno, a szczegóły pod „Więcej”", () => {
     render(<PlanRunCard run={{ ...RUN, cost: COST }} />);
 
     const cost = screen.getByRole("region", { name: "Rachunek przed i po" });
@@ -88,11 +88,18 @@ describe("PlanRunCard (raport przebiegu)", () => {
     const row = within(cost).getByRole("row", { name: /Pralka Bosch/ });
     expect(row.textContent).toContain("1,20 zł");
     expect(row.textContent).toContain("0,78 zł");
+    expect(within(cost).getByRole("heading", { name: "Koszt zaplanowanych urządzeń" })).toBeTruthy();
+    expect(cost.textContent).toContain("19 października 00:00 – 20 października 06:00");
+    expect(cost.textContent).toContain("Liczymy tylko te urządzenia");
     const facts = cost.querySelector("dl");
     expect(facts.textContent).toContain("Poza porównaniemŁadowarka EV");
-    expect(facts.textContent).toContain("Włączone ręcznie0,12 zł");
-    expect(facts.textContent).toContain("PV6,40 kWh, z tego plan 0,90 kWh");
     expect(facts.textContent).toContain("Odchylenia2");
+    // Ręczne włączenia i PV osobno, z dopiskiem, że nie zmieniają oszczędności.
+    const rest = within(cost).getByRole("group", { name: "Reszta domu" });
+    expect(rest.textContent).toContain("nie wchodzi do oszczędności");
+    expect(rest.textContent).toContain("Włączone ręcznie0,12 zł");
+    expect(rest.textContent).toContain("PV6,40 kWh, z tego plan 0,90 kWh");
+    expect(facts.textContent).not.toContain("Włączone ręcznie");
     const more = cost.querySelector("details");
     expect(more.textContent).toContain("Włączone ręcznie: Lampa salon 0,20 kWh (0,12 zł).");
     expect(more.textContent).toContain(
@@ -115,7 +122,7 @@ describe("PlanRunCard (raport przebiegu)", () => {
     expect(cost.textContent).not.toContain("według planu");
   });
 
-  it("raport po „Zakończ” ma plakietkę „niepełny” z godziną w podpowiedzi", () => {
+  it("raport po „Zakończ” ma plakietkę „niepełny” z godziną w podpowiedzi, a okres do chwili zakończenia", () => {
     render(<PlanRunCard run={{ ...RUN, status: "ended", cost: {
       ...COST, complete: false, until: "2026-10-19T14:00:00+02:00", excluded: [],
       pending: [{ device_id: "dev_ev_01", device_name: "Ładowarka EV" }],
@@ -125,7 +132,9 @@ describe("PlanRunCard (raport przebiegu)", () => {
     const badge = within(cost).getByText("niepełny");
     expect(badge.getAttribute("title")).toBe("Porównane są urządzenia, które skończyły pracę do 14:00.");
     expect(cost.textContent).toContain("Nie skończyły pracyŁadowarka EV");
-    expect(cost.textContent).not.toContain("14:00");
+    // Okres kończy się chwilą „Zakończ”, nie końcem planu o 06:00.
+    expect(cost.textContent).toContain("19 października, 00:00–14:00");
+    expect(cost.textContent).not.toContain("06:00");
   });
 
   it("energia urządzeń z planu i z historii jest pod „Energia urządzeń”", () => {

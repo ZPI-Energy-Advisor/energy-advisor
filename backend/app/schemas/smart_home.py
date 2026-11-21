@@ -2,7 +2,7 @@ import math
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
@@ -304,6 +304,10 @@ class HomePower(BaseModel):
 
 
 class HomeEnergyToday(BaseModel):
+    # Okres bilansu: "day" od północy doby symulacji, "plan_run" od początku przebiegu planu tej symulacji
+    # (także po północy jego drugiego dnia, do końca planu), żeby bilans nie zerował się o północy.
+    period: Literal["day", "plan_run"] = "day"
+    plan_date: date | None = None
     day_start: datetime
     until: datetime
     consumption_kwh: float

@@ -3,6 +3,10 @@
 Zużycie liczymy ze zdarzeń energy_report, a nie z liczników huba: restart mikroserwisu zeruje licznik,
 a zdarzenia zostają w bazie. Bierzemy tylko bieżący przebieg symulacji (`simulation_id`), bo ustawienie
 zegara zaczyna nowy przebieg i ta sama doba może się powtórzyć.
+
+Gdy symulacja jest przebiegiem planu dnia (ZP-113), bilans liczymy od początku planu, a nie od północy:
+plan trwa do 06:00 następnego dnia i po północy doba kalendarzowa pokazywałaby tylko kilka godzin.
+Ten sam okres liczy raport przebiegu (ZP-114), więc liczby się nie rozjeżdżają.
 """
 
 import logging
@@ -13,10 +17,12 @@ from datetime import datetime, time, timedelta, timezone
 from fastapi import HTTPException
 
 from app.clients.hub_client import HubClient, HubError
+from app.models.PlanRun import PlanRun
 from app.models.User import User
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.repositories.home_event_repository import EnergyStep, HomeEventRepository
 from app.repositories.home_repository import HomeRepository
+from app.repositories.plan_run_repository import PlanRunRepository
 from app.schemas.smart_home import (
     HomeClockState,
     HomeDeviceState,
@@ -100,11 +106,13 @@ class HomeStateService:
         event_repository: HomeEventRepository,
         hub_client: HubClient | None,
         price_service: SchedulePriceService,
+        plan_run_repository: PlanRunRepository | None = None,
     ):
         self.home_repository = home_repository
         self.event_repository = event_repository
         self.hub_client = hub_client
         self.price_service = price_service
+        self.plan_run_repository = plan_run_repository
 
     def state(self, owner: User) -> HomeState:
         require_connected(self.home_repository.get(), owner)
@@ -122,10 +130,11 @@ class HomeStateService:
         today = None
         if simulation_id is not None:
             now = now.astimezone(LOCAL_TIMEZONE)  # Baza zwraca czas w UTC, a odpowiedź podaje go w strefie domu.
-            start = day_start(now)
+            run = self._plan_run(owner, simulation_id, now)
+            start = run.horizon_start.astimezone(LOCAL_TIMEZONE) if run else day_start(now)
             steps = self.event_repository.energy_steps(owner.id, simulation_id, start, now)
             energy = day_energy(steps, start, now)
-            today = self._today(owner, energy, start, now)
+            today = self._today(owner, energy, start, now, run)
 
         return HomeState(
             hub_available=clock is not None,
@@ -147,10 +156,23 @@ class HomeStateService:
             logger.warning("Stan domu bez huba: %s", error)
             return None, None
 
-    def _today(self, owner: User, energy: DayEnergy, start: datetime, now: datetime) -> HomeEnergyToday:
+    def _plan_run(self, owner: User, simulation_id: str, now: datetime) -> PlanRun | None:
+        """Przebieg planu tej symulacji, jeśli zegar jest w jego horyzoncie; po końcu planu wraca zwykła doba."""
+        if self.plan_run_repository is None:
+            return None
+        run = self.plan_run_repository.for_simulation(owner.id, simulation_id)
+        if run is None or not run.horizon_start <= now <= run.horizon_end:
+            return None
+        return run
+
+    def _today(
+        self, owner: User, energy: DayEnergy, start: datetime, now: datetime, run: PlanRun | None,
+    ) -> HomeEnergyToday:
         grid_import = {slot: kwh for slot, kwh in energy.by_slot.items() if kwh > 0}
         cost, cost_error = self._cost(owner, grid_import)
         return HomeEnergyToday(
+            period="plan_run" if run else "day",
+            plan_date=run.plan_date if run else None,
             day_start=start,
             until=now,
             consumption_kwh=_kwh(energy.consumption_kwh),

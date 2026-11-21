@@ -1,3 +1,28 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Widok domu na ekranie „Mój dom” (ZP-110): poświata pracujących urządzeń, przepływ w przyłączu, ładowanie EV. */
+@keyframes house-halo {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.32; }
+}
+@keyframes house-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes house-flow {
+  to { stroke-dashoffset: -14; }
+}
+.house-device-halo { opacity: 0.2; animation: house-halo 2.4s ease-in-out infinite; }
+.house-wire-flow { stroke-dasharray: 2 5; animation: house-flow 0.9s linear infinite; }
+.house-ev-indeterminate { animation: house-pulse 1.4s ease-in-out infinite; }
+.house-device-tile { transition: fill 0.3s ease, stroke 0.3s ease; }
+.house-room { transition: fill 0.4s ease; }
+.house-device:hover .house-device-tile { filter: brightness(0.97); }
+.house-device:focus-visible .house-device-tile { stroke: #0f172a; stroke-width: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  .house-device-halo, .house-wire-flow, .house-ev-indeterminate { animation: none; }
+  .house-device-tile, .house-room { transition: none; }
+}

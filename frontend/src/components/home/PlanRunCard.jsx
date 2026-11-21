@@ -53,7 +53,7 @@ function PlanRunCard({ run }) {
         </p>
       )}
 
-      {run.cost && !running && <PlanRunCost cost={run.cost} />}
+      {run.cost && !running && <PlanRunCost cost={run.cost} horizonStart={run.horizon_start} />}
       {running && (
         <p className="text-sm text-gray-600">
           Plan trwa: urządzenia z planu zużyły {formatKwh(run.actual_kwh)} z {formatKwh(run.planned_kwh)}. Rachunek bez
