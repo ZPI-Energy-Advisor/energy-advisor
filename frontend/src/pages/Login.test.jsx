@@ -47,6 +47,12 @@ describe("Login", () => {
     expect(screen.getByRole("status").textContent).toBe("Sesja wygasła, zaloguj się ponownie.");
   });
 
+  it("po usunięciu konta mówi, że dane zostały usunięte", () => {
+    renderLogin({ accountDeleted: true });
+
+    expect(screen.getByRole("status").textContent).toBe("Konto i wszystkie dane zostały usunięte.");
+  });
+
   it("błąd logowania pokazuje jako alert, nie jako informację", () => {
     renderLogin();
 

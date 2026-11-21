@@ -5,6 +5,12 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const SESSION_EXPIRED_MESSAGE = "Sesja wygasła, zaloguj się ponownie.";
+const ACCOUNT_DELETED_MESSAGE = "Konto i wszystkie dane zostały usunięte.";
+
+function initialMessage(state) {
+  if (state?.accountDeleted) return ACCOUNT_DELETED_MESSAGE;
+  return state?.sessionExpired ? SESSION_EXPIRED_MESSAGE : "";
+}
 
 function getRedirectPath(from) {
   if (!from?.pathname || from.pathname === "/") {
@@ -17,9 +23,7 @@ function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const location = useLocation();
-  const [message, setMessage] = useState(
-    location.state?.sessionExpired ? SESSION_EXPIRED_MESSAGE : "",
-  );
+  const [message, setMessage] = useState(initialMessage(location.state));
   const [isRegister, setIsRegister] = useState(false);
   const navigate = useNavigate();
   const redirectTo = getRedirectPath(location.state?.from);
@@ -162,11 +166,13 @@ function Login() {
 
           {message && (
             <div
-              role={message === SESSION_EXPIRED_MESSAGE ? "status" : "alert"}
+              role={message === SESSION_EXPIRED_MESSAGE || message === ACCOUNT_DELETED_MESSAGE ? "status" : "alert"}
               className={`mt-4 text-center text-sm font-medium p-3 rounded ${
-                message === SESSION_EXPIRED_MESSAGE
-                  ? "text-amber-700 bg-amber-50"
-                  : "text-red-600 bg-red-50"
+                message === ACCOUNT_DELETED_MESSAGE
+                  ? "text-emerald-700 bg-emerald-50"
+                  : message === SESSION_EXPIRED_MESSAGE
+                    ? "text-amber-700 bg-amber-50"
+                    : "text-red-600 bg-red-50"
               }`}
             >
               {message}

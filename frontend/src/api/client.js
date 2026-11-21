@@ -34,6 +34,20 @@ export const clearAuth = () => {
   localStorage.removeItem("user");
 };
 
+// Klucz zależy od użytkownika, żeby po zmianie konta nie podpowiadać cudzego wyboru.
+export const selectedFileStorageKey = (userId) => `selected_energy_file:${userId}`;
+
+// Po usunięciu konta w przeglądarce nie zostaje nic po nim: sesja i zapamiętany wybór pliku.
+export const clearAccountData = () => {
+  try {
+    const userId = JSON.parse(localStorage.getItem("user"))?.id;
+    if (userId) localStorage.removeItem(selectedFileStorageKey(userId));
+  } catch {
+    // uszkodzony wpis "user" - i tak usuwa go clearAuth
+  }
+  clearAuth();
+};
+
 export const isAuthenticated = () => {
   try {
     const user = JSON.parse(localStorage.getItem("user"));

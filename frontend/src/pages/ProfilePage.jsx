@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FiCheckCircle } from "react-icons/fi";
 import apiClient from "../api/client";
 import SegmentedControl from "../components/SegmentedControl";
+import DeleteAccount from "../components/profile/DeleteAccount";
 import { ChoiceCards, Field, Section, Stepper, UnitInput, inputClass } from "../components/profile/ProfileControls";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import {
@@ -58,7 +59,7 @@ const fieldId = (key) => `profile-${key.replace(".", "-")}`;
 const cycleLabel = (months) => `${months} mies.`;
 
 function ProfilePage() {
-  const { refresh: refreshCurrentUser } = useCurrentUser();
+  const { me, refresh: refreshCurrentUser } = useCurrentUser();
   const [profile, setProfile] = useState(createEmptyProfile);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -430,6 +431,8 @@ function ProfilePage() {
           {(errorList.length > 0 || saveError) && <p className="text-sm text-red-600">Nie zapisano – popraw błędy powyżej.</p>}
         </div>
       </form>
+
+      {me?.email && <DeleteAccount email={me.email} />}
     </div>
   );
 }

@@ -13,7 +13,10 @@ from app.schemas.user_profile import UserProfile
 from app.services.tariff_costs import PricingProfile, TariffOption
 
 
-def _field_error(field: tuple[str, str], message: str) -> HTTPException:
+DELETE_CONFIRMATION_MESSAGE = "Wpisz adres e-mail swojego konta, żeby potwierdzić usunięcie."
+
+
+def _field_error(field: tuple[str, ...], message: str) -> HTTPException:
     """Błąd 422 w formacie walidacji FastAPI (lista z położeniem pola), żeby formularz pokazał go przy polu."""
     return HTTPException(status_code=422, detail=[{"loc": ["body", *field], "msg": message, "type": "value_error"}])
 
@@ -26,6 +29,15 @@ class UserService:
     ):
         self.repository = repository
         self.definition_repository = definition_repository
+
+    @staticmethod
+    def check_deletion_confirmed(user: User, confirm_email: str) -> None:
+        """Usunięcie konta wymaga wpisania jego e-maila (wielkość liter i spacje na brzegach bez znaczenia)."""
+        if confirm_email.strip().lower() != user.email.strip().lower():
+            raise _field_error(("confirm_email",), DELETE_CONFIRMATION_MESSAGE)
+
+    def delete_account(self, user: User) -> None:
+        self.repository.delete(user.id)
 
     def get_current_user(self, user: User, today: date | None = None) -> CurrentUserResponse:
         profile = self.repository.get_profile(user.id)
