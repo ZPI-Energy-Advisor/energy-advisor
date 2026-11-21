@@ -12,7 +12,7 @@ from app.schemas.user_profile import UserProfile as UserProfileSchema
 from app.services.home_service import RELEASE_FAILED_MESSAGE, registry_hash
 from app.services.user_service import DELETE_CONFIRMATION_MESSAGE
 from test_energy_files import _headers, client
-from test_home import WASHER, _connect, _devices_file, _upload, db  # noqa: F401 (db: fixture)
+from test_home import WASHER, _connect, _devices_file, _reset_home, _upload, db  # noqa: F401 (db: fixture)
 from test_home_control import home  # noqa: F401 (home: fixture)
 from test_home_events import _report
 from test_plan_run import _home_with_files, _plan, _start, _store_events
@@ -134,3 +134,13 @@ def test_deleted_account_is_logged_out(db, home):
     # Token sprzed usunięcia już nic nie otwiera.
     assert client.get("/api/v1/users/me", headers=_headers(owner)).status_code == 401
     assert client.get("/api/v1/energy-files", headers=_headers(owner)).status_code == 401
+
+
+def test_owner_who_never_connected_home_is_deleted_when_hub_is_down(db, home):
+    owner = home.owner
+    _reset_home(db)
+    assert _home_row(db).registry_hash is None
+    home.hub.down = True
+
+    assert _delete(owner, owner.email).status_code == 204
+    assert UserRepository(db).get_by_id(owner.id) is None

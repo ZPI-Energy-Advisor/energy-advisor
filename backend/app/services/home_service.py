@@ -93,9 +93,10 @@ class HomeService:
         if not self.is_owner(user):
             return
         home = self.repository.get()
-        # Dom odłączony wcześniej, a hub potwierdził pusty rejestr: nie ma czego zatrzymywać. Po nieudanym
-        # odłączeniu dom jest już odłączony w bazie, ale hub wciąż ma urządzenia, więc wysyłamy ponownie.
-        if home.user_id != user.id and home.registry_hash == registry_hash([]):
+        # Dom odłączony wcześniej, a hub potwierdził pusty rejestr albo nigdy nie dostał żadnego (registry_hash
+        # NULL): nie ma czego zatrzymywać. Po nieudanym odłączeniu dom jest już odłączony w bazie, ale hub wciąż
+        # ma urządzenia, więc wysyłamy ponownie.
+        if home.user_id != user.id and home.registry_hash in (None, registry_hash([])):
             return
         result = self.disconnect(user)
         if result.sync.status != HomeSyncStatus.SYNCED:

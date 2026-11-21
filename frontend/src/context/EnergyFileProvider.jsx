@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import apiClient from "../api/client";
+import apiClient, { selectedFileStorageKey } from "../api/client";
 import { CurrentUserContext } from "./currentUserContext";
 import { EnergyFileContext } from "./energyFileContext";
 import { aggregateIdForSourceType, getApiErrorMessage } from "../utils/energyFiles";
@@ -14,8 +14,7 @@ const getStoredUserId = () => {
   }
 };
 
-// Klucz zależy od użytkownika, żeby po zmianie konta nie podpowiadać cudzego wyboru.
-const storageKey = (userId) => `selected_energy_file:${userId}`;
+const storageKey = selectedFileStorageKey;
 
 const readStoredFileId = (userId) => {
   try {

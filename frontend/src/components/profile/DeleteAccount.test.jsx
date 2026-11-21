@@ -41,6 +41,9 @@ describe("DeleteAccount", () => {
   it("usuwa konto, czyści sesję i wraca do logowania", async () => {
     localStorage.setItem("access_token", "a");
     localStorage.setItem("refresh_token", "r");
+    localStorage.setItem("user", JSON.stringify({ id: "u-1", email: "jan@example.com" }));
+    localStorage.setItem("selected_energy_file:u-1", "plik-1");
+    localStorage.setItem("selected_energy_file:u-2", "plik-2");
     const remove = vi.spyOn(apiClient, "delete").mockResolvedValue({ status: 204 });
     renderSection();
 
@@ -51,6 +54,9 @@ describe("DeleteAccount", () => {
     expect(remove).toHaveBeenCalledWith("/users/me", { data: { confirm_email: "jan@example.com" } });
     expect(localStorage.getItem("access_token")).toBeNull();
     expect(localStorage.getItem("refresh_token")).toBeNull();
+    expect(localStorage.getItem("user")).toBeNull();
+    expect(localStorage.getItem("selected_energy_file:u-1")).toBeNull();
+    expect(localStorage.getItem("selected_energy_file:u-2")).toBe("plik-2");
   });
 
   it("gdy backend odmówi, zostaje na profilu z komunikatem", async () => {

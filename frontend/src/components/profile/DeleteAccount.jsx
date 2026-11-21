@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FiTrash2 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import apiClient, { clearAuth } from "../../api/client";
+import apiClient, { clearAccountData } from "../../api/client";
 import { getApiErrorMessage } from "../../utils/energyFiles";
 
 const sameEmail = (typed, email) => typed.trim().toLowerCase() === (email ?? "").trim().toLowerCase();
@@ -19,7 +19,7 @@ function DeleteAccount({ email }) {
     setError(null);
     try {
       await apiClient.delete("/users/me", { data: { confirm_email: typed } });
-      clearAuth();
+      clearAccountData();
       navigate("/", { replace: true, state: { accountDeleted: true } });
     } catch (err) {
       setError(getApiErrorMessage(err, "Nie udało się usunąć konta."));
