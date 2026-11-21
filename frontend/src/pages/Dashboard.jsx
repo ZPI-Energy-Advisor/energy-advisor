@@ -10,7 +10,6 @@ import ChartTooltip from "../components/ChartTooltip";
 import IncompleteDaysNotice from "../components/IncompleteDaysNotice";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
-import TomorrowPriceCards from "../components/TomorrowPriceCards";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { fillMissingDays, hasDataInRange } from "../utils/energyFiles";
 import { describeBreakdown, formatPln } from "../utils/tariffs";
@@ -164,9 +163,6 @@ function Dashboard() {
         missingProfile=", żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy G11 operatora PGE."
         pricingNote={pricing?.note}
       />
-
-      {/* Ceny na jutro nie zależą od pliku, więc karty są nad wyborem pliku i widać je też bez danych. */}
-      <TomorrowPriceCards />
 
       <SelectedFileBar />
       {simulationData && <DateRangeFilter />}

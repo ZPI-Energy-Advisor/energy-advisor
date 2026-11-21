@@ -144,9 +144,16 @@ describe("HouseView", () => {
     expect(screen.getByRole("img", { name: "Licznik: Oddawanie do sieci 3,00 kW" })).toBeTruthy();
   });
 
-  it("ładowarka według planu ma oznaczenie i postęp sesji, a nie stan baterii", () => {
+  it("ładowarka według planu ma oznaczenie i procent energii z planu, która już dotarła", () => {
     const { container } = renderHouse([EV], {
       planBadges: { dev_ev_01: { text: "Plan 18:00–22:00 · w trakcie", tone: "active" } },
+      planRun: {
+        horizon_start: "2026-10-19T00:00:00+02:00",
+        horizon_end: "2026-10-20T00:00:00+02:00",
+        prices: [],
+        water_heaters: [],
+        devices: [{ device_id: "dev_ev_01", device_name: "Ładowarka EV", planned_kwh: 8, actual_kwh: 4, actions: [] }],
+      },
     });
 
     const ev = within(screen.getByRole("group", { name: "Garaż" })).getByRole("button", {
@@ -156,7 +163,7 @@ describe("HouseView", () => {
     fireEvent.click(ev);
     const popover = screen.getByRole("dialog", { name: "Ładowarka EV" });
     expect(popover.textContent).toContain("Plan 18:00–22:00 · w trakcie");
-    expect(popover.textContent).toContain("Upłynęło 25% czasu sesji ładowania");
+    expect(popover.textContent).toContain("Naładowano 50% energii z planu (4,00 kWh z 8,00 kWh)");
   });
 
   it("pralka uruchomiona przez plan programem też ma oznaczenie planu", () => {

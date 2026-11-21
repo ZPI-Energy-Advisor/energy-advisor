@@ -5,6 +5,7 @@ import PriceChart from "../components/PriceChart";
 import PriceDataCompleteness from "../components/PriceDataCompleteness";
 import PriceRangeForm from "../components/PriceRangeForm";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
+import TomorrowPriceCards from "../components/TomorrowPriceCards";
 import { countDays, formatDate, getApiErrorMessage } from "../utils/energyFiles";
 import {
   PRICE_RESOLUTIONS,
@@ -109,6 +110,10 @@ function DynamicPricesPage() {
         missingProfile=", żebyśmy pokazali ceny oferty Twojego operatora. Do tego czasu pokazujemy ofertę PGE z dystrybucją G11."
         pricingNote={history?.note}
       />
+
+      {/* Najtańsze i najdroższe godziny jutra w ofercie z ceną dynamiczną: tu, przy cenach dynamicznych,
+          a nie na Dashboardzie, bo dotyczą tylko tej oferty. */}
+      <TomorrowPriceCards />
 
       {error && (
         <div role="alert" className="mb-6 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">

@@ -7,7 +7,7 @@ import {
   HOUSE_TOP,
   HOUSE_WIDTH,
   deviceAppearance,
-  evSession,
+  evCharge,
   gridFlow,
   houseRooms,
   isProducingPv,
@@ -138,21 +138,21 @@ function GridMeter({ power, shadow }) {
   );
 }
 
-function EvBar({ session, x, y, w }) {
+function EvBar({ charge, x, y, w }) {
   return (
     <g aria-hidden="true">
       <rect x={x} y={y} width={w} height="4" rx="2" fill="#ede9fe" />
-      {session.fraction == null ? (
+      {charge.fraction == null ? (
         <rect x={x} y={y} width={w} height="4" rx="2" fill="#8b5cf6" className="house-ev-indeterminate" />
       ) : (
-        <rect x={x} y={y} width={Math.max(4, w * session.fraction)} height="4" rx="2" fill="#8b5cf6" />
+        <rect x={x} y={y} width={Math.max(4, w * charge.fraction)} height="4" rx="2" fill="#8b5cf6" />
       )}
     </g>
   );
 }
 
 // `plan`: znaczek pozycji planu z `planBadges` ({ text, tone }) albo undefined dla urządzenia spoza planu.
-function HouseDevice({ device, plan, cell, simTime, selected, onSelect, shadow }) {
+function HouseDevice({ device, plan, planRun, cell, selected, onSelect, shadow }) {
   const appearance = deviceAppearance(device);
   const Icon = DEVICE_ICONS[device.device_type] ?? DEVICE_ICONS.other;
   const Glyph = STATE_GLYPHS[appearance.glyph];
@@ -162,7 +162,7 @@ function HouseDevice({ device, plan, cell, simTime, selected, onSelect, shadow }
   const by = cell.y + 2;
   const radius = box * 0.32;
   const badge = Math.max(5, box * 0.2);
-  const session = evSession(device, simTime);
+  const charge = evCharge(device, planRun);
   const caption =
     device.state === "running" && device.power_kw != null && device.power_kw !== 0
       ? shortPower(device.power_kw)
@@ -260,12 +260,12 @@ function HouseDevice({ device, plan, cell, simTime, selected, onSelect, shadow }
           {caption}
         </text>
       )}
-      {session && <EvBar session={session} x={cell.x + 6} y={by + box + 19 * scale} w={cell.w - 12} />}
+      {charge && <EvBar charge={charge} x={cell.x + 6} y={by + box + 19 * scale} w={cell.w - 12} />}
     </g>
   );
 }
 
-function Room({ room, devices, cells, planBadges, simTime, selectedId, onSelect, shadow }) {
+function Room({ room, devices, cells, planBadges, planRun, selectedId, onSelect, shadow }) {
   const lit = isRoomLit(devices);
   const label = roomLabel(room.id);
   return (
@@ -300,8 +300,8 @@ function Room({ room, devices, cells, planBadges, simTime, selectedId, onSelect,
           key={device.device_id}
           device={device}
           plan={planBadges[device.device_id]}
+          planRun={planRun}
           cell={cells[index]}
-          simTime={simTime}
           selected={selectedId === device.device_id}
           onSelect={() => onSelect(device.device_id)}
           shadow={shadow}
@@ -483,7 +483,7 @@ function HouseView({ devices, power, simTime, disabled = false, onCommand, planB
                   devices={rooms.get(room.id)}
                   cells={rooms.get(room.id).map((device) => cells.get(device.device_id))}
                   planBadges={planBadges}
-                  simTime={simTime}
+                  planRun={planRun}
                   selectedId={selectedId}
                   onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
                   shadow={shadow}
@@ -495,7 +495,7 @@ function HouseView({ devices, power, simTime, disabled = false, onCommand, planB
               <HouseDevicePopover
                 device={selected}
                 plan={planBadges[selected.device_id]}
-                simTime={simTime}
+                planRun={planRun}
                 disabled={disabled || pending.has(selected.device_id)}
                 onCommand={(command) => send(selected, command)}
                 onClose={() => setSelectedId(null)}
