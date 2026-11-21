@@ -10,7 +10,7 @@ import {
   programName,
   runLabel,
 } from "../../utils/home";
-import { deviceAppearance, evSession, isProducingPv, planBadgeColor, roomLabel, roomOf } from "../../utils/houseView";
+import { deviceAppearance, evCharge, isProducingPv, planBadgeColor, roomLabel, roomOf } from "../../utils/houseView";
 import { STATE_GLYPHS } from "./houseIcons";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "./styles";
 
@@ -57,11 +57,11 @@ function PopoverControls({ device, disabled, onCommand }) {
 }
 
 /** Dymek urządzenia z widoku domu: stan, moc, energia doby, program i sterowanie. */
-function HouseDevicePopover({ device, plan, simTime, disabled, onCommand, onClose, style }) {
+function HouseDevicePopover({ device, plan, planRun, disabled, onCommand, onClose, style }) {
   const appearance = deviceAppearance(device);
   const Glyph = STATE_GLYPHS[appearance.glyph];
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type];
-  const session = evSession(device, simTime);
+  const charge = evCharge(device, planRun);
   const producing = isProducingPv(device);
 
   return (
@@ -121,11 +121,12 @@ function HouseDevicePopover({ device, plan, simTime, disabled, onCommand, onClos
           {runLabel(device.run)}, koniec {formatSimTime(device.run.ends_at)}
         </p>
       )}
-      {session && (
+      {charge && (
         <p className="text-xs text-gray-600">
-          {session.fraction == null
-            ? "Ładowanie bez ustalonego końca."
-            : `Upłynęło ${formatNumber(session.fraction * 100, 0)}% czasu sesji ładowania`}
+          {charge.fraction == null
+            ? "Ładowanie poza planem, bez ustalonej energii."
+            : `Naładowano ${formatNumber(charge.fraction * 100, 0)}% energii z planu ` +
+              `(${formatKwh(charge.deliveredKwh)} z ${formatKwh(charge.plannedKwh)})`}
         </p>
       )}
 

@@ -4,7 +4,7 @@ import {
   FALLBACK_ROOM,
   HOUSE_ROOMS,
   deviceAppearance,
-  evSession,
+  evCharge,
   gridFlow,
   houseRooms,
   isRoomLit,
@@ -204,19 +204,21 @@ describe("gridFlow", () => {
   });
 });
 
-describe("evSession", () => {
-  const charger = (overrides) => device({ device_type: "ev_charger", state: "running", ...overrides });
-  const run = { ref: null, started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T22:00:00+02:00" };
+describe("evCharge", () => {
+  const charger = (overrides) => device({ device_id: "dev_ev_01", device_type: "ev_charger", state: "running", ...overrides });
+  const planRun = (actual) => ({ devices: [{ device_id: "dev_ev_01", planned_kwh: 30, actual_kwh: actual }] });
 
-  it("liczy postęp sesji według zegara symulacji", () => {
-    expect(evSession(charger({ run }), "2026-10-19T19:00:00+02:00")).toEqual({ fraction: 0.25, endsAt: run.ends_at });
-    expect(evSession(charger({ run }), "2026-10-19T23:00:00+02:00").fraction).toBe(1);
+  it("liczy, ile energii z planu już dotarło do auta, a nie ile minęło czasu", () => {
+    // Plan ładuje w najtańszych kwadransach: połowa energii może dotrzeć w pierwszej ćwiartce sesji.
+    expect(evCharge(charger(), planRun(15))).toEqual({ fraction: 0.5, deliveredKwh: 15, plannedKwh: 30 });
+    expect(evCharge(charger({ state: "off" }), planRun(0)).fraction).toBe(0);
+    expect(evCharge(charger(), planRun(31)).fraction).toBe(1);
   });
 
-  it("ładowanie włączone ręcznie nie ma procentu, a wyłączona ładowarka nie ma sesji", () => {
-    expect(evSession(charger({ run: null }), "2026-10-19T19:00:00+02:00")).toEqual({ fraction: null, endsAt: null });
-    expect(evSession(charger({ state: "off", run }), "2026-10-19T19:00:00+02:00")).toBeNull();
-    expect(evSession(device({ state: "running", run }), "2026-10-19T19:00:00+02:00")).toBeNull();
+  it("ładowanie poza planem nie ma procentu, a wyłączona ładowarka poza planem nie ma paska", () => {
+    expect(evCharge(charger(), null)).toEqual({ fraction: null, deliveredKwh: null, plannedKwh: null });
+    expect(evCharge(charger({ state: "off" }), null)).toBeNull();
+    expect(evCharge(device({ state: "running" }), planRun(15))).toBeNull();
   });
 });
 

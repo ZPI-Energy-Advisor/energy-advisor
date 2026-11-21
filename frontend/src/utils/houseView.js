@@ -163,20 +163,18 @@ export const gridFlow = (power) => {
 };
 
 /**
- * Sesja ładowania auta: stan baterii nie przychodzi ze stanu domu, więc pasek pokazuje postęp sesji
- * według zegara symulacji, gdy przebieg ma koniec (`run.ends_at`). Ładowanie włączone ręcznie
- * (bez końca) ma `fraction: null`, a wyłączona ładowarka nie ma sesji (`null`).
+ * Ładowanie auta w przebiegu planu: ile energii z planu już dotarło do auta (`actual_kwh` z `planned_kwh`
+ * urządzenia w przebiegu, liczone ze zdarzeń huba). Auto poza planem, ładowane ręcznie, nie ma celu, więc
+ * dostaje `fraction: null` (pasek bez procentu) tylko wtedy, gdy ładuje; inaczej `null`.
  */
-export const evSession = (device, simTime) => {
-  if (device.device_type !== "ev_charger" || device.state !== "running") return null;
-  const start = Date.parse(device.run?.started_at);
-  const end = Date.parse(device.run?.ends_at);
-  const now = Date.parse(simTime);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(now) || end <= start) {
-    return { fraction: null, endsAt: device.run?.ends_at ?? null };
+export const evCharge = (device, run) => {
+  if (device.device_type !== "ev_charger") return null;
+  const planned = run?.devices?.find((item) => item.device_id === device.device_id);
+  if (planned && planned.planned_kwh > 0) {
+    const delivered = Math.max(0, planned.actual_kwh ?? 0);
+    return { fraction: Math.min(1, delivered / planned.planned_kwh), deliveredKwh: delivered, plannedKwh: planned.planned_kwh };
   }
-  const fraction = Math.min(1, Math.max(0, (now - start) / (end - start)));
-  return { fraction, endsAt: device.run.ends_at };
+  return device.state === "running" ? { fraction: null, deliveredKwh: null, plannedKwh: null } : null;
 };
 
 const QUARTER_MS = 15 * 60 * 1000;
