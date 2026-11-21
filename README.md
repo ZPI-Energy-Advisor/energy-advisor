@@ -148,3 +148,4 @@ Powrót do wersji z kontenera: zatrzymać Vite i wykonać `docker compose start 
 
 - [Ceny dynamiczne](docs/dynamic-prices.md): źródło danych, worker synchronizacji, wycena taryfy dynamicznej
 - [Testy](docs/testing.md): uruchamianie testów, CI, fixtures i testy izolacji danych użytkowników
+- [Jak przechowujemy dane](docs/privacy-and-data.md): jakie dane zbieramy, po co, gdzie, jak długo i kto ma do nich dostęp
