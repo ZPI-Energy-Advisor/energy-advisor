@@ -69,6 +69,27 @@ class PlanRunDeviceOut(BaseModel):
     actions: list[PlanRunActionOut]
 
 
+class PlanRunPriceOut(BaseModel):
+    """Cena kwadransu planu (zł/kWh brutto) do paska czasu na ekranie „Mój dom”."""
+
+    start: datetime
+    price_pln_kwh: float
+
+
+class PlanRunWaterTemperatureOut(BaseModel):
+    # Temperatura wody według planu na końcu kwadransu zaczętego o `start`.
+    start: datetime
+    temp_c: float
+
+
+class PlanRunWaterHeaterOut(BaseModel):
+    """Bojler z planu: przebieg temperatury wody według planu (z migawki przy starcie przebiegu)."""
+
+    device_id: str
+    device_name: str
+    temperatures: list[PlanRunWaterTemperatureOut]
+
+
 class PlanRunErrorOut(BaseModel):
     """Awaria urządzenia w trakcie przebiegu, np. komenda, której urządzenie nie wykonało o `start_at`."""
 
@@ -199,3 +220,10 @@ class PlanRunOut(BaseModel):
     errors: list[PlanRunErrorOut] = []
     # Rachunek przed i po (ZP-114); None w przebiegach sprzed niego.
     cost: PlanRunCostOut | None = None
+    # Z migawki planu przy starcie (ZP-110): ceny kwadransów do paska czasu i temperatura wody bojlerów
+    # według planu. Puste w przebiegach sprzed tej zmiany.
+    prices: list[PlanRunPriceOut] = []
+    # Od tej chwili ceny w `prices` są przybliżone: ceny nocy po dniu planu nie były jeszcze znane, więc plan
+    # przyjął ceny z tych samych godzin dnia planu. None, gdy wszystkie ceny są prawdziwe.
+    prices_approximate_from: datetime | None = None
+    water_heaters: list[PlanRunWaterHeaterOut] = []

@@ -62,8 +62,20 @@ const EV = {
   run: { ref: null, started_at: "2026-10-19T18:00:00+02:00", ends_at: "2026-10-19T22:00:00+02:00" },
 };
 
-const renderHouse = (devices, { onCommand = vi.fn().mockResolvedValue(true), power = POWER } = {}) => {
-  const view = render(<HouseView devices={devices} power={power} simTime={SIM_TIME} onCommand={onCommand} />);
+const renderHouse = (
+  devices,
+  { onCommand = vi.fn().mockResolvedValue(true), power = POWER, planBadges, planRun = null } = {},
+) => {
+  const view = render(
+    <HouseView
+      devices={devices}
+      power={power}
+      simTime={SIM_TIME}
+      onCommand={onCommand}
+      planBadges={planBadges}
+      planRun={planRun}
+    />,
+  );
   return { ...view, onCommand };
 };
 
@@ -132,14 +144,36 @@ describe("HouseView", () => {
     expect(screen.getByRole("img", { name: "Licznik: Oddawanie do sieci 3,00 kW" })).toBeTruthy();
   });
 
-  it("ładowarka według planu ma oznaczenie i postęp sesji", () => {
-    renderHouse([EV]);
+  it("ładowarka według planu ma oznaczenie i postęp sesji, a nie stan baterii", () => {
+    const { container } = renderHouse([EV], {
+      planBadges: { dev_ev_01: { text: "Plan 18:00–22:00 · w trakcie", tone: "active" } },
+    });
 
-    const ev = within(screen.getByRole("group", { name: "Garaż" })).getByRole("button", { name: "Ładowarka EV: Według planu, 3,70 kW" });
+    const ev = within(screen.getByRole("group", { name: "Garaż" })).getByRole("button", {
+      name: "Ładowarka EV: Według planu, 3,70 kW, Plan 18:00–22:00 · w trakcie",
+    });
+    expect(container.querySelector('[data-device-id="dev_ev_01"] [data-plan-tone="active"]')).not.toBeNull();
     fireEvent.click(ev);
     const popover = screen.getByRole("dialog", { name: "Ładowarka EV" });
-    expect(popover.textContent).toContain("Według planu, koniec 22:00");
-    expect(popover.textContent).toContain("Sesja ładowania: 25% czasu");
+    expect(popover.textContent).toContain("Plan 18:00–22:00 · w trakcie");
+    expect(popover.textContent).toContain("Upłynęło 25% czasu sesji ładowania");
+  });
+
+  it("pralka uruchomiona przez plan programem też ma oznaczenie planu", () => {
+    const { container } = renderHouse([WASHER, KETTLE], {
+      planBadges: { dev_wm_01: { text: "Plan 19:00–21:00 · w trakcie", tone: "active" } },
+    });
+
+    // Program z planu nie ma przebiegu (run), a znaczek i tak jest: bierze się z przebiegu planu, jak na liście.
+    expect(screen.getByRole("button", { name: /^Pralka: .*Plan 19:00–21:00 · w trakcie$/ })).toBeTruthy();
+    expect(container.querySelector('[data-device-id="dev_wm_01"] [data-plan-tone]')).not.toBeNull();
+    expect(container.querySelector('[data-device-id="dev_kt_01"] [data-plan-tone]')).toBeNull();
+  });
+
+  it("bez przebiegu planu żadne urządzenie nie ma oznaczenia, także przebieg z historii", () => {
+    const { container } = renderHouse([{ ...EV, run: { ...EV.run, ref: "act_1" } }, WASHER]);
+
+    expect(container.querySelector("[data-plan-tone]")).toBeNull();
   });
 
   it("dymek czyta urządzenie przy każdym odświeżeniu stanu i zamyka się klawiszem Escape", () => {
@@ -164,5 +198,36 @@ describe("HouseView", () => {
     renderHouse([]);
 
     expect(screen.getByRole("region", { name: "Dom" }).textContent).toContain("Zaimportuj plik urządzeń");
+  });
+
+  it("nad przekrojem jest godzina symulacji, a w rogu temperatura wody i cena teraz z planu", () => {
+    const planRun = {
+      horizon_start: "2026-10-19T00:00:00+02:00",
+      horizon_end: "2026-10-20T06:00:00+02:00",
+      prices: [
+        { start: "2026-10-19T18:45:00+02:00", price_pln_kwh: 0.31 },
+        { start: "2026-10-19T19:00:00+02:00", price_pln_kwh: 0.92 },
+      ],
+      devices: [],
+      water_heaters: [
+        { device_id: "dev_wh_01", device_name: "Bojler", temperatures: [{ start: SIM_TIME, temp_c: 54.4 }] },
+      ],
+    };
+
+    renderHouse([KETTLE], { planRun });
+
+    expect(screen.getByTestId("timeline-time").textContent).toBe("19:00");
+    const indicators = screen.getByRole("list", { name: "Wskaźniki domu" });
+    expect(indicators.textContent).toContain("54°C");
+    expect(within(indicators).getByLabelText("Temperatura wody (Bojler, według planu): 54°C")).toBeTruthy();
+    expect(indicators.textContent).toContain("0,92 zł/kWh");
+    expect(indicators.textContent).toContain("drogo");
+  });
+
+  it("bez przebiegu planu pasek pokazuje samą godzinę, bez wskaźników", () => {
+    renderHouse([KETTLE]);
+
+    expect(screen.getByTestId("timeline-time").textContent).toBe("19:00");
+    expect(screen.queryByRole("list", { name: "Wskaźniki domu" })).toBeNull();
   });
 });

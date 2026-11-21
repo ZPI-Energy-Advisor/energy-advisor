@@ -81,6 +81,12 @@ function HomeLive({ onShowReport }) {
   const startBlocked = finishedHere
     ? `Plan na ${shortDay(planRun.run.plan_date)} się skończył. Żeby go powtórzyć, kliknij „Uruchom ponownie”.`
     : null;
+  // Urządzenia sterujemy tylko przy chodzącym zegarze: w pauzie i po końcu planu włączenie niczego by nie
+  // policzyło (zegar stoi), a po końcu planu psułoby stan, który widać w raporcie.
+  const controlsLocked = !state?.clock?.running;
+  const lockedNote = finishedHere
+    ? "Plan się skończył, więc urządzeń już nie włączysz. Żeby symulować dalej, kliknij „Uruchom ponownie”."
+    : "Symulacja jest zatrzymana. Urządzenia włączysz po kliknięciu „Start”.";
   // Odchylenia z rachunku; przebieg bez rachunku (sprzed ZP-114 albo jeszcze bez zdarzeń) ma tylko awarie.
   const deviations = planRun.run?.cost
     ? planRun.run.cost.deviations
@@ -150,7 +156,10 @@ function HomeLive({ onShowReport }) {
           <HomeSummary power={state.power} today={state.today} />
           {!hubDown && (
             <>
-              <div className="flex justify-end">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-gray-600" role="status">
+                  {controlsLocked ? lockedNote : ""}
+                </p>
                 <SegmentedControl label="Widok urządzeń" options={VIEW_OPTIONS} value={view} onChange={setView} />
               </div>
               {view === "house" ? (
@@ -159,9 +168,18 @@ function HomeLive({ onShowReport }) {
                   power={state.power}
                   simTime={state.clock?.sim_time}
                   onCommand={sendCommand}
+                  disabled={controlsLocked}
+                  planBadges={planBadges(planRun.run)}
+                  // Pasek czasu i wskaźniki tylko z przebiegu tej symulacji, nie z planu sprzed restartu huba.
+                  planRun={planRun.run?.simulation_id === state.simulation_id ? planRun.run : null}
                 />
               ) : (
-                <HomeDeviceList devices={state.devices} onCommand={sendCommand} planBadges={planBadges(planRun.run)} />
+                <HomeDeviceList
+                  devices={state.devices}
+                  onCommand={sendCommand}
+                  disabled={controlsLocked}
+                  planBadges={planBadges(planRun.run)}
+                />
               )}
             </>
           )}

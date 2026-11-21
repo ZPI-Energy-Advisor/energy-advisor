@@ -116,8 +116,9 @@ def test_approved_plan_goes_to_hub_in_one_request_after_new_day_and_before_clock
         "clock ['running', 'stop_at']",
     ]
     assert home.hub.clock_updates[1] == {"sim_time": f"{PLAN_DAY}T00:00:00+02:00", "restart": True}
-    # Zegar sam stanie o końcu planu (06:00 następnego dnia).
-    assert home.hub.clock_updates[-1] == {"running": True, "stop_at": plan["horizon_end"]}
+    # Zegar sam stanie o końcu przebiegu: auto ładuje się w nocy, więc koniec jego ładowania (przed 06:00).
+    run_end = items["dev_ev_01"]["end"]
+    assert home.hub.clock_updates[-1] == {"running": True, "stop_at": run_end}
     assert [update.get("running") for update in (home.hub.clock_updates[0], home.hub.clock_updates[-1])] == [False, True]
     commands = _by_device(home.hub.batches[0])
     washer, = commands["dev_wm_01"]
@@ -129,7 +130,7 @@ def test_approved_plan_goes_to_hub_in_one_request_after_new_day_and_before_clock
 
     run = response.json()
     assert (run["status"], run["plan_id"], run["plan_date"]) == ("running", plan["id"], PLAN_DAY)
-    assert (run["horizon_start"], run["horizon_end"]) == (plan["horizon_start"], plan["horizon_end"])
+    assert (run["horizon_start"], run["horizon_end"]) == (plan["horizon_start"], run_end)
     assert {device["device_id"]: device["planned_kwh"] for device in run["devices"]} == {
         "dev_wm_01": items["dev_wm_01"]["energy_kwh"], "dev_ev_01": items["dev_ev_01"]["energy_kwh"],
     }
@@ -357,13 +358,13 @@ def test_run_finished_in_hub_before_new_start_counts_as_completed(home, db):
     owner = _home_with_files(home)
     plan = _plan(owner)
     first = _start(owner, plan["id"]).json()
-    home.hub.clock_state.update(sim_time=plan["horizon_end"], running=False, stop_at=None)
+    home.hub.clock_state.update(sim_time=first["horizon_end"], running=False, stop_at=None)
 
     _start(owner, plan["id"])
 
     stored = db.get(PlanRun, first["id"])
     db.refresh(stored)
-    assert (stored.status, stored.ended_sim_time) == ("completed", datetime.fromisoformat(plan["horizon_end"]))
+    assert (stored.status, stored.ended_sim_time) == ("completed", datetime.fromisoformat(first["horizon_end"]))
 
 
 def test_commands_over_contract_limit_go_in_several_requests():
@@ -423,11 +424,11 @@ def test_run_completes_when_clock_passes_end_of_plan(home, db):
     owner = _home_with_files(home)
     plan = _plan(owner)
     run = _start(owner, plan["id"]).json()
-    home.hub.clock_state["sim_time"] = (datetime.fromisoformat(plan["horizon_end"]) + timedelta(minutes=15)).isoformat()
+    home.hub.clock_state["sim_time"] = (datetime.fromisoformat(run["horizon_end"]) + timedelta(minutes=15)).isoformat()
 
     report = _latest(owner).json()
 
-    assert (report["status"], report["sim_time"]) == ("completed", plan["horizon_end"])
+    assert (report["status"], report["sim_time"]) == ("completed", run["horizon_end"])
     stored = db.get(PlanRun, run["id"])
     db.refresh(stored)
     assert stored.status == "completed" and stored.ended_at is not None
@@ -511,15 +512,15 @@ def test_home_state_counts_plan_run_from_its_start_also_after_midnight(home, db)
     simulation_id = run["simulation_id"]
     _store_events(db, owner, [
         _report(simulation_id, "dev_wm_01", f"{PLAN_DAY}T10:00:00+02:00", 0.6),
-        _report(simulation_id, "dev_ev_01", "2026-10-13T03:00:00+02:00", 0.9),
+        _report(simulation_id, "dev_ev_01", "2026-10-13T01:00:00+02:00", 0.9),
     ])
-    home.hub.clock_state["sim_time"] = "2026-10-13T05:00:00+02:00"
+    home.hub.clock_state["sim_time"] = "2026-10-13T02:00:00+02:00"
 
     today = _today(owner)
 
     # Po północy doba kalendarzowa miałaby tylko 0,9 kWh z nocy; bilans obejmuje cały plan, jak raport.
     assert (today["period"], today["plan_date"]) == ("plan_run", PLAN_DAY)
-    assert (today["day_start"], today["until"]) == (run["horizon_start"], "2026-10-13T05:00:00+02:00")
+    assert (today["day_start"], today["until"]) == (run["horizon_start"], "2026-10-13T02:00:00+02:00")
     assert today["consumption_kwh"] == pytest.approx(1.5)
 
 
@@ -535,3 +536,64 @@ def test_home_state_after_end_of_plan_horizon_counts_ordinary_day(home, db):
     assert (today["period"], today["plan_date"]) == ("day", None)
     assert today["day_start"] == "2026-10-13T00:00:00+02:00"
     assert today["consumption_kwh"] == 0.0
+
+
+# Pasek czasu i temperatura wody na ekranie „Mój dom” (ZP-110)
+
+
+def test_run_carries_plan_prices_and_water_temperature_from_plan(home):
+    from test_planning_preferences import WATER_HEATER
+
+    owner = _home_with_files(home, WASHER, EV, WATER_HEATER)
+    plan = _plan(owner, devices=[
+        {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))},
+        {"device_id": "dev_wh_01", "enabled": True, "ready_times": ["07:00", "19:00"]},
+    ])
+
+    run = _start(owner, plan["id"]).json()
+
+    assert run["prices"] == plan["prices"]
+    assert run["prices_approximate_from"] == plan["approximate_from"]
+    heater, = run["water_heaters"]
+    planned, = plan["water_heaters"]
+    assert heater["device_id"] == "dev_wh_01"
+    assert heater["temperatures"] == [
+        {"start": entry["start"], "temp_c": entry["after"]} for entry in planned["temperatures"]
+    ]
+
+
+def test_run_without_water_heater_has_no_water_temperature(home):
+    owner = _home_with_files(home)
+
+    run = _start(owner, _plan(owner)["id"]).json()
+
+    assert run["water_heaters"] == [] and len(run["prices"]) > 0
+
+
+# Koniec przebiegu: północ albo koniec ostatniej pozycji planu, najpóźniej 06:00
+
+
+def test_run_without_work_after_midnight_ends_at_midnight(home):
+    owner = _home_with_files(home)
+    plan = _plan(owner, devices=[
+        {"device_id": "dev_wm_01", "enabled": True, "program_id": "cotton_60", "windows": _windows(("07:00", "22:00"))},
+    ])
+
+    run = _start(owner, plan["id"]).json()
+
+    midnight = "2026-10-13T00:00:00+02:00"
+    assert plan["horizon_end"] > midnight  # Plan liczy do 06:00, ale po północy nic z niego nie pracuje.
+    assert run["horizon_end"] == midnight
+    assert home.hub.clock_updates[-1] == {"running": True, "stop_at": midnight}
+
+
+def test_run_ends_with_last_plan_item_after_midnight(home):
+    owner = _home_with_files(home)
+    plan = _plan(owner)
+    ev = next(item for item in plan["items"] if item["device_id"] == "dev_ev_01")
+
+    run = _start(owner, plan["id"]).json()
+
+    assert ev["end"] > "2026-10-13T00:00:00+02:00"
+    assert run["horizon_end"] == ev["end"] <= plan["horizon_end"]
+

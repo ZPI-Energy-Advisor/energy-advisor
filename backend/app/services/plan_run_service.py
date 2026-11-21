@@ -14,7 +14,9 @@ Uruchomienie zaczyna w hubie dobę planu od północy i wysyła jednym żądanie
 Urządzenia stałe (światło, TV, czajnik…) startują wyłączone i włącza je użytkownik z ekranu „Mój dom”:
 widać wtedy, jak plan i ręczne włączenia razem obciążają przyłącze.
 
-Zegar rusza ze `stop_at` na koniec planu, więc hub sam staje o 06:00 następnego dnia. Hub jest jedynym
+Zegar rusza ze `stop_at` na koniec przebiegu, więc hub sam staje. Koniec przebiegu to północ po dobie planu
+albo, gdy pozycja planu pracuje dłużej (np. auto ładuje się w nocy), koniec ostatniej pozycji, najpóźniej
+06:00 jak zakres planu: po północy bez pracy z planu nie ma czego symulować. Hub jest jedynym
 źródłem czasu i stanu, więc status przebiegu sprawdzamy przy odczycie: hub z innym `simulation_id` zaczął
 nową symulację (`superseded`), a zegar na końcu planu kończy przebieg (`completed`).
 
@@ -47,8 +49,10 @@ from app.schemas.plan_run import (
     PlanRunErrorOut,
     PlanRunHistoryDeviceOut,
     PlanRunOut,
+    PlanRunPriceOut,
     PlanRunReplay,
     PlanRunSummaryOut,
+    PlanRunWaterHeaterOut,
 )
 from app.schemas.smart_home import CommandType, HubClock, HubCommand, HubCommandResult, HubCommandStatus
 from app.services.home_control_service import (
@@ -122,10 +126,27 @@ class PlanRunService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PLAN_NOT_APPROVED_MESSAGE)
         items = [PlanItemOut.model_validate(item) for item in plan.result["items"]]
         planned = self._plan_commands(items)
-        tariff = {"max_grid_kw": plan.result.get("max_grid_kw"), "prices": plan.result["prices"]}
+        tariff = {
+            "max_grid_kw": plan.result.get("max_grid_kw"),
+            "prices": plan.result["prices"],
+            # Od tej chwili ceny nocy po dniu planu są przybliżone (te same godziny dnia planu), gdy nie było cen.
+            "approximate_from": plan.result.get("approximate_from"),
+            # Temperatura wody według planu do wskaźnika na ekranie „Mój dom” (ZP-110). Migawka, bo ponowne
+            # ułożenie planu nadpisuje jego wiersz.
+            "water_heaters": [
+                {
+                    "device_id": heater["device_id"],
+                    "device_name": heater["device_name"],
+                    "temperatures": [
+                        {"start": entry["start"], "temp_c": entry["after"]} for entry in heater["temperatures"]
+                    ],
+                }
+                for heater in plan.result.get("water_heaters", [])
+            ],
+        }
         prices = _prices(tariff)
         horizon_start = datetime.fromisoformat(plan.result["horizon_start"])
-        horizon_end = datetime.fromisoformat(plan.result["horizon_end"])
+        horizon_end = self._run_end(plan, [item for item, _ in planned])
         history_days, runs = self._history(owner, plan, {item.device_id for item in items})
 
         # Blokada wiersza domu: dwa równoczesne „Uruchom” (albo uruchomienie i wysyłka rejestru) nie przeplatają
@@ -168,6 +189,15 @@ class PlanRunService:
         clock = update_hub_clock(hub_client, running=True, stop_at=horizon_end)
         self.run_repository.commit()
         return self._out(owner, run, clock)
+
+    @staticmethod
+    def _run_end(plan: DayPlan, items: list[PlanItemOut]) -> datetime:
+        """Koniec przebiegu: północ po dobie planu albo koniec ostatniej wysłanej pozycji planu, gdy pracuje
+        dłużej, najpóźniej koniec zakresu planu (06:00). Historia (PV, pompa i bojler) kończy się o północy."""
+        plan_end = datetime.fromisoformat(plan.result["horizon_end"])
+        midnight = day_midnight(plan.plan_date + timedelta(days=1))
+        last = max((item.end for item in items), default=midnight)
+        return min(plan_end, max(midnight, last))
 
     @staticmethod
     def _plan_commands(items: list[PlanItemOut]) -> list[tuple[PlanItemOut, HubCommand]]:
@@ -448,6 +478,11 @@ class PlanRunService:
             devices=devices,
             errors=errors,
             cost=cost,
+            prices=[PlanRunPriceOut.model_validate(entry) for entry in (run.tariff or {}).get("prices", [])],
+            prices_approximate_from=(run.tariff or {}).get("approximate_from"),
+            water_heaters=[
+                PlanRunWaterHeaterOut.model_validate(heater) for heater in (run.tariff or {}).get("water_heaters", [])
+            ],
         )
 
     def _energy(self, owner: User, run: PlanRun, until: datetime) -> DayEnergy:

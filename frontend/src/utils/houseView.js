@@ -34,6 +34,18 @@ export const HOUSE_ROOMS = [
 
 const ROOM_IDS = new Set(HOUSE_ROOMS.map((room) => room.id));
 
+/**
+ * Pomieszczenia do narysowania. Pralnia bez urządzeń znika, a pomieszczenie techniczne zajmuje jej miejsce:
+ * pralka i suszarka bez pola `room` stoją w łazience (ZP-109), więc w zwykłym pliku pralnia byłaby pusta.
+ */
+export const houseRooms = (placed) => {
+  if (placed.get("laundry")?.length) return HOUSE_ROOMS;
+  const laundry = HOUSE_ROOMS.find((room) => room.id === "laundry");
+  return HOUSE_ROOMS.filter((room) => room.id !== "laundry").map((room) =>
+    room.id === "technical" ? { ...room, x: laundry.x, w: room.x + room.w - laundry.x } : room,
+  );
+};
+
 // Słownik backendu nazywa pomieszczenie techniczne pełną nazwą, w przekroju brakuje na nią miejsca.
 const SHORT_ROOM_LABELS = { technical: "Techniczne" };
 export const roomLabel = (roomId) => SHORT_ROOM_LABELS[roomId] ?? ROOM_LABELS[roomId] ?? roomId;
@@ -121,8 +133,13 @@ export const deviceAppearance = (device) => {
   }
 };
 
-/** Urządzenie pracuje w przebiegu z pozycji planu (przebieg z historii dnia referencyjnego ma `ref`). */
-export const isPlanControlled = (device) => Boolean(device.run && !device.run.ref);
+/**
+ * Kolor znaczka „według planu” ze stanu pozycji planu (`planBadges` z utils/home): w trakcie zielony,
+ * wykonane niebieskie, czeka szary, odrzucone, awaria albo przerwane czerwone. To samo źródło co widok listy,
+ * więc znaczek mają też urządzenia z programem (pralka, zmywarka), które plan uruchamia przez start_program.
+ */
+export const PLAN_BADGE_COLORS = { active: "#10b981", ready: "#0ea5e9", neutral: "#94a3b8", error: "#ef4444" };
+export const planBadgeColor = (badge) => PLAN_BADGE_COLORS[badge?.tone] ?? PLAN_BADGE_COLORS.neutral;
 
 /** Pomieszczenie jest rozjaśnione, gdy świeci w nim choć jedno oświetlenie. */
 export const isRoomLit = (devices) => devices.some((device) => device.device_type === "light" && device.state === "running");
@@ -160,4 +177,120 @@ export const evSession = (device, simTime) => {
   }
   const fraction = Math.min(1, Math.max(0, (now - start) / (end - start)));
   return { fraction, endsAt: device.run.ends_at };
+};
+
+const QUARTER_MS = 15 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+// Podziałka paska czasu co 6 h (00:00, 06:00, 12:00, 18:00), także przez północ planu.
+const TICK_HOURS = 6;
+
+/**
+ * Poziom ceny kwadransu względem cen całego planu, z jej pozycji wśród nich: najtańsza trzecia część to tanio,
+ * najdroższa drogo. Gdy wszystkie ceny są równe (np. G11), każda jest „średnio”.
+ */
+export const priceLevels = (prices) => {
+  const sorted = prices.map((entry) => entry.price_pln_kwh).sort((a, b) => a - b);
+  if (!sorted.length || sorted[0] === sorted[sorted.length - 1]) return () => (sorted.length ? "mid" : null);
+  const last = sorted.length - 1;
+  return (price) => {
+    const below = sorted.filter((value) => value < price).length;
+    const equal = sorted.filter((value) => value === price).length;
+    // Środek pozycji ceny w posortowanej liście (powtórzona cena ma jedną pozycję), od 0 do 1.
+    const position = (below + Math.max(0, equal - 1) / 2) / last;
+    if (position <= 1 / 3) return "cheap";
+    if (position >= 2 / 3) return "expensive";
+    return "mid";
+  };
+};
+
+export const PRICE_LEVEL_LABELS = { cheap: "tanio", mid: "średnio", expensive: "drogo" };
+
+/** Wpis z listy `{ start, ... }` dla kwadransu, w którym jest chwila `simTime` (ostatni o starcie nie później). */
+const entryAt = (entries, simTime) => {
+  const now = Date.parse(simTime);
+  if (!Number.isFinite(now)) return null;
+  let found = null;
+  for (const entry of entries ?? []) {
+    const start = Date.parse(entry.start);
+    if (start <= now && now < start + QUARTER_MS) return entry;
+    if (start <= now) found = entry;
+  }
+  return found && now < Date.parse(found.start) + QUARTER_MS ? found : null;
+};
+
+/** Ceny od tej chwili są przybliżone: noc po dniu planu dostała ceny z tych samych godzin dnia planu. */
+const isApproximate = (run, ms) => {
+  const from = Date.parse(run?.prices_approximate_from);
+  return Number.isFinite(from) && ms >= from;
+};
+
+/** Cena kwadransu teraz z poziomem względem cen planu; null bez przebiegu planu albo poza jego zakresem. */
+export const priceNow = (run, simTime) => {
+  const entry = entryAt(run?.prices, simTime);
+  if (!entry) return null;
+  return {
+    price: entry.price_pln_kwh,
+    level: priceLevels(run.prices)(entry.price_pln_kwh),
+    approximate: isApproximate(run, Date.parse(entry.start)),
+  };
+};
+
+/**
+ * Temperatura wody bojlerów według planu w chwili `simTime`: wartość z końca bieżącego kwadransu planu.
+ * To przebieg zaplanowany, a nie zmierzony (hub nie liczy temperatury), więc ekran podpisuje go „wg planu”.
+ */
+export const waterTemperaturesNow = (run, simTime) =>
+  (run?.water_heaters ?? [])
+    .map((heater) => ({ deviceId: heater.device_id, name: heater.device_name, entry: entryAt(heater.temperatures, simTime) }))
+    .filter((heater) => heater.entry)
+    .map(({ deviceId, name, entry }) => ({ deviceId, name, tempC: entry.temp_c }));
+
+const clockParts = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Warsaw", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+/** Minuty od północy w strefie domu. */
+const localMinutes = (ms) => {
+  const parts = Object.fromEntries(clockParts.formatToParts(ms).map((part) => [part.type, part.value]));
+  return Number(parts.hour) * 60 + Number(parts.minute);
+};
+
+/**
+ * Pasek czasu nad przekrojem: zakres planu (doba planu i noc do 06:00) albo, bez przebiegu planu, doba zegara.
+ * Pozycje są ułamkami szerokości paska (0–1): kreska „teraz”, odcinki cen planu z poziomem i starty pozycji planu.
+ */
+export const simTimeline = (run, simTime) => {
+  const now = Date.parse(simTime);
+  if (!Number.isFinite(now)) return null;
+  let start = Date.parse(run?.horizon_start);
+  let end = Date.parse(run?.horizon_end);
+  const planned = Number.isFinite(start) && Number.isFinite(end) && end > start && now >= start && now <= end;
+  if (!planned) {
+    // Doba zegara od północy w strefie domu (zegar huba stoi zawsze na pełnym kwadransie).
+    start = now - localMinutes(now) * 60000;
+    end = start + DAY_MS;
+  }
+  const span = end - start;
+  const at = (ms) => Math.min(1, Math.max(0, (ms - start) / span));
+  const level = planned ? priceLevels(run.prices ?? []) : () => null;
+  const prices = planned
+    ? (run.prices ?? [])
+        .map((entry) => ({ from: Date.parse(entry.start), price: entry.price_pln_kwh }))
+        .filter((entry) => entry.from >= start && entry.from < end)
+        .map((entry) => ({ from: at(entry.from), to: at(entry.from + QUARTER_MS), level: level(entry.price) }))
+    : [];
+  const markers = planned
+    ? (run.devices ?? []).flatMap((device) =>
+        device.actions
+          .filter((action) => action.status !== "rejected")
+          .map((action) => ({ at: at(Date.parse(action.start)), name: device.device_name, start: action.start })),
+      )
+    : [];
+  const ticks = [];
+  for (let ms = Math.ceil(start / HOUR_MS) * HOUR_MS; ms <= end; ms += HOUR_MS) {
+    if (localMinutes(ms) % (TICK_HOURS * 60) === 0) ticks.push({ at: at(ms), time: ms });
+  }
+  const approximateFrom =
+    planned && Number.isFinite(Date.parse(run.prices_approximate_from)) ? at(Date.parse(run.prices_approximate_from)) : null;
+  return { planned, start, end, now: at(now), prices, markers, ticks, approximateFrom };
 };

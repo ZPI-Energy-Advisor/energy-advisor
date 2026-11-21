@@ -6,10 +6,15 @@ import {
   deviceAppearance,
   evSession,
   gridFlow,
-  isPlanControlled,
+  houseRooms,
   isRoomLit,
   layoutRoom,
   placeDevicesInRooms,
+  planBadgeColor,
+  priceLevels,
+  priceNow,
+  simTimeline,
+  waterTemperaturesNow,
 } from "./houseView";
 
 // Urządzenia z przykładowego pliku w kształcie stanu domu (GET /home/state).
@@ -148,11 +153,32 @@ describe("deviceAppearance", () => {
   });
 });
 
-describe("isPlanControlled", () => {
-  it("rozróżnia przebieg z planu od przebiegu z historii i braku przebiegu", () => {
-    expect(isPlanControlled(device({ run: { ref: null } }))).toBe(true);
-    expect(isPlanControlled(device({ run: { ref: "act_1" } }))).toBe(false);
-    expect(isPlanControlled(device())).toBe(false);
+describe("planBadgeColor", () => {
+  it("kolor znaczka planu ze stanu pozycji, a bez stanu szary", () => {
+    expect(planBadgeColor({ tone: "active" })).toBe("#10b981");
+    expect(planBadgeColor({ tone: "error" })).toBe("#ef4444");
+    expect(planBadgeColor({ tone: "neutral" })).toBe(planBadgeColor(undefined));
+  });
+});
+
+describe("houseRooms", () => {
+  const rooms = (devices) => houseRooms(placeDevicesInRooms(devices)).map((room) => room.id);
+
+  it("pusta pralnia znika, a pomieszczenie techniczne zajmuje jej miejsce", () => {
+    const laundry = HOUSE_ROOMS.find((room) => room.id === "laundry");
+    const technical = HOUSE_ROOMS.find((room) => room.id === "technical");
+
+    const shown = houseRooms(placeDevicesInRooms(sampleDevices));
+
+    expect(shown.map((room) => room.id)).not.toContain("laundry");
+    expect(shown.find((room) => room.id === "technical")).toMatchObject({
+      x: laundry.x,
+      w: technical.x + technical.w - laundry.x,
+    });
+  });
+
+  it("pralnia z urządzeniem zostaje w przekroju", () => {
+    expect(rooms([device({ room: "laundry" })])).toContain("laundry");
   });
 });
 
@@ -191,5 +217,81 @@ describe("evSession", () => {
     expect(evSession(charger({ run: null }), "2026-10-19T19:00:00+02:00")).toEqual({ fraction: null, endsAt: null });
     expect(evSession(charger({ state: "off", run }), "2026-10-19T19:00:00+02:00")).toBeNull();
     expect(evSession(device({ state: "running", run }), "2026-10-19T19:00:00+02:00")).toBeNull();
+  });
+});
+
+describe("pasek czasu, cena i temperatura wody", () => {
+  const RUN = {
+    horizon_start: "2026-10-19T00:00:00+02:00",
+    horizon_end: "2026-10-20T06:00:00+02:00",
+    prices: [
+      { start: "2026-10-19T12:00:00+02:00", price_pln_kwh: 0.3 },
+      { start: "2026-10-19T12:15:00+02:00", price_pln_kwh: 0.6 },
+      { start: "2026-10-19T12:30:00+02:00", price_pln_kwh: 0.9 },
+    ],
+    devices: [
+      { device_name: "Pralka", actions: [{ start: "2026-10-19T12:15:00+02:00", status: "scheduled" }] },
+      { device_name: "Zmywarka", actions: [{ start: "2026-10-19T20:00:00+02:00", status: "rejected" }] },
+    ],
+    water_heaters: [{
+      device_id: "dev_wh_01",
+      device_name: "Bojler",
+      temperatures: [
+        { start: "2026-10-19T12:00:00+02:00", temp_c: 48.2 },
+        { start: "2026-10-19T12:15:00+02:00", temp_c: 51.7 },
+      ],
+    }],
+  };
+
+  it("pasek obejmuje zakres planu: teraz, ceny z poziomem i starty pozycji bez odrzuconych", () => {
+    const line = simTimeline(RUN, "2026-10-19T15:00:00+02:00");
+
+    expect(line.planned).toBe(true);
+    expect(line.now).toBeCloseTo(15 / 30);
+    expect(line.prices.map((band) => band.level)).toEqual(["cheap", "mid", "expensive"]);
+    expect(line.markers).toEqual([{ at: 12.25 / 30, name: "Pralka", start: "2026-10-19T12:15:00+02:00" }]);
+    // Podziałka co 6 h: 00, 06, 12, 18, 00 i 06 następnego dnia.
+    expect(line.ticks).toHaveLength(6);
+  });
+
+  it("bez przebiegu planu pasek pokazuje dobę zegara bez cen", () => {
+    const line = simTimeline(null, "2026-10-19T06:00:00+02:00");
+
+    expect(line.planned).toBe(false);
+    expect(line.now).toBeCloseTo(0.25);
+    expect(line.prices).toEqual([]);
+    expect(line.markers).toEqual([]);
+  });
+
+  it("cena i temperatura wody z bieżącego kwadransu planu, a poza planem ich nie ma", () => {
+    expect(priceNow(RUN, "2026-10-19T12:20:00+02:00")).toEqual({ price: 0.6, level: "mid", approximate: false });
+    // Noc po dniu planu bez znanych cen: plan przyjął ceny z tych samych godzin, więc cena jest przybliżona.
+    const approximate = { ...RUN, prices_approximate_from: "2026-10-19T12:30:00+02:00" };
+    expect(priceNow(approximate, "2026-10-19T12:35:00+02:00")).toMatchObject({ price: 0.9, approximate: true });
+    expect(simTimeline(approximate, "2026-10-19T15:00:00+02:00").approximateFrom).toBeCloseTo(12.5 / 30);
+    expect(simTimeline(RUN, "2026-10-19T15:00:00+02:00").approximateFrom).toBeNull();
+    expect(waterTemperaturesNow(RUN, "2026-10-19T12:20:00+02:00")).toEqual([
+      { deviceId: "dev_wh_01", name: "Bojler", tempC: 51.7 },
+    ]);
+    expect(priceNow(RUN, "2026-10-19T18:00:00+02:00")).toBeNull();
+    expect(waterTemperaturesNow(RUN, "2026-10-19T18:00:00+02:00")).toEqual([]);
+    expect(priceNow(null, "2026-10-19T12:20:00+02:00")).toBeNull();
+  });
+});
+
+describe("priceLevels", () => {
+  const levels = (values) => {
+    const level = priceLevels(values.map((price_pln_kwh) => ({ price_pln_kwh })));
+    return values.map(level);
+  };
+
+  it("trzecia część najtańszych to tanio, najdroższych drogo", () => {
+    expect(levels([0.3, 0.9])).toEqual(["cheap", "expensive"]);
+    expect(levels([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7])).toEqual(["cheap", "cheap", "cheap", "mid", "expensive", "expensive", "expensive"]);
+  });
+
+  it("równe ceny (np. G11) są średnio, a bez cen nie ma poziomu", () => {
+    expect(levels([0.8, 0.8, 0.8])).toEqual(["mid", "mid", "mid"]);
+    expect(priceLevels([])(0.5)).toBeNull();
   });
 });

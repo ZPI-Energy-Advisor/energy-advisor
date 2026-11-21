@@ -59,6 +59,9 @@ const STATE = {
   },
 };
 
+// Urządzenia steruje się tylko przy chodzącym zegarze.
+const RUNNING = { ...STATE, clock: { ...STATE.clock, running: true } };
+
 const PLAN_RUN = {
   id: "run-1",
   plan_id: "plan-1",
@@ -236,7 +239,7 @@ describe("HomePage", () => {
 
   it("włączenie lampy wysyła polecenie i od razu pokazuje nowy stan i moc", async () => {
     const lampOn = { ...LAMP, state: "running", power_kw: 0.06 };
-    mockApi({ states: [STATE, { ...STATE, devices: [lampOn, WASHER] }] });
+    mockApi({ states: [RUNNING, { ...RUNNING, devices: [lampOn, WASHER] }] });
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { status: "accepted", state: "running" } });
     renderPage();
     await showList();
@@ -251,7 +254,7 @@ describe("HomePage", () => {
   });
 
   it("uruchamia wybrany program urządzenia", async () => {
-    mockApi();
+    mockApi({ states: [RUNNING] });
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} });
     renderPage();
     await showList();
@@ -271,7 +274,7 @@ describe("HomePage", () => {
   });
 
   it("pokazuje powód odrzucenia polecenia przez hub", async () => {
-    mockApi();
+    mockApi({ states: [RUNNING] });
     vi.spyOn(apiClient, "post").mockRejectedValue({ response: { data: { detail: "Trwa program urządzenia" } } });
     renderPage();
     await showList();
@@ -609,7 +612,7 @@ describe("HomePage", () => {
 
   it("włączenie lampy z dymku w domu wysyła polecenie, a nowy stan widać w przekroju i w dymku", async () => {
     const lampOn = { ...LAMP, room: "living_room", state: "running", power_kw: 0.06 };
-    mockApi({ states: [{ ...STATE, devices: [{ ...LAMP, room: "living_room" }, WASHER] }, { ...STATE, devices: [lampOn, WASHER] }] });
+    mockApi({ states: [{ ...RUNNING, devices: [{ ...LAMP, room: "living_room" }, WASHER] }, { ...RUNNING, devices: [lampOn, WASHER] }] });
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: { status: "accepted", state: "running" } });
     renderPage();
 
@@ -634,5 +637,25 @@ describe("HomePage", () => {
 
     expect(await screen.findByTestId("sim-time")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("HomePage: sterowanie urządzeniami przy zatrzymanym zegarze", () => {
+  it("w pauzie przyciski urządzeń są wyłączone, a ekran mówi, że trzeba kliknąć „Start”", async () => {
+    mockApi();
+    renderPage();
+    await showList();
+
+    expect((await screen.findByRole("button", { name: "Włącz: Lampa salon" })).disabled).toBe(true);
+    expect(screen.getByText("Symulacja jest zatrzymana. Urządzenia włączysz po kliknięciu „Start”.")).toBeTruthy();
+  });
+
+  it("po końcu planu urządzeń nie da się włączyć, a ekran odsyła do „Uruchom ponownie”", async () => {
+    mockApi({ planRun: { ...PLAN_RUN, status: "completed", cost: COST } });
+    renderPage();
+    await showList();
+
+    expect((await screen.findByRole("button", { name: "Włącz: Lampa salon" })).disabled).toBe(true);
+    expect(screen.getByText(/Plan się skończył, więc urządzeń już nie włączysz/)).toBeTruthy();
   });
 });

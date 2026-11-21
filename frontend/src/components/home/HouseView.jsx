@@ -1,23 +1,27 @@
 import { useEffect, useId, useState } from "react";
-import { LuArrowLeft, LuArrowRight, LuCalendarCheck, LuZap } from "react-icons/lu";
+import { LuArrowLeft, LuArrowRight, LuCalendarCheck, LuDroplet, LuZap } from "react-icons/lu";
 import { formatNumber } from "../../utils/home";
 import {
   GROUND_Y,
   HOUSE_HEIGHT,
   HOUSE_TOP,
-  HOUSE_ROOMS,
   HOUSE_WIDTH,
   deviceAppearance,
   evSession,
   gridFlow,
-  isPlanControlled,
+  houseRooms,
   isProducingPv,
   isRoomLit,
   layoutRoom,
   placeDevicesInRooms,
+  planBadgeColor,
+  PRICE_LEVEL_LABELS,
+  priceNow,
   roomLabel,
+  waterTemperaturesNow,
 } from "../../utils/houseView";
 import HouseDevicePopover from "./HouseDevicePopover";
+import HouseTimeline from "./HouseTimeline";
 import { DEVICE_ICONS, STATE_GLYPHS } from "./houseIcons";
 import { CARD } from "./styles";
 
@@ -147,7 +151,8 @@ function EvBar({ session, x, y, w }) {
   );
 }
 
-function HouseDevice({ device, cell, simTime, selected, onSelect, shadow }) {
+// `plan`: znaczek pozycji planu z `planBadges` ({ text, tone }) albo undefined dla urządzenia spoza planu.
+function HouseDevice({ device, plan, cell, simTime, selected, onSelect, shadow }) {
   const appearance = deviceAppearance(device);
   const Icon = DEVICE_ICONS[device.device_type] ?? DEVICE_ICONS.other;
   const Glyph = STATE_GLYPHS[appearance.glyph];
@@ -158,14 +163,15 @@ function HouseDevice({ device, cell, simTime, selected, onSelect, shadow }) {
   const radius = box * 0.32;
   const badge = Math.max(5, box * 0.2);
   const session = evSession(device, simTime);
-  const planned = isPlanControlled(device) && device.state === "running";
   const caption =
     device.state === "running" && device.power_kw != null && device.power_kw !== 0
       ? shortPower(device.power_kw)
       : appearance.tone === "error"
         ? appearance.label
         : null;
-  const name = `${device.device_name}: ${appearance.label}${caption && appearance.tone !== "error" ? `, ${caption}` : ""}`;
+  const name =
+    `${device.device_name}: ${appearance.label}${caption && appearance.tone !== "error" ? `, ${caption}` : ""}` +
+    (plan ? `, ${plan.text}` : "");
 
   const onKeyDown = (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -234,9 +240,9 @@ function HouseDevice({ device, cell, simTime, selected, onSelect, shadow }) {
           color={appearance.tone === "off" ? LABEL : appearance.tone === "error" ? "#dc2626" : appearance.stroke}
         />
       </g>
-      {planned && (
-        <g aria-hidden="true">
-          <circle cx={bx + 1} cy={by + 1} r={badge} fill="#10b981" />
+      {plan && (
+        <g aria-hidden="true" data-plan-tone={plan.tone}>
+          <circle cx={bx + 1} cy={by + 1} r={badge} fill={planBadgeColor(plan)} />
           <LuCalendarCheck x={bx + 1 - badge * 0.6} y={by + 1 - badge * 0.6} size={badge * 1.2} color="#ffffff" />
         </g>
       )}
@@ -259,7 +265,7 @@ function HouseDevice({ device, cell, simTime, selected, onSelect, shadow }) {
   );
 }
 
-function Room({ room, devices, cells, simTime, selectedId, onSelect, shadow }) {
+function Room({ room, devices, cells, planBadges, simTime, selectedId, onSelect, shadow }) {
   const lit = isRoomLit(devices);
   const label = roomLabel(room.id);
   return (
@@ -293,6 +299,7 @@ function Room({ room, devices, cells, simTime, selectedId, onSelect, shadow }) {
         <HouseDevice
           key={device.device_id}
           device={device}
+          plan={planBadges[device.device_id]}
           cell={cells[index]}
           simTime={simTime}
           selected={selectedId === device.device_id}
@@ -353,15 +360,58 @@ const popoverStyle = (cell) => {
  * Przekrój domu: urządzenia w swoich pomieszczeniach, licznik przy wejściu i dymek po kliknięciu.
  * Stan przychodzi z GET /home/state co 1–2 s, więc dymek czyta urządzenie po `device_id` przy każdym renderze.
  */
-function HouseView({ devices, power, simTime, disabled = false, onCommand }) {
+// `planBadges` (device_id -> { text, tone }): pozycje trwającego przebiegu planu, te same co w widoku listy.
+const PRICE_LEVEL_CLASSES = { cheap: "text-emerald-700", mid: "text-amber-700", expensive: "text-rose-700" };
+
+// Wskaźniki w lewym górnym rogu przekroju, zmieniające się z zegarem symulacji: temperatura wody bojlera
+// według planu i cena prądu w bieżącym kwadransie. Temperatury na zewnątrz i w domu dojdą z pogodą
+// i modelem strat ciepła budynku.
+function HouseIndicators({ run, simTime }) {
+  const water = waterTemperaturesNow(run, simTime);
+  const price = priceNow(run, simTime);
+  if (!water.length && !price) return null;
+  return (
+    <ul
+      className="absolute left-3 top-3 z-[1] space-y-1.5 rounded-xl bg-white/90 px-3 py-2 text-sm shadow-sm ring-1 ring-slate-900/5"
+      aria-label="Wskaźniki domu"
+    >
+      {water.map((heater) => (
+        <li
+          key={heater.deviceId}
+          className="flex items-center gap-1.5"
+          title={`${heater.name}: temperatura wody według planu`}
+          aria-label={`Temperatura wody (${heater.name}, według planu): ${formatNumber(heater.tempC, 0)}°C`}
+        >
+          <LuDroplet className="text-sky-600" aria-hidden="true" />
+          <span className="font-semibold tabular-nums text-slate-900">{formatNumber(heater.tempC, 0)}°C</span>
+          {water.length > 1 && <span className="text-xs text-slate-500">{heater.name}</span>}
+        </li>
+      ))}
+      {price && (
+        <li className="flex items-center gap-1.5" title="Cena prądu z sieci w bieżącym kwadransie, z planu">
+          <LuZap className="text-amber-500" aria-hidden="true" />
+          <span className="font-semibold tabular-nums text-slate-900">{formatNumber(price.price, 2)} zł/kWh</span>
+          <span className={`text-xs font-medium ${PRICE_LEVEL_CLASSES[price.level] ?? "text-slate-500"}`}>
+            {PRICE_LEVEL_LABELS[price.level]}
+            {price.approximate && " · przybliżona"}
+          </span>
+        </li>
+      )}
+    </ul>
+  );
+}
+
+// `planRun`: przebieg planu tej symulacji (GET /home/plan-runs/latest) do paska czasu i wskaźników; null bez niego.
+function HouseView({ devices, power, simTime, disabled = false, onCommand, planBadges = {}, planRun = null }) {
   const [selectedId, setSelectedId] = useState(null);
   const [pending, setPending] = useState(() => new Set());
   const shadowId = `house-shadow-${useId().replace(/:/g, "")}`;
   const shadow = `url(#${shadowId})`;
 
   const rooms = placeDevicesInRooms(devices);
+  const shownRooms = houseRooms(rooms);
   const cells = new Map();
-  for (const room of HOUSE_ROOMS) {
+  for (const room of shownRooms) {
     const roomDevices = rooms.get(room.id);
     layoutRoom(room, roomDevices.length).forEach((cell, index) => cells.set(roomDevices[index].device_id, cell));
   }
@@ -400,10 +450,14 @@ function HouseView({ devices, power, simTime, disabled = false, onCommand }) {
 
   return (
     <section className={`${CARD} space-y-4`} aria-label="Dom">
+      <HouseTimeline run={planRun} simTime={simTime} />
       <p className="text-xs text-slate-500 sm:hidden">Przesuń przekrój w bok, żeby zobaczyć cały dom.</p>
-      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+      {/* Przewijanie w bok tylko na wąskim ekranie. `overflow-x: auto` przewija też w pionie, więc dymek
+          wystający poniżej przekroju dodawał pasek przewijania i przesuwał widok; od `md` dymek może wystawać. */}
+      <div className="overflow-x-auto -mx-4 px-4 md:overflow-visible md:mx-0 md:px-0">
         <div className="relative min-w-[720px] rounded-xl bg-slate-50 p-3 md:p-4">
           <div className="relative">
+            <HouseIndicators run={planRun} simTime={simTime} />
             <svg
               viewBox={`0 ${HOUSE_TOP} ${HOUSE_WIDTH} ${HOUSE_HEIGHT - HOUSE_TOP}`}
               className="block w-full h-auto select-none"
@@ -422,12 +476,13 @@ function HouseView({ devices, power, simTime, disabled = false, onCommand }) {
               {/* Drzwi wejściowe w ścianie pomieszczenia „Inne”. */}
               <rect x={DOOR.x} y={DOOR.y} width={DOOR.w} height={DOOR.h} rx="3" fill="#94a3b8" aria-hidden="true" />
               <GridMeter power={power} shadow={shadow} />
-              {HOUSE_ROOMS.map((room) => (
+              {shownRooms.map((room) => (
                 <Room
                   key={room.id}
                   room={room}
                   devices={rooms.get(room.id)}
                   cells={rooms.get(room.id).map((device) => cells.get(device.device_id))}
+                  planBadges={planBadges}
                   simTime={simTime}
                   selectedId={selectedId}
                   onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
@@ -439,6 +494,7 @@ function HouseView({ devices, power, simTime, disabled = false, onCommand }) {
             {selected && (
               <HouseDevicePopover
                 device={selected}
+                plan={planBadges[selected.device_id]}
                 simTime={simTime}
                 disabled={disabled || pending.has(selected.device_id)}
                 onCommand={(command) => send(selected, command)}

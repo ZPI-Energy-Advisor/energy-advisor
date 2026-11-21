@@ -10,7 +10,7 @@ import {
   programName,
   runLabel,
 } from "../../utils/home";
-import { deviceAppearance, evSession, isPlanControlled, isProducingPv, roomLabel, roomOf } from "../../utils/houseView";
+import { deviceAppearance, evSession, isProducingPv, planBadgeColor, roomLabel, roomOf } from "../../utils/houseView";
 import { STATE_GLYPHS } from "./houseIcons";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "./styles";
 
@@ -57,7 +57,7 @@ function PopoverControls({ device, disabled, onCommand }) {
 }
 
 /** Dymek urządzenia z widoku domu: stan, moc, energia doby, program i sterowanie. */
-function HouseDevicePopover({ device, simTime, disabled, onCommand, onClose, style }) {
+function HouseDevicePopover({ device, plan, simTime, disabled, onCommand, onClose, style }) {
   const appearance = deviceAppearance(device);
   const Glyph = STATE_GLYPHS[appearance.glyph];
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type];
@@ -97,10 +97,13 @@ function HouseDevicePopover({ device, simTime, disabled, onCommand, onClose, sty
       >
         <Glyph aria-hidden="true" />
         {appearance.label}
-        {isPlanControlled(device) && device.state === "running" && (
-          <LuCalendarCheck className="text-emerald-700" aria-hidden="true" />
-        )}
       </p>
+      {plan && (
+        <p className="flex items-center gap-1.5 text-xs font-medium" style={{ color: planBadgeColor(plan) }}>
+          <LuCalendarCheck aria-hidden="true" />
+          {plan.text}
+        </p>
+      )}
 
       <dl className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
         <Fact label={producing ? "Produkcja" : "Moc"}>{formatKw(producing ? -device.power_kw : device.power_kw)}</Fact>
@@ -122,7 +125,7 @@ function HouseDevicePopover({ device, simTime, disabled, onCommand, onClose, sty
         <p className="text-xs text-gray-600">
           {session.fraction == null
             ? "Ładowanie bez ustalonego końca."
-            : `Sesja ładowania: ${formatNumber(session.fraction * 100, 0)}% czasu`}
+            : `Upłynęło ${formatNumber(session.fraction * 100, 0)}% czasu sesji ładowania`}
         </p>
       )}
 
