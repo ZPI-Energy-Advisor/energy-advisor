@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { getApiErrorMessage } from "../utils/energyFiles";
 
@@ -13,14 +13,20 @@ export function usePlanRun(simTime, simulationId) {
   const [run, setRun] = useState(undefined);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const version = useRef(0);
   const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
+  const replace = useCallback((next) => {
+    version.current += 1;
+    setRun(next);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const started = version.current;
     apiClient
       .get("/home/plan-runs/latest")
       .then(({ data }) => {
-        if (cancelled) return;
+        if (cancelled || version.current !== started) return;
         setRun(data ?? null);
         setError(null);
       })
@@ -32,5 +38,5 @@ export function usePlanRun(simTime, simulationId) {
     };
   }, [simTime, simulationId, reloadKey]);
 
-  return { run, error, refresh, replace: setRun };
+  return { run, error, refresh, replace };
 }
