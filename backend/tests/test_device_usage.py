@@ -2,7 +2,6 @@
 import datetime
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 import time
@@ -22,6 +21,7 @@ from app.parsers import parse_energy_file
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.services.calculation_service import CalculationService
+from timing import TIME_LIMIT_SCALE
 from test_energy_files import (
     T0,
     T1,
@@ -46,8 +46,6 @@ DEVICES_FROM_METER_DEMO = FIXTURES / "devices_from_meter_demo_30d.json"
 DEVICES_DEMO = FIXTURES / "devices_demo_30d.json"
 SAMPLE_DEVICES = BACKEND_DIR.parent / "frontend" / "public" / "samples" / "devices-example.json"
 OCTOBER = ("2026-10-08T00:00:00", "2026-10-11T00:00:00")
-# Progi czasu z ZP-81 dotyczą uruchomienia lokalnego; maszyny GitHub Actions (CI=true) są wolniejsze.
-TIME_LIMIT_SCALE = 2.0 if os.getenv("CI") else 1.0
 MIGRATION = BACKEND_DIR / "alembic" / "versions" / "b8d4f2a6c9e1_zapisane_scalanie_urzadzen.py"
 
 
@@ -394,6 +392,7 @@ def test_meter_file_has_no_devices_and_others_files_are_not_found(db):
     assert client.get(f"/api/v1/energy-files/{devices.id}/devices/usage").status_code == 401
 
 
+@pytest.mark.perf
 def test_thirty_days_of_24_devices_respond_within_a_second(db):
     user = _create_user(db)
     energy_file = _create_document_file(db, user, DEVICES_DEMO, name="dom.json", uploaded_at=T0)
@@ -417,6 +416,7 @@ def yearly_document(tmp_path_factory):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@pytest.mark.perf
 def test_yearly_files_flags_and_aggregate_are_fast(db, yearly_document):
     user = _create_user(db)
     _create_devices_file(db, user, yearly_document, name="rok.json", uploaded_at=T0)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeBreakdown, formatPln, tariffEntries } from "./tariffs";
+import { describeBreakdown, formatPln } from "./tariffs";
 
 describe("tariffs", () => {
   it("opisuje części ceny w kolejności rachunku", () => {
@@ -12,13 +12,5 @@ describe("tariffs", () => {
   it("formatuje kwoty w złotych", () => {
     expect(formatPln(1234.5)).toMatch(/^1\s?234,50 zł$/);
     expect(formatPln(null)).toBe("—");
-  });
-
-  it("zwraca taryfy z kluczem", () => {
-    expect(tariffEntries({ tariffs: { G11: { label: "G11" }, "G12-dynamic": { key: "G12-dynamic" } } })).toEqual([
-      { key: "G11", label: "G11" },
-      { key: "G12-dynamic" },
-    ]);
-    expect(tariffEntries(null)).toEqual([]);
   });
 });

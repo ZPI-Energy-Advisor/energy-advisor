@@ -25,6 +25,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
+from timing import TIME_LIMIT_SCALE
 from main import app
 
 
@@ -40,7 +41,7 @@ auth = AuthService(repository=None)
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 SAMPLE_DEVICES_FILE = Path(__file__).resolve().parents[2] / "frontend" / "public" / "samples" / "devices-example.json"
 # Plik roczny to ok. 35 tys. kwadransów, zapisywanych jednym wsadowym INSERT-em.
-YEARLY_READINGS_SAVE_LIMIT_SECONDS = 10
+YEARLY_READINGS_SAVE_LIMIT_SECONDS = 10 * TIME_LIMIT_SCALE
 
 SAMPLE_RESULTS = {
     "tariffs": {"G11": {"type": "stala", "total_usage_kwh": 1.0, "estimated_cost_pln": 1.0}},
@@ -195,8 +196,11 @@ def test_get_file_data(db):
     assert body["results"]["tariffs"]["G11"]["estimated_cost_pln"] == 72.0
     assert body["results"]["pricing"] == {
         "operator": "PGE", "from_profile": False, "profile_tariff": "G11",
-        "tariff_key": "G11", "tariff_label": "G11", "note": None, "all_tariffs": True,
+        "tariff_key": "G11", "tariff_label": "G11", "note": None, "all_tariffs": False,
     }
+    first_hour, first_day = body["results"]["chart_hourly"][0], body["results"]["chart_daily"][0]
+    assert body["results"]["chart_15min"][0]["price_G11"] == first_hour["price_G11"] == first_day["price_G11"] == 1.0
+    assert first_hour["cost_G11"] == first_hour["kwh"] * 1.0
 
 
 def test_file_without_usage_series_has_to_be_uploaded_again(db):
@@ -349,6 +353,7 @@ def test_upload_of_meter_file_without_export_saves_zero_export(db):
     assert readings and all(exported == 0 for _, _, exported in readings)
 
 
+@pytest.mark.perf
 def test_saving_readings_of_a_yearly_file_is_fast(db):
     user = _create_user(db)
     energy_file = _create_file(db, user, with_simulation=False)

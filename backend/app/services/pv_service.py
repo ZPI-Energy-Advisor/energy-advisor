@@ -3,7 +3,7 @@ from dateutil.relativedelta import relativedelta
 from collections import deque
 from typing import Any, Callable
 
-from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
+from app.schemas.other import BillingCycleEnum, PVTypeEnum, TypeOfMarketEnergyEnum
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.providers.prices.pse_provider import PseRcePriceProvider
 from app.services.tariff_zones import ZoneSchedule
@@ -28,6 +28,35 @@ def get_deadline_date(start_date: datetime, billing_cycle: BillingCycleEnum, add
     return next_cycle_start_date + relativedelta(days=additional_days)
 
 
+# Ceny RCE zamkniętych, kompletnych miesięcy są stałe, więc trzymamy je między zapytaniami (kilka godzin,
+# na wypadek korekty PSE). Miesiąc niepełny albo bieżący zawsze czytamy z bazy.
+CLOSED_MONTH_TTL = timedelta(hours=6)
+_closed_rce_months: dict[tuple[int, int], tuple[datetime, dict[datetime, float]]] = {}
+
+
+def clear_rce_cache() -> None:
+    _closed_rce_months.clear()
+
+
+def _expected_quarters(year: int, month: int) -> int:
+    start = datetime(year, month, 1, tzinfo=LOCAL_TIMEZONE)
+    end = start + relativedelta(months=1)
+    return int((end.astimezone(timezone.utc) - start.astimezone(timezone.utc)) / timedelta(minutes=15))
+
+
+def _cached_month(key: tuple[int, int]) -> dict[datetime, float] | None:
+    entry = _closed_rce_months.get(key)
+    if entry is None or datetime.now(timezone.utc) - entry[0] > CLOSED_MONTH_TTL:
+        return None
+    return entry[1]
+
+
+def _remember_month(key: tuple[int, int], prices: dict[datetime, float]) -> None:
+    month_end = datetime(*key, 1, tzinfo=LOCAL_TIMEZONE) + relativedelta(months=1)
+    if month_end < datetime.now(LOCAL_TIMEZONE) and len(prices) >= _expected_quarters(*key):
+        _closed_rce_months[key] = (datetime.now(timezone.utc), prices)
+
+
 class DynamicMarketPriceResolver:
     """Ceny RCE (kwadrans) i RCEm (miesiąc) z zapisanych obserwacji.
 
@@ -39,6 +68,8 @@ class DynamicMarketPriceResolver:
     def __init__(self, price_repository):
         self.price_repository = price_repository
         self._rce_months: dict[tuple[int, int], dict[datetime, float]] = {}
+        # Ten sam kwadrans pytają bilans PV, oferty dynamiczne i wykres: bez ponownej zamiany stref czasowych.
+        self._rce_by_moment: dict[datetime, float] = {}
         self._rcem_months: dict[date, float | None] = {}
 
     def __call__(
@@ -57,8 +88,13 @@ class DynamicMarketPriceResolver:
         months = []
         month = datetime(first.year, first.month, 1, tzinfo=LOCAL_TIMEZONE)
         while month <= last:
-            if (month.year, month.month) not in self._rce_months:
-                months.append(month)
+            key = (month.year, month.month)
+            if key not in self._rce_months:
+                cached = _cached_month(key)
+                if cached is not None:
+                    self._rce_months[key] = cached
+                else:
+                    months.append(month)
             month += relativedelta(months=1)
         if not months:
             return
@@ -74,11 +110,18 @@ class DynamicMarketPriceResolver:
             if key in loaded:
                 loaded[key][moment.astimezone(timezone.utc)] = float(price) / 1000.0
         self._rce_months.update(loaded)
+        for key, month_prices in loaded.items():
+            _remember_month(key, month_prices)
 
     def rce(self, timestamp: datetime) -> float:
+        price = self._rce_by_moment.get(timestamp)
+        if price is not None:
+            return price
         local = timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=LOCAL_TIMEZONE)
         local = local.astimezone(LOCAL_TIMEZONE)
         key = (local.year, local.month)
+        if key not in self._rce_months and (cached := _cached_month(key)) is not None:
+            self._rce_months[key] = cached
         if key not in self._rce_months:
             month_start = datetime(local.year, local.month, 1, tzinfo=LOCAL_TIMEZONE)
             month_end = month_start + relativedelta(months=1)
@@ -90,9 +133,11 @@ class DynamicMarketPriceResolver:
             self._rce_months[key] = {
                 moment.astimezone(timezone.utc): float(price) / 1000.0 for moment, price in prices.items()
             }
+            _remember_month(key, self._rce_months[key])
         price = self._rce_months[key].get(local.astimezone(timezone.utc))
         if price is None:
             raise ValueError(f"Brak ceny RCE dla interwału {timestamp.isoformat()}.")
+        self._rce_by_moment[timestamp] = price
         return price
 
     def rcem(self, day: date) -> float:
@@ -333,30 +378,6 @@ class PVBalancingEngine:
 
         return energy_usage_after_balancing_cycles, overpayment_cycles
 
-    @staticmethod
-    def _group_balanced_billing_cycles(
-        balanced_cycles: list[dict[datetime, float]],
-        cycle_starts: list[datetime],
-        schedule: ZoneSchedule,
-    ) -> list[tuple[datetime, list[float]]]:
-        if len(balanced_cycles) != len(cycle_starts):
-            raise ValueError("Liczba zbilansowanych cykli nie zgadza się z liczbą cykli zużycia.")
-        return [
-            (
-                cycle_start,
-                PVBalancingEngine.get_grouped_energy_by_zones(
-                    [
-                        (timestamp, energy_kwh)
-                        for timestamp, energy_kwh in balanced_energy.items()
-                        if abs(energy_kwh) >= 1e-9
-                    ],
-                    schedule,
-                ),
-            )
-            for cycle_start, balanced_energy in zip(cycle_starts, balanced_cycles)
-        ]
-
-
     def balance_pv(self, calculations_details, schedule: ZoneSchedule):
         """Bilansuje PV w cyklach z `calculations_details`; strefy i ich kolejność bierze z `schedule` taryfy."""
 
@@ -384,17 +405,6 @@ class PVBalancingEngine:
                 calculations_details.pv_details.type_of_market_energy,
             )
             cycle_starts = [cycle_start for cycle_start, _ in calculations_details.used_energy_cycles]
-            if calculations_details.tariff_data.tariff_type == TariffTypeEnum.DYNAMIC:
-                calculations_details.used_energy_after_balancing_cycles = [
-                    (cycle_start, list(energy.items()))
-                    for cycle_start, energy in zip(cycle_starts, energy_usage_after_balancing_cycles)
-                ]
-            else:
-                calculations_details.used_energy_after_balancing_cycles = self._group_balanced_billing_cycles(
-                    energy_usage_after_balancing_cycles,
-                    cycle_starts,
-                    schedule,
-                )
             # Silnik dostaje energię ze znacznikami czasu, żeby sam podzielił ją na strefy i dni ze stawkami.
             calculations_details.used_energy_cycles = list(zip(cycle_starts, energy_usage_after_balancing_cycles))
             calculations_details.overpayment_cycles = overpayment_cycles

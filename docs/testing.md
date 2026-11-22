@@ -11,6 +11,9 @@ W kontenerze backendu:
 docker compose exec backend python -m pytest tests/
 ```
 
+Część testów czyta przykładowe pliki z `frontend/public/samples`; `docker-compose.yml` montuje je w kontenerze
+backendu (po aktualizacji repozytorium: `docker compose up -d backend`, żeby kontener dostał nowy wolumen).
+
 Poza kontenerem (z katalogu `backend`, przy uruchomionym kontenerze bazy):
 
 ```bash
@@ -22,6 +25,20 @@ Lint (wersja zgodna z CI):
 ```bash
 pip install ruff==0.16.10
 ruff check .
+```
+
+### Testy wydajności
+
+Testy z limitem czasu mają marker `perf`. Limity są mnożone przez `TIME_LIMIT_SCALE` z
+`backend/tests/timing.py`: 1,5 lokalnie i 2 w CI (`CI=true`), razy współczynnik szybkości maszyny.
+Na starcie testy mierzą krótkie zadanie kalibracyjne i porównują je z maszyną, na której dobrano limity;
+wolniejsza maszyna dostaje proporcjonalnie wyższe limity, więc test łapie regresję kodu, a nie wolniejszy
+komputer. Mnożnik widać w nagłówku pytest („limity testów wydajności: ×…”). Można go też ustawić ręcznie,
+a testy wydajności pominąć:
+
+```bash
+docker compose exec -e PERF_TIME_SCALE=2.5 backend python -m pytest tests/
+docker compose exec backend python -m pytest tests/ -m "not perf"
 ```
 
 Testy korzystają z osobnej bazy `<POSTGRES_DB>_test`, którą `tests/conftest.py` tworzy i migruje

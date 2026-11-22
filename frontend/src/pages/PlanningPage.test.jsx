@@ -403,7 +403,7 @@ describe("PlanningPage", () => {
     const warnings = await screen.findByRole("alert");
     expect(within(warnings).getByText(/zabraknie ok\. 0,6 kWh/)).toBeTruthy();
     expect(screen.getByText(/taryfę ze stałą ceną/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sprawdź w Analizie taryf" }).getAttribute("href")).toBe("/results");
+    expect(screen.getByRole("link", { name: "Sprawdź w Analizie taryf" }).getAttribute("href")).toBe("/tariffs");
   });
 
   it("bez profilu podpowiada przejście do profilu", async () => {

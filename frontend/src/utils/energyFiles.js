@@ -173,3 +173,10 @@ export const dropRejectionMessage = (rejections, maxFileSizeMb) => {
   if (codes.has("file-too-large")) return `Plik jest za duży. Maksymalny rozmiar pliku to ${maxFileSizeMb} MB.`;
   return "Nieprawidłowy format pliku. Proszę wgrać plik z rozszerzeniem .csv lub .json.";
 };
+
+// Zakres równy całemu okresowi pliku to null: ten sam widok ma wtedy jeden klucz w pamięci podręcznej.
+export const normalizeRange = (range, file) => {
+  if (!range?.from || !range?.to) return null;
+  if (file && range.from === file.data_start && range.to === file.data_end) return null;
+  return { from: range.from, to: range.to };
+};

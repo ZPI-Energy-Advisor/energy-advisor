@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -50,15 +51,24 @@ def local_midnight_utc(day: date) -> datetime:
     return datetime.combine(day, time(), LOCAL_TIMEZONE).astimezone(timezone.utc)
 
 
-def _day_moments(day: date) -> list[datetime]:
+@lru_cache(maxsize=2048)
+def _day_moments(day: date) -> tuple[datetime, ...]:
     midnight = datetime.combine(day, time())
-    return [midnight + timedelta(minutes=15 * slot) for slot in range(SLOTS_PER_DAY)]
+    return tuple(midnight + timedelta(minutes=15 * slot) for slot in range(SLOTS_PER_DAY))
 
 
-def _clock_zones(schedule: ZoneSchedule, day: date) -> list[int]:
-    zones = list(schedule.quarter_zones(day))
+@lru_cache(maxsize=2048)
+def _clock_shifted(day: date) -> bool:
     midnight = datetime.combine(day, time(), LOCAL_TIMEZONE)
-    shifted = midnight.utcoffset() != datetime.combine(day + timedelta(days=1), time(), LOCAL_TIMEZONE).utcoffset()
+    return midnight.utcoffset() != datetime.combine(day + timedelta(days=1), time(), LOCAL_TIMEZONE).utcoffset()
+
+
+def _clock_zones(schedule: ZoneSchedule, day: date) -> tuple[int, ...] | list[int]:
+    zones = schedule.quarter_zones(day)
+    shifted = _clock_shifted(day)
+    if not shifted and 0 not in zones:
+        return zones
+    zones = list(zones)
     for slot, moment in enumerate(_day_moments(day)):
         if shifted:
             clock = moment.replace(tzinfo=LOCAL_TIMEZONE).astimezone(timezone.utc).astimezone(LOCAL_TIMEZONE)
@@ -249,18 +259,18 @@ class TariffCostService:
         )
 
     def chart_prices(
-        self, profile: PricingProfile, usage: dict[str, list[float | None]], keys
+        self, profile: PricingProfile, usage: dict[str, list[float | None]], keys=None
     ) -> dict[str, dict]:
-        keys = set(keys)
+        keys = None if keys is None else set(keys)
         data_start = self.tariff_repository.first_valid_from(operator=profile.operator)
         days = sorted(
             date.fromisoformat(day) for day, slots in usage.items()
             if any(kwh is not None for kwh in slots) and (data_start is None or day >= data_start.isoformat())
         )
-        if not days or not keys:
+        if not days or keys == set():
             return {}
         periods = self.tariff_repository.list_regulatory_periods(date_from=days[0], date_to=days[-1])
-        options = [option for option in self.options(profile.operator, days[0], days[-1]) if option.key in keys]
+        options = [option for option in self.options(profile.operator, days[0], days[-1]) if keys is None or option.key in keys]
         market = None
         if any(option.dynamic for option in options) and self.market_prices is not None:
             market = self._market_by_day(days)
@@ -275,14 +285,15 @@ class TariffCostService:
             slot_prices[option.key] = {"type": DYNAMIC_TYPE if option.dynamic else ZONED_TYPE, "prices_by_day": prices_by_day}
         return slot_prices
 
-    def _market_by_day(self, days: list[date]) -> dict[date, list[Decimal | None]]:
+    def _market_by_day(self, days: list[date]) -> dict[date, list[float | None]]:
         self.market_prices.preload_rce(local_midnight_utc(days[0]), local_midnight_utc(days[-1] + timedelta(days=1)))
+        rce = self.market_prices.rce
         market = {}
         for day in days:
             row = []
             for moment in _day_moments(day):
                 try:
-                    row.append(decimal(self.market_prices.rce(moment)))
+                    row.append(rce(moment))
                 except ValueError:
                     row.append(None)
             market[day] = row
@@ -309,10 +320,18 @@ class TariffCostService:
                     by_zone[zone] = round(float(tariff_rates.price(zone).gross), 5)
                 prices_by_day[day.isoformat()] = [by_zone[zone] for zone in zones]
                 continue
+            # Cena kwadransa jak w quarter_prices: (cena giełdowa w granicach oferty + stała część strefy) × VAT,
+            # liczona na float, bo to tylko wykres (zaokrąglony do 5 miejsc).
             for zone in set(zones) - by_zone.keys():
-                by_zone[zone] = tariff_rates.price(zone, Decimal(0), prosumer).net - tariff_rates.market_part(Decimal(0))
+                by_zone[zone] = float(
+                    tariff_rates.price(zone, Decimal(0), prosumer).net - tariff_rates.market_part(Decimal(0))
+                )
+            floor, cap = (None if limit is None else float(limit) / 1000 for limit in tariff_rates.market_limits)
+            vat = float(vat_factor)
             prices_by_day[day.isoformat()] = [
-                None if price is None else round(float((tariff_rates.market_part(price) + by_zone[zone]) * vat_factor), 5)
+                None if price is None
+                else round((min(max(price, floor if floor is not None else price), cap if cap is not None else price)
+                            + by_zone[zone]) * vat, 5)
                 for zone, price in zip(zones, market[day])
             ]
         return prices_by_day

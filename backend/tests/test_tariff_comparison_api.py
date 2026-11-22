@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 import time
 from io import BytesIO
 
@@ -15,6 +14,7 @@ from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.services.calculation_service import CalculationService
 from app.database import SessionLocal
 from app.models.User import User
+from timing import TIME_LIMIT_SCALE
 from test_device_usage import SAMPLE_DEVICES
 from test_energy_files import (
     T0, T1, _create_devices_file, _create_series_file, _create_user, _days, _flat_tariff_repository, _headers,
@@ -22,7 +22,6 @@ from test_energy_files import (
 )
 
 pytestmark = pytest.mark.usefixtures("flat_tariffs")
-TIME_LIMIT_SCALE = 2.0 if os.getenv("CI") else 1.0
 EXPORT_HOURS = range(10, 14)
 
 
@@ -187,6 +186,7 @@ def test_range_outside_file_is_rejected(db):
     assert response.status_code == 422
 
 
+@pytest.mark.perf
 def test_year_of_readings_is_compared_quickly(db):
     user = _create_user(db)
     energy_file = _meter_file(db, user, "2024-01-01", 366, 0.25, export=0.3)

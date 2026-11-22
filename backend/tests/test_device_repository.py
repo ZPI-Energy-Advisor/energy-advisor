@@ -1,5 +1,4 @@
 import json
-import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,12 +22,13 @@ from app.repositories.device_repository import DeviceRepository
 from app.repositories.energy_data_file_repository import EnergyDataFileRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.energy_file_service import EnergyFileService
+from timing import TIME_LIMIT_SCALE
 
 
 DEMO_FILE = Path(__file__).parent / "fixtures" / "devices_demo_30d.json"
 DEMO = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
 # Zapis 30 dni trwa lokalnie 3-4 s; maszyny GitHub Actions (CI=true) są wolniejsze.
-SAVE_LIMIT_SECONDS = 6 * (2 if os.getenv("CI") else 1)
+SAVE_LIMIT_SECONDS = 6 * TIME_LIMIT_SCALE
 
 
 with DEMO_FILE.open("rb") as demo_handle:
@@ -87,6 +87,7 @@ def test_saves_whole_demo_file(db, saved_demo):
     assert saved_kwh == pytest.approx(sum(action["energy_kwh"] for action in DEMO["energy_usage"]), abs=0.01)
 
 
+@pytest.mark.perf
 def test_saving_30_days_is_fast(db, user_a, energy_file):
     started = time.perf_counter()
     DeviceRepository(db).save_for_file(user_id=user_a.id, energy_data_file_id=energy_file.id, devices=DEMO_RECORDS)

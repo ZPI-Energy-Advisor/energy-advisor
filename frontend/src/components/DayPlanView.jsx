@@ -38,7 +38,7 @@ export function FlatTariffNote() {
   return (
     <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">
       Masz taryfę ze stałą ceną przez całą dobę, więc przesuwanie urządzeń prawie nie obniży rachunku.{" "}
-      <Link to="/results" className="font-semibold underline">Sprawdź w Analizie taryf</Link>, ile dałaby taryfa
+      <Link to="/tariffs" className="font-semibold underline">Sprawdź w Analizie taryf</Link>, ile dałaby taryfa
       G12 albo dynamiczna.
     </p>
   );

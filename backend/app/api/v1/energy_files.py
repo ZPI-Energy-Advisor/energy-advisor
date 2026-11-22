@@ -50,8 +50,15 @@ class TariffScope(str, Enum):
 
 
 TARIFFS_QUERY = Query(
+    TariffScope.PROFILE,
+    description=(
+        "profile = rachunek taryfy z profilu i jej ceny do wykresów; all = ceny do wykresów wszystkich taryf "
+        "operatora, bez rachunku (rachunki wszystkich taryf: /tariff-comparison)."
+    ),
+)
+COMPARISON_TARIFFS_QUERY = Query(
     TariffScope.ALL,
-    description="Koszty: profile = tylko taryfa kosztów (z profilu), all = wszystkie taryfy operatora z profilu.",
+    description="all = rachunki wszystkich taryf operatora z profilu, profile = tylko taryfy z profilu.",
 )
 
 
@@ -95,7 +102,7 @@ def get_tariff_comparison(
     source_id: str,
     date_from: date | None = DATE_FROM_QUERY,
     date_to: date | None = DATE_TO_QUERY,
-    tariffs: TariffScope = TARIFFS_QUERY,
+    tariffs: TariffScope = COMPARISON_TARIFFS_QUERY,
     user: User = Depends(get_authenticated_user),
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
