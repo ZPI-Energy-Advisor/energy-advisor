@@ -71,6 +71,28 @@ DATABASE_ERROR = _prepare_test_database()
 
 
 @pytest.fixture(autouse=True)
+def _rate_limit_off():
+    """Testy rejestrują wielu użytkowników z jednego adresu, więc limity prób są domyślnie wyłączone.
+    Fixture `rate_limited` włącza je dla pojedynczego testu."""
+    from app.core.rate_limit import limiter
+
+    limiter.enabled = False
+    yield
+    limiter.enabled = False
+
+
+@pytest.fixture
+def rate_limited():
+    from app.core.rate_limit import limiter
+
+    limiter.reset()
+    limiter.enabled = True
+    yield limiter
+    limiter.enabled = False
+    limiter.reset()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_price_cache():
     # Testy wstawiają różne ceny RCE dla tych samych miesięcy, więc pamięć cen nie może przechodzić między nimi.
     from app.services.pv_service import clear_rce_cache

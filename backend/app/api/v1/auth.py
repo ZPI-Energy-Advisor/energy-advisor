@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.v1.deps import get_auth_service
+from app.config import RATE_LIMIT_LOGIN, RATE_LIMIT_REGISTER
+from app.core.rate_limit import limiter
 from app.schemas.auth import (
     GoogleAuthRequest,
     LoginLocalRequest,
@@ -19,7 +21,9 @@ router = APIRouter(
 
 
 @router.post("/google", response_model=TokenResponse)
+@limiter.limit(RATE_LIMIT_LOGIN)
 def authenticate_google(
+    request: Request,
     payload: GoogleAuthRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
@@ -27,7 +31,9 @@ def authenticate_google(
 
 
 @router.post("/register", response_model=TokenResponse)
+@limiter.limit(RATE_LIMIT_REGISTER)
 def register_local(
+    request: Request,
     payload: RegisterLocalRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
@@ -35,7 +41,9 @@ def register_local(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit(RATE_LIMIT_LOGIN)
 def login_local(
+    request: Request,
     payload: LoginLocalRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:

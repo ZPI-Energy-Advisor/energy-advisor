@@ -50,3 +50,8 @@ HUB_URL = os.getenv("HUB_URL") or None
 HUB_API_KEY = optional_secret("HUB_API_KEY", os.getenv("HUB_API_KEY"))
 HUB_TIMEOUT_SECONDS = float(os.getenv("HUB_TIMEOUT_SECONDS") or 5)
 HUB_HOME_USER_EMAIL = (os.getenv("HUB_HOME_USER_EMAIL") or "").strip().lower() or None
+
+# Limity prób na /auth (ZP-134), format biblioteki limits, np. "5/minute". Liczone na adres IP.
+RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED") or "true").strip().lower() not in {"0", "false", "no"}
+RATE_LIMIT_LOGIN = os.getenv("RATE_LIMIT_LOGIN") or "5/minute"
+RATE_LIMIT_REGISTER = os.getenv("RATE_LIMIT_REGISTER") or "3/hour"
