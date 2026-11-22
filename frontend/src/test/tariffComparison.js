@@ -48,11 +48,37 @@ export const entry = (key, payable, overrides = {}) => {
   };
 };
 
+// Te same zasady co `recommendation` w backendzie (app/services/tariff_comparison.py).
+export const recommendationOf = (entries, referenceKey, days) => {
+  const priced = entries.filter((item) => item.payable_gross != null);
+  const skipped = entries.filter((item) => item.payable_gross == null).map((item) => item.key);
+  const cheapest = priced.reduce((best, item) => (best && best.payable_gross <= item.payable_gross ? best : item), null);
+  if (!cheapest) return null;
+  const reference = priced.find((item) => item.key === referenceKey);
+  const base = { skipped_tariffs: skipped, difference_to_cheapest: null };
+  if (!reference) {
+    return { ...base, tariff: cheapest.key, is_current: false, saving: null, saving_percent: null, monthly_saving_estimate: null };
+  }
+  const difference = Math.round((reference.payable_gross - cheapest.payable_gross) * 100) / 100;
+  if (difference < 1) {
+    return {
+      ...base, tariff: reference.key, is_current: true, difference_to_cheapest: difference,
+      saving: 0, saving_percent: 0, monthly_saving_estimate: null,
+    };
+  }
+  return {
+    ...base, tariff: cheapest.key, is_current: false, difference_to_cheapest: difference, saving: difference,
+    saving_percent: Math.round((difference / reference.payable_gross) * 1000) / 10,
+    monthly_saving_estimate: days >= 28 ? Math.round(((difference * 365.25) / 12 / days) * 100) / 100 : null,
+  };
+};
+
 export const comparisonOf = (entries, overrides = {}) => {
   const selected = overrides.selected_tariff ?? entries.find((item) => item.is_profile)?.key ?? "G11";
   const reference = entries.find((item) => item.key === selected)?.payable_gross;
   const priced = entries.filter((item) => item.payable_gross != null);
   const cheapest = priced.reduce((best, item) => (best && best.payable_gross <= item.payable_gross ? best : item), null);
+  const fromProfile = overrides.from_profile ?? true;
   return {
     source_id: "f1",
     source_name: "dom.csv",
@@ -63,7 +89,7 @@ export const comparisonOf = (entries, overrides = {}) => {
     billed_to: "2026-01-31",
     all_tariffs: true,
     operator: "TAURON",
-    from_profile: true,
+    from_profile: fromProfile,
     profile_tariff: selected,
     selected_tariff: selected,
     selection_note: null,
@@ -71,6 +97,7 @@ export const comparisonOf = (entries, overrides = {}) => {
     pv_mode: null,
     annual_consumption: { annual_kwh: 3650, days: 31, scaled: true, consumption_kwh: 310 },
     cheapest_tariff: cheapest?.key ?? null,
+    recommendation: recommendationOf(entries, fromProfile ? selected : null, 31),
     tariffs: entries.map((item) => ({
       ...item,
       difference_to_profile:

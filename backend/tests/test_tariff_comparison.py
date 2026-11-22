@@ -12,7 +12,7 @@ from app.schemas.other import TariffTypeEnum
 from app.services.energy_file_service import EnergyFileService
 from app.services.new_calculations_service import CalculationsService
 from app.services.pv_service import DynamicMarketPriceResolver
-from app.services.tariff_comparison import Reading, comparison, readings_from_usage
+from app.services.tariff_comparison import Reading, comparison, readings_from_usage, recommendation
 from app.services.tariff_costs import PricingProfile, TariffCostService
 from timing import TIME_LIMIT_SCALE
 from tariff_helpers import FlatTariffRepository, definition, period
@@ -450,3 +450,127 @@ def test_readings_from_usage_skip_quarters_without_measurement():
     assert readings[0] == Reading(datetime(2026, 2, 1), 0.5, 0.0)
     assert readings[1].measured_at == datetime(2026, 2, 1, 0, 30)
     assert len(readings) == 95
+
+
+def _priced(key, payable):
+    return {"key": key, "payable_gross": payable}
+
+
+@pytest.mark.parametrize(
+    "entries, reference, days, expected",
+    [
+        (
+            [_priced("G11", 400.0), _priced("G12", 330.0)], "G11", 61,
+            {"tariff": "G12", "is_current": False, "saving": 70.0, "saving_percent": 17.5,
+             "monthly_saving_estimate": round(70 * 365.25 / 12 / 61, 2), "difference_to_cheapest": 70.0},
+        ),
+        (
+            [_priced("G11", 300.0), _priced("G12", 330.0)], "G11", 61,
+            {"tariff": "G11", "is_current": True, "saving": 0.0, "saving_percent": 0.0,
+             "monthly_saving_estimate": None, "difference_to_cheapest": 0.0},
+        ),
+        (
+            [_priced("G11", 300.5), _priced("G12", 299.6)], "G11", 61,
+            {"tariff": "G11", "is_current": True, "saving": 0.0, "saving_percent": 0.0,
+             "monthly_saving_estimate": None, "difference_to_cheapest": 0.9},
+        ),
+        (
+            [_priced("G11", 301.0), _priced("G12", 300.0)], "G11", 10,
+            {"tariff": "G12", "is_current": False, "saving": 1.0, "saving_percent": 0.3,
+             "monthly_saving_estimate": None, "difference_to_cheapest": 1.0},
+        ),
+        (
+            [_priced("G11", 400.0), _priced("G12", 330.0)], None, 61,
+            {"tariff": "G12", "is_current": False, "saving": None, "saving_percent": None,
+             "monthly_saving_estimate": None, "difference_to_cheapest": None},
+        ),
+    ],
+    ids=["oszczednosc", "aktualna-najtansza", "remis-ponizej-zlotowki", "krotki-okres-bez-szacunku", "bez-profilu"],
+)
+def test_recommendation_rules(entries, reference, days, expected):
+    assert recommendation(entries, reference, days) == {**expected, "skipped_tariffs": []}
+
+
+def test_recommendation_skips_tariffs_without_full_price_and_unpriced_profile_tariff():
+    entries = [_priced("G11", None), _priced("G12", 330.0), _priced("G11-dynamic", None)]
+
+    result = recommendation(entries, "G11", 61)
+
+    assert result["tariff"] == "G12" and result["saving"] is None and result["is_current"] is False
+    assert result["skipped_tariffs"] == ["G11", "G11-dynamic"]
+    assert recommendation([_priced("G11", None)], "G11", 61) is None
+
+
+def test_recommendation_without_percent_when_profile_tariff_costs_nothing():
+    result = recommendation([_priced("G11", 0.0), _priced("G12", -5.0)], "G11", 61)
+
+    assert result["saving"] == 5.0 and result["saving_percent"] is None
+
+
+def _recommended(profile, readings, **kwargs):
+    compared = _comparison(profile, readings, **kwargs)
+    return compared, compared["recommendation"]
+
+
+def test_recommendation_compares_payable_amounts_against_profile_tariff():
+    readings = _readings(_usage(date(2026, 2, 1), 59))
+
+    compared, recommended = _recommended(_profile("G11"), readings)
+
+    payable = {entry["key"]: entry["payable_gross"] for entry in compared["tariffs"]}
+    cheapest = min(payable, key=payable.get)
+    assert recommended["tariff"] == cheapest != "G11"
+    assert recommended["saving"] == round(payable["G11"] - payable[cheapest], 2)
+    assert recommended["saving_percent"] == round(recommended["saving"] / payable["G11"] * 100, 1)
+    assert recommended["monthly_saving_estimate"] == round(recommended["saving"] * 365.25 / 12 / 59, 2)
+
+
+def test_cheapest_profile_tariff_is_confirmed():
+    readings = _readings(_usage(date(2026, 2, 1), 28))
+    payable = {entry["key"]: entry["payable_gross"] for entry in _comparison(_profile("G11"), readings)["tariffs"]}
+    cheapest = min(payable, key=payable.get)
+    profile = _profile(cheapest.removesuffix("-dynamic"), dynamic=cheapest.endswith("-dynamic"))
+
+    _, recommended = _recommended(profile, readings)
+
+    assert recommended == {
+        "tariff": cheapest, "is_current": True, "saving": 0.0, "saving_percent": 0.0,
+        "monthly_saving_estimate": None, "difference_to_cheapest": 0.0, "skipped_tariffs": [],
+    }
+
+
+@pytest.mark.parametrize("mode", ["net_billing", "net_metering"])
+def test_recommendation_with_pv_uses_amounts_after_deposit(mode):
+    readings = _with_export(_readings(_usage(date(2026, 3, 1), 61)))
+
+    compared, recommended = _recommended(_with_pv(_profile("G11"), mode), readings)
+
+    payable = {entry["key"]: entry["payable_gross"] for entry in compared["tariffs"] if entry["payable_gross"] is not None}
+    assert recommended["tariff"] == min(payable, key=payable.get)
+    assert recommended["saving"] == round(payable["G11"] - payable[recommended["tariff"]], 2)
+
+
+def test_without_profile_recommends_cheapest_without_saving():
+    compared, recommended = _recommended(None, _readings(_usage(date(2026, 2, 1), 28)))
+
+    assert compared["from_profile"] is False
+    assert recommended["tariff"] == compared["cheapest_tariff"]
+    assert recommended["saving"] is None and recommended["is_current"] is False
+
+
+def test_profile_tariff_without_rates_gives_no_saving_against_fallback():
+    compared, recommended = _recommended(_profile("G12w"), _readings(_usage(date(2026, 2, 1), 28)))
+
+    assert compared["selected_tariff"] == "G11" and compared["profile_tariff"] == "G12w"
+    assert recommended["tariff"] == compared["cheapest_tariff"] and recommended["saving"] is None
+
+
+def test_offer_without_market_prices_is_not_recommended():
+    usage = _usage(date(2026, 2, 2), 2)
+    start = datetime(2026, 2, 2, tzinfo=WARSAW).astimezone(timezone.utc)
+    missing = {start + timedelta(minutes=15 * index) for index in range(48)}
+
+    compared, recommended = _recommended(_profile("G11"), _readings(usage), market=_MarketRepository(missing))
+
+    assert recommended["skipped_tariffs"] == ["G11-dynamic"]
+    assert recommended["tariff"] != "G11-dynamic"

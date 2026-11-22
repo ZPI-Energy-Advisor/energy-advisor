@@ -111,6 +111,10 @@ def test_comparison_of_whole_file_equals_calculation_results_and_dashboard(db, p
     assert dashboard["pricing"]["tariff_key"] == compared["selected_tariff"] == "G11"
     assert compared["from_profile"] is True and compared["tariffs"][0]["is_profile"] is True
     assert compared["pv_mode"] == (pv or {}).get("mode")
+    assert compared["recommendation"] == {
+        "tariff": "G11", "is_current": True, "saving": 0.0, "saving_percent": 0.0,
+        "monthly_saving_estimate": None, "difference_to_cheapest": 0.0, "skipped_tariffs": [],
+    }
     if pv is None:
         assert payable == 30 * 20 * 4 * 0.25
         assert any("energii oddanej do sieci" in warning for warning in compared["warnings"])
@@ -129,6 +133,7 @@ def test_comparison_of_date_range_bills_only_its_days(db):
     assert body["annual_consumption"]["days"] == 2
     assert body["from_profile"] is False and body["operator"] == "PGE"
     assert body["cheapest_tariff"] == "G11" and body["tariffs"][0]["difference_to_profile"] == 0
+    assert body["recommendation"]["tariff"] == "G11" and body["recommendation"]["saving"] is None
 
 
 def test_all_files_comparison_takes_newest_file_where_files_overlap(db):

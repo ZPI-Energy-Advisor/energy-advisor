@@ -28,6 +28,16 @@ class TariffComparisonItem(BaseModel):
     difference_to_profile: float | None = None
 
 
+class TariffRecommendation(BaseModel):
+    tariff: str
+    is_current: bool
+    saving: float | None = None
+    saving_percent: float | None = None
+    monthly_saving_estimate: float | None = None
+    difference_to_cheapest: float | None = None
+    skipped_tariffs: list[str] = []
+
+
 class TariffComparisonResponse(BaseModel):
     source_id: str
     source_name: str
@@ -46,6 +56,7 @@ class TariffComparisonResponse(BaseModel):
     pv_mode: str | None = None
     annual_consumption: AnnualConsumption
     cheapest_tariff: str | None = None
+    recommendation: TariffRecommendation | None = None
     tariffs: list[TariffComparisonItem]
     warnings: list[str] = []
     unsupported_tariffs: list[UnsupportedTariffInfo] = []

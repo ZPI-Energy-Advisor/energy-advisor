@@ -65,13 +65,15 @@ export const tariffMatrix = (entries) => {
 
 export const findEntry = (comparison, key) => comparison?.tariffs.find((entry) => entry.key === key) ?? null;
 
-export const comparisonSummary = (comparison) => {
-  const selected = findEntry(comparison, comparison?.selected_tariff);
-  const cheapest = findEntry(comparison, comparison?.cheapest_tariff);
-  const saving =
-    isPriced(selected) && isPriced(cheapest) ? Math.round((selected.payable_gross - cheapest.payable_gross) * 100) / 100 : null;
-  return { selected: isPriced(selected) ? selected : null, cheapest, saving };
-};
+// Taryfa z profilu (null bez profilu albo gdy operator nie ma jej stawek w tym okresie).
+export const profileEntry = (comparison) =>
+  comparison?.from_profile ? findEntry(comparison, comparison.profile_tariff) : null;
+
+export const entryLabel = (entry) => [entry.label, entry.name].filter(Boolean).join(" · ");
+
+const percentFormatter = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 });
+
+export const formatPercent = (value) => (value == null ? null : `${percentFormatter.format(value)}%`);
 
 // Taryfa pokazana w szczegółach: wybrana przez użytkownika, a domyślnie taryfa z profilu albo najtańsza.
 export const detailsKey = (comparison, chosenKey) => {
