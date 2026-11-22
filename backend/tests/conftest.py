@@ -11,7 +11,7 @@ load_dotenv(BACKEND_DIR.parent / ".env")
 _configured_db = os.getenv("POSTGRES_DB", "energy_advisor")
 TEST_DATABASE = _configured_db if _configured_db.endswith("_test") else f"{_configured_db}_test"
 os.environ["POSTGRES_DB"] = TEST_DATABASE
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-only-for-pytest-0123456789")
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402

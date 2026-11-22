@@ -392,6 +392,13 @@ def test_settings_require_api_key(monkeypatch):
         HubSettings.from_env()
 
 
+def test_settings_reject_placeholder_api_key(monkeypatch):
+    monkeypatch.setenv("HUB_API_KEY", "generate_your_own_random_key")
+
+    with pytest.raises(RuntimeError, match="placeholder"):
+        HubSettings.from_env()
+
+
 def test_devices_listen_only_on_configured_host(client, settings):
     _put(client, [_lamp()])
 

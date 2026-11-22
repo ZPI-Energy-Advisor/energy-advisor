@@ -10,6 +10,18 @@ POSTGRES_USER = os.getenv("POSTGRES_USER")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 POSTGRES_DB = os.getenv("POSTGRES_DB")
 
+_missing = [
+    name
+    for name, value in (
+        ("POSTGRES_USER", POSTGRES_USER),
+        ("POSTGRES_PASSWORD", POSTGRES_PASSWORD),
+        ("POSTGRES_DB", POSTGRES_DB),
+    )
+    if not value
+]
+if _missing:
+    raise RuntimeError(f"Database configuration missing: {', '.join(_missing)} (see .env.example)")
+
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "db")
 
 SQLALCHEMY_DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:5432/{POSTGRES_DB}"

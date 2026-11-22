@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
+from app.core.logging_config import configure_logging
 from app.core.price_settings import PRICE_PUBLICATION_TIME
 from app.core.price_sync_factory import build_http_client, build_price_sync_service
 from app.database import SessionLocal, engine
@@ -151,7 +152,7 @@ def run_scheduler() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    configure_logging()
 
     parser = argparse.ArgumentParser(description="Synchronizacja cen dynamicznych")
     subparsers = parser.add_subparsers(dest="command")
