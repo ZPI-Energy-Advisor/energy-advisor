@@ -25,7 +25,13 @@ jobs:
       - name: Instalacja paczek (NPM)
         run: |
           cd frontend
-          npm install
+          npm ci
+
+      - name: Audyt zależności (npm audit)
+        # Tylko zależności produkcyjne; podatność krytyczna zatrzymuje pipeline.
+        run: |
+          cd frontend
+          npm audit --omit=dev --audit-level=critical
 
       - name: Uruchomienie testów (Vitest)
         run: |

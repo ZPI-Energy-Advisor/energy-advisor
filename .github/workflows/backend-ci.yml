@@ -55,6 +55,14 @@ jobs:
           pip install -r smart-home-hub/requirements.txt
           pip install ruff==0.16.10 pytest pytest-cov
 
+      - name: Audyt zależności (pip-audit)
+        # Audyt środowiska po instalacji: obejmuje zależności backendu i huba razem z przechodnimi.
+        # pip-audit nie rozróżnia wagi podatności, więc zatrzymuje pipeline na każdej znanej.
+        # Świadomie zaakceptowaną podatność wyciszamy: --ignore-vuln <ID> z komentarzem, dlaczego.
+        run: |
+          pip install pip-audit
+          pip-audit --progress-spinner off
+
       - name: Sprawdzanie czystości kodu (Ruff Lint)
         run: |
           cd backend
