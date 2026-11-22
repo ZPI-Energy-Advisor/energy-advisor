@@ -224,6 +224,224 @@ describe("ProfilePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zapisz profil" }));
 
     await vi.waitFor(() => expect(put).toHaveBeenCalled());
-    expect(put.mock.calls[0][1].pv_config).toEqual({ mode: "net_billing", type_of_price: "RCEm" });
+    expect(put.mock.calls[0][1].pv_config).toEqual({
+      mode: "net_billing",
+      type_of_price: "RCEm",
+      installation: { arrays: [{ power_kwp: 6, azimuth: 0, tilt: 35 }], estimated: true },
+    });
+  });
+
+  it("zapisuje panele grupami: 4 na południe i 3 na wschód", async () => {
+    renderPage();
+    const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: profile });
+    fireEvent.click(await screen.findByRole("radio", { name: /^Net-billing/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Nie znam parametrów paneli/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Liczba paneli" }));
+
+    fireEvent.change(screen.getByLabelText("Liczba paneli"), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Dodaj grupę paneli" }));
+    const second = screen.getByRole("group", { name: /Grupa paneli 2/ });
+    fireEvent.change(within(second).getByLabelText("Liczba paneli"), { target: { value: "3" } });
+    fireEvent.change(within(second).getByLabelText("Kierunek"), { target: { value: "-90" } });
+
+    expect(screen.getByText("Razem: 3,01 kWp")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz profil" }));
+
+    await vi.waitFor(() => expect(put).toHaveBeenCalled());
+    expect(put.mock.calls[0][1].pv_config.installation).toEqual({
+      arrays: [
+        { azimuth: 0, tilt: 35, panel_count: 4 },
+        { azimuth: -90, tilt: 35, panel_count: 3 },
+      ],
+      panel_power_w: 430,
+      inverter_power_kw: null,
+      estimated: false,
+    });
+  });
+
+  it("pokazuje błąd grupy paneli przy polu i w podsumowaniu", async () => {
+    renderPage();
+    const put = vi.spyOn(apiClient, "put");
+    fireEvent.click(await screen.findByRole("radio", { name: /^Net-metering/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Nie znam parametrów paneli/ }));
+    fireEvent.change(screen.getByLabelText("Nachylenie"), { target: { value: "95" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz profil" }));
+
+    expect(await screen.findByRole("link", { name: "Grupa paneli 1: nachylenie" })).toBeTruthy();
+    expect(screen.getByLabelText("Nachylenie").getAttribute("aria-invalid")).toBe("true");
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("pokazuje lokalizację wyznaczoną z kodu i ostrzega o przybliżonej", async () => {
+    const located = {
+      ...profile,
+      base_info: {
+        ...profile.base_info,
+        location: { latitude: 50.0614, longitude: 19.9366, source: "postal_code", label: "Kraków", address: "30-001 Kraków", approximate: false },
+      },
+    };
+    renderPage(located);
+
+    expect(await screen.findByText("Kraków, 30-001")).toBeTruthy();
+    expect(screen.getByText(/50,0614° N, 19,9366° E/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Miejscowość"), { target: { value: "Wieliczka" } });
+    expect(screen.getByText(/Adres się zmienił/)).toBeTruthy();
+  });
+
+  it("przybliżona lokalizacja ma ostrzeżenie", async () => {
+    renderPage({
+      ...profile,
+      base_info: {
+        ...profile.base_info,
+        location: { latitude: 50.0647, longitude: 19.945, source: "postal_region", label: "Kraków", address: "30-001 Kraków", approximate: true },
+      },
+    });
+
+    expect(await screen.findByText("Okolice: Kraków")).toBeTruthy();
+    expect(screen.getByText(/przybliżona dla całego regionu/)).toBeTruthy();
+  });
+
+  it("pokazuje przy polu błąd niepasującej miejscowości z backendu", async () => {
+    renderPage();
+    const detail = [
+      {
+        loc: ["body", "base_info", "town"],
+        msg: "Miejscowość Wronki nie pasuje do kodu pocztowego 51-515. Ten kod to okolice: Wrocław.",
+        type: "value_error",
+      },
+    ];
+    vi.spyOn(apiClient, "put").mockRejectedValue({ response: { status: 422, data: { detail } } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Zapisz profil" }));
+
+    expect(await screen.findByText("Miejscowość Wronki nie pasuje do kodu pocztowego 51-515. Ten kod to okolice: Wrocław.")).toBeTruthy();
+    expect(screen.getByLabelText("Miejscowość").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("lokalizacja z przeglądarki trafia do zapisu jako wskazana ręcznie, a można wrócić do kodu", async () => {
+    const getCurrentPosition = vi.fn((success) => success({ coords: { latitude: 50.012345, longitude: 20.054321 } }));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    renderPage();
+    const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: profile });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Użyj mojej lokalizacji" }));
+    expect(screen.getByText("Położenie wskazane przez Ciebie")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz profil" }));
+
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    expect(put.mock.calls[0][1].base_info.location).toEqual({
+      latitude: 50.0123,
+      longitude: 20.0543,
+      source: "manual",
+      label: null,
+      address: "30-001 Kraków",
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Użyj mojej lokalizacji" }));
+    fireEvent.click(screen.getByRole("button", { name: "Wyznacz z kodu pocztowego" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Zapisz profil" }));
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(2));
+    expect(put.mock.calls[1][1].base_info.location).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("położenie poza Polską nie zmienia lokalizacji", async () => {
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition: (success) => success({ coords: { latitude: 48.2, longitude: 16.37 } }) } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Użyj mojej lokalizacji" }));
+
+    expect(screen.getByText(/poza Polską/)).toBeTruthy();
+    expect(screen.getByText(/pokażemy, gdzie jest dom/)).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("z samego kodu pocztowego po Enterze uzupełnia miejscowość i pokazuje lokalizację bez zapisu", async () => {
+    renderPage({ ...profile, base_info: { ...profile.base_info, town: "", postal_code: "" } });
+    const lookup = {
+      status: "found",
+      town: "Wronki",
+      postal_code: "64-510",
+      location: { latitude: 52.71, longitude: 16.3743, source: "postal_code", label: "Wronki", address: "64-510 Wronki", approximate: false },
+      errors: {},
+      message: "Uzupełniliśmy miejscowość z kodu pocztowego.",
+    };
+    const get = apiClient.get.getMockImplementation();
+    apiClient.get.mockImplementation((url, config) =>
+      url.endsWith("/address-lookup") ? Promise.resolve({ data: lookup }) : get(url, config),
+    );
+    const put = vi.spyOn(apiClient, "put");
+
+    const postal = await screen.findByLabelText("Kod pocztowy");
+    fireEvent.change(postal, { target: { value: "64510" } });
+    fireEvent.keyDown(postal, { key: "Enter" });
+
+    expect(await screen.findByText("Wronki, 64-510")).toBeTruthy();
+    expect(screen.getByLabelText("Miejscowość").value).toBe("Wronki");
+    expect(screen.getByText("Uzupełniliśmy miejscowość z kodu pocztowego.")).toBeTruthy();
+    expect(apiClient.get).toHaveBeenCalledWith("/users/me/profile/address-lookup", { params: { postal_code: "64-510" } });
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("po wyjściu z pola miejscowości uzupełnia kod, a niepasujący adres oznacza przy polu", async () => {
+    renderPage({ ...profile, base_info: { ...profile.base_info, town: "", postal_code: "" } });
+    const responses = {
+      Smolec: { status: "found", town: "Smolec", postal_code: "55-080", location: { latitude: 51.07, longitude: 16.88, source: "postal_code", label: "Smolec" }, errors: {} },
+      Wronki: { status: "invalid", errors: { town: "Miejscowość Wronki nie pasuje do kodu pocztowego 55-080." } },
+    };
+    const get = apiClient.get.getMockImplementation();
+    apiClient.get.mockImplementation((url, config) =>
+      url.endsWith("/address-lookup") ? Promise.resolve({ data: responses[config.params.town] }) : get(url, config),
+    );
+
+    const town = await screen.findByLabelText("Miejscowość");
+    fireEvent.change(town, { target: { value: "Smolec" } });
+    fireEvent.blur(town);
+    await vi.waitFor(() => expect(screen.getByLabelText("Kod pocztowy").value).toBe("55-080"));
+
+    fireEvent.change(town, { target: { value: "Wronki" } });
+    fireEvent.blur(town);
+
+    expect(await screen.findByText("Miejscowość Wronki nie pasuje do kodu pocztowego 55-080.")).toBeTruthy();
+    expect(town.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("pyta przed wyjściem z niezapisanymi zmianami i nie pyta po zapisie", async () => {
+    renderPage();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.spyOn(apiClient, "put").mockImplementation((url, payload) => Promise.resolve({ data: { ...profile, base_info: { ...profile.base_info, ...payload.base_info } } }));
+    const link = document.createElement("a");
+    link.href = "/dashboard";
+    link.textContent = "Dashboard";
+    document.body.appendChild(link);
+    const clickLink = () => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+
+    fireEvent.change(await screen.findByLabelText("Powierzchnia ogrzewana"), { target: { value: "130" } });
+    expect(screen.getByText("Masz niezapisane zmiany.")).toBeTruthy();
+    expect(clickLink()).toBe(false);
+    expect(confirm).toHaveBeenCalledWith("Masz niezapisane zmiany w profilu. Wyjść bez zapisywania?");
+
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz profil" }));
+    await screen.findByText("Profil zapisany.");
+    confirm.mockClear();
+
+    expect(clickLink()).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    link.remove();
+  });
+
+  it("cofa niezapisane zmiany do zapisanego profilu", async () => {
+    renderPage();
+    const area = await screen.findByLabelText("Powierzchnia ogrzewana");
+    const saved = area.value;
+    expect(screen.getByText("Wszystkie zmiany są zapisane.")).toBeTruthy();
+
+    fireEvent.change(area, { target: { value: "130" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cofnij zmiany" }));
+
+    expect(area.value).toBe(saved);
+    expect(screen.queryByRole("button", { name: "Cofnij zmiany" })).toBeNull();
+    expect(screen.getByText("Wszystkie zmiany są zapisane.")).toBeTruthy();
   });
 });

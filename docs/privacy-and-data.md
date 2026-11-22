@@ -31,7 +31,7 @@ Podstawy prawne (art. 6 ust. 1 RODO): **b** – niezbędne do świadczenia usłu
 |---|---|---|---|---|---|
 | `users` | `email`, `password_hash` (bcrypt), `provider`, `provider_id` (Google), `created_at`, `last_login_at` | tak | Logowanie i identyfikacja konta | b | Do usunięcia konta, najdłużej 12 miesięcy od ostatniego logowania |
 | `tokens` | `token_hash` (pbkdf2), `expires_at` | tak | Odświeżanie sesji; jeden wiersz na konto, nadpisywany | b | 7 dni od wydania, potem nieważny |
-| `user_profiles` | `base_info` (typ budynku, rok budowy, powierzchnia, liczba domowników, miejscowość, kod pocztowy, operator, faza, moc przyłączeniowa, cykl rozliczeń), `consumption_and_tariff`, `pv_config` | tak | Rachunki taryf, plan na jutro, ceny kwadransów | b | Do usunięcia konta |
+| `user_profiles` | `base_info` (typ budynku, rok budowy, powierzchnia, liczba domowników, miejscowość, kod pocztowy, współrzędne domu, operator, faza, moc przyłączeniowa, cykl rozliczeń), `consumption_and_tariff`, `pv_config` (rozliczenie i panele) | tak | Rachunki taryf, plan na jutro, ceny kwadransów | b | Do usunięcia konta |
 | `energy_data_files` | `file_name`, daty, liczba rekordów, `error_message` | tak | Lista wgranych plików | b | Do usunięcia pliku lub konta |
 | `energy_readings` | `measured_at`, `energy_kwh`, `exported_kwh` (co 15 min) | tak | Wszystkie wyliczenia kosztów | b | Do usunięcia pliku lub konta |
 | `simulations` | `results` (statystyki i wykresy pliku) | tak | Wykresy i podsumowania pliku | b | Do usunięcia pliku lub konta |
@@ -70,7 +70,8 @@ i `rcem_price_observations`, przebiegi workera `price_sync_runs`, słowniki `dev
 | Google (OAuth) | Token logowania; od Google dostajemy e-mail i identyfikator konta | Logowanie przez Google |
 | Google (skrypt logowania) | Adres IP przeglądarki: `@react-oauth/google` pobiera skrypt z `accounts.google.com` | Tylko na ekranie logowania i rejestracji |
 | PSE (`api.raporty.pse.pl`, `pse.pl`) | Nic o użytkownikach: pobieramy publiczne ceny RCE i RCEm | Worker cen, codziennie |
-| Open-Meteo | Nazwa miejscowości z kodem pocztowym (wyznaczenie współrzędnych) i same współrzędne (prognoza); bez danych konta | Zapis profilu i worker pogody |
+| OpenStreetMap Nominatim (`nominatim.openstreetmap.org`) | Kod pocztowy, a gdy go nie zna, nazwa miejscowości (wyznaczenie współrzędnych); bez danych konta | Zapis profilu po zmianie adresu i pierwszy odczyt profilu bez współrzędnych |
+| Open-Meteo | Same współrzędne domu (prognoza i historia pogody); bez danych konta | Worker pogody (ZP-117) |
 
 Żadnemu podmiotowi zewnętrznemu nie przekazujemy odczytów zużycia, profilu ani e-maila.
 
@@ -80,7 +81,9 @@ Każde pole profilu ma cel:
 
 | Pole | Cel |
 |---|---|
-| `town`, `postal_code` | Lokalizacja domu do prognozy pogody i produkcji PV. Kod pocztowy rozróżnia miejscowości o tej samej nazwie. Do Open-Meteo idzie tylko przy wyznaczaniu współrzędnych, a prognozę pobieramy po samych współrzędnych |
+| `town`, `postal_code` | Lokalizacja domu do prognozy pogody i produkcji PV. Kod pocztowy rozróżnia miejscowości o tej samej nazwie. Do Nominatim idą tylko przy wyznaczaniu współrzędnych |
+| `location` | Współrzędne domu (dokładność obszaru kodu pocztowego albo położenie z przeglądarki, gdy użytkownik je wskaże); tylko one idą do Open-Meteo |
+| `pv_config.installation` | Moc, kierunek i nachylenie grup paneli oraz moc falownika: prognoza produkcji PV i opust net-meteringu |
 | `year_of_construction`, `heating_area_m2`, `type_of_property` | Straty ciepła budynku: zużycie pompy ciepła zależne od temperatury |
 | `number_of_residents` | Domyślna pojemność bojlera i zużycie ciepłej wody |
 | `contracted_power_kw`, `phase_type`, operator, cykl rozliczeń, taryfa, PV | Rachunki taryf, ceny kwadransów i limit przyłącza w planie |

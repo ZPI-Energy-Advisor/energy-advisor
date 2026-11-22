@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.v1.deps import get_authenticated_user, get_home_service, get_user_service
 from app.models.User import User
 from app.schemas.user import CurrentUserResponse, DeleteAccountRequest
 from app.schemas.user_profile import UserProfile
+from app.services.home_location import AddressLookup, lookup_address
 from app.services.home_service import HomeService
 from app.services.user_service import UserService
 
@@ -50,6 +51,19 @@ def get_user_profile(
     service: UserService = Depends(get_user_service),
 ):
     return service.get_profile(user)
+
+
+@router.get("/me/profile/address-lookup", response_model=AddressLookup)
+def look_up_address(
+    town: str | None = Query(default=None, max_length=100),
+    postal_code: str | None = Query(default=None, pattern=r"^\d{2}-\d{3}$"),
+    user: User = Depends(get_authenticated_user),
+):
+    """Sprawdza miejscowość i kod pocztowy bez zapisu profilu; z jednego pola podpowiada drugie."""
+    town = (town or "").strip() or None
+    if not town and not postal_code:
+        raise HTTPException(status_code=422, detail="Podaj miejscowość albo kod pocztowy.")
+    return lookup_address(town, postal_code)
 
 
 @router.put("/me/profile", response_model=UserProfile)

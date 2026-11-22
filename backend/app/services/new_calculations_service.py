@@ -6,7 +6,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 from fastapi import HTTPException
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from dateutil.relativedelta import relativedelta
 
 from app.parsers.devices import LOCAL_TIMEZONE
@@ -20,7 +20,7 @@ from app.schemas.calculation import (
 from app.schemas.other import (
     BillingCycleEnum, DistributionOperatorEnum, PhaseTypeEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum,
 )
-from app.schemas.user_profile import UserProfile
+from app.schemas.user_profile import PVConfig, UserProfile
 from app.services.pv_service import DynamicMarketPriceResolver, PVBalancingEngine
 from app.services.tariff_engine import (
     DAYS_IN_YEAR,
@@ -37,6 +37,7 @@ from app.services.tariff_zones import ZoneSchedule
 
 
 logger = logging.getLogger(__name__)
+PV_CONFIG = TypeAdapter(PVConfig)
 
 
 DEFAULT_CONTRACTED_POWER_KW = 7.0
@@ -493,26 +494,19 @@ class CalculationsService:
 
     @staticmethod
     def _build_pv_details(pv_config, produced_energy_cycles):
-        mode = pv_config.get("mode") if isinstance(pv_config, dict) else pv_config.mode
-        if mode == "none":
+        if isinstance(pv_config, dict):
+            pv_config = PV_CONFIG.validate_python(pv_config)
+        if pv_config.mode == "none":
             return None
 
         details = {
             "pv_energy_cycles": produced_energy_cycles,
-            "mode": mode,
+            "mode": pv_config.mode,
         }
-        if mode == "net_metering":
-            details["power_of_pv_kwp"] = (
-                pv_config.get("power_of_pv_kwp")
-                if isinstance(pv_config, dict)
-                else pv_config.power_of_pv_kwp
-            )
+        if pv_config.mode == "net_metering":
+            details["power_of_pv_kwp"] = pv_config.power_of_pv_kwp
         else:
-            details["type_of_market_energy"] = (
-                pv_config.get("type_of_price", TypeOfMarketEnergyEnum.RCE)
-                if isinstance(pv_config, dict)
-                else pv_config.type_of_price
-            )
+            details["type_of_market_energy"] = pv_config.type_of_price
         return PVDetails.model_validate(details)
 
 

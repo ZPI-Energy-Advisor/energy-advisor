@@ -10,6 +10,7 @@ from app.schemas.other import TariffTypeEnum
 from app.schemas.tariff import TariffOut
 from app.schemas.user import CurrentUserResponse, ProfileTariffSummary
 from app.schemas.user_profile import UserProfile
+from app.services.home_location import AddressError, resolve_location, stored_location
 from app.services.tariff_costs import PricingProfile, TariffOption
 
 
@@ -26,9 +27,11 @@ class UserService:
         self,
         repository: UserRepository,
         definition_repository: TariffDefinitionRepository | None = None,
+        geocoder=None,
     ):
         self.repository = repository
         self.definition_repository = definition_repository
+        self.geocoder = geocoder
 
     @staticmethod
     def check_deletion_confirmed(user: User, confirm_email: str) -> None:
@@ -91,7 +94,7 @@ class UserService:
         if profile is None:
             raise HTTPException(status_code=404, detail="Profil użytkownika nie został znaleziony.")
         try:
-            return UserProfile.model_validate(profile)
+            data = UserProfile.model_validate(profile)
         except ValidationError as error:
             # Profil zapisany w starszym formacie: oddajemy zapisane dane i pola do uzupełnienia, żeby formularz je oznaczył.
             raise HTTPException(
@@ -106,6 +109,13 @@ class UserService:
                     "fields": sorted({".".join(str(part) for part in item["loc"][:2]) for item in error.errors()}),
                 },
             ) from error
+        stored = data.base_info.location
+        if stored is None or stored.approximate:
+            location = resolve_location(data.base_info, stored, self.geocoder, strict=False)
+            if location != stored:
+                self.repository.update_location(user.id, location.model_dump(mode="json"))
+                data.base_info.location = location
+        return data
 
     @staticmethod
     def _validated(profile) -> UserProfile | None:
@@ -162,7 +172,22 @@ class UserService:
 
     def save_profile(self, user: User, profile_data: UserProfile) -> UserProfile:
         self._validate_against_rates(profile_data)
-        if self.repository.get_profile(user.id):
+        existing = self.repository.get_profile(user.id)
+        previous = stored_location(existing.base_info) if existing else None
+        try:
+            location = resolve_location(profile_data.base_info, previous, self.geocoder)
+        except AddressError as error:
+            raise HTTPException(
+                status_code=422,
+                detail=[
+                    {"loc": ["body", "base_info", field], "msg": message, "type": "value_error"}
+                    for field, message in error.errors.items()
+                ],
+            ) from error
+        profile_data = profile_data.model_copy(
+            update={"base_info": profile_data.base_info.model_copy(update={"location": location})}
+        )
+        if existing:
             profile = self.repository.update_profile(user.id, profile_data)
         else:
             profile = self.repository.create_profile(user.id, profile_data)

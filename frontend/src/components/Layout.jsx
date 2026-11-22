@@ -139,6 +139,7 @@ function LayoutShell() {
         <div className="p-4 border-t border-gray-200">
           <button
             onClick={handleLogout}
+            data-leaves-page
             className="flex items-center w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition-colors"
           >
             <FiLogOut className="mr-3 text-lg" />
