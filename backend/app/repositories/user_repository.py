@@ -98,6 +98,13 @@ class UserRepository:
         self.db.refresh(profile)
         return profile
 
+    def update_location(self, user_id: UUID, location: dict) -> None:
+        profile = self.get_profile(user_id)
+        if profile is None:
+            return
+        profile.base_info = {**profile.base_info, "location": location}
+        self.db.commit()
+
     def update_profile(
         self, user_id: UUID, profile_data: UserProfileSchema
     ) -> UserProfile | None:

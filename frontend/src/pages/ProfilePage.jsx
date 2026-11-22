@@ -3,18 +3,25 @@ import { FiCheckCircle } from "react-icons/fi";
 import apiClient from "../api/client";
 import SegmentedControl from "../components/SegmentedControl";
 import DeleteAccount from "../components/profile/DeleteAccount";
+import HomeLocationField from "../components/profile/HomeLocationField";
+import PvInstallationFields from "../components/profile/PvInstallationFields";
 import { ChoiceCards, Field, Section, Stepper, UnitInput, inputClass } from "../components/profile/ProfileControls";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useUnsavedChangesWarning } from "../hooks/useUnsavedChangesWarning";
 import {
   FIELD_LABELS,
   MAX_BUILD_YEAR,
   MIN_BUILD_YEAR,
   createEmptyProfile,
+  fieldLabel,
   formatPostalCode,
   parseSaveError,
   profileFromSaved,
+  profileSnapshot,
   toPayload,
+  typicalInstallation,
   validateProfile,
+  withAddressLookup,
 } from "../utils/profileForm";
 
 // Grupy taryfowe, gdy operator nie ma stawek w cenniku.
@@ -55,7 +62,9 @@ const PRICE_TYPES = [
   { value: "RCEm", label: "RCEm", description: "Średnia miesięczna cena rynkowa." },
 ];
 
-const fieldId = (key) => `profile-${key.replace(".", "-")}`;
+const fieldId = (key) => `profile-${key.replaceAll(".", "-")}`;
+const POSTAL_CODE = /^\d{2}-\d{3}$/;
+const LOOKUP_UNAVAILABLE = "Nie udało się teraz sprawdzić adresu. Sprawdzimy go przy zapisie profilu.";
 const cycleLabel = (months) => `${months} mies.`;
 
 function ProfilePage() {
@@ -70,7 +79,13 @@ function ProfilePage() {
   const [successMessage, setSuccessMessage] = useState(null);
   const [optionsState, setOptionsState] = useState({ operator: null, data: null });
   const [scrollRequest, setScrollRequest] = useState(0);
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const [lookup, setLookup] = useState(null);
+  const lookupRef = useRef({ key: null, id: 0 });
   const errorSummaryRef = useRef(null);
+
+  const dirty = savedSnapshot !== null && profileSnapshot(profile) !== savedSnapshot;
+  useUnsavedChangesWarning(dirty);
 
   // Po nieudanym zapisie przewijamy do listy błędów nad formularzem (przycisk jest na dole strony).
   useEffect(() => {
@@ -93,14 +108,21 @@ function ProfilePage() {
   }, [operator]);
 
   useEffect(() => {
+    const loaded = (next) => {
+      setProfile(next);
+      setSavedSnapshot(profileSnapshot(next));
+    };
     apiClient.get("/users/me/profile")
-      .then(({ data }) => setProfile(profileFromSaved(data)))
+      .then(({ data }) => loaded(profileFromSaved(data)))
       .catch((err) => {
         const { status, data } = err.response ?? {};
-        if (status === 404) return;
+        if (status === 404) {
+          loaded(createEmptyProfile());
+          return;
+        }
         if (status === 409 && data?.detail?.profile) {
           // Profil w starszym formacie: wczytujemy, co jest, i oznaczamy pola do uzupełnienia.
-          setProfile(profileFromSaved(data.detail.profile));
+          loaded(profileFromSaved(data.detail.profile));
           setMissingFields(data.detail.fields ?? []);
           return;
         }
@@ -124,6 +146,49 @@ function ProfilePage() {
   const update = (section, name, value) => {
     setProfile((current) => ({ ...current, [section]: { ...current[section], [name]: value } }));
     clearField(`${section}.${name}`);
+  };
+
+  const updateAddress = (name, value) => {
+    update("base_info", name, value);
+    lookupRef.current.key = null;
+    setLookup(null);
+  };
+
+  const checkAddress = () => {
+    const base = profile.base_info;
+    const town = String(base.town ?? "").trim();
+    const postalCode = POSTAL_CODE.test(base.postal_code ?? "") ? base.postal_code : "";
+    if (!town && !postalCode) return;
+    const key = `${postalCode}|${town}`;
+    if (lookupRef.current.key === key) return;
+    const id = lookupRef.current.id + 1;
+    lookupRef.current = { key, id };
+    setLookup({ status: "loading" });
+    const params = { ...(town ? { town } : {}), ...(postalCode ? { postal_code: postalCode } : {}) };
+    apiClient.get("/users/me/profile/address-lookup", { params })
+      .then(({ data }) => {
+        if (lookupRef.current.id !== id) return;
+        setLookup({ status: data.status, message: data.message });
+        setFieldErrors((current) => {
+          const next = { ...current };
+          delete next["base_info.town"];
+          delete next["base_info.postal_code"];
+          for (const [field, message] of Object.entries(data.errors ?? {})) next[`base_info.${field}`] = message;
+          return next;
+        });
+        if (data.status === "found") {
+          setProfile((current) => ({ ...current, base_info: withAddressLookup(current.base_info, data, { town, postalCode }) }));
+        }
+      })
+      .catch(() => {
+        if (lookupRef.current.id === id) setLookup({ status: "unavailable", message: LOOKUP_UNAVAILABLE });
+      });
+  };
+
+  const checkAddressOnEnter = (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    checkAddress();
   };
 
   const optionsLoaded = optionsState.operator === operator;
@@ -163,13 +228,18 @@ function ProfilePage() {
   const handlePvModeChange = (mode) => {
     setProfile((current) => ({
       ...current,
-      pv_config: mode === "none"
-        ? { mode }
-        : mode === "net_billing"
-          ? { mode, type_of_price: current.pv_config.type_of_price ?? "RCE" }
-          : { mode, power_of_pv_kwp: current.pv_config.power_of_pv_kwp ?? "" },
+      pv_config: {
+        mode,
+        type_of_price: current.pv_config.type_of_price ?? "RCE",
+        installation: current.pv_config.installation ?? typicalInstallation(),
+      },
     }));
     clearField("pv_config.mode");
+  };
+
+  const handleInstallationChange = (installation, keys) => {
+    setProfile((current) => ({ ...current, pv_config: { ...current.pv_config, installation } }));
+    keys.forEach(clearField);
   };
 
   const handleSubmit = async (event) => {
@@ -186,7 +256,10 @@ function ProfilePage() {
     setIsSaving(true);
     try {
       const response = await apiClient.put("/users/me/profile", toPayload(profile));
-      setProfile(profileFromSaved(response.data));
+      const saved = profileFromSaved(response.data);
+      setProfile(saved);
+      setSavedSnapshot(profileSnapshot(saved));
+      setLookup(null);
       setMissingFields([]);
       setSuccessMessage("Profil zapisany.");
       await refreshCurrentUser();
@@ -246,7 +319,7 @@ function ProfilePage() {
 
       {missingFields.length > 0 && (
         <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Profil wymaga uzupełnienia: {missingFields.map((key) => FIELD_LABELS[key] ?? key).join(", ")}.
+          Profil wymaga uzupełnienia: {missingFields.map(fieldLabel).join(", ")}.
         </div>
       )}
       <div ref={errorSummaryRef} className="scroll-mt-4" />
@@ -256,7 +329,7 @@ function ProfilePage() {
           <p className="font-medium">Popraw pola:</p>
           <ul className="mt-1 list-disc pl-5">
             {errorList.map(([key, message]) => (
-              <li key={key}><a className="underline" href={`#${fieldId(key)}`}>{FIELD_LABELS[key] ?? key}</a>: {message}</li>
+              <li key={key}><a className="underline" href={`#${fieldId(key)}`}>{fieldLabel(key)}</a>: {message}</li>
             ))}
           </ul>
         </div>
@@ -286,7 +359,19 @@ function ProfilePage() {
             {(f) => <Stepper field={f} value={base.number_of_residents} onChange={(value) => update("base_info", "number_of_residents", value)} />}
           </Field>
           <Field {...field("base_info.town")}>
-            {(f) => <input id={f.id} className={`${inputClass} ${f.borderClass}`} autoComplete="address-level2" value={base.town} aria-invalid={f.invalid} aria-describedby={f.describedBy} onChange={(e) => update("base_info", "town", e.target.value)} />}
+            {(f) => (
+              <input
+                id={f.id}
+                className={`${inputClass} ${f.borderClass}`}
+                autoComplete="address-level2"
+                value={base.town}
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedBy}
+                onChange={(e) => updateAddress("town", e.target.value)}
+                onBlur={checkAddress}
+                onKeyDown={checkAddressOnEnter}
+              />
+            )}
           </Field>
           <Field {...field("base_info.postal_code")}>
             {(f) => (
@@ -300,10 +385,19 @@ function ProfilePage() {
                 value={base.postal_code}
                 aria-invalid={f.invalid}
                 aria-describedby={f.describedBy}
-                onChange={(e) => update("base_info", "postal_code", formatPostalCode(e.target.value))}
+                onChange={(e) => updateAddress("postal_code", formatPostalCode(e.target.value))}
+                onBlur={checkAddress}
+                onKeyDown={checkAddressOnEnter}
               />
             )}
           </Field>
+          <HomeLocationField
+            id={fieldId("base_info.location")}
+            base={base}
+            lookup={lookup}
+            error={fieldErrors["base_info.location"]}
+            onChange={(location) => update("base_info", "location", location)}
+          />
         </Section>
 
         <Section title="Przyłącze i rozliczenie" description="Dane z faktury za prąd.">
@@ -404,7 +498,7 @@ function ProfilePage() {
           )}
         </Section>
 
-        <Section title="Fotowoltaika" description="Sposób rozliczenia energii oddanej do sieci.">
+        <Section title="Fotowoltaika" description="Rozliczenie energii oddanej do sieci i panele do prognozy produkcji.">
           <Field {...field("pv_config.mode", { group: true, wide: true })}>
             {(f) => <ChoiceCards field={f} name="pv_mode" options={PV_MODES} value={pv.mode} onChange={handlePvModeChange} columns="sm:grid-cols-3" />}
           </Field>
@@ -413,10 +507,13 @@ function ProfilePage() {
               {(f) => <ChoiceCards field={f} name="type_of_price" options={PRICE_TYPES} value={pv.type_of_price ?? "RCE"} onChange={(value) => update("pv_config", "type_of_price", value)} />}
             </Field>
           )}
-          {pv.mode === "net_metering" && (
-            <Field {...field("pv_config.power_of_pv_kwp", { hint: "Maksymalnie 50 kWp." })}>
-              {(f) => <UnitInput field={f} unit="kWp" placeholder="np. 6,5" value={pv.power_of_pv_kwp} onChange={(value) => update("pv_config", "power_of_pv_kwp", value)} />}
-            </Field>
+          {pv.mode !== "none" && pv.installation && (
+            <PvInstallationFields
+              installation={pv.installation}
+              netMetering={pv.mode === "net_metering"}
+              field={field}
+              onChange={handleInstallationChange}
+            />
           )}
         </Section>
 
@@ -429,6 +526,7 @@ function ProfilePage() {
             {successMessage && <><FiCheckCircle aria-hidden="true" />{successMessage}</>}
           </p>
           {(errorList.length > 0 || saveError) && <p className="text-sm text-red-600">Nie zapisano – popraw błędy powyżej.</p>}
+          {dirty && !isSaving && errorList.length === 0 && !saveError && <p className="text-sm text-amber-700">Masz niezapisane zmiany.</p>}
         </div>
       </form>
 

@@ -80,6 +80,23 @@ def _fresh_price_cache():
     clear_rce_cache()
 
 
+class OfflineGeocoder:
+    def by_postal_code(self, postal_code):
+        from app.providers.geocoding import GeocoderError
+
+        raise GeocoderError("testy nie pytają Nominatim", unavailable=True)
+
+    def by_town(self, town, near=None):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _offline_geocoder(monkeypatch):
+    from app.providers import geocoding
+
+    monkeypatch.setattr(geocoding, "default_geocoder", OfflineGeocoder)
+
+
 @pytest.fixture
 def db():
     if DATABASE_ERROR:
