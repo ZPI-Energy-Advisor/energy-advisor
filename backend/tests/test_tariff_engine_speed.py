@@ -21,7 +21,7 @@ from app.services.tariff_engine import (
 )
 from app.services.tariff_zones import ZoneSchedule
 from tariff_helpers import HOURS, FlatTariffRepository, definition, period
-from test_tariff_costs import (
+from test_tariff_comparison import (
     TIME_LIMIT_SCALE,
     _definitions,
     _MarketRepository,

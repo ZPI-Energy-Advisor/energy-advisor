@@ -227,12 +227,6 @@ function ResultsPage() {
                           {tariff.estimated_cost_pln == null && tariff.note && (
                             <div className="max-w-[16rem] ml-auto whitespace-normal text-[10px] md:text-xs text-gray-500">{tariff.note}</div>
                           )}
-                          {tariff.price_coverage != null &&
-                            tariff.price_coverage < 1 && (
-                              <div className="text-[10px] md:text-xs text-amber-600">
-                                ceny dla {Math.round(tariff.price_coverage * 100)}% okresu
-                              </div>
-                            )}
                         </td>
                         <td
                           className="px-4 md:px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900"

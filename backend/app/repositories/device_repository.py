@@ -359,11 +359,11 @@ class DeviceRepository:
             .where(DeviceInstance.id.in_(instance_ids))
         ).all()
 
-    def merged_grid_import(self, file_ids: list[UUID]) -> list[tuple[str, int, float]]:
-        """Pobór z sieci (dzień lokalny, kwadrans, kWh) z obowiązujących wersji urządzeń plików.
+    def merged_grid_balance(self, file_ids: list[UUID]) -> list[tuple[str, int, float, float]]:
+        """Pobór i oddanie (dzień lokalny, kwadrans, pobór kWh, oddanie kWh) z obowiązujących wersji urządzeń plików.
 
         Jak przy imporcie pliku: w każdym kwadransie produkcja PV najpierw pokrywa zużycie,
-        więc pobór = max(0, suma energii urządzeń).
+        więc pobór = max(0, suma energii urządzeń), a oddanie = max(0, −suma).
         """
         net = (
             select(DeviceSlotUsage.slot_start, func.sum(DeviceSlotUsage.kwh).label("kwh"))
@@ -373,7 +373,10 @@ class DeviceRepository:
         )
         day, slot = _local_day_and_slot(net.c.slot_start)
         return self.db.execute(
-            select(day.label("day"), slot.label("slot"), func.sum(func.greatest(net.c.kwh, 0.0)))
+            select(
+                day.label("day"), slot.label("slot"),
+                func.sum(func.greatest(net.c.kwh, 0.0)), func.sum(func.greatest(-net.c.kwh, 0.0)),
+            )
             .group_by("day", "slot")
         ).all()
 

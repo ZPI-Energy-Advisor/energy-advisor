@@ -211,12 +211,11 @@ z tych samych cen RCE, a różnić się narzutem.
 
 Pozostałe zasady:
 
-- Ceny są zapisywane w wynikach symulacji w momencie importu (`slot_prices[...].prices_by_day`),
-  podobnie jak ceny G11 i G12.
+- Ceny kwadransów (`slot_prices[...].prices_by_day`) i rachunki liczymy przy każdym odczycie
+  z bieżącego cennika i cen RCE, tak jak dla G11 i G12.
 - Brak ceny dla kwadransu daje `null`.
-- Wynik taryfy zawiera `price_coverage` (0–1) i `missing_price_intervals`.
-- Koszt brakujących kwadransów jest ekstrapolowany średnią ceną z pokrytego zużycia.
-  Przy zerowym pokryciu `estimated_cost_pln = null`.
-- Przy łączeniu plików ceny dynamiczne są scalane po dniach ze wszystkich importów.
-- Jeśli plik wgrano zanim worker pobrał ceny dla jego okresu, trzeba wgrać go ponownie,
-  bo ceny są zapisywane w momencie importu.
+- Rachunki taryf (`/energy-files/{id}/data` i `/energy-files/{id}/tariff-comparison`) liczy ten sam
+  silnik co Wyniki kalkulacji. Brak ceny RCE dla któregokolwiek kwadransu daje ofercie dynamicznej
+  `estimated_cost_pln = null` (`payable_gross = null`) i powód w `note`, a ceny do wykresów mają tam `null`.
+- Jeśli plik wgrano, zanim worker pobrał ceny dla jego okresu, koszty uzupełnią się same
+  po pobraniu cen, bez ponownego importu.

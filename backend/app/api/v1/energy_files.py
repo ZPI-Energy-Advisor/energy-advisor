@@ -17,6 +17,7 @@ from app.schemas.calculation import TariffChoice
 from app.schemas.device_usage import DeviceUsageGroupBy, DeviceUsageResolution, DeviceUsageResponse
 from app.schemas.other import TariffTypeEnum
 from app.schemas.schedule import ScheduleResponse
+from app.schemas.tariff_comparison import TariffComparisonResponse
 from app.services.device_usage_service import DeviceUsageService
 from app.services.dynamic_price_service import DynamicTariffNotFoundError
 from app.services.energy_file_service import EnergyFileService
@@ -87,6 +88,18 @@ def get_energy_file_data(
     service: EnergyFileService = Depends(get_energy_file_service),
 ):
     return service.get_file_data(file_id, user.id, date_from, date_to, tariffs == TariffScope.ALL)
+
+
+@router.get("/{source_id}/tariff-comparison", response_model=TariffComparisonResponse)
+def get_tariff_comparison(
+    source_id: str,
+    date_from: date | None = DATE_FROM_QUERY,
+    date_to: date | None = DATE_TO_QUERY,
+    tariffs: TariffScope = TARIFFS_QUERY,
+    user: User = Depends(get_authenticated_user),
+    service: EnergyFileService = Depends(get_energy_file_service),
+):
+    return service.get_tariff_comparison(source_id, user.id, date_from, date_to, tariffs == TariffScope.ALL)
 
 
 @router.get("/{source_id}/devices/usage", response_model=DeviceUsageResponse)

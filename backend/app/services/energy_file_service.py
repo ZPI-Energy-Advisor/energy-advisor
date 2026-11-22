@@ -1,6 +1,7 @@
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -26,7 +27,10 @@ from app.services.scheduling import INTERRUPTIBLE, SLOT, actions_from_devices, l
 from app.schemas.calculation import TariffChoice
 from app.services.schedule_prices import SchedulePriceService
 from app.services.schedule_bill import grid_limit_note, padded_readings, shifted_readings
-from app.services.tariff_costs import TariffCostService
+from app.schemas.tariff_comparison import TariffComparisonResponse
+from app.services.new_calculations_service import profile_key
+from app.services.tariff_comparison import Reading, comparison, readings_from_usage, tariff_entries
+from app.services.tariff_costs import TariffCostService, tariff_key, tariff_label
 from app.schemas.energy_file import (
     ALL_DEVICE_FILES_SOURCE_ID,
     ALL_DEVICE_FILES_SOURCE_NAME,
@@ -49,6 +53,43 @@ AGGREGATE_SOURCES = {
     EnergyDataFile.SOURCE_METER: (ALL_FILES_SOURCE_ID, ALL_FILES_SOURCE_NAME, "plików z licznika"),
     EnergyDataFile.SOURCE_DEVICES: (ALL_DEVICE_FILES_SOURCE_ID, ALL_DEVICE_FILES_SOURCE_NAME, "plików urządzeń"),
 }
+AGGREGATE_SOURCE_TYPES = {source_id: source_type for source_type, (source_id, _, _) in AGGREGATE_SOURCES.items()}
+LEGACY_FIELDS = (
+    "key", "label", "name", "type", "tariff_code", "distribution_group", "is_profile", "note", "billing_cycle_months",
+    "energy_cost_pln", "monthly_fees_pln", "monthly_fee_gross", "cost_breakdown",
+)
+
+
+@dataclass(frozen=True)
+class _ReadingsSource:
+    file_ids: list[UUID] | None = None
+    exports: dict | None = None
+
+    @classmethod
+    def of_aggregate(cls, source_type: str, aggregate: "_Aggregate") -> "_ReadingsSource":
+        if source_type == EnergyDataFile.SOURCE_DEVICES:
+            return cls(exports=aggregate.exports)
+        return cls(file_ids=[energy_file.id for energy_file in aggregate.files])
+
+
+@dataclass
+class _Aggregate:
+    files: list
+    skipped_files: list
+    usage: dict
+    contributions: list
+    actions_per_day: dict | None
+    exports: dict | None
+    resolution: int | None
+    records_count: int
+
+    @property
+    def data_start(self) -> date:
+        return date.fromisoformat(min(self.usage))
+
+    @property
+    def data_end(self) -> date:
+        return date.fromisoformat(max(self.usage))
 
 
 class EnergyFileService:
@@ -71,22 +112,106 @@ class EnergyFileService:
         self.tariff_costs = tariff_costs
 
     def _priced_results(
-        self, user_id: UUID, results: dict, date_from: date, date_to: date, all_tariffs: bool = True
+        self, user_id: UUID, results: dict, date_from: date, date_to: date, all_tariffs: bool = True,
+        source: _ReadingsSource | None = None,
     ) -> dict:
         """Wykresy, statystyki i koszty taryf operatora z profilu dla dni [date_from, date_to], z cenami
         policzonymi teraz z cennika (nie zapisanymi przy imporcie)."""
         usage = CalculationService.usage_in_range(results["usage_15min"], date_from, date_to)
-        if self.tariff_costs is None:
-            slot_prices, tariffs, pricing = {}, {}, None
-        else:
-            costs = self.tariff_costs.usage_costs(self.tariff_costs.profile(user_id), usage, all_tariffs)
-            slot_prices, tariffs, pricing = costs.slot_prices, costs.tariffs, costs.pricing
+        tariffs, pricing = {}, None
+        if self.calculations_service is not None:
+            readings = self._engine_readings(source or _ReadingsSource(), usage, date_from, date_to)
+            tariffs, pricing = self._usage_tariffs(user_id, readings, date_from, all_tariffs)
+        slot_prices = {}
+        if self.tariff_costs is not None and tariffs:
+            slot_prices = self.tariff_costs.chart_prices(self.tariff_costs.profile(user_id), usage, tariffs)
         summary = CalculationService.summarize_usage(
             usage, slot_prices, source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
         )
         summary["tariffs"] = tariffs
         summary["pricing"] = pricing
         return summary
+
+    def _engine_readings(self, source: _ReadingsSource, usage: dict, date_from: date, date_to: date) -> list:
+        if source.file_ids:
+            rows = self.calculations_service.energy_reading_repository.merged_for_files(
+                source.file_ids, datetime.combine(date_from, time()), datetime.combine(date_to + timedelta(days=1), time()),
+            )
+            if rows:
+                return [Reading(*row) for row in rows]
+        return readings_from_usage(usage, source.exports)
+
+    def _calculate(self, user_id: UUID, readings: list, inputs, all_tariffs: bool):
+        return self.calculations_service.calculate(
+            readings, inputs, selected_only=not all_tariffs, fallback=True, user_id=user_id,
+        )
+
+    def _usage_tariffs(self, user_id: UUID, readings: list, first_day: date, all_tariffs: bool) -> tuple[dict, dict]:
+        inputs = self.calculations_service.profile_inputs(user_id, first_day)
+        pricing = {
+            "operator": inputs.tariff_data.distribution_operator.value,
+            "from_profile": inputs.from_profile,
+            "profile_tariff": tariff_key(*profile_key(inputs.tariff_data)),
+            "tariff_key": None,
+            "tariff_label": None,
+            "note": None,
+            "all_tariffs": all_tariffs,
+        }
+        if not readings:
+            return {}, pricing
+        try:
+            run = self._calculate(user_id, readings, inputs, all_tariffs)
+        except HTTPException as error:
+            return {}, {**pricing, "note": str(error.detail)}
+        total_usage = round(run.details.annual_consumption.consumption_kwh, 2)
+        tariffs = {
+            entry["key"]: {
+                **{name: entry.get(name) for name in LEGACY_FIELDS},
+                "total_usage_kwh": total_usage,
+                "estimated_cost_pln": entry["payable_gross"],
+            }
+            for entry in tariff_entries(run)
+        }
+        notes = [*(run.details.warnings or []), run.selection_note]
+        return tariffs, {
+            **pricing,
+            "tariff_key": tariff_key(*run.selected_key),
+            "tariff_label": tariff_label(*run.selected_key),
+            "note": " ".join(note for note in notes if note) or None,
+        }
+
+    def get_tariff_comparison(
+        self, source_id: str, user_id: UUID, date_from: date | None = None, date_to: date | None = None,
+        all_tariffs: bool = True,
+    ) -> TariffComparisonResponse:
+        if source_id in AGGREGATE_SOURCE_TYPES:
+            source_type = AGGREGATE_SOURCE_TYPES[source_id]
+            aggregate = self._aggregate(user_id, source_type)
+            usage, data_start, data_end = aggregate.usage, aggregate.data_start, aggregate.data_end
+            source = _ReadingsSource.of_aggregate(source_type, aggregate)
+            source_name = AGGREGATE_SOURCES[source_type][1]
+        else:
+            try:
+                file_id = UUID(source_id)
+            except ValueError as error:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono pliku.") from error
+            energy_file, simulation = self._completed_file(file_id, user_id)
+            usage, data_start, data_end = simulation.results["usage_15min"], energy_file.data_start, energy_file.data_end
+            source_type, source_name = energy_file.source_type, energy_file.file_name
+            source = _ReadingsSource(file_ids=[energy_file.id])
+        date_from, date_to = self._resolve_range(data_start, data_end, date_from, date_to)
+        usage = CalculationService.usage_in_range(usage, date_from, date_to)
+        readings = self._engine_readings(source, usage, date_from, date_to)
+        inputs = self.calculations_service.profile_inputs(user_id, date_from)
+        return TariffComparisonResponse(
+            source_id=source_id,
+            source_name=source_name,
+            source_type=source_type,
+            date_from=date_from,
+            date_to=date_to,
+            all_tariffs=all_tariffs,
+            **comparison(self._calculate(user_id, readings, inputs, all_tariffs)),
+        )
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:
         items, total = self.file_repository.list_by_user_id(
@@ -125,6 +250,22 @@ class EnergyFileService:
             data_end=data_end,
         )
 
+    def _completed_file(self, file_id: UUID, user_id: UUID) -> tuple[EnergyDataFile, Any]:
+        energy_file = self._get_own_file(file_id, user_id)
+        simulation = self.simulation_repository.get_latest_by_file_id(energy_file.id)
+        if energy_file.status != EnergyDataFile.STATUS_COMPLETED or not simulation:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Dane pliku nie są dostępne (status: {energy_file.status}).",
+            )
+        if not has_usage_series(simulation.results):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ten plik został wgrany w starszej wersji aplikacji, która nie zapisywała zużycia w kwadransach. "
+                "Wgraj go ponownie, aby zobaczyć wykresy i koszty.",
+            )
+        return energy_file, simulation
+
     def get_file_data(
         self,
         file_id: UUID,
@@ -133,27 +274,14 @@ class EnergyFileService:
         date_to: date | None = None,
         all_tariffs: bool = True,
     ) -> EnergyDataFileDataResponse:
-        energy_file = self._get_own_file(file_id, user_id)
-
-        simulation = self.simulation_repository.get_latest_by_file_id(energy_file.id)
-        if energy_file.status != EnergyDataFile.STATUS_COMPLETED or not simulation:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Dane pliku nie są dostępne (status: {energy_file.status}).",
-            )
-
-        results = simulation.results
-        if not has_usage_series(results):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Ten plik został wgrany w starszej wersji aplikacji, która nie zapisywała zużycia w kwadransach. "
-                "Wgraj go ponownie, aby zobaczyć wykresy i koszty.",
-            )
+        energy_file, simulation = self._completed_file(file_id, user_id)
         if date_from is None and date_to is None:
             date_from, date_to = energy_file.data_start, energy_file.data_end
         else:
             date_from, date_to = self._resolve_range(energy_file.data_start, energy_file.data_end, date_from, date_to)
-        results = self._priced_results(user_id, results, date_from, date_to, all_tariffs)
+        results = self._priced_results(
+            user_id, simulation.results, date_from, date_to, all_tariffs, _ReadingsSource(file_ids=[energy_file.id]),
+        )
 
         return EnergyDataFileDataResponse(
             status="success",
@@ -166,20 +294,8 @@ class EnergyFileService:
             results=public_results(results),
         )
 
-    def get_all_files_data(
-        self,
-        user_id: UUID,
-        source_type: str = EnergyDataFile.SOURCE_METER,
-        date_from: date | None = None,
-        date_to: date | None = None,
-        all_tariffs: bool = True,
-    ) -> EnergyDataFileDataResponse:
-        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
-
-        Nie są nigdzie zapisywane - liczymy je przy każdym zapytaniu z serii zapisanych przy
-        imporcie, więc dodanie lub usunięcie pliku od razu zmienia wynik.
-        """
-        source_id, source_name, files_label = AGGREGATE_SOURCES[source_type]
+    def _aggregate(self, user_id: UUID, source_type: str) -> _Aggregate:
+        files_label = AGGREGATE_SOURCES[source_type][2]
         files = self.file_repository.list_completed_by_user_id(user_id, source_type)
         simulations = self.simulation_repository.get_latest_by_file_ids([file.id for file in files])
 
@@ -201,11 +317,9 @@ class EnergyFileService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
         resolutions = [source_resolution(source) for source in sources]
-        common_resolution = resolutions[0] if len(set(resolutions)) == 1 else None
-        merged_results = {"statistics": {"resolution_minutes": common_resolution}}
+        actions_per_day = exports = None
         if source_type == EnergyDataFile.SOURCE_DEVICES:
-            usage, actions_per_day, contributions = self._merge_device_files(merged_files, sources)
-            merged_results[ACTIONS_PER_DAY_KEY] = actions_per_day
+            usage, actions_per_day, contributions, exports = self._merge_device_files(merged_files, sources)
             records_count = sum(actions_per_day.values())
         else:
             usage, contributions = CalculationService.merge_usage(sources)
@@ -213,9 +327,37 @@ class EnergyFileService:
                 contribution["slots_used"] * SLOT_MINUTES / resolution
                 for contribution, resolution in zip(contributions, resolutions)
             ))
-        merged_results["usage_15min"] = usage
+        return _Aggregate(
+            files=merged_files,
+            skipped_files=skipped_files,
+            usage=usage,
+            contributions=contributions,
+            actions_per_day=actions_per_day,
+            exports=exports,
+            resolution=resolutions[0] if len(set(resolutions)) == 1 else None,
+            records_count=records_count,
+        )
 
-        data_start, data_end = date.fromisoformat(min(usage)), date.fromisoformat(max(usage))
+    def get_all_files_data(
+        self,
+        user_id: UUID,
+        source_type: str = EnergyDataFile.SOURCE_METER,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        all_tariffs: bool = True,
+    ) -> EnergyDataFileDataResponse:
+        """Dane zbiorcze ze wszystkich poprawnie zaimportowanych plików użytkownika.
+
+        Nie są nigdzie zapisywane - liczymy je przy każdym zapytaniu z serii zapisanych przy
+        imporcie, więc dodanie lub usunięcie pliku od razu zmienia wynik.
+        """
+        source_id, source_name, _ = AGGREGATE_SOURCES[source_type]
+        aggregate = self._aggregate(user_id, source_type)
+        merged_results = {"statistics": {"resolution_minutes": aggregate.resolution}, "usage_15min": aggregate.usage}
+        if source_type == EnergyDataFile.SOURCE_DEVICES:
+            merged_results[ACTIONS_PER_DAY_KEY] = aggregate.actions_per_day
+
+        data_start, data_end = aggregate.data_start, aggregate.data_end
         if date_from is None and date_to is None:
             date_from, date_to = data_start, data_end
         else:
@@ -227,13 +369,15 @@ class EnergyFileService:
             source_type=source_type,
             data_start=data_start,
             data_end=data_end,
-            records_count=records_count,
-            files_count=len(merged_files),
+            records_count=aggregate.records_count,
+            files_count=len(aggregate.files),
             files=[
                 self._aggregate_file(energy_file, **contribution)
-                for energy_file, contribution in zip(merged_files, contributions)
+                for energy_file, contribution in zip(aggregate.files, aggregate.contributions)
             ],
-            skipped_files=[self._aggregate_file(energy_file, days_used=0, slots_used=0) for energy_file in skipped_files],
+            skipped_files=[
+                self._aggregate_file(energy_file, days_used=0, slots_used=0) for energy_file in aggregate.skipped_files
+            ],
         )
 
         return EnergyDataFileDataResponse(
@@ -241,7 +385,12 @@ class EnergyFileService:
             file=source,
             date_from=date_from,
             date_to=date_to,
-            results=public_results(self._priced_results(user_id, merged_results, date_from, date_to, all_tariffs)),
+            results=public_results(
+                self._priced_results(
+                    user_id, merged_results, date_from, date_to, all_tariffs,
+                    _ReadingsSource.of_aggregate(source_type, aggregate),
+                )
+            ),
         )
 
     def _readings_in_range(self, file_id: UUID, date_from: date, date_to: date) -> list:
@@ -428,13 +577,15 @@ class EnergyFileService:
         """
         file_ids = [energy_file.id for energy_file in files]
         covering = CalculationService.device_coverage([source["usage_15min"] for source in sources])
-        usage = CalculationService.device_usage_series(covering, self.device_repository.merged_grid_import(file_ids))
+        balance = self.device_repository.merged_grid_balance(file_ids)
+        usage = CalculationService.device_usage_series(covering, [(day, slot, used) for day, slot, used, _ in balance])
+        exports = {(day, slot): float(exported) for day, slot, _, exported in balance if exported}
         actions_per_day = self.device_repository.merged_actions_per_day(file_ids)
         devices = self.device_repository.device_ids_by_file(file_ids)
         contributions = CalculationService.device_contributions(
             [devices.get(energy_file.id, set()) for energy_file in files], covering
         )
-        return usage, actions_per_day, contributions
+        return usage, actions_per_day, contributions, exports
 
     def delete_file(self, file_id: UUID, user: User) -> None:
         user_id = user.id
