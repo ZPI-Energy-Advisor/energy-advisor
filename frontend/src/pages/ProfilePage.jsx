@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FiCheckCircle } from "react-icons/fi";
+import { FiAlertCircle, FiCheckCircle } from "react-icons/fi";
 import apiClient from "../api/client";
 import SegmentedControl from "../components/SegmentedControl";
 import DeleteAccount from "../components/profile/DeleteAccount";
@@ -79,12 +79,12 @@ function ProfilePage() {
   const [successMessage, setSuccessMessage] = useState(null);
   const [optionsState, setOptionsState] = useState({ operator: null, data: null });
   const [scrollRequest, setScrollRequest] = useState(0);
-  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const [savedProfile, setSavedProfile] = useState(null);
   const [lookup, setLookup] = useState(null);
   const lookupRef = useRef({ key: null, id: 0 });
   const errorSummaryRef = useRef(null);
 
-  const dirty = savedSnapshot !== null && profileSnapshot(profile) !== savedSnapshot;
+  const dirty = savedProfile !== null && profileSnapshot(profile) !== profileSnapshot(savedProfile);
   useUnsavedChangesWarning(dirty);
 
   // Po nieudanym zapisie przewijamy do listy błędów nad formularzem (przycisk jest na dole strony).
@@ -110,7 +110,7 @@ function ProfilePage() {
   useEffect(() => {
     const loaded = (next) => {
       setProfile(next);
-      setSavedSnapshot(profileSnapshot(next));
+      setSavedProfile(next);
     };
     apiClient.get("/users/me/profile")
       .then(({ data }) => loaded(profileFromSaved(data)))
@@ -242,6 +242,15 @@ function ProfilePage() {
     keys.forEach(clearField);
   };
 
+  const discardChanges = () => {
+    setProfile(savedProfile);
+    setFieldErrors({});
+    setSaveError(null);
+    setSuccessMessage(null);
+    setLookup(null);
+    lookupRef.current.key = null;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSaveError(null);
@@ -258,7 +267,7 @@ function ProfilePage() {
       const response = await apiClient.put("/users/me/profile", toPayload(profile));
       const saved = profileFromSaved(response.data);
       setProfile(saved);
-      setSavedSnapshot(profileSnapshot(saved));
+      setSavedProfile(saved);
       setLookup(null);
       setMissingFields([]);
       setSuccessMessage("Profil zapisany.");
@@ -309,6 +318,7 @@ function ProfilePage() {
     ? BUILD_YEARS
     : [Number(base.year_of_construction), ...BUILD_YEARS];
   const errorList = Object.entries(fieldErrors);
+  const failed = !isSaving && (errorList.length > 0 || Boolean(saveError));
 
   return (
     <div className="mx-auto max-w-4xl pb-12">
@@ -517,16 +527,30 @@ function ProfilePage() {
           )}
         </Section>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <button className="w-full rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-50 sm:w-auto" disabled={isSaving}>
-            {isSaving ? "Zapisywanie..." : "Zapisz profil"}
-          </button>
-          {/* Komunikat przy przycisku: po zapisie użytkownik jest na dole strony. */}
-          <p role="status" className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
-            {successMessage && <><FiCheckCircle aria-hidden="true" />{successMessage}</>}
+        <div
+          className={`sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border bg-white px-4 py-3 shadow-lg sm:flex-row sm:items-center sm:justify-between ${
+            dirty ? "border-amber-300" : "border-gray-200"
+          }`}
+        >
+          <p role="status" className="flex items-center gap-1.5 text-sm font-medium">
+            {failed
+              ? <span className="flex items-center gap-1.5 text-red-600"><FiAlertCircle aria-hidden="true" />Nie zapisano – popraw błędy powyżej.</span>
+              : dirty
+                ? <span className="flex items-center gap-1.5 text-amber-700"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-amber-500" />Masz niezapisane zmiany.</span>
+                : successMessage
+                  ? <span className="flex items-center gap-1.5 text-emerald-700"><FiCheckCircle aria-hidden="true" />{successMessage}</span>
+                  : <span className="text-gray-500">Wszystkie zmiany są zapisane.</span>}
           </p>
-          {(errorList.length > 0 || saveError) && <p className="text-sm text-red-600">Nie zapisano – popraw błędy powyżej.</p>}
-          {dirty && !isSaving && errorList.length === 0 && !saveError && <p className="text-sm text-amber-700">Masz niezapisane zmiany.</p>}
+          <div className="flex gap-2">
+            {dirty && (
+              <button type="button" onClick={discardChanges} disabled={isSaving} className="flex-1 rounded-md border border-gray-300 px-4 py-2.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:flex-none">
+                Cofnij zmiany
+              </button>
+            )}
+            <button className="flex-1 rounded-md bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:flex-none" disabled={isSaving}>
+              {isSaving ? "Zapisywanie..." : "Zapisz profil"}
+            </button>
+          </div>
         </div>
       </form>
 

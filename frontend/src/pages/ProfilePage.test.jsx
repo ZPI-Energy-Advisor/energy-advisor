@@ -430,4 +430,18 @@ describe("ProfilePage", () => {
     expect(confirm).not.toHaveBeenCalled();
     link.remove();
   });
+
+  it("cofa niezapisane zmiany do zapisanego profilu", async () => {
+    renderPage();
+    const area = await screen.findByLabelText("Powierzchnia ogrzewana");
+    const saved = area.value;
+    expect(screen.getByText("Wszystkie zmiany są zapisane.")).toBeTruthy();
+
+    fireEvent.change(area, { target: { value: "130" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cofnij zmiany" }));
+
+    expect(area.value).toBe(saved);
+    expect(screen.queryByRole("button", { name: "Cofnij zmiany" })).toBeNull();
+    expect(screen.getByText("Wszystkie zmiany są zapisane.")).toBeTruthy();
+  });
 });

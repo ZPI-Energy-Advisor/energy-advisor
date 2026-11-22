@@ -151,6 +151,18 @@ def _from_postal_code(postal_code: str, geocoder) -> AddressLookup:
     )
 
 
+def _postal_code_of(place: Place, geocoder) -> str | None:
+    if place.postal_code:
+        return place.postal_code
+    postal_code = geocoder.postal_code_at(place)
+    if postal_code is None:
+        return None
+    area = geocoder.by_postal_code(postal_code)
+    if area is None or not area.name or _plain(area.name) != _plain(place.name):
+        return None
+    return postal_code
+
+
 def _from_town(town: str, geocoder) -> AddressLookup:
     named = _distinct([place for place in geocoder.by_town(town) if place.name and _plain(place.name) == _plain(town)])
     if not named:
@@ -166,19 +178,25 @@ def _from_town(town: str, geocoder) -> AddressLookup:
         named = towns
         note = f"Są też wsie o nazwie {town}. Jeśli mieszkasz w jednej z nich, wpisz jej kod pocztowy."
     place = named[0]
-    if place.postal_code is None:
+    postal_code = None if place.kind == "city" else _postal_code_of(place, geocoder)
+    if postal_code is None:
+        ask = (
+            f"Wpisz kod pocztowy: {place.name} ma ich kilka."
+            if place.kind == "city"
+            else f"Wpisz kod pocztowy: nie znaleźliśmy go dla miejscowości {place.name}."
+        )
         return AddressLookup(
             status="found",
             town=place.name,
             location=_location(place, LocationSource.TOWN, place.name, None),
-            message=" ".join(filter(None, [f"Wpisz kod pocztowy: {place.name} może mieć ich kilka.", note])),
+            message=" ".join(filter(None, [ask, note])),
         )
     return AddressLookup(
         status="found",
         town=place.name,
-        postal_code=place.postal_code,
-        location=_location(place, LocationSource.POSTAL_CODE, place.name, f"{place.postal_code} {place.name}"),
-        message=note,
+        postal_code=postal_code,
+        location=_location(place, LocationSource.POSTAL_CODE, place.name, f"{postal_code} {place.name}"),
+        message=" ".join(filter(None, [f"Uzupełniliśmy kod pocztowy {postal_code}. Jeśli Twój adres ma inny, popraw go.", note])),
     )
 
 

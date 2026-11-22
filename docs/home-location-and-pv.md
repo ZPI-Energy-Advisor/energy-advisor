@@ -27,9 +27,15 @@ Formularz sprawdza adres od razu, bez zapisu profilu: po Enterze albo wyjściu z
 wywołuje `GET /api/v1/users/me/profile/address-lookup?town=&postal_code=` i pokazuje znalezione miejsce.
 
 - Sam kod pocztowy uzupełnia miejscowość: miasto albo siedzibę gminy z obszaru kodu.
-- Sama miejscowość uzupełnia kod, gdy jest jednoznaczna i OpenStreetMap zna jej kod. Gdy oprócz miasta są wsie
-  o tej nazwie, wybieramy miasto z dopiskiem o wsiach. Kilka wsi o tej nazwie: prośba o kod pocztowy.
+- Sama miejscowość uzupełnia kod, gdy jest jednoznaczna. Kod bierzemy z wyniku wyszukiwania, a gdy go tam nie
+  ma, z adresu w środku miejscowości (`/reverse`). Taki kod przyjmujemy tylko wtedy, gdy jego obszar nosi nazwę
+  tej miejscowości, bo w środku wsi pod miastem bywa kod miasta. Duże miasta (`city`) mają wiele kodów, więc
+  prosimy o kod. Gdy oprócz miasta są wsie o tej nazwie, wybieramy miasto z dopiskiem o wsiach. Kilka wsi o tej
+  nazwie: prośba o kod pocztowy.
 - Oba pola: to samo sprawdzenie co przy zapisie; błąd trafia od razu pod pole.
+
+Przycisk zapisu jest w pasku przyklejonym do dołu ekranu, więc da się zapisać z każdego miejsca formularza.
+Pasek pokazuje stan (zapisane, niezapisane zmiany, błędy) i przy zmianach przycisk „Cofnij zmiany”.
 
 Formularz pamięta zapisany stan profilu. Przy niezapisanych zmianach pokazuje „Masz niezapisane zmiany”,
 pyta przed przejściem linkiem do innej zakładki albo wylogowaniem, a przeglądarka ostrzega przy zamknięciu

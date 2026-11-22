@@ -93,25 +93,39 @@ class NominatimGeocoder:
             self._cache[key] = [self._place(item) for item in self._search(params)]
         return self._cache[key]
 
+    def postal_code_at(self, place: Place) -> str | None:
+        key = ("reverse", round(place.latitude, 4), round(place.longitude, 4))
+        if key not in self._cache:
+            result = self._call("reverse", {"lat": place.latitude, "lon": place.longitude, "zoom": 18, "addressdetails": 1})
+            postal_code = (result.get("address") or {}).get("postcode") if isinstance(result, dict) else None
+            self._cache[key] = postal_code if isinstance(postal_code, str) and POSTAL_CODE.match(postal_code) else None
+        return self._cache[key]
+
     def _search(self, params: dict) -> list[dict]:
+        payload = self._call("search", {**params, "countrycodes": "pl"})
+        if not isinstance(payload, list):
+            raise GeocoderError("Nieoczekiwany format odpowiedzi geokodera")
+        return payload
+
+    def _call(self, endpoint: str, params: dict):
         if time.monotonic() < NominatimGeocoder._unavailable_until:
             raise GeocoderError("Geokoder był niedostępny przed chwilą; spróbujemy później")
         try:
-            return self._request(params)
+            return self._request(endpoint, params)
         except GeocoderError as error:
             if getattr(error, "unavailable", False):
                 NominatimGeocoder._unavailable_until = time.monotonic() + UNAVAILABLE_PAUSE_SECONDS
             raise
 
-    def _request(self, params: dict) -> list[dict]:
+    def _request(self, endpoint: str, params: dict):
         with NominatimGeocoder._lock:
             wait = NominatimGeocoder._last_request + MIN_INTERVAL_SECONDS - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
             try:
                 response = self.client.get(
-                    f"{self.base_url}/search",
-                    params={**params, "countrycodes": "pl", "format": "jsonv2", "accept-language": "pl"},
+                    f"{self.base_url}/{endpoint}",
+                    params={**params, "format": "jsonv2", "accept-language": "pl"},
                 )
             except httpx.HTTPError as error:
                 raise GeocoderError(f"Geokoder nie odpowiada: {error}", unavailable=True) from error
@@ -123,12 +137,9 @@ class NominatimGeocoder:
                 unavailable=response.status_code in (403, 429) or response.status_code >= 500,
             )
         try:
-            payload = response.json()
+            return response.json()
         except ValueError as error:
             raise GeocoderError("Geokoder zwrócił niepoprawny JSON") from error
-        if not isinstance(payload, list):
-            raise GeocoderError("Nieoczekiwany format odpowiedzi geokodera")
-        return payload
 
     @staticmethod
     def _place(item: dict, area: bool = False) -> Place:

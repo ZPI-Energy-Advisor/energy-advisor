@@ -89,6 +89,9 @@ class OfflineGeocoder:
     def by_town(self, town, near=None):
         return []
 
+    def postal_code_at(self, place):
+        return None
+
 
 @pytest.fixture(autouse=True)
 def _offline_geocoder(monkeypatch):

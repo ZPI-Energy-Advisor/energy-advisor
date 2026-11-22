@@ -25,9 +25,10 @@ TOWNS = {
 
 
 class FakeGeocoder:
-    def __init__(self, postal=POSTAL_CODES, towns=TOWNS, error=None):
+    def __init__(self, postal=POSTAL_CODES, towns=TOWNS, error=None, reverse=None):
         self.postal = postal
         self.towns = towns
+        self.reverse = reverse or {}
         self.error = error
         self.calls = []
 
@@ -41,6 +42,10 @@ class FakeGeocoder:
         self.calls.append(("town", town))
         places = next((value for key, value in self.towns.items() if key.casefold() == town.casefold()), [])
         return [place for place in places if near is None or distance_km(place, near) < 35]
+
+    def postal_code_at(self, place):
+        self.calls.append(("reverse", place.name))
+        return self.reverse.get(place.name)
 
 
 def base_info(town="Wrocław", postal_code="50-370", location=None, **extra):
@@ -222,6 +227,23 @@ def test_nominatim_asks_only_in_poland_and_caches_answers(monkeypatch):
     assert (town["city"], town["bounded"], town["countrycodes"]) == ("Wrocław", "1", "pl")
     west, north, east, south = map(float, town["viewbox"].split(","))
     assert west < 17.143 < east and south < 51.11 < north
+
+
+def test_nominatim_reads_postal_code_at_point(monkeypatch):
+    monkeypatch.setattr("app.providers.geocoding.MIN_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(NominatimGeocoder, "_unavailable_until", 0.0)
+    answers = {"50.9": {"address": {"postcode": "55-050"}}, "51.0": {"error": "Unable to geocode"}}
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=answers[request.url.params["lat"]])
+
+    geocoder = _nominatim(handler)
+
+    assert geocoder.postal_code_at(Place(50.9, 16.7)) == geocoder.postal_code_at(Place(50.9, 16.7)) == "55-050"
+    assert geocoder.postal_code_at(Place(51.0, 16.7)) is None
+    assert len(requests) == 2 and requests[0].url.path == "/reverse"
 
 
 @pytest.mark.parametrize(
@@ -427,6 +449,35 @@ def test_town_alone_fills_postal_code_when_it_is_the_only_town_with_that_name():
     result = lookup_address("Smolec", None, FakeGeocoder(towns=LOOKUP_TOWNS))
 
     assert (result.status, result.town, result.postal_code) == ("found", "Smolec", "55-080")
+
+
+def test_town_without_postal_code_in_search_gets_code_confirmed_by_its_area():
+    towns = {"Sobotka": [Place(50.899, 16.744, "Sobótka", None, "town")]}
+    postal = {"55-050": Place(50.897, 16.751, "Sobótka")}
+
+    result = lookup_address("Sobotka", None, FakeGeocoder(postal=postal, towns=towns, reverse={"Sobótka": "55-050"}))
+
+    assert (result.status, result.town, result.postal_code) == ("found", "Sobótka", "55-050")
+    assert "popraw" in result.message
+
+
+def test_postal_code_of_neighbouring_town_is_not_filled():
+    towns = {"Smolec": [Place(51.074, 16.884, "Smolec", None, "village")]}
+    postal = {"54-560": Place(51.107, 16.886, "Wrocław")}
+
+    result = lookup_address("Smolec", None, FakeGeocoder(postal=postal, towns=towns, reverse={"Smolec": "54-560"}))
+
+    assert (result.status, result.town, result.postal_code) == ("found", "Smolec", None)
+    assert "Wpisz kod pocztowy" in result.message
+
+
+def test_city_postal_code_from_search_is_not_filled():
+    towns = {"Legnica": [Place(51.21, 16.161, "Legnica", "59-220", "city")]}
+
+    result = lookup_address("Legnica", None, FakeGeocoder(towns=towns))
+
+    assert (result.status, result.postal_code) == ("found", None)
+    assert "ma ich kilka" in result.message
 
 
 def test_town_is_preferred_over_villages_with_the_same_name():
