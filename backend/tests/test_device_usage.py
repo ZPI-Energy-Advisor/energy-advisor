@@ -392,6 +392,7 @@ def test_meter_file_has_no_devices_and_others_files_are_not_found(db):
     assert client.get(f"/api/v1/energy-files/{devices.id}/devices/usage").status_code == 401
 
 
+@pytest.mark.perf
 def test_thirty_days_of_24_devices_respond_within_a_second(db):
     user = _create_user(db)
     energy_file = _create_document_file(db, user, DEVICES_DEMO, name="dom.json", uploaded_at=T0)

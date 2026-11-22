@@ -196,7 +196,7 @@ def test_get_file_data(db):
     assert body["results"]["tariffs"]["G11"]["estimated_cost_pln"] == 72.0
     assert body["results"]["pricing"] == {
         "operator": "PGE", "from_profile": False, "profile_tariff": "G11",
-        "tariff_key": "G11", "tariff_label": "G11", "note": None, "all_tariffs": True,
+        "tariff_key": "G11", "tariff_label": "G11", "note": None, "all_tariffs": False,
     }
     first_hour, first_day = body["results"]["chart_hourly"][0], body["results"]["chart_daily"][0]
     assert body["results"]["chart_15min"][0]["price_G11"] == first_hour["price_G11"] == first_day["price_G11"] == 1.0

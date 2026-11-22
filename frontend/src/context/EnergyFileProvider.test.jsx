@@ -60,7 +60,7 @@ describe("EnergyFileProvider", () => {
     expect(context.viewSource).toEqual({ fileId: "f1", range: null });
   });
 
-  it("dane z cenami wszystkich taryf wystarczają ekranom z samą taryfą z profilu, ale nie odwrotnie", async () => {
+  it("każdy ekran dostaje dane w swoim trybie: Analiza ceny wszystkich taryf, Dashboard rachunek z profilu", async () => {
     loginAs();
     const get = mockApi();
     const context = renderProvider();
@@ -69,9 +69,51 @@ describe("EnergyFileProvider", () => {
     act(() => context.requireAllTariffs(true));
     await waitFor(() => expect(context.results.pricing.all_tariffs).toBe(true));
     act(() => context.requireAllTariffs(false));
-    await act(() => context.selectFile("f1"));
+    await waitFor(() => expect(context.results.pricing.all_tariffs).toBe(false));
+    act(() => context.requireAllTariffs(true));
+    await waitFor(() => expect(context.results.pricing.all_tariffs).toBe(true));
 
     expect(dataCalls(get).map(([, { params }]) => params.tariffs)).toEqual(["profile", "all"]);
+  });
+
+  it("wejście na Analizę w trakcie zmiany zakresu nie gubi nowego zakresu", async () => {
+    loginAs();
+    let release;
+    const get = mockApi();
+    const context = renderProvider();
+    await waitFor(() => expect(context.selectedFileId).toBe("f1"));
+    get.mockImplementationOnce(
+      (url, { params }) => new Promise((resolve) => (release = () => resolve({ data: dataFor(params.from, params.to) }))),
+    );
+
+    let applied;
+    act(() => {
+      applied = context.applyDateRange({ from: "2026-02-01", to: "2026-02-28" });
+    });
+    act(() => context.requireAllTariffs(true));
+    await act(async () => {
+      release();
+      await applied;
+    });
+
+    await waitFor(() => expect(context.results.pricing.all_tariffs).toBe(true));
+    expect(context.dateRange).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(dataCalls(get).at(-1)[1].params).toEqual({ from: "2026-02-01", to: "2026-02-28", tariffs: "all" });
+  });
+
+  it("pamięć porównań należy do providera i czyści się po zmianie plików", async () => {
+    loginAs();
+    mockApi();
+    const context = renderProvider();
+    await waitFor(() => expect(context.selectedFileId).toBe("f1"));
+    context.comparisonCache.set("klucz", { tariffs: [] });
+
+    await act(() => context.refreshFiles());
+
+    expect(context.comparisonCache.get("klucz")).toBeUndefined();
+    const other = renderProvider();
+    await waitFor(() => expect(other.selectedFileId).toBe("f1"));
+    expect(other.comparisonCache).not.toBe(context.comparisonCache);
   });
 
   it("po wgraniu pliku pobiera dane od nowa i zmienia zakres ważności porównań", async () => {

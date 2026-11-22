@@ -216,7 +216,7 @@ Pozostałe zasady:
 - Brak ceny dla kwadransu daje `null`.
 - Rachunki taryf liczy silnik rachunku (ten sam co `/upload/calculation-details/{id}`): wszystkich taryf
   operatora `/energy-files/{id}/tariff-comparison`, a taryfy z profilu `/energy-files/{id}/data`
-  (`tariffs=all` dodaje tam tylko ceny do wykresów pozostałych taryf). Brak ceny RCE dla któregokolwiek
+  (`tariffs=all` zwraca tam zamiast rachunku same ceny do wykresów wszystkich taryf). Brak ceny RCE dla któregokolwiek
   kwadransu daje ofercie dynamicznej `payable_gross = null` (w `/data` `estimated_cost_pln = null`)
   i powód w `note`, a ceny do wykresów mają tam `null`.
 - Jeśli plik wgrano, zanim worker pobrał ceny dla jego okresu, koszty uzupełnią się same

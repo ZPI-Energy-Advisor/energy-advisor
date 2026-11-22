@@ -10,7 +10,8 @@ import {
   isPriced,
 } from "../../utils/tariffComparison";
 
-const formatKwh = (value) => `${Number(value).toLocaleString("pl-PL", { maximumFractionDigits: 0 })} kWh`;
+const formatKwh = (value, digits = 0) =>
+  `${Number(value).toLocaleString("pl-PL", { maximumFractionDigits: digits })} kWh`;
 
 const CELL = "whitespace-nowrap px-3 md:px-4 py-3 text-right text-sm";
 const HEAD = "whitespace-nowrap px-3 md:px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500";
@@ -129,6 +130,7 @@ function TariffBillDetails({ entry, comparison }) {
             )}
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {annual && <Fact label="Zużycie w okresie">{formatKwh(annual.consumption_kwh, 1)}</Fact>}
             <Fact label="Tryb PV">{comparison.pv_mode ? PV_MODE_LABELS[comparison.pv_mode] ?? comparison.pv_mode : "Brak instalacji PV"}</Fact>
             {annual && (
               <Fact label="Roczne zużycie (próg opłaty mocowej)">
@@ -140,6 +142,9 @@ function TariffBillDetails({ entry, comparison }) {
             )}
             <Fact label="Okres rozliczeniowy">{entry.billing_cycle_months} mies.</Fact>
             {entry.monthly_fee_gross != null && <Fact label="Opłaty miesięczne">{formatPln(entry.monthly_fee_gross)} / mies.</Fact>}
+            {entry.active_energy_gross != null && (
+              <Fact label="Energia czynna brutto">{formatPln(entry.active_energy_gross)}</Fact>
+            )}
           </dl>
           <p className="mt-4 text-sm text-gray-700">
             Za kWh <span className="font-semibold">{formatPln(entry.energy_cost_pln)}</span>

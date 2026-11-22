@@ -7,6 +7,7 @@ import { createResponseCache } from "../utils/responseCache";
 
 const PAGE_SIZE = 20;
 const DATA_CACHE_LIMIT = 10;
+const COMPARISON_CACHE_LIMIT = 10;
 
 const getStoredUserId = () => {
   try {
@@ -76,7 +77,9 @@ export function EnergyFileProvider({ children }) {
   const [isReady, setIsReady] = useState(false);
   // Rośnie po wgraniu, usunięciu i ponownym wczytaniu plików: dane zbiorcze i odpowiedzi w pamięci są wtedy nieaktualne.
   const [filesVersion, setFilesVersion] = useState(0);
+  // Pamięć odpowiedzi żyje tyle co provider, czyli do wylogowania: kolejne konto zaczyna z pustą.
   const [dataCache] = useState(() => createResponseCache(DATA_CACHE_LIMIT));
+  const [comparisonCache] = useState(() => createResponseCache(COMPARISON_CACHE_LIMIT));
 
   const latestRequestRef = useRef(0);
   const latestPageRequestRef = useRef(0);
@@ -93,7 +96,8 @@ export function EnergyFileProvider({ children }) {
   const clearDataCache = useCallback(() => {
     cacheGenerationRef.current += 1;
     dataCache.clear();
-  }, [dataCache]);
+    comparisonCache.clear();
+  }, [dataCache, comparisonCache]);
 
   const invalidateFiles = useCallback(() => {
     clearDataCache();
@@ -140,7 +144,8 @@ export function EnergyFileProvider({ children }) {
 
   // Dane podmieniane są dopiero po udanej odpowiedzi - błąd nie kasuje tego,
   // co jest aktualnie wyświetlane. Bez zakresu backend zwraca cały okres pliku.
-  // Odpowiedź z cenami wszystkich taryf wystarcza też tam, gdzie potrzebna jest tylko taryfa z profilu.
+  // Tryb "profile" ma rachunek taryfy z profilu (Dashboard), a "all" same ceny wszystkich taryf do wykresu
+  // (Analiza taryf, kwoty z /tariff-comparison), więc odpowiedzi jednego trybu nie zastępują drugiego.
   const loadFileData = useCallback(
     async (fileId, range, onError) => {
       const requestId = ++latestRequestRef.current;
@@ -148,11 +153,9 @@ export function EnergyFileProvider({ children }) {
       const tariffs = allTariffsRef.current ? "all" : "profile";
       setDataError(null);
       setRangeError(null);
-      const cached =
-        dataCache.get(dataKey(fileId, range, "all")) ??
-        (tariffs === "profile" ? dataCache.get(dataKey(fileId, range, "profile")) : undefined);
+      const cached = dataCache.get(dataKey(fileId, range, tariffs));
       if (cached) {
-        dataCache.touch(dataKey(fileId, range, cached.results?.pricing?.all_tariffs ? "all" : "profile"));
+        dataCache.touch(dataKey(fileId, range, tariffs));
         setPendingSource(null);
         setFileData(cached);
         return true;
@@ -307,10 +310,13 @@ export function EnergyFileProvider({ children }) {
     );
   }, [userVersion, selectedFileId, shownRangeKey, loadFileData, clearDataCache]);
 
-  // Wynik z cenami samej taryfy z profilu nie wystarcza Analizie taryf: dociągamy wszystkie dla tego samego zakresu.
-  const hasOnlyProfileTariff = fileData?.results?.pricing?.all_tariffs === false;
+  // Ekran potrzebuje innego trybu niż wyświetlane dane (wejście na Analizę taryf albo powrót na Dashboard):
+  // dociągamy ten sam zakres. Nie w trakcie zapytania, żeby nie zastąpić nowego zakresu starym.
+  const shownAllTariffs = fileData?.results?.pricing?.all_tariffs;
+  const wrongMode = shownAllTariffs != null && shownAllTariffs !== needsAllTariffs;
+  const isPending = pendingSource !== null;
   useEffect(() => {
-    if (!needsAllTariffs || !hasOnlyProfileTariff || !selectedFileId) return undefined;
+    if (!wrongMode || isPending || !selectedFileId) return undefined;
     let cancelled = false;
     Promise.resolve().then(() => {
       if (cancelled) return;
@@ -321,7 +327,16 @@ export function EnergyFileProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [needsAllTariffs, hasOnlyProfileTariff, selectedFileId, shownRangeKey, loadFileData]);
+  }, [wrongMode, isPending, selectedFileId, shownRangeKey, loadFileData]);
+
+  const reloadData = useCallback(() => {
+    const file = fileData?.file;
+    if (!file) return Promise.resolve(false);
+    const range = normalizeRange({ from: fileData.date_from, to: fileData.date_to }, file);
+    return loadFileData(file.id, range, (error) =>
+      setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
+    );
+  }, [fileData, loadFileData]);
 
   // Nowe pliki trafiają na początek listy, więc odświeżenie wraca na 1. stronę.
   const refreshFiles = useCallback(() => {
@@ -372,9 +387,11 @@ export function EnergyFileProvider({ children }) {
       rangeError,
       clearRangeError: () => setRangeError(null),
       requireAllTariffs,
+      reloadData,
 
       viewSource,
       cacheScope,
+      comparisonCache,
 
       isReady,
     }),
@@ -402,8 +419,10 @@ export function EnergyFileProvider({ children }) {
       dataError,
       selectFile,
       requireAllTariffs,
+      reloadData,
       viewSource,
       cacheScope,
+      comparisonCache,
       isReady,
     ],
   );
