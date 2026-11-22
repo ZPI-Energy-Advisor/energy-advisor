@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import logging
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -15,7 +17,9 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.calculation import (
     AnnualConsumption, CalculationDetails, PVDetails, TariffChoice, TariffData, UnsupportedTariffInfo,
 )
-from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
+from app.schemas.other import (
+    BillingCycleEnum, DistributionOperatorEnum, PhaseTypeEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum,
+)
 from app.schemas.user_profile import UserProfile
 from app.services.pv_service import DynamicMarketPriceResolver, PVBalancingEngine
 from app.services.tariff_engine import (
@@ -28,14 +32,55 @@ from app.services.tariff_engine import (
     days_between,
     format_day_ranges,
 )
+from app.services.tariff_costs import tariff_label
 from app.services.tariff_zones import ZoneSchedule
 
 
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_CONTRACTED_POWER_KW = 7.0
+TariffKey = tuple[TariffTypeEnum, TariffTypeEnum]
+
+
 def _polish_date(day: date) -> str:
     return day.strftime("%d.%m.%Y")
+
+
+def key_order(key: TariffKey) -> tuple[bool, str]:
+    return key[0] == TariffTypeEnum.DYNAMIC, key[1].value.lower()
+
+
+def profile_key(tariff_data: TariffData) -> TariffKey:
+    if tariff_data.dynamic_price:
+        return TariffTypeEnum.DYNAMIC, tariff_data.tariff_type
+    return tariff_data.tariff_type, tariff_data.tariff_type
+
+
+def result_for(details: CalculationDetails, key: TariffKey) -> dict | None:
+    code, group = key
+    if code == TariffTypeEnum.DYNAMIC:
+        return (details.dynamic_calculations or {}).get(group.value)
+    return (details.tariff_calculations or {}).get(code.value)
+
+
+class ProfileInputs(NamedTuple):
+    pv_config: Any
+    tariff_data: TariffData
+    from_profile: bool
+
+
+@dataclass
+class TariffRun:
+    details: CalculationDetails
+    inputs: ProfileInputs
+    definitions: dict[TariffKey, list]
+    regulatory_periods: list
+    profile_key: TariffKey
+    selected_key: TariffKey
+    selection_note: str | None
+    first_day: date
+    last_day: date
 
 
 class CalculationsService:
@@ -49,14 +94,14 @@ class CalculationsService:
         pv_balancer: PVBalancingEngine | None = None,
         tariff_engine: ZonedTariffCalculationStrategy | None = None,
         settlement: FinancialSettlement | None = None,
+        market_prices: DynamicMarketPriceResolver | None = None,
     ):
         self.user_repository = user_repository
         self.energy_file_repository = energy_file_repository
         self.energy_reading_repository = energy_reading_repository
         self.tariff_repository = tariff_repository
-        market_prices = (
-            DynamicMarketPriceResolver(market_price_repository) if market_price_repository is not None else None
-        )
+        if market_prices is None and market_price_repository is not None:
+            market_prices = DynamicMarketPriceResolver(market_price_repository)
         self.market_prices = market_prices
         self.pv_balancer = pv_balancer or PVBalancingEngine(market_prices)
         self.tariff_engine = tariff_engine or ZonedTariffCalculationStrategy()
@@ -83,6 +128,15 @@ class CalculationsService:
                 detail=f"Dane pliku nie są dostępne (status: {energy_file.status}).",
             )
 
+        inputs = self._inputs_from_profile(profile, tariff)
+        if readings is None:
+            readings = self.energy_reading_repository.list_for_file(file_id)
+        if not readings:
+            raise HTTPException(status_code=409, detail="Brak surowych odczytów energii dla pliku.")
+        return inputs, readings
+
+    @staticmethod
+    def _inputs_from_profile(profile, tariff: TariffChoice | None) -> "ProfileInputs":
         try:
             profile_data = UserProfile.model_validate(profile)
         except ValidationError as exc:
@@ -93,7 +147,6 @@ class CalculationsService:
                     "Uzupełnij i zapisz profil przed uruchomieniem kalkulacji."
                 ),
             ) from exc
-
         base_info = profile_data.base_info
         tariff_type, dynamic_price = (tariff or TariffChoice()).resolve(profile_data)
         tariff_data = TariffData(
@@ -105,18 +158,14 @@ class CalculationsService:
             phase_type=base_info.phase_type,
             contracted_power_kw=base_info.contracted_power_kw,
         )
-        if readings is None:
-            readings = self.energy_reading_repository.list_for_file(file_id)
-        if not readings:
-            raise HTTPException(status_code=409, detail="Brak surowych odczytów energii dla pliku.")
-        return profile_data, tariff_data, readings
+        return ProfileInputs(profile_data.pv_config, tariff_data, from_profile=True)
 
-    def _details(self, profile_data, tariff_data, readings, first_day, warnings) -> CalculationDetails:
+    def _details(self, pv_config, tariff_data, readings, first_day, warnings) -> CalculationDetails:
         if first_day is not None:
             readings = [reading for reading in readings if reading.measured_at.date() >= first_day]
         used_energy_cycles, produced_energy_cycles = self._cycles_from_readings(readings, tariff_data)
 
-        pv_details = self._build_pv_details(profile_data.pv_config, produced_energy_cycles)
+        pv_details = self._build_pv_details(pv_config, produced_energy_cycles)
         warnings = list(warnings or [])
         exported_kwh = sum(kwh for _, records in produced_energy_cycles for _, kwh in records)
         if pv_details is None and exported_kwh > 0:
@@ -135,6 +184,30 @@ class CalculationsService:
             warnings=warnings or None,
         )
 
+    def profile_inputs(self, user_id: UUID, first_day: date) -> ProfileInputs:
+        profile = self.user_repository.get_profile(user_id)
+        if profile is None:
+            return self.default_inputs(first_day)
+        try:
+            return self._inputs_from_profile(profile, None)
+        except HTTPException:
+            return self.default_inputs(first_day)
+
+    @staticmethod
+    def default_inputs(first_day: date) -> ProfileInputs:
+        return ProfileInputs(
+            {"mode": "none"},
+            TariffData(
+                tariff_type=TariffTypeEnum.G11,
+                billing_cycle=BillingCycleEnum.TWO_MONTHS,
+                billing_period_start_date=first_day.replace(day=1),
+                distribution_operator=DistributionOperatorEnum.PGE,
+                phase_type=PhaseTypeEnum.SINGLE_PHASE,
+                contracted_power_kw=DEFAULT_CONTRACTED_POWER_KW,
+            ),
+            from_profile=False,
+        )
+
     def perform_tariff_calculations(
         self, user_id: UUID, file_id: UUID, readings=None, selected_only: bool = False,
         tariff: TariffChoice | None = None,
@@ -142,7 +215,16 @@ class CalculationsService:
         """Rachunki dla pliku; `readings` zastępuje odczyty z bazy (np. zużycie po przesunięciu akcji),
         `selected_only` liczy tylko wybraną taryfę (grupa albo grupa z ceną dynamiczną): z profilu albo
         z `tariff` (wybór z ekranu optymalizacji)."""
-        profile_data, tariff_data, readings = self._load_inputs(user_id, file_id, readings, tariff)
+        inputs, readings = self._load_inputs(user_id, file_id, readings, tariff)
+        return self.calculate(readings, inputs, selected_only=selected_only, user_id=user_id).details
+
+    def calculate(
+        self, readings, inputs: ProfileInputs, *, selected_only: bool = False, fallback: bool = False,
+        user_id: UUID | None = None,
+    ) -> TariffRun:
+        if not readings:
+            raise HTTPException(status_code=409, detail="Brak odczytów energii w wybranym okresie.")
+        tariff_data = inputs.tariff_data
         operator = tariff_data.distribution_operator
         file_first = min(reading.measured_at for reading in readings).date()
         file_last = max(reading.measured_at for reading in readings).date()
@@ -209,10 +291,29 @@ class CalculationsService:
                 ),
             )
 
-        base_details = self._details(profile_data, tariff_data, readings, first_day, warnings)
+        # Taryfy strefowe po kodzie; oferta dynamiczna osobno dla każdej grupy dystrybucyjnej.
+        definitions_by_key: dict[tuple[TariffTypeEnum, TariffTypeEnum], list] = {}
+        for definition in definitions:
+            key = (definition.tariff_code, definition.distribution_group)
+            definitions_by_key.setdefault(key, []).append(definition)
+        for tariff_definitions in definitions_by_key.values():
+            tariff_definitions.sort(key=lambda item: item.valid_from)
+        requested_key = profile_key(tariff_data)
+        selected_key, selection_note = requested_key, None
+        if fallback and requested_key not in definitions_by_key:
+            selected_key = next(
+                (key for key in ((TariffTypeEnum.G11, TariffTypeEnum.G11), *sorted(definitions_by_key, key=key_order))
+                 if key in definitions_by_key),
+            )
+            selection_note = (
+                f"Operator {operator.value} nie ma w cenniku stawek taryfy {tariff_label(*requested_key)} dla tego okresu, "
+                f"więc liczymy taryfę {tariff_label(*selected_key)}."
+            )
+
+        base_details = self._details(inputs.pv_config, tariff_data, readings, first_day, warnings)
         # Ceny RCE są potrzebne do ofert dynamicznych, które liczymy, i do wyceny oddania w net-billingu.
         dynamic_needed = (
-            tariff_data.dynamic_price if selected_only
+            selected_key[0] == TariffTypeEnum.DYNAMIC if selected_only
             else any(definition.tariff_code == TariffTypeEnum.DYNAMIC for definition in definitions)
         )
         net_billing = base_details.pv_details is not None and base_details.pv_details.mode == PVTypeEnum.NET_BILLING
@@ -232,28 +333,19 @@ class CalculationsService:
             raw_cycles=base_details.used_energy_cycles,
             prosumer=base_details.pv_details is not None,
         )
-        # Taryfy strefowe po kodzie; oferta dynamiczna osobno dla każdej grupy dystrybucyjnej.
-        definitions_by_key: dict[tuple[TariffTypeEnum, TariffTypeEnum], list] = {}
-        for definition in definitions:
-            key = (definition.tariff_code, definition.distribution_group)
-            definitions_by_key.setdefault(key, []).append(definition)
 
         calculations = {}
         dynamic_calculations = {}
         calculation_errors = {}
         tariff_notes = {}
         cycle_details_by_months: dict[int, CalculationDetails] = {}
-        selected_key = (
-            (TariffTypeEnum.DYNAMIC, tariff_data.tariff_type) if tariff_data.dynamic_price
-            else (tariff_data.tariff_type, tariff_data.tariff_type)
-        )
         for (tariff_code, group), tariff_definitions in definitions_by_key.items():
             if selected_only and (tariff_code, group) != selected_key:
                 continue
             dynamic = tariff_code == TariffTypeEnum.DYNAMIC
             tariff_name = f"dynamic {group.value}" if dynamic else tariff_code.value
             note_key = tariff_code.value
-            available_from = min(definition.valid_from for definition in tariff_definitions)
+            available_from = tariff_definitions[0].valid_from
             if available_from > first_day:
                 name = next((definition.name for definition in tariff_definitions if definition.name), tariff_name)
                 tariff_notes[note_key] = (
@@ -279,7 +371,7 @@ class CalculationsService:
                     details.tariff_data.billing_cycle = BillingCycleEnum(months)
                     if months not in cycle_details_by_months:
                         cycle_details_by_months[months] = self._details(
-                            profile_data, details.tariff_data, readings, first_day, warnings
+                            inputs.pv_config, details.tariff_data, readings, first_day, warnings
                         )
                     cycle_details = cycle_details_by_months[months]
                     details.used_energy_cycles = cycle_details.used_energy_cycles
@@ -313,12 +405,10 @@ class CalculationsService:
                 status_code=409,
                 detail=" ".join(["Brak kompletnych danych taryfowych dla tego pliku.", *reasons]),
             )
-        selected_group = base_details.tariff_data.tariff_type.value
         base_details.tariff_calculations = calculations
         base_details.dynamic_calculations = dynamic_calculations or None
         base_details.tariff_calculation_errors = calculation_errors or None
-        selected = dynamic_calculations if base_details.tariff_data.dynamic_price else calculations
-        base_details.tariff_calculation = selected.get(selected_group)
+        base_details.tariff_calculation = result_for(base_details, selected_key)
         base_details.tariff_notes = tariff_notes or None
         base_details.unsupported_tariffs = [
             UnsupportedTariffInfo(code=item.tariff_code, name=item.name, reason=item.reason)
@@ -326,7 +416,17 @@ class CalculationsService:
                 self.tariff_repository.list_unsupported(operator=operator, date_from=first_day, date_to=file_last)
             )
         ] or None
-        return base_details
+        return TariffRun(
+            details=base_details,
+            inputs=inputs,
+            definitions=definitions_by_key,
+            regulatory_periods=regulatory_periods,
+            profile_key=requested_key,
+            selected_key=selected_key,
+            selection_note=selection_note,
+            first_day=first_day,
+            last_day=file_last,
+        )
 
     @staticmethod
     def _unique_unsupported(items):

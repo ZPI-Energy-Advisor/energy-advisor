@@ -111,28 +111,34 @@ def get_energy_reading_repository(db: Session = Depends(get_db)) -> EnergyReadin
     return EnergyReadingRepository(db)
 
 
+def get_market_price_resolver(
+    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+) -> DynamicMarketPriceResolver:
+    return DynamicMarketPriceResolver(dynamic_price_repository)
+
+
 def get_new_calculations_service(
     user_repository: UserRepository = Depends(get_user_repository),
     energy_file_repository: EnergyDataFileRepository = Depends(get_energy_file_repository),
     energy_reading_repository: EnergyReadingRepository = Depends(get_energy_reading_repository),
     tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
-    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+    market_prices: DynamicMarketPriceResolver = Depends(get_market_price_resolver),
 ) -> CalculationsService:
     return CalculationsService(
         user_repository=user_repository,
         energy_file_repository=energy_file_repository,
         energy_reading_repository=energy_reading_repository,
         tariff_repository=tariff_repository,
-        market_price_repository=dynamic_price_repository,
+        market_prices=market_prices,
     )
 
 
 def get_tariff_cost_service(
     user_repository: UserRepository = Depends(get_user_repository),
     tariff_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
-    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
+    market_prices: DynamicMarketPriceResolver = Depends(get_market_price_resolver),
 ) -> TariffCostService:
-    return TariffCostService(tariff_repository, user_repository, DynamicMarketPriceResolver(dynamic_price_repository))
+    return TariffCostService(tariff_repository, user_repository, market_prices)
 
 
 def get_dynamic_price_service(
