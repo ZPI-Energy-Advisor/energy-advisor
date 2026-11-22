@@ -20,9 +20,9 @@ from app.services.tariff_engine import (
     zone_totals,
 )
 from app.services.tariff_zones import ZoneSchedule
+from timing import TIME_LIMIT_SCALE
 from tariff_helpers import HOURS, FlatTariffRepository, definition, period
 from test_tariff_comparison import (
-    TIME_LIMIT_SCALE,
     _definitions,
     _MarketRepository,
     _periods,
@@ -203,6 +203,7 @@ def _best_time(readings, **kwargs):
     return best
 
 
+@pytest.mark.perf
 def test_year_of_every_tariff_is_billed_quickly():
     year = _readings(_usage(date(2026, 1, 1), 365))
 
@@ -210,6 +211,7 @@ def test_year_of_every_tariff_is_billed_quickly():
     assert _best_time(year, selected_only=True) < 0.15 * TIME_LIMIT_SCALE
 
 
+@pytest.mark.perf
 def test_month_of_every_tariff_is_billed_quickly():
     month = _readings(_usage(date(2026, 3, 1), 31))
 

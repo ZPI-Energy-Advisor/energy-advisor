@@ -298,6 +298,11 @@ class CalculationService:
                 usage.setdefault((first + timedelta(days=offset)).isoformat(), [None] * SLOTS_PER_DAY)
         return dict(sorted(usage.items()))
 
+    @staticmethod
+    def _sum_energy_average_prices(grouped, sum_columns: list[str], price_columns: list[str]) -> pd.DataFrame:
+        # Zużycie i koszt sumujemy w okresie, a cenę kWh uśredniamy (suma cen 4 kwadransów to nie cena godziny).
+        return grouped[sum_columns].sum(min_count=1).join(grouped[price_columns].mean())
+
     @classmethod
     def summarize_usage(
         cls,
@@ -355,13 +360,17 @@ class CalculationService:
         hours = times.hour.where(times.minute != 0, (times.hour - 1) % 24)
         df_15min['hour'] = hours.astype(str).str.zfill(2) + ":00"
         
-        daily_hourly_sum = df_15min.groupby(['date', 'hour'])[columns_to_aggregate].sum(min_count=1).reset_index()
+        daily_hourly_sum = cls._sum_energy_average_prices(
+            df_15min.groupby(['date', 'hour']), ['Wartość kWh'] + cost_columns, price_columns
+        ).reset_index()
         
         hourly_data = daily_hourly_sum.groupby('hour')[columns_to_aggregate].mean().round(2).reset_index()
         hourly_data = hourly_data.rename(columns={'Wartość kWh': 'kwh'})
         results_dict["chart_hourly"] = cls._to_records(hourly_data)
 
-        daily_data = df_15min.groupby('date')[columns_to_aggregate].sum(min_count=1).round(2).reset_index()
+        daily_data = cls._sum_energy_average_prices(
+            df_15min.groupby('date'), ['Wartość kWh'] + cost_columns, price_columns
+        ).round(2).reset_index()
         daily_data = daily_data.rename(columns={'Wartość kWh': 'kwh'})
         results_dict["chart_daily"] = cls._to_records(daily_data)
         

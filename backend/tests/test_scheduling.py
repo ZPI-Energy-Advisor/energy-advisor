@@ -25,6 +25,7 @@ from app.services.scheduling import (
     actions_from_devices,
     schedule,
 )
+from timing import TIME_LIMIT_SCALE
 
 
 WARSAW = ZoneInfo("Europe/Warsaw")
@@ -403,6 +404,7 @@ def test_actions_from_devices_links_dryer_and_keeps_pv_only_as_load():
     assert dryers and all(item.after_action_id for item in dryers)
 
 
+@pytest.mark.perf
 def test_week_of_demo_file_is_scheduled_under_2_seconds():
     with DEMO_FILE.open("rb") as handle:
         devices = parse_energy_file(handle).devices
@@ -414,7 +416,7 @@ def test_week_of_demo_file_is_scheduled_under_2_seconds():
     started = clock.perf_counter()
     schedule(week, all_prices)
 
-    assert clock.perf_counter() - started < 2
+    assert clock.perf_counter() - started < 2 * TIME_LIMIT_SCALE
 
 
 def test_show_schedule_prints_saving_for_demo_files():

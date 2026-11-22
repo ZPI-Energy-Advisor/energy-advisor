@@ -2,9 +2,11 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import apiClient, { selectedFileStorageKey } from "../api/client";
 import { CurrentUserContext } from "./currentUserContext";
 import { EnergyFileContext } from "./energyFileContext";
-import { aggregateIdForSourceType, getApiErrorMessage } from "../utils/energyFiles";
+import { aggregateIdForSourceType, getApiErrorMessage, normalizeRange } from "../utils/energyFiles";
+import { createResponseCache } from "../utils/responseCache";
 
 const PAGE_SIZE = 20;
+const DATA_CACHE_LIMIT = 10;
 
 const getStoredUserId = () => {
   try {
@@ -32,6 +34,23 @@ const writeStoredFileId = (userId, fileId) => {
   }
 };
 
+const rangeKey = (range) => (range ? `${range.from}|${range.to}` : "full");
+
+const rangeFromKey = (key) => {
+  if (!key || key === "full") return null;
+  const [from, to] = key.split("|");
+  return { from, to };
+};
+
+const sourceKey = (source) => `${source.fileId}|${rangeKey(source.range)}`;
+
+const sourceFromKey = (key) => {
+  const [fileId, ...range] = key.split("|");
+  return { fileId, range: rangeFromKey(range.join("|")) };
+};
+
+const dataKey = (fileId, range, tariffs) => `${fileId}|${rangeKey(range)}|${tariffs}`;
+
 export function EnergyFileProvider({ children }) {
   const [userId] = useState(getStoredUserId);
 
@@ -50,20 +69,36 @@ export function EnergyFileProvider({ children }) {
 
   // fileData zawiera { file, simulation_id, results } ostatnio poprawnie pobranego pliku.
   const [fileData, setFileData] = useState(null);
-  const [pendingFileId, setPendingFileId] = useState(null);
+  // Plik i zakres zapytania w toku (zakres null = cały okres pliku).
+  const [pendingSource, setPendingSource] = useState(null);
   const [dataError, setDataError] = useState(null);
   const [rangeError, setRangeError] = useState(null);
   const [isReady, setIsReady] = useState(false);
+  // Rośnie po wgraniu, usunięciu i ponownym wczytaniu plików: dane zbiorcze i odpowiedzi w pamięci są wtedy nieaktualne.
+  const [filesVersion, setFilesVersion] = useState(0);
+  const [dataCache] = useState(() => createResponseCache(DATA_CACHE_LIMIT));
 
   const latestRequestRef = useRef(0);
   const latestPageRequestRef = useRef(0);
-  // Domyślnie backend liczy koszty tylko taryfy z profilu; wszystkie taryfy operatora potrzebuje Analiza taryf.
+  // Domyślnie wykresy mają ceny tylko taryfy z profilu; ceny wszystkich taryf operatora potrzebuje Analiza taryf.
   const allTariffsRef = useRef(false);
   const [needsAllTariffs, setNeedsAllTariffs] = useState(false);
   const requireAllTariffs = useCallback((required) => {
     allTariffsRef.current = required;
     setNeedsAllTariffs(required);
   }, []);
+
+  // Odpowiedź na zapytanie wysłane przed wyczyszczeniem pamięci nie może do niej trafić.
+  const cacheGenerationRef = useRef(0);
+  const clearDataCache = useCallback(() => {
+    cacheGenerationRef.current += 1;
+    dataCache.clear();
+  }, [dataCache]);
+
+  const invalidateFiles = useCallback(() => {
+    clearDataCache();
+    setFilesVersion((current) => current + 1);
+  }, [clearDataCache]);
 
   // Stan ustawiany jest dopiero po odpowiedzi API, więc można to wywołać prosto z efektu.
   // Przy błędzie zostaje poprzednio wyświetlona strona.
@@ -105,29 +140,42 @@ export function EnergyFileProvider({ children }) {
 
   // Dane podmieniane są dopiero po udanej odpowiedzi - błąd nie kasuje tego,
   // co jest aktualnie wyświetlane. Bez zakresu backend zwraca cały okres pliku.
-  const loadFileData = useCallback(async (fileId, range, onError) => {
-    const requestId = ++latestRequestRef.current;
-    setPendingFileId(fileId);
-    setDataError(null);
-    setRangeError(null);
-    try {
-      const { data } = await apiClient.get(`/energy-files/${fileId}/data`, {
-        params: {
-          ...(range ? { from: range.from, to: range.to } : {}),
-          tariffs: allTariffsRef.current ? "all" : "profile",
-        },
-      });
-      if (requestId !== latestRequestRef.current) return false;
-      setFileData(data);
-      return true;
-    } catch (error) {
-      if (requestId !== latestRequestRef.current) return false;
-      onError(error);
-      return false;
-    } finally {
-      if (requestId === latestRequestRef.current) setPendingFileId(null);
-    }
-  }, []);
+  // Odpowiedź z cenami wszystkich taryf wystarcza też tam, gdzie potrzebna jest tylko taryfa z profilu.
+  const loadFileData = useCallback(
+    async (fileId, range, onError) => {
+      const requestId = ++latestRequestRef.current;
+      const generation = cacheGenerationRef.current;
+      const tariffs = allTariffsRef.current ? "all" : "profile";
+      setDataError(null);
+      setRangeError(null);
+      const cached =
+        dataCache.get(dataKey(fileId, range, "all")) ??
+        (tariffs === "profile" ? dataCache.get(dataKey(fileId, range, "profile")) : undefined);
+      if (cached) {
+        dataCache.touch(dataKey(fileId, range, cached.results?.pricing?.all_tariffs ? "all" : "profile"));
+        setPendingSource(null);
+        setFileData(cached);
+        return true;
+      }
+      setPendingSource({ fileId, range });
+      try {
+        const { data } = await apiClient.get(`/energy-files/${fileId}/data`, {
+          params: { ...(range ? { from: range.from, to: range.to } : {}), tariffs },
+        });
+        if (generation === cacheGenerationRef.current) dataCache.set(dataKey(fileId, range, tariffs), data);
+        if (requestId !== latestRequestRef.current) return false;
+        setFileData(data);
+        return true;
+      } catch (error) {
+        if (requestId !== latestRequestRef.current) return false;
+        onError(error);
+        return false;
+      } finally {
+        if (requestId === latestRequestRef.current) setPendingSource(null);
+      }
+    },
+    [dataCache],
+  );
 
   // Zmiana pliku zawsze wraca do pełnego okresu - każdy plik ma inny zakres dat.
   const selectFile = useCallback(
@@ -146,12 +194,13 @@ export function EnergyFileProvider({ children }) {
     [loadFileData, userId],
   );
 
-  const selectedFileId = fileData?.file?.id ?? null;
+  const selectedFile = fileData?.file ?? null;
+  const selectedFileId = selectedFile?.id ?? null;
 
   const applyDateRange = useCallback(
     (range) => {
-      if (!selectedFileId) return Promise.resolve(false);
-      return loadFileData(selectedFileId, range, (error) =>
+      if (!selectedFile) return Promise.resolve(false);
+      return loadFileData(selectedFile.id, normalizeRange(range, selectedFile), (error) =>
         setRangeError(
           getApiErrorMessage(
             error,
@@ -160,7 +209,7 @@ export function EnergyFileProvider({ children }) {
         ),
       );
     },
-    [loadFileData, selectedFileId],
+    [loadFileData, selectedFile],
   );
 
   const selectFirstCompleted = useCallback(
@@ -197,6 +246,7 @@ export function EnergyFileProvider({ children }) {
       } finally {
         setDeletingFileId(null);
       }
+      invalidateFiles();
 
       // Usunięcie jedynego pliku na ostatniej stronie cofa na poprzednią.
       const pageToLoad = files.length === 1 && page > 1 ? page - 1 : page;
@@ -210,7 +260,7 @@ export function EnergyFileProvider({ children }) {
       }
       return true;
     },
-    [files, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted],
+    [files, page, loadFilesPage, selectedFileId, selectFile, selectFirstCompleted, invalidateFiles],
   );
 
   // Start odroczony do mikrozadania: przy podwójnym montowaniu (StrictMode)
@@ -226,37 +276,45 @@ export function EnergyFileProvider({ children }) {
   }, [initialize]);
 
   const reload = useCallback(async () => {
+    invalidateFiles();
     setIsLoadingFiles(true);
     try {
       await initialize();
     } finally {
       setIsLoadingFiles(false);
     }
-  }, [initialize]);
+  }, [initialize, invalidateFiles]);
+
+  const shownRange = normalizeRange(
+    fileData?.date_from && fileData?.date_to ? { from: fileData.date_from, to: fileData.date_to } : null,
+    selectedFile,
+  );
+  const shownRangeKey = shownRange ? rangeKey(shownRange) : null;
 
   // Koszty liczone są przy odczycie z taryfy w profilu: po jego zmianie pobieramy ponownie ten sam plik i zakres.
   const userVersion = useContext(CurrentUserContext)?.version ?? 0;
   const seenUserVersionRef = useRef(null);
-  const shownRangeKey = fileData?.date_from && fileData?.date_to ? `${fileData.date_from}|${fileData.date_to}` : null;
   useEffect(() => {
     const previous = seenUserVersionRef.current;
     seenUserVersionRef.current = userVersion;
-    if (!previous || previous === userVersion || !selectedFileId) return;
-    const [from, to] = shownRangeKey ? shownRangeKey.split("|") : [];
-    loadFileData(selectedFileId, from ? { from, to } : null, (error) =>
-      setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
+    if (!previous || previous === userVersion) return;
+    clearDataCache();
+    if (!selectedFileId) return;
+    Promise.resolve().then(() =>
+      loadFileData(selectedFileId, rangeFromKey(shownRangeKey), (error) =>
+        setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
+      ),
     );
-  }, [userVersion, selectedFileId, shownRangeKey, loadFileData]);
+  }, [userVersion, selectedFileId, shownRangeKey, loadFileData, clearDataCache]);
 
-  // Wynik z samą taryfą z profilu nie wystarcza Analizie taryf: dociągamy wszystkie dla tego samego zakresu.
+  // Wynik z cenami samej taryfy z profilu nie wystarcza Analizie taryf: dociągamy wszystkie dla tego samego zakresu.
   const hasOnlyProfileTariff = fileData?.results?.pricing?.all_tariffs === false;
   useEffect(() => {
     if (!needsAllTariffs || !hasOnlyProfileTariff || !selectedFileId) return undefined;
-    const [from, to] = shownRangeKey ? shownRangeKey.split("|") : [];
     let cancelled = false;
     Promise.resolve().then(() => {
       if (cancelled) return;
-      loadFileData(selectedFileId, from ? { from, to } : null, (error) =>
+      loadFileData(selectedFileId, rangeFromKey(shownRangeKey), (error) =>
         setDataError(getApiErrorMessage(error, "Nie udało się pobrać danych wybranego pliku.")),
       );
     });
@@ -266,7 +324,18 @@ export function EnergyFileProvider({ children }) {
   }, [needsAllTariffs, hasOnlyProfileTariff, selectedFileId, shownRangeKey, loadFileData]);
 
   // Nowe pliki trafiają na początek listy, więc odświeżenie wraca na 1. stronę.
-  const refreshFiles = useCallback(() => fetchFilesPage(1), [fetchFilesPage]);
+  const refreshFiles = useCallback(() => {
+    invalidateFiles();
+    return fetchFilesPage(1);
+  }, [fetchFilesPage, invalidateFiles]);
+
+  // Plik i zakres widoku (zapytanie w toku albo wyświetlane dane) oraz zakres ważności odpowiedzi w pamięci.
+  const pendingFileId = pendingSource?.fileId ?? null;
+  const viewSourceKey = pendingSource
+    ? sourceKey(pendingSource)
+    : selectedFileId && sourceKey({ fileId: selectedFileId, range: shownRange });
+  const viewSource = useMemo(() => (viewSourceKey ? sourceFromKey(viewSourceKey) : null), [viewSourceKey]);
+  const cacheScope = `${userId}|${Math.max(userVersion, 1)}|${filesVersion}`;
 
   const value = useMemo(
     () => ({
@@ -286,7 +355,7 @@ export function EnergyFileProvider({ children }) {
       deleteError,
       clearDeleteError: () => setDeleteError(null),
 
-      selectedFile: fileData?.file ?? null,
+      selectedFile,
       selectedFileId,
       results: fileData?.results ?? null,
       pendingFileId,
@@ -304,6 +373,9 @@ export function EnergyFileProvider({ children }) {
       clearRangeError: () => setRangeError(null),
       requireAllTariffs,
 
+      viewSource,
+      cacheScope,
+
       isReady,
     }),
     [
@@ -312,6 +384,7 @@ export function EnergyFileProvider({ children }) {
       deleteFile,
       deletingFileId,
       deleteError,
+      selectedFile,
       selectedFileId,
       applyDateRange,
       rangeError,
@@ -329,6 +402,8 @@ export function EnergyFileProvider({ children }) {
       dataError,
       selectFile,
       requireAllTariffs,
+      viewSource,
+      cacheScope,
       isReady,
     ],
   );

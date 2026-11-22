@@ -37,4 +37,11 @@ describe("Layout", () => {
     // Plan na jutro jest dla każdego: dotyczy urządzeń z plików, nie domu Smart Home.
     expect(screen.getByRole("link", { name: "Plan na jutro" }).getAttribute("href")).toBe("/plan");
   });
+
+  it("ma jeden ekran taryf", () => {
+    renderLayout(null);
+
+    expect(screen.getByRole("link", { name: "Analiza taryf" }).getAttribute("href")).toBe("/tariffs");
+    expect(screen.queryByRole("link", { name: "Wyniki kalkulacji" })).toBeNull();
+  });
 });

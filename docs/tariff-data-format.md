@@ -201,7 +201,7 @@ krótką informację „oferta dostępna od …”.
 
 Grupy G oferowane przez operatora, których nie liczymy (strefy ogłaszane przez operatora lub zmieniane co
 miesiąc, stawki zależne od historii zużycia, brak ceny energii w taryfie sprzedawcy z urzędu, liczniki
-przedpłatowe itd.). Wyniki kalkulacji pokazują je jedną linijką pod tabelą porównania, powód w podpowiedzi.
+przedpłatowe itd.). Analiza taryf pokazuje je jedną linijką pod tabelą porównania, powód w podpowiedzi.
 
 ## Plik `regulatory.json`
 

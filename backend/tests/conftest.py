@@ -29,6 +29,10 @@ from main import app  # noqa: E402
 TEST_EMAIL_DOMAIN = "tests.example.com"
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "perf: test wydajności z limitem czasu; pominięcie: -m \"not perf\"")
+
+
 def _prepare_test_database() -> str | None:
     """Zakłada bazę testową, jeśli nie istnieje, i migruje ją do head. Zwraca opis błędu albo None."""
     url = make_url(database_url)

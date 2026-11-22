@@ -51,7 +51,10 @@ class TariffScope(str, Enum):
 
 TARIFFS_QUERY = Query(
     TariffScope.ALL,
-    description="Koszty: profile = tylko taryfa kosztów (z profilu), all = wszystkie taryfy operatora z profilu.",
+    description=(
+        "profile = rachunek i ceny do wykresów taryfy z profilu; all = do tego ceny do wykresów wszystkich taryf "
+        "operatora. W /tariff-comparison: rachunki wszystkich taryf (all) albo tylko taryfy z profilu (profile)."
+    ),
 )
 
 

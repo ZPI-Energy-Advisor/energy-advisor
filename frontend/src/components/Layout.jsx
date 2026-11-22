@@ -9,7 +9,6 @@ import {
   FiMenu,
   FiX,
   FiUser,
-  FiDollarSign,
   FiClock,
   FiZap,
   FiCalendar,
@@ -64,14 +63,9 @@ function LayoutShell() {
       icon: <FiUploadCloud className="mr-3 text-lg" />,
     },
     {
-      path: "/results",
-      label: "Analiza Taryf",
+      path: "/tariffs",
+      label: "Analiza taryf",
       icon: <FiPieChart className="mr-3 text-lg" />,
-    },
-    {
-      path: "/calculations",
-      label: "Wyniki kalkulacji",
-      icon: <FiDollarSign className="mr-3 text-lg" />,
     },
     {
       path: "/prices",

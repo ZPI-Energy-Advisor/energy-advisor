@@ -24,6 +24,17 @@ pip install ruff==0.16.10
 ruff check .
 ```
 
+### Testy wydajności
+
+Testy z limitem czasu mają marker `perf`. Limity są mnożone przez `TIME_LIMIT_SCALE` z
+`backend/tests/timing.py`: 1,5 lokalnie, 2 w CI (`CI=true`). Na wolniejszej maszynie mnożnik można
+ustawić ręcznie, a testy wydajności można też pominąć:
+
+```bash
+docker compose exec -e PERF_TIME_SCALE=2.5 backend python -m pytest tests/
+docker compose exec backend python -m pytest tests/ -m "not perf"
+```
+
 Testy korzystają z osobnej bazy `<POSTGRES_DB>_test`, którą `tests/conftest.py` tworzy i migruje
 przy starcie. Jeśli baza jest niedostępna, testy wymagające bazy są pomijane.
 

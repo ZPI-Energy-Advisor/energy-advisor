@@ -96,7 +96,7 @@ describe("TomorrowPriceCards", () => {
 
     await screen.findByTestId("price-card-cheapest");
     const note = screen.getByText(/To ceny taryfy dynamicznej, a Ty masz taryfę G12/);
-    expect(within(note).getByRole("link", { name: "Sprawdź w analizie taryf" }).getAttribute("href")).toBe("/results");
+    expect(within(note).getByRole("link", { name: "Sprawdź w analizie taryf" }).getAttribute("href")).toBe("/tariffs");
   });
 
   it("dopisek o taryfie dynamicznej jest też przy braku cen", async () => {

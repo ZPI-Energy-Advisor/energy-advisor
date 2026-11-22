@@ -17,6 +17,7 @@ from app.services.quarter_prices import (
     quarter_prices,
 )
 from app.services.tariff_engine import BillingContext, ZonedTariffCalculationStrategy, money
+from timing import TIME_LIMIT_SCALE
 from tariff_helpers import HOURS, definition, period
 
 WARSAW = ZoneInfo("Europe/Warsaw")
@@ -204,6 +205,7 @@ def test_sum_of_quarters_equals_bill_for_dynamic_offer():
 
 
 @pytest.mark.parametrize("code", [T.G13, T.DYNAMIC])
+@pytest.mark.perf
 def test_year_of_quarters_for_one_tariff_takes_under_a_second(code):
     tariff = definition(code, ["0.9", "0.6", "0.3"] if code == T.G13 else ["0.08"],
                         ["0.2", "0.1", "0.05"] if code == T.G13 else ["0.30"])
@@ -219,7 +221,7 @@ def test_year_of_quarters_for_one_tariff_takes_under_a_second(code):
     elapsed = time.perf_counter() - started
 
     assert len(result.prices) == 365 * 96
-    assert elapsed < 1.0
+    assert elapsed < 1.0 * TIME_LIMIT_SCALE
 
 
 class _PriceRepository:

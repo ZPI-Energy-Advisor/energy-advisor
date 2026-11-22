@@ -249,18 +249,18 @@ class TariffCostService:
         )
 
     def chart_prices(
-        self, profile: PricingProfile, usage: dict[str, list[float | None]], keys
+        self, profile: PricingProfile, usage: dict[str, list[float | None]], keys=None
     ) -> dict[str, dict]:
-        keys = set(keys)
+        keys = None if keys is None else set(keys)
         data_start = self.tariff_repository.first_valid_from(operator=profile.operator)
         days = sorted(
             date.fromisoformat(day) for day, slots in usage.items()
             if any(kwh is not None for kwh in slots) and (data_start is None or day >= data_start.isoformat())
         )
-        if not days or not keys:
+        if not days or keys == set():
             return {}
         periods = self.tariff_repository.list_regulatory_periods(date_from=days[0], date_to=days[-1])
-        options = [option for option in self.options(profile.operator, days[0], days[-1]) if option.key in keys]
+        options = [option for option in self.options(profile.operator, days[0], days[-1]) if keys is None or option.key in keys]
         market = None
         if any(option.dynamic for option in options) and self.market_prices is not None:
             market = self._market_by_day(days)

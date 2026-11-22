@@ -141,7 +141,7 @@ function ImportPage() {
               Przejdź do Dashboardu
             </button>
             <button
-              onClick={() => navigate("/results")}
+              onClick={() => navigate("/tariffs")}
               className="w-full sm:w-auto bg-white text-emerald-700 border border-emerald-600 px-8 py-3 rounded font-medium hover:bg-emerald-50 transition-colors"
             >
               Porównaj taryfy

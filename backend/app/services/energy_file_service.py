@@ -115,16 +115,18 @@ class EnergyFileService:
         self, user_id: UUID, results: dict, date_from: date, date_to: date, all_tariffs: bool = True,
         source: _ReadingsSource | None = None,
     ) -> dict:
-        """Wykresy, statystyki i koszty taryf operatora z profilu dla dni [date_from, date_to], z cenami
-        policzonymi teraz z cennika (nie zapisanymi przy imporcie)."""
+        """Wykresy, statystyki i rachunek taryfy z profilu dla dni [date_from, date_to], z cenami policzonymi
+        teraz z cennika; `all_tariffs` dodaje do wykresów ceny wszystkich taryf operatora."""
         usage = CalculationService.usage_in_range(results["usage_15min"], date_from, date_to)
         tariffs, pricing = {}, None
         if self.calculations_service is not None:
             readings = self._engine_readings(source or _ReadingsSource(), usage, date_from, date_to)
             tariffs, pricing = self._usage_tariffs(user_id, readings, date_from, all_tariffs)
         slot_prices = {}
-        if self.tariff_costs is not None and tariffs:
-            slot_prices = self.tariff_costs.chart_prices(self.tariff_costs.profile(user_id), usage, tariffs)
+        if self.tariff_costs is not None and (tariffs or all_tariffs):
+            slot_prices = self.tariff_costs.chart_prices(
+                self.tariff_costs.profile(user_id), usage, None if all_tariffs else tariffs
+            )
         summary = CalculationService.summarize_usage(
             usage, slot_prices, source_resolution(results), results.get(ACTIONS_PER_DAY_KEY)
         )
@@ -160,7 +162,7 @@ class EnergyFileService:
         if not readings:
             return {}, pricing
         try:
-            run = self._calculate(user_id, readings, inputs, all_tariffs)
+            run = self._calculate(user_id, readings, inputs, all_tariffs=False)
         except HTTPException as error:
             return {}, {**pricing, "note": str(error.detail)}
         total_usage = round(run.details.annual_consumption.consumption_kwh, 2)

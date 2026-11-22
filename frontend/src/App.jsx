@@ -1,13 +1,12 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ImportPage from "./pages/ImportPage";
-import ResultsPage from "./pages/ResultsPage";
+import TariffsPage from "./pages/TariffsPage";
 import SchedulePage from "./pages/SchedulePage";
 import DynamicPricesPage from "./pages/DynamicPricesPage";
 import ProfilePage from "./pages/ProfilePage";
-import CalculationResultsPage from "./pages/CalculationResultsPage";
 import HomePage from "./pages/HomePage";
 import PlanningPage from "./pages/PlanningPage";
 import "./index.css";
@@ -17,26 +16,33 @@ import SessionExpiredListener from "./components/SessionExpiredListener";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Login />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<Layout />}>
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/upload" element={<ImportPage />} />
+          <Route path="/tariffs" element={<TariffsPage />} />
+          <Route path="/results" element={<Navigate to="/tariffs" replace />} />
+          <Route path="/calculations" element={<Navigate to="/tariffs" replace />} />
+          <Route path="/schedule" element={<SchedulePage />} />
+          <Route path="/prices" element={<DynamicPricesPage />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/plan" element={<PlanningPage />} />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}
+
 function App() {
   const routes = (
     <BrowserRouter>
       <SessionExpiredListener />
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route element={<ProtectedRoute />}>
-          <Route element={<Layout />}>
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/upload" element={<ImportPage />} />
-            <Route path="/results" element={<ResultsPage />} />
-            <Route path="/calculations" element={<CalculationResultsPage />} />
-            <Route path="/schedule" element={<SchedulePage />} />
-            <Route path="/prices" element={<DynamicPricesPage />} />
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/plan" element={<PlanningPage />} />
-          </Route>
-        </Route>
-      </Routes>
+      <AppRoutes />
     </BrowserRouter>
   );
 

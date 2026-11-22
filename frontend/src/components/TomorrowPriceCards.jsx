@@ -128,7 +128,7 @@ function TomorrowPriceCards() {
         <p className="mt-3 text-xs md:text-sm text-gray-500">
           To ceny taryfy dynamicznej
           {profileTariff?.tariff_type ? `, a Ty masz taryfę ${profileTariff.tariff_type}` : ", której teraz nie masz"}.{" "}
-          <Link to="/results" className={LINK}>
+          <Link to="/tariffs" className={LINK}>
             Sprawdź w analizie taryf
           </Link>
           , czy taryfa dynamiczna by Ci się opłacała.

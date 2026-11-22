@@ -76,6 +76,6 @@ describe("ImportPage po udanym imporcie", () => {
     expect(navigate).toHaveBeenLastCalledWith("/dashboard");
 
     fireEvent.click(screen.getByText("Porównaj taryfy"));
-    expect(navigate).toHaveBeenLastCalledWith("/results");
+    expect(navigate).toHaveBeenLastCalledWith("/tariffs");
   });
 });
