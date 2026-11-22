@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from collections import deque
-from typing import Callable
+from typing import Any, Callable
 
 from app.schemas.other import BillingCycleEnum, PVTypeEnum, TariffTypeEnum, TypeOfMarketEnergyEnum
 from app.parsers.devices import LOCAL_TIMEZONE
@@ -113,6 +113,22 @@ class PVBalancingEngine:
         market_price_resolver: Callable[[datetime, TypeOfMarketEnergyEnum], float] | None = None,
     ):
         self.market_price_resolver = market_price_resolver
+        # Wyniki net-billingu dla tych samych list cykli: nie zależą od taryfy, więc liczymy je raz na zapytanie
+        # (osobno dla okresu z profilu i okresu oferty dynamicznej).
+        self._net_billing: dict[tuple, tuple[Any, Any, Any]] = {}
+
+    NET_BILLING_LIMIT = 4
+
+    def _net_billing_once(self, pv_energy_cycles, used_energy_cycles, type_of_market_energy):
+        key = (id(pv_energy_cycles), id(used_energy_cycles), type_of_market_energy)
+        cached = self._net_billing.get(key)
+        if cached is not None and cached[0] is pv_energy_cycles and cached[1] is used_energy_cycles:
+            return cached[2]
+        result = self._apply_net_billing(pv_energy_cycles, used_energy_cycles, type_of_market_energy)
+        if len(self._net_billing) >= self.NET_BILLING_LIMIT:
+            self._net_billing.clear()
+        self._net_billing[key] = (pv_energy_cycles, used_energy_cycles, result)
+        return result
 
     @staticmethod
     def zone_priority(schedule: ZoneSchedule, cycle_start: datetime) -> list[int]:
@@ -362,10 +378,10 @@ class PVBalancingEngine:
             )
 
         elif calculations_details.pv_details.mode == PVTypeEnum.NET_BILLING:
-            energy_usage_after_balancing_cycles, overpayment_cycles = self._apply_net_billing(
-                pv_energy_cycles=calculations_details.pv_details.pv_energy_cycles,
-                used_energy_cycles=calculations_details.used_energy_cycles,
-                type_of_market_energy=calculations_details.pv_details.type_of_market_energy
+            energy_usage_after_balancing_cycles, overpayment_cycles = self._net_billing_once(
+                calculations_details.pv_details.pv_energy_cycles,
+                calculations_details.used_energy_cycles,
+                calculations_details.pv_details.type_of_market_energy,
             )
             cycle_starts = [cycle_start for cycle_start, _ in calculations_details.used_energy_cycles]
             if calculations_details.tariff_data.tariff_type == TariffTypeEnum.DYNAMIC:

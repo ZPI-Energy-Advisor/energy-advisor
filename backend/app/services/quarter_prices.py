@@ -108,18 +108,31 @@ class TariffRates:
             self._floor = None if floor is None else decimal(floor)
             self._cap = None if cap is None else decimal(cap)
             self._included_excise = included_excise(definition, self.excise)
+            self.market_limits = (self._floor, self._cap)
 
     def energy(self, zone: int, market_pln_kwh: Any = None, prosumer: bool = False) -> Decimal:
         if self.dynamic:
             if market_pln_kwh is None:
                 raise ValueError("Taryfa dynamiczna wymaga ceny rynkowej kwadransa.")
-            market = decimal(market_pln_kwh) * MWH
-            if self._floor is not None:
-                market = max(market, self._floor)
-            if self._cap is not None:
-                market = min(market, self._cap)
-            return market / MWH + self._margins[bool(prosumer)] - self._included_excise
+            return self.dynamic_energy(decimal(market_pln_kwh), prosumer)
         return zone_energy_price(self.definition, self.energy_rates[zone], self.excise)
+
+    def dynamic_energy(self, market_pln_kwh: Decimal, prosumer: bool = False) -> Decimal:
+        """Cena energii netto kwadransa oferty dynamicznej dla ceny rynkowej już w Decimal (zł/kWh)."""
+        return self.market_part(market_pln_kwh) + self._margins[bool(prosumer)] - self._included_excise
+
+    def market_part(self, market_pln_kwh: Decimal) -> Decimal:
+        """Cena rynkowa (zł/kWh) ograniczona do [market_price_floor, market_price_cap] oferty."""
+        market = market_pln_kwh * MWH
+        if self._floor is not None:
+            market = max(market, self._floor)
+        if self._cap is not None:
+            market = min(market, self._cap)
+        return market / MWH
+
+    def dynamic_offset(self, prosumer: bool = False) -> Decimal:
+        """Stała część ceny energii oferty dynamicznej: marża (prosumenta, jeśli jest) bez akcyzy zawartej w marży."""
+        return self._margins[bool(prosumer)] - self._included_excise
 
     def price(self, zone: int, market_pln_kwh: Any = None, prosumer: bool = False) -> KwhPrice:
         if not self.dynamic and zone in self._fixed:
