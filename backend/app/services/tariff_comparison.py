@@ -129,6 +129,7 @@ def tariff_entries(run: TariffRun) -> list[dict[str, Any]]:
             "billing_cycle_months": months,
             "payable_gross": result["payable_gross"],
             "gross_total": result["gross_total"],
+            "active_energy_gross": result["active_energy_gross"],
             "deposit_amount": result["deposit_amount"],
             "deposit_applied": result["deposit_applied"],
             "monthly_fee_gross": _monthly_fee_gross(run, definitions, months),

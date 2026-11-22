@@ -154,10 +154,11 @@ def _engine_bills(profile, readings, definitions=None):
     return bills
 
 
-def _data_tariffs(profile, readings, *, all_tariffs=False, definitions=None, market=None):
-    files = EnergyFileService(None, None, None, None, _calculations(profile, None, definitions, market))
+def _data_tariffs(profile, readings, *, definitions=None, market=None):
+    calculations = _calculations(profile, None, definitions, market)
+    files = EnergyFileService(None, None, None, None, calculations)
     first_day = min((reading.measured_at for reading in readings), default=datetime(2026, 1, 1)).date()
-    return files._usage_tariffs("user", readings, first_day, all_tariffs)
+    return files._usage_tariffs("user", readings, calculations.profile_inputs("user", first_day))
 
 
 def _comparison(profile, readings, *, all_tariffs=True, definitions=None, market=None):
@@ -228,6 +229,7 @@ def test_net_billing_deposit_lowers_cost_of_kwh():
 
     g12 = next(entry for entry in compared["tariffs"] if entry["key"] == "G12")
     assert g12["deposit_applied"] > 0
+    assert 0 < g12["deposit_applied"] <= g12["active_energy_gross"] < g12["gross_total"]
     assert g12["payable_gross"] == pytest.approx(g12["gross_total"] - g12["deposit_applied"], abs=0.005)
     assert g12["energy_cost_pln"] + g12["monthly_fees_pln"] == pytest.approx(g12["payable_gross"], abs=1e-9)
 
@@ -397,15 +399,36 @@ def test_offer_available_later_than_period_start_is_left_out_like_in_calculation
     assert tariffs["G11-dynamic"]["note"] == "Oferta dynamiczna: oferta dostępna od 01.02.2026, a plik zaczyna się 10.01.2026."
 
 
-def test_data_bills_only_profile_tariff_also_when_chart_has_every_tariff():
-    readings = _readings(_usage(date(2026, 2, 1), 10))
+def _data(profile, usage, all_tariffs):
+    costs = TariffCostService(
+        FlatTariffRepository(_definitions(), _periods()), _Repository(get_profile=profile),
+        market_prices=DynamicMarketPriceResolver(_MarketRepository()),
+    )
+    files = EnergyFileService(None, None, None, None, _calculations(profile), tariff_costs=costs)
+    days = sorted(usage)
+    results = {"usage_15min": usage, "statistics": {"resolution_minutes": 15}}
+    return files._priced_results(
+        "user", results, date.fromisoformat(days[0]), date.fromisoformat(days[-1]), all_tariffs=all_tariffs
+    )
 
-    with_every_chart, every_pricing = _data_tariffs(_profile("G13"), readings, all_tariffs=True)
-    only_profile, pricing = _data_tariffs(_profile("G13"), readings)
 
-    assert list(only_profile) == list(with_every_chart) == ["G13"]
-    assert only_profile["G13"]["estimated_cost_pln"] == _all_tariffs(_profile("G13"), readings)["G13"]["payable_gross"]
-    assert pricing == {**every_pricing, "all_tariffs": False}
+def _chart_keys(summary):
+    return {name.removeprefix("price_") for name in summary["chart_15min"][0] if name.startswith("price_")}
+
+
+def test_data_bills_only_profile_tariff_and_every_tariff_mode_gives_only_chart_prices():
+    usage = _usage(date(2026, 2, 1), 10)
+
+    profile_only = _data(_profile("G13"), usage, all_tariffs=False)
+    every_chart = _data(_profile("G13"), usage, all_tariffs=True)
+
+    assert list(profile_only["tariffs"]) == ["G13"] and _chart_keys(profile_only) == {"G13"}
+    assert profile_only["tariffs"]["G13"]["estimated_cost_pln"] == (
+        _all_tariffs(_profile("G13"), _readings(usage))["G13"]["payable_gross"]
+    )
+    assert every_chart["tariffs"] == {}
+    assert _chart_keys(every_chart) == {"G11", "G12", "G13", "G11-dynamic"}
+    assert every_chart["pricing"] == {**profile_only["pricing"], "tariff_key": None, "tariff_label": None, "all_tariffs": True}
 
 
 def test_only_fallback_tariff_is_priced_when_profile_tariff_has_no_rates():

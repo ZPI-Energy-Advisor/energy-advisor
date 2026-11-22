@@ -115,13 +115,18 @@ class EnergyFileService:
         self, user_id: UUID, results: dict, date_from: date, date_to: date, all_tariffs: bool = True,
         source: _ReadingsSource | None = None,
     ) -> dict:
-        """Wykresy, statystyki i rachunek taryfy z profilu dla dni [date_from, date_to], z cenami policzonymi
-        teraz z cennika; `all_tariffs` dodaje do wykresów ceny wszystkich taryf operatora."""
+        """Wykresy i statystyki dni [date_from, date_to] z cenami policzonymi teraz z cennika. Bez `all_tariffs`
+        także rachunek taryfy z profilu; z `all_tariffs` tylko ceny do wykresów wszystkich taryf operatora
+        (rachunki wszystkich taryf liczy /tariff-comparison)."""
         usage = CalculationService.usage_in_range(results["usage_15min"], date_from, date_to)
         tariffs, pricing = {}, None
         if self.calculations_service is not None:
-            readings = self._engine_readings(source or _ReadingsSource(), usage, date_from, date_to)
-            tariffs, pricing = self._usage_tariffs(user_id, readings, date_from, all_tariffs)
+            inputs = self.calculations_service.profile_inputs(user_id, date_from)
+            if all_tariffs:
+                pricing = self._base_pricing(inputs, all_tariffs=True)
+            else:
+                readings = self._engine_readings(source or _ReadingsSource(), usage, date_from, date_to)
+                tariffs, pricing = self._usage_tariffs(user_id, readings, inputs)
         slot_prices = {}
         if self.tariff_costs is not None and (tariffs or all_tariffs):
             slot_prices = self.tariff_costs.chart_prices(
@@ -148,9 +153,9 @@ class EnergyFileService:
             readings, inputs, selected_only=not all_tariffs, fallback=True, user_id=user_id,
         )
 
-    def _usage_tariffs(self, user_id: UUID, readings: list, first_day: date, all_tariffs: bool) -> tuple[dict, dict]:
-        inputs = self.calculations_service.profile_inputs(user_id, first_day)
-        pricing = {
+    @staticmethod
+    def _base_pricing(inputs, all_tariffs: bool) -> dict:
+        return {
             "operator": inputs.tariff_data.distribution_operator.value,
             "from_profile": inputs.from_profile,
             "profile_tariff": tariff_key(*profile_key(inputs.tariff_data)),
@@ -159,6 +164,9 @@ class EnergyFileService:
             "note": None,
             "all_tariffs": all_tariffs,
         }
+
+    def _usage_tariffs(self, user_id: UUID, readings: list, inputs) -> tuple[dict, dict]:
+        pricing = self._base_pricing(inputs, all_tariffs=False)
         if not readings:
             return {}, pricing
         try:

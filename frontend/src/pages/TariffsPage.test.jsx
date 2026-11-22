@@ -5,7 +5,7 @@ import apiClient from "../api/client";
 import TariffsPage from "./TariffsPage";
 import { EnergyFileContext } from "../context/energyFileContext";
 import { CurrentUserContext } from "../context/currentUserContext";
-import { comparisonCache } from "../hooks/useTariffComparison";
+import { createResponseCache } from "../utils/responseCache";
 import { COMPARISON, PV_COMPARISON, chartRow, comparisonOf, entry } from "../test/tariffComparison";
 
 const FILE = { id: "f1", file_name: "dom.csv", source_type: "meter", data_start: "2026-01-01", data_end: "2026-03-31" };
@@ -31,6 +31,8 @@ const fileContext = (overrides = {}) => ({
   dataError: null,
   clearDataError: vi.fn(),
   requireAllTariffs: vi.fn(),
+  reloadData: vi.fn(),
+  comparisonCache,
   files: [{ id: FILE.id, status: "completed" }],
   filesError: null,
   isLoadingFiles: false,
@@ -68,8 +70,10 @@ const respondWith = (...comparisons) => {
 
 const matrix = () => screen.getByRole("region", { name: "Porównanie taryf" });
 
+let comparisonCache = createResponseCache();
+
 beforeEach(() => {
-  comparisonCache.clear();
+  comparisonCache = createResponseCache();
 });
 
 describe("TariffsPage", () => {
@@ -325,4 +329,61 @@ describe("TariffsPage", () => {
 
     expect(requireAllTariffs.mock.calls).toEqual([[true], [false]]);
   });
+
+  it("przy pierwszym wejściu pyta o porównanie równolegle z danymi, nie czekając na nie", () => {
+    const get = vi.spyOn(apiClient, "get").mockReturnValue(new Promise(() => {}));
+    renderPage(fileContext({ isReady: false, selectedFile: null, selectedFileId: null, results: null, isLoadingData: true }));
+
+    expect(get).toHaveBeenCalledWith("/energy-files/f1/tariff-comparison", { params: {} });
+  });
+
+  it("nie pyta o porównanie dla zakresu bez pomiarów", () => {
+    const get = vi.spyOn(apiClient, "get");
+    renderPage(fileContext({ results: { ...RESULTS, statistics: { days_analyzed: 0 } } }));
+
+    expect(get).not.toHaveBeenCalled();
+    expect(screen.getByText("Brak danych w wybranym zakresie")).toBeTruthy();
+  });
+
+  it("po błędzie porównania pozwala spróbować ponownie i nadal pokazuje wykres", async () => {
+    vi.spyOn(apiClient, "get")
+      .mockRejectedValueOnce({ response: { data: { detail: "Chwilowy błąd." } } })
+      .mockResolvedValueOnce({ data: COMPARISON });
+    renderPage();
+
+    const alert = await screen.findByRole("alert");
+    expect(screen.getByRole("heading", { name: "Kiedy płacisz najwięcej" })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Pokaż wszystkie taryfy" })).toBeNull();
+    fireEvent.click(within(alert).getByRole("button", { name: "Spróbuj ponownie" }));
+
+    expect(await screen.findByRole("group", { name: "Grupa G12" })).toBeTruthy();
+    expect(screen.queryByText("Chwilowy błąd.")).toBeNull();
+  });
+
+  it("gdy nie udało się pobrać cen do wykresu, pokazuje błąd zamiast wiecznego ładowania", async () => {
+    respondWith(COMPARISON);
+    const reloadData = vi.fn();
+    renderPage(
+      fileContext({
+        results: { ...RESULTS, pricing: { operator: "TAURON", all_tariffs: false } },
+        dataError: "Nie udało się pobrać danych wybranego pliku.",
+        reloadData,
+      }),
+    );
+
+    const chart = await screen.findByRole("region", { name: "Kiedy płacisz najwięcej" });
+    expect(within(chart).queryByText("Ładowanie wykresu...")).toBeNull();
+    fireEvent.click(within(chart).getByRole("button", { name: "Spróbuj ponownie" }));
+    expect(reloadData).toHaveBeenCalledTimes(1);
+  });
+
+  it("szczegóły pokazują zużycie w okresie i energię czynną brutto", async () => {
+    respondWith(comparisonOf([entry("G11", 400, { is_profile: true, active_energy_gross: 210.5 })]));
+    renderPage();
+
+    const details = await screen.findByRole("region", { name: "Szczegóły rachunku: G11" });
+    expect(within(details).getByText("Zużycie w okresie").nextSibling.textContent).toBe("310 kWh");
+    expect(within(details).getByText("Energia czynna brutto").nextSibling.textContent).toMatch(/210,50 zł/);
+  });
 });
+

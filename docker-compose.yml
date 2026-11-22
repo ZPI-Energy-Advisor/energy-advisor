@@ -26,7 +26,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app  
+      - ./backend:/app
+      # Przykładowe pliki z frontendu, z których korzystają testy backendu (pytest tests/ w kontenerze).
+      - ./frontend/public/samples:/frontend/public/samples:ro
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

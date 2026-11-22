@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import ChartTooltip from "../ChartTooltip";
 import SegmentedControl from "../SegmentedControl";
-import { chartKeysOf, chartTariffKeys } from "../../utils/tariffComparison";
+import { chartKeysOf, chartTariffKeys, findEntry, keyLabel } from "../../utils/tariffComparison";
 
 const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9", "#ec4899", "#84cc16"];
 const METRIC_OPTIONS = [
@@ -34,17 +34,18 @@ function TooltipValues({ payload, unit, labels }) {
   );
 }
 
-function TariffDayChart({ results, comparison, chosenKey }) {
+function TariffDayChart({ results, comparison, chosenKey, failed = false, onRetry }) {
   const [metric, setMetric] = useState("cost");
   const [resolution, setResolution] = useState("1h");
   const [showAll, setShowAll] = useState(false);
 
   const ready = results?.pricing?.all_tariffs === true;
   const rows = (resolution === "15m" ? results?.chart_15min : results?.chart_hourly) ?? [];
-  const keys = ready ? chartTariffKeys(comparison, chosenKey, showAll, chartKeysOf(rows)) : [];
-  const order = comparison.tariffs.map((entry) => entry.key);
+  const chartKeys = chartKeysOf(rows);
+  const keys = ready ? chartTariffKeys(comparison, chosenKey, showAll, chartKeys) : [];
+  const order = comparison ? comparison.tariffs.map((entry) => entry.key) : chartKeys;
   const labels = Object.fromEntries(
-    comparison.tariffs.map((entry) => [`${metric}_${entry.key}`, entry.label]),
+    order.map((key) => [`${metric}_${key}`, findEntry(comparison, key)?.label ?? keyLabel(key)]),
   );
   const unit = metric === "price" ? "zł/kWh" : "zł";
 
@@ -63,6 +64,7 @@ function TariffDayChart({ results, comparison, chosenKey }) {
           <SegmentedControl label="Rozdzielczość wykresu" options={RESOLUTION_OPTIONS} value={resolution} onChange={setResolution} />
         </div>
       </div>
+      {comparison && (
       <label className="mb-3 inline-flex items-center gap-2 text-sm text-gray-700">
         <input
           type="checkbox"
@@ -72,7 +74,15 @@ function TariffDayChart({ results, comparison, chosenKey }) {
         />
         Pokaż wszystkie taryfy
       </label>
-      {!ready ? (
+      )}
+      {!ready && failed ? (
+        <div role="alert" className="py-16 text-center text-sm text-gray-600">
+          Nie udało się pobrać cen do wykresu.{" "}
+          <button type="button" onClick={onRetry} className="font-semibold text-emerald-700 underline">
+            Spróbuj ponownie
+          </button>
+        </div>
+      ) : !ready ? (
         <p className="py-16 text-center text-sm text-gray-500">Ładowanie wykresu...</p>
       ) : keys.length === 0 || rows.length === 0 ? (
         <p className="py-16 text-center text-sm text-gray-500">Brak cen do wykresu w tym okresie.</p>

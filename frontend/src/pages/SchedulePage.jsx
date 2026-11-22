@@ -377,7 +377,7 @@ function SchedulePage() {
     if (scroll) browserRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   };
 
-  // Pełny rachunek przed i po (jak w Wynikach kalkulacji); bez niego koszt samych akcji urządzeń.
+  // Pełny rachunek przed i po (jak w Analizie taryf); bez niego koszt samych akcji urządzeń.
   const hasBills = shown?.bill_before != null && shown?.bill_after != null;
   const before = shown ? (hasBills ? shown.bill_before : shown.cost_before) : 0;
   const after = shown ? (hasBills ? shown.bill_after : shown.cost_after) : 0;
@@ -542,14 +542,14 @@ function SchedulePage() {
                   <ul className="mt-2 list-disc pl-5 space-y-1">
                     <li>
                       {hasBills
-                        ? "Rachunek liczymy jak w Wynikach kalkulacji: z opłatami stałymi, fotowoltaiką i depozytem."
+                        ? "Rachunek liczymy jak w Analizie taryf: z opłatami stałymi, fotowoltaiką i depozytem."
                         : "Koszt akcji obejmuje energię, dystrybucję zmienną, opłaty za kWh i VAT, bez opłat stałych."}
                     </li>
                     {hasBills && shown.bill_until && (
                       <li>
                         Akcja zaczęta w okresie (np. nocne ładowanie auta) kończy się po jego końcu, więc rachunek obejmuje też
                         zużycie domu do {formatMoment(shown.bill_until)} i opłaty stałe za tę dobę, przed i po optymalizacji tak
-                        samo. Dlatego może być wyższy niż w Wynikach kalkulacji za ten sam zakres.
+                        samo. Dlatego może być wyższy niż w Analizie taryf za ten sam zakres.
                       </li>
                     )}
                     <li>Godziny dobieramy po cenach kwadransów; przy zwykłej taryfie bez PV zysk daje tylko przejście do tańszej strefy.</li>

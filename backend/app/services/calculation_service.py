@@ -197,13 +197,11 @@ class CalculationService:
         return dict(sorted(merged.items())), contributions
 
     @staticmethod
-    def _price_column(tariff: dict, df_15min: pd.DataFrame) -> pd.Series:
+    def _price_column(tariff: dict, df_15min: pd.DataFrame, day_codes, days) -> pd.Series:
         prices_by_day = tariff["prices_by_day"]
-        values = [
-            (prices_by_day.get(day) or [None] * SLOTS_PER_DAY)[slot]
-            for day, slot in zip(df_15min['date'], df_15min['slot'])
-        ]
-        return pd.Series(values, index=df_15min.index, dtype=float)
+        empty = [None] * SLOTS_PER_DAY
+        matrix = pd.DataFrame([prices_by_day.get(day) or empty for day in days], dtype=float).to_numpy()
+        return pd.Series(matrix[day_codes, df_15min['slot'].to_numpy()], index=df_15min.index)
 
     @staticmethod
     def _to_records(df: pd.DataFrame) -> list[dict]:
@@ -262,6 +260,7 @@ class CalculationService:
 
         cost_columns = []
         price_columns = []
+        day_codes, days = pd.factorize(df_15min['date'])
 
         for tariff_name, tariff in slot_prices.items():
             price_col_name = f'price_{tariff_name}'
@@ -270,7 +269,7 @@ class CalculationService:
             price_columns.append(price_col_name)
             cost_columns.append(cost_col_name)
 
-            df_15min[price_col_name] = cls._price_column(tariff, df_15min)
+            df_15min[price_col_name] = cls._price_column(tariff, df_15min, day_codes, days)
             df_15min[cost_col_name] = df_15min['Wartość kWh'] * df_15min[price_col_name]
 
         columns_to_aggregate = ['Wartość kWh'] + cost_columns + price_columns

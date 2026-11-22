@@ -33,6 +33,12 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "perf: test wydajności z limitem czasu; pominięcie: -m \"not perf\"")
 
 
+def pytest_report_header(config):
+    from timing import MACHINE_FACTOR, TIME_LIMIT_SCALE
+
+    return f"limity testów wydajności: ×{TIME_LIMIT_SCALE:.2f} (maszyna ×{MACHINE_FACTOR:.2f} względem wzorcowej)"
+
+
 def _prepare_test_database() -> str | None:
     """Zakłada bazę testową, jeśli nie istnieje, i migruje ją do head. Zwraca opis błędu albo None."""
     url = make_url(database_url)
@@ -62,6 +68,16 @@ def _prepare_test_database() -> str | None:
 
 
 DATABASE_ERROR = _prepare_test_database()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_price_cache():
+    # Testy wstawiają różne ceny RCE dla tych samych miesięcy, więc pamięć cen nie może przechodzić między nimi.
+    from app.services.pv_service import clear_rce_cache
+
+    clear_rce_cache()
+    yield
+    clear_rce_cache()
 
 
 @pytest.fixture

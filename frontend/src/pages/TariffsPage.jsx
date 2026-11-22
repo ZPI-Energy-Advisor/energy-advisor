@@ -24,9 +24,16 @@ function Warning({ children }) {
 }
 
 function TariffsPage() {
-  const { isReady, results, isLoadingData, selectedFile, viewSource, cacheScope, requireAllTariffs } = useEnergyFiles();
-  const hasData = Boolean(selectedFile) && hasDataInRange(results);
-  const { comparison, isLoading, error } = useTariffComparison(hasData ? viewSource : null, cacheScope);
+  const {
+    isReady, results, isLoadingData, selectedFile, viewSource, cacheScope, comparisonCache, requireAllTariffs,
+    dataError, reloadData,
+  } = useEnergyFiles();
+  // Porównanie startuje razem z /data (także przy pierwszym wejściu); nie pytamy tylko o zakres, o którym już wiemy,
+  // że nie ma pomiarów.
+  const emptyRange = Boolean(selectedFile) && !isLoadingData && !hasDataInRange(results);
+  const { comparison, isLoading, error, retry } = useTariffComparison(
+    emptyRange ? null : viewSource, cacheScope, comparisonCache,
+  );
   const [chosenKey, setChosenKey] = useState(null);
 
   useEffect(() => {
@@ -77,7 +84,10 @@ function TariffsPage() {
           {error && (
             <div role="alert" className="mb-6 flex items-start gap-3 rounded-lg bg-red-50 p-4 text-sm text-red-700">
               <FiAlertCircle className="mt-0.5 shrink-0" />
-              <span>{error}</span>
+              <span className="flex-1">{error}</span>
+              <button type="button" onClick={retry} className="shrink-0 font-semibold underline">
+                Spróbuj ponownie
+              </button>
             </div>
           )}
           {!comparison && !error && (
@@ -89,10 +99,18 @@ function TariffsPage() {
             <>
               <TariffSummaryCards comparison={comparison} />
               <TariffMatrix comparison={comparison} chosenKey={shownKey} onChoose={setChosenKey} />
-              <TariffDayChart results={results} comparison={comparison} chosenKey={shownKey} />
-              {shownEntry && <TariffBillDetails entry={shownEntry} comparison={comparison} />}
             </>
           )}
+          {(comparison || error) && (
+            <TariffDayChart
+              results={results}
+              comparison={comparison}
+              chosenKey={shownKey}
+              failed={Boolean(dataError) && !isLoadingData}
+              onRetry={reloadData}
+            />
+          )}
+          {comparison && shownEntry && <TariffBillDetails entry={shownEntry} comparison={comparison} />}
         </div>
       )}
     </div>
