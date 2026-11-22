@@ -73,7 +73,6 @@ app/repositories/
   price_sync_run_repository.py   historia i status synchronizacji
 app/services/
   price_sync_service.py   orkiestracja: które doby, pobranie, zapis, status
-  pricing_strategies.py   wycena taryf: FixedRatePricing / DynamicMarketPricing
 app/core/
   price_sync_factory.py   jedyne miejsce wyboru konkretnego dostawcy
   locks.py                pg_advisory_lock: API i worker nie synchronizują jednocześnie
@@ -196,23 +195,20 @@ Szczegóły `POST /sync`:
 
 ## Wycena taryfy dynamicznej
 
-`DynamicMarketPricing` liczy cenę dla klienta według wzoru:
+Ofertę z ceną dynamiczną wycenia silnik rachunku z cennika `tariff_definitions` (format:
+[tariff-data-format.md](tariff-data-format.md#dynamic_offers--oferty-z-ceną-dynamiczną)). Cena energii
+kwadransu to:
 
-    (RCE [PLN/MWh] / 1000 + tariffs.markup_pln_kwh) × (1 + tariffs.vat_rate)
+    clamp(RCE [PLN/MWh], market_price_floor, market_price_cap) / 1000 + marża sprzedawcy
 
-RCE to hurtowa cena energii netto. Taryfy G11 i G12 w bazie to ceny brutto „all-in”, więc bez
-narzutu (dystrybucja, opłaty, marża sprzedawcy) porównanie byłoby mylące.
-
-Narzut i VAT są częścią definicji taryfy, tak jak stawki G11/G12 w `tariff_rates`, więc są
-kolumnami tabeli `tariffs` (puste dla taryf ze stałymi stawkami). Seed i migracja ustawiają
-0.40 PLN/kWh i 23%. Zmiana to zwykły `UPDATE` na tabeli `tariffs`, bez deployu. 
-Kilka taryf dynamicznych (np. różnych sprzedawców) może korzystać
-z tych samych cen RCE, a różnić się narzutem.
+(marża prosumenta, gdy profil ma PV). Do niej dochodzą dystrybucja i opłaty grupy taryfowej klienta oraz VAT,
+tak jak w taryfach strefowych. Kilka ofert (np. różnych sprzedawców) korzysta z tych samych cen RCE, a różni
+się marżą.
 
 Pozostałe zasady:
 
-- Ceny kwadransów (`slot_prices[...].prices_by_day`) i rachunki liczymy przy każdym odczycie
-  z bieżącego cennika i cen RCE, tak jak dla G11 i G12.
+- Ceny kwadransów do wykresów i rachunki liczymy przy każdym odczycie z bieżącego cennika i cen RCE;
+  przy imporcie pliku nic z cennika nie zapisujemy.
 - Brak ceny dla kwadransu daje `null`.
 - Rachunki taryf liczy silnik rachunku (ten sam co `/upload/calculation-details/{id}`): wszystkich taryf
   operatora `/energy-files/{id}/tariff-comparison`, a taryfy z profilu `/energy-files/{id}/data`

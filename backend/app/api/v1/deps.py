@@ -16,7 +16,6 @@ from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.home_event_repository import HomeEventRepository
 from app.repositories.home_repository import HomeRepository
 from app.repositories.simulation_repository import SimulationRepository
-from app.repositories.tariff_repository import TariffRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
@@ -32,7 +31,6 @@ from app.services.home_event_service import HomeEventService
 from app.services.home_service import HomeService
 from app.services.home_state_service import HomeStateService
 from app.services.price_sync_service import PriceSyncService
-from app.services.pricing_strategies import build_pricing_strategies
 from app.services.simulation_service import SimulationService
 from app.services.tariff_catalog_service import TariffCatalogService
 from app.services.tariff_costs import TariffCostService
@@ -52,10 +50,6 @@ from app.config import HUB_API_KEY, HUB_HOME_USER_EMAIL, PRICE_SYNC_ADMIN_KEY, S
 from app.core.price_settings import FLAT_PRICE_SPREAD_PLN_KWH, PRICE_PUBLICATION_TIME
 from app.core.errors import ContractError
 
-
-
-def get_tariff_repository(db: Session = Depends(get_db)) -> TariffRepository:
-    return TariffRepository(db)
 
 
 def get_user_repository(db: Session = Depends(get_db)) -> UserRepository:
@@ -95,12 +89,8 @@ def get_dynamic_price_repository(db: Session = Depends(get_db)) -> DynamicPriceR
     return DynamicPriceRepository(db)
 
 
-def get_calculation_service(
-    tariff_repository: TariffRepository = Depends(get_tariff_repository),
-    dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
-) -> CalculationService:
-    strategies = build_pricing_strategies(tariff_repository, dynamic_price_repository)
-    return CalculationService(tariff_repository, pricing_strategies=strategies)
+def get_calculation_service() -> CalculationService:
+    return CalculationService()
 
 
 def get_energy_file_repository(db: Session = Depends(get_db)) -> EnergyDataFileRepository:

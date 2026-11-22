@@ -320,10 +320,7 @@ def test_upload_saves_energy_readings(db):
 
 
 def _meter_calculation_service() -> CalculationService:
-    tariff = SimpleNamespace(id=1, name="G11", type="stala")
-    rate = SimpleNamespace(price_per_kwh=1.0, time_start=datetime.time(0, 0), time_end=datetime.time(23, 59, 59))
-    repository = SimpleNamespace(get_all=lambda: [tariff], get_rates_for_tariff=lambda tariff_id: [rate])
-    return CalculationService(repository)
+    return CalculationService()
 
 
 def test_upload_of_meter_file_with_pv_saves_consumption_and_export(db):
@@ -443,9 +440,7 @@ def test_failed_devices_save_marks_file_as_failed_and_keeps_no_devices(db):
 def _results_with_series():
     # 03.11 - 0,25 kWh w każdym slocie, 04.11 - brak pomiarów, 05.11 - 0,5 kWh w każdym slocie.
     usage = {"2024-11-03": [0.25] * 96, "2024-11-05": [0.5] * 96}
-    slot_prices = {"G11": {"type": "stala", "prices": [1.0] * 96}}
-    results = CalculationService.summarize_usage(usage, slot_prices)
-    return {**results, "usage_15min": usage, "slot_prices": slot_prices}
+    return {**CalculationService.summarize_usage(usage, {}), "usage_15min": usage}
 
 
 def _create_file_with_series(db, user):
@@ -545,7 +540,6 @@ def test_range_on_file_without_usage_series(db):
     assert "Wgraj go ponownie" in response.json()["detail"]
 
 
-SLOT_PRICES = {"G11": {"type": "stala", "prices": [1.0] * 96}}
 
 
 def _days(start, count, kwh_per_slot):
@@ -555,9 +549,8 @@ def _days(start, count, kwh_per_slot):
 
 def _series_results(usage, actions_per_day=None):
     results = {
-        **CalculationService.summarize_usage(usage, SLOT_PRICES, 15 if actions_per_day else 60, actions_per_day),
+        **CalculationService.summarize_usage(usage, {}, 15 if actions_per_day else 60, actions_per_day),
         "usage_15min": usage,
-        "slot_prices": SLOT_PRICES,
     }
     if actions_per_day is not None:
         results["actions_per_day"] = actions_per_day
@@ -849,9 +842,8 @@ def test_aggregate_endpoints_require_token():
 
 def _create_file_with_resolution(db, user, usage, resolution, *, name, uploaded_at):
     results = {
-        **CalculationService.summarize_usage(usage, SLOT_PRICES, resolution),
+        **CalculationService.summarize_usage(usage, {}, resolution),
         "usage_15min": usage,
-        "slot_prices": SLOT_PRICES,
     }
     energy_file = EnergyDataFile(
         user_id=user.id,
@@ -1015,12 +1007,6 @@ def test_meter_and_devices_files_have_separate_aggregates(db):
     }
 
 
-def _flat_tariff_repository():
-    rate = SimpleNamespace(time_start=datetime.time(0, 0), time_end=datetime.time(23, 59, 59), price_per_kwh=1.0)
-    tariff = SimpleNamespace(id=1, name="G11", type="stala")
-    return SimpleNamespace(get_all=lambda: [tariff], get_rates_for_tariff=lambda tariff_id: [rate])
-
-
 def _devices_document(period_start, period_end, devices):
     return {
         "period": {"start": f"{period_start}+01:00", "end": f"{period_end}+01:00"},
@@ -1040,7 +1026,7 @@ def _devices_document(period_start, period_end, devices):
 
 def _create_devices_file(db, user, document, *, name, uploaded_at):
     parsed = parse_energy_file(BytesIO(json.dumps(document).encode()))
-    results = CalculationService(_flat_tariff_repository()).calculate_with_report(parsed)
+    results = CalculationService().calculate_with_report(parsed)
     statistics = results["statistics"]
     energy_file = EnergyDataFile(
         user_id=user.id,

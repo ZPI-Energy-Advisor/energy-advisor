@@ -17,7 +17,7 @@ from app.models.User import User
 from timing import TIME_LIMIT_SCALE
 from test_device_usage import SAMPLE_DEVICES
 from test_energy_files import (
-    T0, T1, _create_devices_file, _create_series_file, _create_user, _days, _flat_tariff_repository, _headers,
+    T0, T1, _create_devices_file, _create_series_file, _create_user, _days, _headers,
     _series_results, client,
 )
 
@@ -208,7 +208,7 @@ def test_all_device_files_have_the_same_export_as_readings_of_the_file(db):
     document = json.loads(SAMPLE_DEVICES.read_text(encoding="utf-8"))
     energy_file = _create_devices_file(db, user, document, name="pv.json", uploaded_at=T0)
     parsed = parse_energy_file(BytesIO(json.dumps(document).encode()))
-    readings = CalculationService(_flat_tariff_repository()).quarter_hour_readings(parsed)
+    readings = CalculationService().quarter_hour_readings(parsed)
     EnergyReadingRepository(db).replace_for_file(energy_file.id, readings)
     db.commit()
 

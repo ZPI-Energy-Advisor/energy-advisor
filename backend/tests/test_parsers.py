@@ -3,7 +3,6 @@ import zipfile
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -60,19 +59,6 @@ def _import_error(content):
     with pytest.raises(FileImportError) as exc_info:
         parse_energy_file(content if isinstance(content, BytesIO) else _file(content))
     return exc_info.value
-
-
-def _repository():
-    tariff = MagicMock()
-    tariff.id, tariff.name, tariff.type = 1, "G11", "stala"
-    rate = MagicMock()
-    rate.time_start = datetime.strptime("00:00:00", "%H:%M:%S").time()
-    rate.time_end = datetime.strptime("23:59:59", "%H:%M:%S").time()
-    rate.price_per_kwh = 1.0
-    repository = MagicMock()
-    repository.get_all.return_value = [tariff]
-    repository.get_rates_for_tariff.return_value = [rate]
-    return repository
 
 
 @pytest.mark.parametrize(
@@ -414,10 +400,10 @@ def test_calculation_accepts_parsed_data_without_csv():
         report=ImportReport(detected_format="test", format_label="test"),
     )
 
-    results = CalculationService(_repository()).calculate(parsed)
+    results = CalculationService().calculate(parsed)
 
     assert results["usage_15min"]["2025-01-01"][:4] == [0.5] * 4
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == 2.0
+    assert results["total_usage_kwh"] == 2.0
     assert results["statistics"]["records_count"] == 1
 
 
@@ -440,22 +426,22 @@ class _TestFormatParser(EnergyFileParser):
 def test_new_format_needs_only_a_registered_parser(monkeypatch):
     monkeypatch.setattr(parsers, "PARSERS", [_TestFormatParser(), *parsers.PARSERS])
 
-    results = CalculationService(_repository()).calculate_all_tariffs(_file(["koniec;kwh", "2025-01-01 01:00;4"]))
+    results = CalculationService().summarize_file(_file(["koniec;kwh", "2025-01-01 01:00;4"]))
 
     assert results["import_report"]["detected_format"] == "testowy"
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == 4.0
+    assert results["total_usage_kwh"] == 4.0
 
 
-def test_calculate_all_tariffs_adds_report_and_hides_it_from_public_results():
-    results = CalculationService(_repository()).calculate_all_tariffs(_file([TAURON_HEADER, _row("2025-01-01 01:00")]))
+def test_summarize_file_adds_report_and_hides_it_from_public_results():
+    results = CalculationService().summarize_file(_file([TAURON_HEADER, _row("2025-01-01 01:00")]))
 
     assert results["import_report"]["detected_format"] == "tauron_v2"
     assert "import_report" not in public_results(results)
 
 
-def test_calculate_all_tariffs_turns_import_errors_into_http_errors():
+def test_summarize_file_turns_import_errors_into_http_errors():
     with pytest.raises(HTTPException) as exc_info:
-        CalculationService(_repository()).calculate_all_tariffs(_file(["Totalna;Bzdura", "1;2"]))
+        CalculationService().summarize_file(_file(["Totalna;Bzdura", "1;2"]))
 
     assert exc_info.value.status_code == 422
 
@@ -521,11 +507,11 @@ def test_new_document_format_needs_only_a_registered_parser(monkeypatch):
     monkeypatch.setattr(parsers, "DOCUMENT_PARSERS", [_TestDocumentParser(), *parsers.DOCUMENT_PARSERS])
     content = BytesIO(json.dumps({"readings": [{"start": "2025-01-01 00:00", "kwh": 4}]}).encode())
 
-    results = CalculationService(_repository()).calculate_all_tariffs(content)
+    results = CalculationService().summarize_file(content)
 
     assert results["import_report"]["detected_format"] == "dokument_testowy"
     assert results["import_report"]["unit"] == "action"
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == 4.0
+    assert results["total_usage_kwh"] == 4.0
 
 
 def test_devices_file_without_devices_is_rejected():

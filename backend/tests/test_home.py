@@ -16,7 +16,7 @@ from app.repositories.home_repository import HomeRepository
 from app.services.calculation_service import CalculationService
 from app.services.home_service import UNAVAILABLE_MESSAGE, HomeService, registry_hash
 from main import app
-from test_energy_files import _create_user, _delete, _flat_tariff_repository, _headers, client
+from test_energy_files import _create_user, _delete, _headers, client
 
 
 HUB_URL = "http://hub.test"
@@ -135,7 +135,7 @@ def home(db):
     _reset_home(db)
     app.dependency_overrides[get_hub_client] = lambda: hub_client
     app.dependency_overrides[get_home_owner_email] = lambda: owner.email
-    app.dependency_overrides[get_calculation_service] = lambda: CalculationService(_flat_tariff_repository())
+    app.dependency_overrides[get_calculation_service] = lambda: CalculationService()
     yield SimpleNamespace(owner=owner, other=other, hub=hub)
     for dependency in (get_hub_client, get_home_owner_email, get_calculation_service):
         app.dependency_overrides.pop(dependency, None)

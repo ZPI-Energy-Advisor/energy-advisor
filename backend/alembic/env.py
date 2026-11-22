@@ -16,8 +16,6 @@ from app.models.User import User  # noqa: F401
 from app.models.Token import Token  # noqa: F401
 from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401
 from app.models.Simulation import Simulation  # noqa: F401
-from app.models.Tariff import Tariff  # noqa: F401
-from app.models.TariffRate import TariffRate  # noqa: F401
 from app.models.RcePriceObservation import RcePriceObservation  # noqa: F401
 from app.models.RcEmPriceObservation import RcEmPriceObservation  # noqa: F401
 from app.models.PriceSyncRun import PriceSyncRun  # noqa: F401
