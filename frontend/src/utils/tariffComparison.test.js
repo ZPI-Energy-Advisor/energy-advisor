@@ -4,11 +4,12 @@ import {
   CYCLE_GROUPS,
   chartKeysOf,
   chartTariffKeys,
-  comparisonSummary,
   cycleGroupValue,
   detailsKey,
   formatDifference,
+  formatPercent,
   keyLabel,
+  profileEntry,
   tariffMatrix,
 } from "./tariffComparison";
 import { COMPARISON, PV_COMPARISON, chartRow, comparisonOf, entry } from "../test/tariffComparison";
@@ -34,16 +35,15 @@ describe("tariffComparison", () => {
     ]);
   });
 
-  it("liczy oszczędność względem taryfy z profilu", () => {
-    const { selected, cheapest, saving } = comparisonSummary(COMPARISON);
-
-    expect([selected.key, cheapest.key, saving]).toEqual(["G11", "G12-dynamic", 70]);
+  it("znajduje taryfę z profilu tylko przy uzupełnionym profilu", () => {
+    expect(profileEntry(COMPARISON).key).toBe("G11");
+    expect(profileEntry({ ...COMPARISON, from_profile: false })).toBeNull();
+    expect(profileEntry({ ...COMPARISON, profile_tariff: "G12w" })).toBeNull();
   });
 
-  it("nie liczy oszczędności, gdy taryfa z profilu nie ma kwoty", () => {
-    const comparison = comparisonOf([entry("G11", null, { is_profile: true }), entry("G12", 300)]);
-
-    expect(comparisonSummary(comparison)).toEqual({ selected: null, cheapest: comparison.tariffs[1], saving: null });
+  it("formatuje procent po polsku", () => {
+    expect(formatPercent(17.5)).toBe("17,5%");
+    expect(formatPercent(null)).toBeNull();
   });
 
   it("wybiera do szczegółów taryfę klikniętą, a domyślnie z profilu albo najtańszą", () => {

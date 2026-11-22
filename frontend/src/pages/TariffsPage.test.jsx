@@ -100,14 +100,95 @@ describe("TariffsPage", () => {
     expect(within(screen.getByRole("group", { name: "Grupa G13" })).getByText(/niedostępna/)).toBeTruthy();
   });
 
-  it("pokazuje karty: Twoja taryfa, najtańsza i możliwą oszczędność", async () => {
+  it("pokazuje karty: Twoja taryfa, najtańsza i oszczędność w zł i % z oznaczonym szacunkiem miesięcznym", async () => {
     respondWith(COMPARISON);
     renderPage();
 
-    const saving = await screen.findByText("Możesz zaoszczędzić");
-    expect(saving.parentElement.textContent).toMatch(/70,00 zł.*po przejściu na G12 z ceną dynamiczną/);
-    expect(screen.getByText("Twoja taryfa").parentElement.textContent).toMatch(/400,00 zł/);
-    expect(screen.getByText("Najtańsza").parentElement.textContent).toMatch(/330,00 zł/);
+    const saving = await screen.findByRole("region", { name: "Możesz zaoszczędzić" });
+    expect(saving.textContent).toMatch(/70,00 zł \(17,5%\)/);
+    expect(saving.textContent).toMatch(/01\.01\.2026 – 31\.01\.2026 po przejściu na G12 z ceną dynamiczną · Oferta dynamiczna/);
+    expect(saving.textContent).toMatch(/Szacunek: średnio ok\. 68,73 zł miesięcznie/);
+    const own = screen.getByRole("region", { name: "Twoja taryfa" });
+    expect(own.textContent).toMatch(/400,00 zł.*G11.*za kWh 350,00 zł · opłaty mies\. 50,00 zł/);
+    const cheapest = screen.getByRole("region", { name: "Najtańsza" });
+    expect(cheapest.textContent).toMatch(/330,00 zł.*G12 z ceną dynamiczną · Oferta dynamiczna.*za kWh 280,00 zł/);
+  });
+
+  it("bez szacunku miesięcznego, gdy backend go nie podał (krótki okres)", async () => {
+    respondWith({ ...COMPARISON, recommendation: { ...COMPARISON.recommendation, monthly_saving_estimate: null } });
+    renderPage();
+
+    const saving = await screen.findByRole("region", { name: "Możesz zaoszczędzić" });
+    expect(saving.textContent).not.toMatch(/Szacunek/);
+  });
+
+  it("potwierdza, gdy Twoja taryfa jest najtańsza", async () => {
+    respondWith(comparisonOf([entry("G11", 300, { is_profile: true }), entry("G12", 350)]));
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Rekomendacja" });
+    expect(card.textContent).toMatch(/Zostań przy swojej taryfie.*Masz najtańszą taryfę w okresie 01\.01\.2026 – 31\.01\.2026/);
+    expect(screen.queryByRole("region", { name: "Możesz zaoszczędzić" })).toBeNull();
+  });
+
+  it("przy różnicy poniżej złotówki rekomenduje obecną taryfę", async () => {
+    respondWith(comparisonOf([entry("G11", 300.5, { is_profile: true }), entry("G12", 299.7)]));
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Rekomendacja" });
+    expect(card.textContent).toMatch(/Zostań przy swojej taryfie.*G12 wyszłaby taniej tylko o 0,80 zł/);
+    expect(within(screen.getByRole("region", { name: "Najtańsza" })).getByText("G12")).toBeTruthy();
+  });
+
+  it("bez profilu wskazuje najtańszą taryfę bez kwoty oszczędności", async () => {
+    respondWith(comparisonOf([entry("G11", 400), entry("G12", 330)], { from_profile: false }));
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Najkorzystniejsza taryfa" });
+    expect(card.textContent).toMatch(/G12.*Kwotę oszczędności pokażemy po uzupełnieniu profilu/);
+    expect(screen.queryByText(/Możesz zaoszczędzić/)).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Twoja taryfa" })).getByRole("link", { name: "Uzupełnij profil" })).toBeTruthy();
+  });
+
+  it("gdy Twojej taryfy nie da się policzyć, nie podaje oszczędności i mówi dlaczego", async () => {
+    respondWith(
+      comparisonOf([
+        entry("G11", 300),
+        entry("G11-dynamic", null, { is_profile: true, note: "Brak cen RCE dla 2 dni." }),
+      ], { selected_tariff: "G11-dynamic" }),
+    );
+    renderPage();
+
+    expect((await screen.findByRole("region", { name: "Twoja taryfa" })).textContent).toMatch(/—.*Brak cen RCE dla 2 dni/);
+    const card = screen.getByRole("region", { name: "Najkorzystniejsza taryfa" });
+    expect(card.textContent).toMatch(/G11.*Twojej taryfy nie policzyliśmy w tym okresie/);
+  });
+
+  it("bez żadnej policzonej taryfy nie rekomenduje niczego", async () => {
+    respondWith(comparisonOf([entry("G11", null, { is_profile: true, note: "Brak cen." })]));
+    renderPage();
+
+    const card = await screen.findByRole("region", { name: "Rekomendacja" });
+    expect(card.textContent).toMatch(/—.*Bez kompletu cen nie wskażemy najkorzystniejszej taryfy/);
+    expect(screen.getByRole("region", { name: "Najtańsza" }).textContent).toMatch(/Żadnej taryfy nie udało się policzyć/);
+  });
+
+  it("ostrzega, że taryf bez kompletu cen nie rekomendujemy", async () => {
+    respondWith(COMPARISON);
+    renderPage();
+
+    const warning = await screen.findByText(/Nie rekomendujemy taryf bez kompletu cen w tym okresie/);
+    expect(warning.textContent).toMatch(/G13\. Powód jest przy każdej z nich w tabeli/);
+    expect(within(warning).getByText("G13").getAttribute("title")).toBe("Brak stawek abonamentowej dla okresu 2 mies.");
+  });
+
+  it("przy PV porównuje kwoty do zapłaty po depozycie", async () => {
+    respondWith(PV_COMPARISON);
+    renderPage();
+
+    const saving = await screen.findByRole("region", { name: "Możesz zaoszczędzić" });
+    expect(saving.textContent).toMatch(/30,00 zł \(12%\).*po przejściu na G12/);
+    expect(screen.getByRole("region", { name: "Twoja taryfa" }).textContent).toMatch(/250,00 zł/);
   });
 
   it("kliknięta taryfa trafia do szczegółów rachunku", async () => {
@@ -160,7 +241,8 @@ describe("TariffsPage", () => {
     expect(await screen.findByText(/liczymy taryfę G11/)).toBeTruthy();
     expect(screen.getByText(/stawki taryfowe mamy od 01.01.2026/)).toBeTruthy();
     expect(screen.getByText("G12r").getAttribute("title")).toBe("Strefy ogłasza operator.");
-    expect(screen.getByText("Taryfa odniesienia")).toBeTruthy();
+    const own = screen.getByRole("region", { name: "Twoja taryfa" });
+    expect(within(own).getByRole("link", { name: "Uzupełnij profil" }).getAttribute("href")).toBe("/profile");
   });
 
   it("wykres pokazuje domyślnie Twoją, najtańszą i zaznaczoną taryfę", async () => {
