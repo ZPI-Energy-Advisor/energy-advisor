@@ -44,8 +44,8 @@ GET /api/v1/energy-files/{file_id | all-devices}/devices/usage
 | `flexible` | `false` | `true`: tylko urządzenia, które można przenieść na inne godziny (`shiftable`, `interruptible`) |
 | `meter` | – | `all` albo id pliku licznika: dodaje grupę „Reszta domu” |
 
-Koszt kwadransu to jego zużycie razy cena tego kwadransu w wybranej taryfie z cennika zapisanego
-przy imporcie (`slot_prices`), tak jak koszt na Dashboardzie. Dla pojedynczego pliku liczą się
+Koszt kwadransu to jego zużycie razy cena tego kwadransu w wybranej taryfie, liczona przy odczycie
+z bieżącego cennika (`tariff_definitions`), tak jak koszt na Dashboardzie. Dla pojedynczego pliku liczą się
 wszystkie jego wiersze; dla `all-devices` tylko obowiązujące.
 
 Odpowiedź:

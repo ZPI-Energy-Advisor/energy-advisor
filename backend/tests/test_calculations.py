@@ -1,34 +1,30 @@
 import math
 
 import pytest
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock
 from fastapi import HTTPException
 
-from app.services.calculation_service import CalculationService, public_results
-from app.services.pricing_strategies import DynamicMarketPricing
+from app.services.calculation_service import (
+    ACTIONS_PER_DAY_KEY,
+    CalculationService,
+    public_results,
+    source_resolution,
+)
 
 format_hour_label = CalculationService.format_hour_label
 
-def _get_mock_repository():
-    mock_repository = MagicMock()
-    mock_tariff = MagicMock()
-    mock_tariff.id = 1
-    mock_tariff.name = "G11"
-    mock_tariff.type = "stala"
-    
-    mock_rate = MagicMock()
-    mock_rate.time_start = datetime.strptime("00:00:00", "%H:%M:%S").time()
-    mock_rate.time_end = datetime.strptime("23:59:59", "%H:%M:%S").time()
-    mock_rate.price_per_kwh = 1.0
 
-    mock_repository.get_all.return_value = [mock_tariff]
-    mock_repository.get_rates_for_tariff.return_value = [mock_rate]
-    return mock_repository
+def _for_range(results, date_from, date_to):
+    """Wykresy i statystyki dni [date_from, date_to] tak jak w `/data`."""
+    return CalculationService.summarize_usage(
+        CalculationService.usage_in_range(results["usage_15min"], date_from, date_to),
+        {},
+        source_resolution(results),
+        results.get(ACTIONS_PER_DAY_KEY),
+    )
+
 
 def test_format_hour_label():
     assert format_hour_label(datetime(2025, 8, 9, 14, 15)) == "14:00"
@@ -43,10 +39,10 @@ def test_calculate_old_format_success():
     2024-11-03 24:00;1,00;pobór"""
     
     dummy_file = BytesIO(csv_content.encode('utf-8'))
-    results = CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
+    results = CalculationService().summarize_file(dummy_file)
 
     assert results["statistics"]["data_start"] == "2024-11-03"
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == 2.15
+    assert results["total_usage_kwh"] == 2.15
 
 def test_calculate_new_format_with_excel_bug_and_oddanie():
     csv_content = """Data i godzina;Wartosc[kWh/kvar];Rodzaj energii
@@ -55,9 +51,9 @@ def test_calculate_new_format_with_excel_bug_and_oddanie():
 46181;2,00;pobór"""
     
     dummy_file = BytesIO(csv_content.encode('utf-8'))
-    results = CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
+    results = CalculationService().summarize_file(dummy_file)
 
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == 3.00
+    assert results["total_usage_kwh"] == 3.00
     
     assert results["statistics"]["days_analyzed"] == 1
     assert results["statistics"]["data_start"] == "2026-06-07"
@@ -72,7 +68,7 @@ def test_calculate_only_oddanie_raises_400():
     dummy_file = BytesIO(csv_content.encode('utf-8'))
     
     with pytest.raises(HTTPException) as exc_info:
-        CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
+        CalculationService().summarize_file(dummy_file)
     
     assert exc_info.value.status_code == 400
     assert "tylko dane o oddaniu" in str(exc_info.value.detail)
@@ -83,7 +79,7 @@ def test_calculate_bad_columns_raises_422():
     dummy_file = BytesIO(csv_content.encode('utf-8'))
     
     with pytest.raises(HTTPException) as exc_info:
-        CalculationService(_get_mock_repository()).calculate_all_tariffs(dummy_file)
+        CalculationService().summarize_file(dummy_file)
     
     assert exc_info.value.status_code == 422
     assert "Nierozpoznany format" in str(exc_info.value.detail)
@@ -99,7 +95,7 @@ def _hourly_csv(daily_values):
 
 def _results_for_days():
     csv_file = _hourly_csv({"2024-05-01": 1.0, "2024-05-02": 2.0, "2024-05-03": 3.0})
-    return CalculationService(_get_mock_repository()).calculate_all_tariffs(csv_file)
+    return CalculationService().summarize_file(csv_file)
 
 
 def test_results_contain_usage_series_for_ranges():
@@ -107,16 +103,16 @@ def test_results_contain_usage_series_for_ranges():
 
     assert list(results["usage_15min"]) == ["2024-05-01", "2024-05-02", "2024-05-03"]
     assert all(len(slots) == 96 and None not in slots for slots in results["usage_15min"].values())
-    assert results["slot_prices"]["G11"] == {"type": "stala", "prices": [1.0] * 96}
+    assert "slot_prices" not in results and "tariffs" not in results
     assert public_results(results).keys() == {
-        "tariffs", "total_usage_kwh", "chart_15min", "chart_hourly", "chart_daily", "statistics",
+        "total_usage_kwh", "chart_15min", "chart_hourly", "chart_daily", "statistics",
     }
 
 
 def test_full_range_matches_import_results():
     results = _results_for_days()
 
-    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 1), date(2024, 5, 3))
+    ranged = _for_range(results, date(2024, 5, 1), date(2024, 5, 3))
 
     assert ranged == public_results(results)
 
@@ -124,11 +120,10 @@ def test_full_range_matches_import_results():
 def test_range_limits_charts_totals_and_statistics():
     results = _results_for_days()
 
-    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 2), date(2024, 5, 3))
+    ranged = _for_range(results, date(2024, 5, 2), date(2024, 5, 3))
 
     assert [row["date"] for row in ranged["chart_daily"]] == ["2024-05-02", "2024-05-03"]
-    assert ranged["tariffs"]["G11"]["total_usage_kwh"] == 120.0
-    assert ranged["tariffs"]["G11"]["estimated_cost_pln"] == 120.0
+    assert ranged["total_usage_kwh"] == 120.0
     assert ranged["statistics"]["data_start"] == "2024-05-02"
     assert ranged["statistics"]["data_end"] == "2024-05-03"
     assert ranged["statistics"]["days_analyzed"] == 2
@@ -138,18 +133,18 @@ def test_range_limits_charts_totals_and_statistics():
 def test_range_end_date_is_inclusive():
     results = _results_for_days()
 
-    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 2), date(2024, 5, 2))
+    ranged = _for_range(results, date(2024, 5, 2), date(2024, 5, 2))
 
     assert [row["date"] for row in ranged["chart_daily"]] == ["2024-05-02"]
-    assert ranged["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+    assert ranged["total_usage_kwh"] == 48.0
 
 
 @pytest.mark.parametrize("chart, points", [("chart_hourly", 24), ("chart_15min", 96)])
 def test_range_applies_to_every_resolution(chart, points):
     results = _results_for_days()
 
-    first_day = CalculationService.calculate_for_range(results, date(2024, 5, 1), date(2024, 5, 1))
-    last_day = CalculationService.calculate_for_range(results, date(2024, 5, 3), date(2024, 5, 3))
+    first_day = _for_range(results, date(2024, 5, 1), date(2024, 5, 1))
+    last_day = _for_range(results, date(2024, 5, 3), date(2024, 5, 3))
 
     # Profil doby liczony jest tylko z dni w zakresie: 1 kWh/h w pierwszym dniu, 3 kWh/h w ostatnim.
     per_point = 1.0 if chart == "chart_hourly" else 0.25
@@ -161,10 +156,10 @@ def test_range_applies_to_every_resolution(chart, points):
 def test_range_without_data_returns_empty_results():
     results = _results_for_days()
 
-    ranged = CalculationService.calculate_for_range(results, date(2024, 6, 1), date(2024, 6, 30))
+    ranged = _for_range(results, date(2024, 6, 1), date(2024, 6, 30))
 
     assert ranged["chart_daily"] == [] and ranged["chart_hourly"] == [] and ranged["chart_15min"] == []
-    assert ranged["tariffs"]["G11"] == {"type": "stala", "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
+    assert ranged["total_usage_kwh"] == 0.0 and "tariffs" not in ranged
     assert ranged["statistics"]["days_analyzed"] == 0
 
 
@@ -263,110 +258,23 @@ def test_merge_missing_slots_in_both_files_stay_missing():
     assert merged["2024-06-01"][20:] == [None] * 76
 
 
-def _dynamic_tariff(markup="0.40", vat="0.23"):
-    return SimpleNamespace(id=2, name="Dynamiczna", type="dynamiczna", markup_pln_kwh=Decimal(markup), vat_rate=Decimal(vat))
-
-
-class _FakeDynamicPriceRepository:
-    def __init__(self, prices_by_start):
-        self.prices_by_start = prices_by_start
-
-    def get_prices_between(self, source, start_utc, end_utc):
-        return {start: price for start, price in self.prices_by_start.items() if start_utc <= start < end_utc}
-
-
-def _dynamic_pricing(prices_by_start):
-    return DynamicMarketPricing(_FakeDynamicPriceRepository(prices_by_start), "pse_rce")
-
-
-def test_dynamic_pricing_maps_local_slots_to_utc_in_winter():
-    # 2025-01-01 00:00 w Warszawie (CET) = 2024-12-31 23:00 UTC
-    first_slot_utc = datetime(2024, 12, 31, 23, 0, tzinfo=timezone.utc)
-    pricing = _dynamic_pricing({first_slot_utc: Decimal("500")})
-
-    slot_prices = pricing.slot_prices(_dynamic_tariff("0", "0"), [date(2025, 1, 1)])
-
-    day_prices = slot_prices["prices_by_day"]["2025-01-01"]
-    assert slot_prices["type"] == "dynamiczna"
-    assert day_prices[0] == pytest.approx(0.5)
-    assert day_prices[1:] == [None] * 95  # brak ceny nie jest zastępowany żadną wartością
-
-
-def test_dynamic_pricing_maps_local_slots_to_utc_in_summer():
-    # 2025-07-01 00:00 w Warszawie (CEST) = 2025-06-30 22:00 UTC
-    pricing = _dynamic_pricing({datetime(2025, 6, 30, 22, 0, tzinfo=timezone.utc): Decimal("-100")})
-
-    day_prices = pricing.slot_prices(_dynamic_tariff("0", "0"), [date(2025, 7, 1)])["prices_by_day"]["2025-07-01"]
-
-    assert day_prices[0] == pytest.approx(-0.1)
-
-
-def test_dynamic_pricing_takes_markup_and_vat_from_tariff():
-    first_slot_utc = datetime(2024, 12, 31, 23, 0, tzinfo=timezone.utc)
-    pricing = _dynamic_pricing({first_slot_utc: Decimal("500")})
-
-    cheap = pricing.slot_prices(_dynamic_tariff("0.10", "0.08"), [date(2025, 1, 1)])
-    no_params = pricing.slot_prices(SimpleNamespace(name="X", type="dynamiczna", markup_pln_kwh=None, vat_rate=None), [date(2025, 1, 1)])
-
-    assert cheap["prices_by_day"]["2025-01-01"][0] == pytest.approx((0.5 + 0.10) * 1.08)
-    assert no_params["prices_by_day"]["2025-01-01"][0] == pytest.approx(0.5)
-
-
-def _dynamic_slot_prices(days_with_prices):
-    return {
-        "G11": {"type": "stala", "prices": [1.0] * 96},
-        "Dynamiczna": {"type": "dynamiczna", "prices_by_day": days_with_prices},
-    }
-
-
-def test_summary_reports_dynamic_price_coverage_and_extrapolates_cost():
+def test_chart_prices_leave_days_without_price_empty():
     usage = {"2025-01-01": _day(0.25), "2025-01-02": _day(0.25)}
-    slot_prices = _dynamic_slot_prices({"2025-01-01": [2.0] * 96})  # brak cen dla 2025-01-02
+    slot_prices = {"G11-dynamic": {"type": "dynamiczna", "prices_by_day": {"2025-01-01": [2.0] * 96}}}
 
     summary = CalculationService.summarize_usage(usage, slot_prices)
-    dynamic = summary["tariffs"]["Dynamiczna"]
 
-    assert dynamic["price_coverage"] == 0.5
-    assert dynamic["missing_price_intervals"] == 96
-    # 24 kWh pokryte po 2 zł, brakujące 24 kWh wycenione tą samą średnią ceną
-    assert dynamic["estimated_cost_pln"] == 96.0
-    assert summary["tariffs"]["G11"] == {"type": "stala", "total_usage_kwh": 48.0, "estimated_cost_pln": 48.0}
     # dzień bez cen to null na wykresie (nie 0 PLN), a profil godzinowy liczy się tylko z dni z ceną
     second_day = next(row for row in summary["chart_daily"] if row["date"] == "2025-01-02")
-    assert second_day["cost_Dynamiczna"] is None
-    assert second_day["price_Dynamiczna"] is None
-    assert {row["cost_Dynamiczna"] for row in summary["chart_hourly"]} == {2.0}
+    assert second_day["cost_G11-dynamic"] is None and second_day["price_G11-dynamic"] is None
+    assert {row["cost_G11-dynamic"] for row in summary["chart_hourly"]} == {2.0}
+    assert {row["price_G11-dynamic"] for row in summary["chart_hourly"]} == {2.0}
+    assert "tariffs" not in summary
     # NaN nie jest poprawnym JSON-em - w żadnym wykresie nie może go być
     for chart in ("chart_15min", "chart_hourly", "chart_daily"):
         assert not any(
             isinstance(value, float) and math.isnan(value) for row in summary[chart] for value in row.values()
         )
-
-
-def test_summary_without_any_dynamic_prices_has_no_cost():
-    usage = {"2023-01-01": _day(0.25)}
-
-    dynamic = CalculationService.summarize_usage(usage, _dynamic_slot_prices({}))["tariffs"]["Dynamiczna"]
-
-    assert dynamic["estimated_cost_pln"] is None
-    assert dynamic["price_coverage"] == 0.0
-
-
-def test_calculate_all_tariffs_uses_registered_strategy_per_tariff_type():
-    repository = _get_mock_repository()
-    repository.get_all.return_value = [repository.get_all.return_value[0], _dynamic_tariff("0", "0")]
-    # 2024-05-01 00:00 CEST = 2024-04-30 22:00 UTC; ceny dla całej doby
-    start = datetime(2024, 4, 30, 22, 0, tzinfo=timezone.utc)
-    pricing = _dynamic_pricing({start + timedelta(minutes=15 * i): Decimal("1000") for i in range(96)})
-
-    results = CalculationService(repository, pricing_strategies={"dynamiczna": pricing}).calculate_all_tariffs(
-        _hourly_csv({"2024-05-01": 1.0})
-    )
-
-    assert results["tariffs"]["G11"]["estimated_cost_pln"] == 24.0
-    assert results["tariffs"]["Dynamiczna"]["estimated_cost_pln"] == 24.0
-    assert results["tariffs"]["Dynamiczna"]["price_coverage"] == 1.0
-    assert results["slot_prices"]["Dynamiczna"]["prices_by_day"]["2024-05-01"] == [1.0] * 96
 
 
 METER_HEADER = "Data i godzina;Wartosc[kWh/kvar];Rodzaj energii"
@@ -376,7 +284,7 @@ SIMPLE_HEADER = "Data;Wartość kWh;Rodzaj"
 def _import_dates(header, dates):
     """Importuje plik z odczytem 1 kWh dla każdej podanej daty i zwraca dni z pomiarami."""
     rows = "\n".join(f"{value};1,0;pobór" for value in dates)
-    results = CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(f"{header}\n{rows}".encode("utf-8")))
+    results = CalculationService().summarize_file(BytesIO(f"{header}\n{rows}".encode("utf-8")))
     days = [day for day, slots in results["usage_15min"].items() if any(kwh is not None for kwh in slots)]
     return days, results["statistics"]
 
@@ -441,7 +349,7 @@ def test_import_without_any_recognized_date_raises_422():
 def _import_rows(rows, header=SIMPLE_HEADER):
     lines = "\n".join(f"{timestamp};{str(kwh).replace('.', ',')};pobór" for timestamp, kwh in rows)
     content = f"{header}\n{lines}".encode("utf-8")
-    return CalculationService(_get_mock_repository()).calculate_all_tariffs(BytesIO(content))
+    return CalculationService().summarize_file(BytesIO(content))
 
 
 def _quarter_rows(day, values):
@@ -462,7 +370,7 @@ def test_quarter_hour_file_keeps_each_reading_in_its_own_slot():
     assert results["statistics"]["resolution_minutes"] == 15
     assert results["statistics"]["records_count"] == 96
     assert results["statistics"]["has_missing_data"] is False
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == round(sum(values), 2)
+    assert results["total_usage_kwh"] == round(sum(values), 2)
 
 
 def test_hourly_file_is_still_split_into_four_quarters():
@@ -473,7 +381,7 @@ def test_hourly_file_is_still_split_into_four_quarters():
     assert results["usage_15min"]["2025-01-01"] == [0.5] * 96
     assert results["statistics"]["resolution_minutes"] == 60
     assert results["statistics"]["records_count"] == 24
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+    assert results["total_usage_kwh"] == 48.0
 
 
 def test_quarter_hour_file_in_meter_format_with_midnight_24():
@@ -529,18 +437,18 @@ def test_range_on_quarter_hour_file_counts_quarter_records():
     rows = _quarter_rows("2025-01-01", [0.25] * 96) + _quarter_rows("2025-01-02", [0.5] * 96)
     results = _import_rows(rows)
 
-    ranged = CalculationService.calculate_for_range(results, date(2025, 1, 2), date(2025, 1, 2))
+    ranged = _for_range(results, date(2025, 1, 2), date(2025, 1, 2))
 
     assert ranged["statistics"]["resolution_minutes"] == 15
     assert ranged["statistics"]["records_count"] == 96
-    assert ranged["tariffs"]["G11"]["total_usage_kwh"] == 48.0
+    assert ranged["total_usage_kwh"] == 48.0
 
 
 def test_range_on_results_without_resolution_assumes_hourly():
     results = _results_for_days()
     del results["statistics"]["resolution_minutes"]
 
-    ranged = CalculationService.calculate_for_range(results, date(2024, 5, 1), date(2024, 5, 1))
+    ranged = _for_range(results, date(2024, 5, 1), date(2024, 5, 1))
 
     assert ranged["statistics"]["records_count"] == 24
     assert ranged["statistics"]["resolution_minutes"] == 60
@@ -549,7 +457,7 @@ def test_range_on_results_without_resolution_assumes_hourly():
 def test_summary_of_mixed_resolutions_has_no_records_count():
     usage = {"2025-01-01": [0.25] * 96}
 
-    summary = CalculationService.summarize_usage(usage, {"G11": {"type": "stala", "prices": [1.0] * 96}}, None)
+    summary = CalculationService.summarize_usage(usage, {}, None)
 
     assert summary["statistics"]["records_count"] is None
     assert summary["statistics"]["resolution_minutes"] is None
@@ -560,7 +468,7 @@ DEVICES_DEMO_FILE = Path(__file__).parent / "fixtures" / "devices_demo_30d.json"
 
 def _devices_demo_results():
     with DEVICES_DEMO_FILE.open("rb") as handle:
-        return CalculationService(_get_mock_repository()).calculate_all_tariffs(handle)
+        return CalculationService().summarize_file(handle)
 
 
 def test_devices_file_counts_actions_as_records():
@@ -577,7 +485,7 @@ def test_devices_file_range_counts_actions_of_selected_days():
     results = _devices_demo_results()
     day = date(2026, 10, 25)
 
-    in_range = CalculationService.calculate_for_range(results, day, day)
+    in_range = _for_range(results, day, day)
 
     assert in_range["statistics"]["records_count"] == results["actions_per_day"]["2026-10-25"]
     assert in_range["statistics"]["data_source"] == "devices"

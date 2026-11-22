@@ -1,10 +1,9 @@
 import copy
 import json
 from collections import defaultdict
-from datetime import date, time
+from datetime import date
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -30,23 +29,17 @@ def action(parsed: ParsedEnergyFile, action_id: str):
 
 
 def calculation_service() -> CalculationService:
-    tariff = MagicMock()
-    tariff.id, tariff.name, tariff.type = 1, "G11", "stala"
-    rate = MagicMock(price_per_kwh=1.0, time_start=time(0, 0), time_end=time(23, 59, 59))
-    repository = MagicMock()
-    repository.get_all.return_value = [tariff]
-    repository.get_rates_for_tariff.return_value = [rate]
-    return CalculationService(repository)
+    return CalculationService()
 
 
 @pytest.mark.parametrize("path", [SAMPLE_FILE, DEMO_FILE], ids=["plik-przykladowy", "plik-demo-30-dni"])
 def test_devices_files_are_imported_and_priced(path):
     with path.open("rb") as handle:
-        results = calculation_service().calculate_all_tariffs(handle)
+        results = calculation_service().summarize_file(handle)
 
     assert results["import_report"]["detected_format"] == "devices"
     assert results["import_report"]["unit"] == "action"
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == results["import_report"]["grid_import_kwh"]
+    assert results["total_usage_kwh"] == results["import_report"]["grid_import_kwh"]
 
 
 def test_action_with_program_uses_program_profile():

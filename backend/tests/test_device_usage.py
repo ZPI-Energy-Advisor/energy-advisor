@@ -31,7 +31,6 @@ from test_energy_files import (
     _create_user,
     _delete,
     _devices_document,
-    _flat_tariff_repository,
     _get_data,
     _headers,
     _upload,
@@ -83,7 +82,7 @@ def _create_meter_file(db, user, path, *, name, uploaded_at):
     """Plik licznika z odczytami w energy_readings, jak po uploadzie."""
     with path.open("rb") as handle:
         parsed = parse_energy_file(handle)
-    service = CalculationService(_flat_tariff_repository())
+    service = CalculationService()
     results = service.calculate_with_report(parsed)
     energy_file = EnergyDataFile(
         user_id=user.id,
@@ -146,7 +145,7 @@ def test_washer_example_counts_only_the_newest_file_covering_each_day(db):
 
     assert _daily_washer_kwh(user) == [0.8, 0.0, 1.95]
     results = _all_devices_data(user).json()["results"]
-    assert results["tariffs"]["G11"]["total_usage_kwh"] == pytest.approx(2.75)
+    assert results["total_usage_kwh"] == pytest.approx(2.75)
     assert results["statistics"]["records_count"] == 2
 
 
@@ -173,7 +172,7 @@ def test_file_saved_after_newer_uploads_is_covered_by_them(db):
 
 def test_upload_of_device_files_saves_period_and_flags(db):
     user = _create_user(db)
-    service = CalculationService(_flat_tariff_repository())
+    service = CalculationService()
 
     responses = [
         _upload(user, service, name, json.dumps(document).encode()) for document, name, _ in _washer_documents()
@@ -439,7 +438,7 @@ def test_yearly_files_flags_and_aggregate_are_fast(db, yearly_document):
     repository._cover_older_files = timed_cover
     repository.save_for_file(user_id=user.id, energy_data_file_id=newer.id, devices=parsed.devices)
     db.commit()
-    results = CalculationService(_flat_tariff_repository()).calculate_with_report(parsed)
+    results = CalculationService().calculate_with_report(parsed)
     newer.data_start = datetime.date.fromisoformat(results["statistics"]["data_start"])
     newer.data_end = datetime.date.fromisoformat(results["statistics"]["data_end"])
     db.add(Simulation(user_id=user.id, energy_data_file_id=newer.id, results=results))

@@ -51,9 +51,8 @@ ich wyciek jest dla użytkownika dotkliwy (patrz „Bezpieczeństwo przechowywan
 
 Cenniki i ceny rynkowe nie dotyczą użytkowników: `tariff_definitions`, `supplier_ure_rates`,
 `osd_variable_network_rates`, `osd_subscription_fees`, `tariff_zone_hours`, `regulatory_periods`,
-`capacity_fee_thresholds`, `transition_fee_thresholds`, `unsupported_tariffs`, stary cennik `tariffs`
-i `tariff_rates`, ceny `rce_price_observations` i `rcem_price_observations`, przebiegi workera
-`price_sync_runs`, słowniki `device_types` i `device_categories`.
+`capacity_fee_thresholds`, `transition_fee_thresholds`, `unsupported_tariffs`, ceny `rce_price_observations`
+i `rcem_price_observations`, przebiegi workera `price_sync_runs`, słowniki `device_types` i `device_categories`.
 
 ## Kto ma dostęp
 

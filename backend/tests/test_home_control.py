@@ -29,7 +29,7 @@ from app.services.home_control_service import (
 )
 from app.services.home_service import AUTH_MESSAGE, DISABLED_MESSAGE, NOT_CONNECTED_MESSAGE
 from main import app
-from test_energy_files import _create_user, _flat_tariff_repository, _headers, client
+from test_energy_files import _create_user, _headers, client
 from test_home import LAMP, WASHER, _devices_file, _reset_home, _upload, db  # noqa: F401 (db: fixture)
 from test_home_events import FlatPrices, _device
 
@@ -145,7 +145,7 @@ def home(db):  # noqa: F811
     overrides = {
         get_hub_client: lambda: hub_client,
         get_home_owner_email: lambda: owner.email,
-        get_calculation_service: lambda: CalculationService(_flat_tariff_repository()),
+        get_calculation_service: lambda: CalculationService(),
         get_schedule_price_service: FlatPrices,
     }
     app.dependency_overrides.update(overrides)

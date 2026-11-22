@@ -16,13 +16,13 @@ from app.services.home_service import HomeService
 from app.services.calculation_service import (
     ACTIONS_PER_DAY_KEY,
     IMPORT_REPORT_KEY,
+    SLOT_MINUTES,
     CalculationService,
     has_usage_series,
     public_results,
     source_resolution,
 )
 from app.schemas.schedule import ChargingPeriodOut, ScheduledActionOut, SchedulePriceOut, ScheduleResponse
-from app.services.pricing_strategies import SLOT_MINUTES
 from app.services.scheduling import INTERRUPTIBLE, SLOT, actions_from_devices, load_from_devices, schedule
 from app.schemas.calculation import TariffChoice
 from app.services.schedule_prices import SchedulePriceService

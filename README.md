@@ -65,16 +65,10 @@ docker compose exec backend python scripts/load_tariffs.py data/tariffs
 docker compose exec backend python scripts/load_tariffs.py --check data/tariffs   # tylko walidacja, bez bazy
 ```
 
-`seed.py` jest nadal potrzebny dla tabeli taryf używanej przez Dashboard:
-
-```bash
-docker compose exec backend python seed.py
-```
-
 ### 5. Ceny dynamiczne
 
-Ceny RCE zapisywane są w tabeli `rce_price_observations` i są niezależne od taryf z kroku 4
-(taryfa dynamiczna przechowuje jedynie narzut i stawkę VAT doliczane do ceny rynkowej).
+Ceny RCE zapisywane są w tabeli `rce_price_observations` i są niezależne od cennika z kroku 4
+(oferta z ceną dynamiczną przechowuje marżę sprzedawcy doliczaną do ceny rynkowej).
 
 **Synchronizacja bieżąca.** Kontener `price-worker` uruchamia się w kroku 2 i czeka do 5 minut na
 utworzenie tabel przez migracje. Następnie pobiera ceny z ostatnich 7 dni i na dzień następny,

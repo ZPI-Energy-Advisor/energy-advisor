@@ -1,7 +1,5 @@
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
-from typing import Mapping
-
 import numpy as np
 import pandas as pd
 from fastapi import HTTPException
@@ -19,17 +17,12 @@ from app.parsers import (
 from app.models.EnergyDataFile import EnergyDataFile
 from app.parsers.devices import LOCAL_TIMEZONE
 from app.providers.prices.base import expected_intervals
-from app.repositories.tariff_repository import TariffRepository
-from app.services.pricing_strategies import (
-    SLOT_MINUTES,
-    SLOTS_PER_DAY,
-    FixedRatePricing,
-    TariffPricingStrategy,
-)
 
 
+SLOTS_PER_DAY = 96
+SLOT_MINUTES = 15
 # Klucze wyników potrzebne tylko do przeliczania zakresów dat - nie wysyłamy ich do frontu.
-INTERNAL_RESULT_KEYS = ("usage_15min", "slot_prices")
+INTERNAL_RESULT_KEYS = ("usage_15min",)
 IMPORT_REPORT_KEY = "import_report"
 ACTIONS_PER_DAY_KEY = "actions_per_day"
 
@@ -50,18 +43,6 @@ def source_resolution(results: dict) -> int | None:
 
 
 class CalculationService:
-    def __init__(
-        self,
-        tariff_repository: TariffRepository,
-        pricing_strategies: Mapping[str, TariffPricingStrategy] | None = None,
-    ):
-        self.tariff_repository = tariff_repository
-        self.default_strategy = FixedRatePricing(tariff_repository)
-        self.pricing_strategies = dict(pricing_strategies or {})
-
-    def _strategy_for(self, tariff) -> TariffPricingStrategy:
-        return self.pricing_strategies.get(tariff.type, self.default_strategy)
-
     @staticmethod
     def format_hour_label(dt_obj):
         if dt_obj.minute == 0:
@@ -69,8 +50,7 @@ class CalculationService:
             return f"{new_hour:02d}:00"
         return f"{dt_obj.hour:02d}:00"
 
-
-    def calculate_all_tariffs(self, file_obj) -> dict:
+    def summarize_file(self, file_obj) -> dict:
         return self.calculate_with_report(self.parse_file(file_obj))
 
     @staticmethod
@@ -116,43 +96,17 @@ class CalculationService:
         ]
 
     def calculate(self, parsed: ParsedEnergyFile) -> dict:
-        data = parsed.data
-        resolution = parsed.resolution_minutes
-        df_15min = self._quarter_hours(parsed)
-
-        tariffs = self.tariff_repository.get_all()
-        if not tariffs:
-            raise HTTPException(status_code=500, detail="Brak taryf w bazie danych!")
-
-        usage = self._build_usage_series(df_15min)
-        days = [date.fromisoformat(day) for day in usage]
-
-        # Ceny zapisujemy razem z wynikami, żeby przeliczenie zakresu dawało te same
-        # kwoty co przy imporcie, nawet jeśli cennik w bazie później się zmieni.
-        slot_prices = {
-            tariff.name: self._strategy_for(tariff).slot_prices(tariff, days)
-            for tariff in tariffs
-        }
-
+        """Seria zużycia i statystyki pliku. Kosztów nie zapisujemy: liczy je przy odczycie silnik rachunku
+        z bieżącego cennika (`tariff_definitions`)."""
+        usage = self._build_usage_series(self._quarter_hours(parsed))
         actions_per_day = self._actions_per_day(parsed.devices) if parsed.devices is not None else None
-        results_dict = self.summarize_usage(usage, slot_prices, resolution, actions_per_day)
+        results_dict = self.summarize_usage(usage, {}, parsed.resolution_minutes, actions_per_day)
         if actions_per_day is None:
-            results_dict["statistics"]["records_count"] = int(len(data))
+            results_dict["statistics"]["records_count"] = int(len(parsed.data))
         else:
             results_dict[ACTIONS_PER_DAY_KEY] = actions_per_day
         results_dict["usage_15min"] = usage
-        results_dict["slot_prices"] = slot_prices
         return results_dict
-
-    @classmethod
-    def calculate_for_range(cls, results: dict, date_from: date, date_to: date) -> dict:
-        """Przelicza wykresy, sumy i statystyki dla dni z przedziału [date_from, date_to] (oba włącznie)."""
-        return cls.summarize_usage(
-            cls.usage_in_range(results["usage_15min"], date_from, date_to),
-            results["slot_prices"],
-            source_resolution(results),
-            results.get(ACTIONS_PER_DAY_KEY),
-        )
 
     @staticmethod
     def usage_in_range(usage: dict, date_from: date, date_to: date) -> dict:
@@ -244,34 +198,10 @@ class CalculationService:
 
     @staticmethod
     def _price_column(tariff: dict, df_15min: pd.DataFrame, day_codes, days) -> pd.Series:
-        if "prices_by_day" in tariff:
-            prices_by_day = tariff["prices_by_day"]
-            empty = [None] * SLOTS_PER_DAY
-            matrix = pd.DataFrame([prices_by_day.get(day) or empty for day in days], dtype=float).to_numpy()
-            return pd.Series(matrix[day_codes, df_15min['slot'].to_numpy()], index=df_15min.index)
-        return pd.Series(np.asarray(tariff["prices"])[df_15min['slot']], index=df_15min.index, dtype=float)
-
-    @staticmethod
-    def _tariff_cost(tariff: dict, df_15min: pd.DataFrame, price_col: str, cost_col: str, total_usage: float) -> dict:
-        if "prices_by_day" not in tariff:
-            return {"estimated_cost_pln": round(float(df_15min[cost_col].sum()), 2)}
-
-        priced = df_15min[price_col].notna()
-        covered_usage = float(df_15min.loc[priced, 'Wartość kWh'].sum())
-        covered_cost = float(df_15min.loc[priced, cost_col].sum())
-
-        if not priced.any():
-            estimated_cost = None
-        elif not priced.all() and covered_usage > 0:
-            estimated_cost = round(covered_cost * total_usage / covered_usage, 2)
-        else:
-            estimated_cost = round(covered_cost, 2)
-
-        return {
-            "estimated_cost_pln": estimated_cost,
-            "price_coverage": round(float(priced.mean()), 4),
-            "missing_price_intervals": int((~priced).sum()),
-        }
+        prices_by_day = tariff["prices_by_day"]
+        empty = [None] * SLOTS_PER_DAY
+        matrix = pd.DataFrame([prices_by_day.get(day) or empty for day in days], dtype=float).to_numpy()
+        return pd.Series(matrix[day_codes, df_15min['slot'].to_numpy()], index=df_15min.index)
 
     @staticmethod
     def _to_records(df: pd.DataFrame) -> list[dict]:
@@ -309,6 +239,8 @@ class CalculationService:
         resolution_minutes: int | None = HOURLY_RESOLUTION,
         actions_per_day: dict[str, int] | None = None,
     ) -> dict:
+        """Wykresy i statystyki serii {dzień: [96 kWh | None]}; `slot_prices` ({taryfa: {"prices_by_day": ...}})
+        dodaje do wykresów kolumny price_<taryfa> i cost_<taryfa>."""
         data_source = EnergyDataFile.SOURCE_METER if actions_per_day is None else EnergyDataFile.SOURCE_DEVICES
         rows = [
             (day, slot, kwh)
@@ -317,15 +249,14 @@ class CalculationService:
             if kwh is not None
         ]
         if not rows:
-            return cls._empty_results(slot_prices, resolution_minutes, data_source)
+            return cls._empty_results(resolution_minutes, data_source)
 
         df_15min = pd.DataFrame(rows, columns=['date', 'slot', 'Wartość kWh'])
         df_15min['Dokładny Czas'] = pd.to_datetime(df_15min['date']) + pd.to_timedelta(
             df_15min['slot'] * SLOT_MINUTES, unit='m'
         )
 
-        total_usage = float(df_15min['Wartość kWh'].sum())
-        results_dict = {"tariffs": {}, "total_usage_kwh": round(total_usage, 2)}
+        results_dict = {"total_usage_kwh": round(float(df_15min['Wartość kWh'].sum()), 2)}
 
         cost_columns = []
         price_columns = []
@@ -340,12 +271,6 @@ class CalculationService:
 
             df_15min[price_col_name] = cls._price_column(tariff, df_15min, day_codes, days)
             df_15min[cost_col_name] = df_15min['Wartość kWh'] * df_15min[price_col_name]
-
-            results_dict["tariffs"][tariff_name] = {
-                "type": tariff["type"],
-                "total_usage_kwh": round(total_usage, 2),
-                **cls._tariff_cost(tariff, df_15min, price_col_name, cost_col_name, total_usage),
-            }
 
         columns_to_aggregate = ['Wartość kWh'] + cost_columns + price_columns
 
@@ -406,12 +331,8 @@ class CalculationService:
         return results_dict
 
     @staticmethod
-    def _empty_results(slot_prices: dict, resolution_minutes: int | None, data_source: str) -> dict:
+    def _empty_results(resolution_minutes: int | None, data_source: str) -> dict:
         return {
-            "tariffs": {
-                tariff_name: {"type": tariff["type"], "total_usage_kwh": 0.0, "estimated_cost_pln": 0.0}
-                for tariff_name, tariff in slot_prices.items()
-            },
             "total_usage_kwh": 0.0,
             "chart_15min": [],
             "chart_hourly": [],
