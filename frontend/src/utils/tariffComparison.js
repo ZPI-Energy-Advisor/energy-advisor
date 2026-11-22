@@ -82,13 +82,18 @@ export const detailsKey = (comparison, chosenKey) => {
 };
 
 // Linie wykresu: domyślnie Twoja, najtańsza i zaznaczona taryfa; tylko taryfy z cenami na wykresie.
+// Linie wykresu: domyślnie Twoja, najtańsza i zaznaczona taryfa, a „wszystkie” to tylko taryfy z kwotą
+// (bez np. ofert dynamicznych przy net-meteringu). Bez porównania (błąd) wszystkie taryfy z cenami.
 export const chartTariffKeys = (comparison, chosenKey, showAll, chartKeys) => {
+  if (!comparison) return [...chartKeys];
   const available = new Set(chartKeys);
-  const ordered = (comparison?.tariffs ?? []).map((entry) => entry.key).filter((key) => available.has(key));
+  const ordered = comparison.tariffs.filter((entry) => isPriced(entry) && available.has(entry.key)).map((entry) => entry.key);
   if (showAll) return ordered;
-  const wanted = new Set([comparison?.selected_tariff, comparison?.cheapest_tariff, chosenKey]);
+  const wanted = new Set([comparison.selected_tariff, comparison.cheapest_tariff, chosenKey]);
   return ordered.filter((key) => wanted.has(key));
 };
+
+export const keyLabel = (key) => (key.endsWith("-dynamic") ? `${key.slice(0, -"-dynamic".length)} z ceną dynamiczną` : key);
 
 export const chartKeysOf = (rows) => {
   const keys = new Set();

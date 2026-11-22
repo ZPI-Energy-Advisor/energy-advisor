@@ -18,6 +18,7 @@ class TariffComparisonItem(BaseModel):
     billing_cycle_months: int | None = None
     payable_gross: float | None = None
     gross_total: float | None = None
+    active_energy_gross: float | None = None
     deposit_amount: float | None = None
     deposit_applied: float | None = None
     energy_cost_pln: float | None = None

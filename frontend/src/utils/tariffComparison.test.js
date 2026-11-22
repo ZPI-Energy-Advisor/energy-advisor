@@ -8,6 +8,7 @@ import {
   cycleGroupValue,
   detailsKey,
   formatDifference,
+  keyLabel,
   tariffMatrix,
 } from "./tariffComparison";
 import { COMPARISON, PV_COMPARISON, chartRow, comparisonOf, entry } from "../test/tariffComparison";
@@ -57,6 +58,15 @@ describe("tariffComparison", () => {
 
     expect(chartTariffKeys(COMPARISON, "G12", false, keys)).toEqual(["G11", "G12", "G12-dynamic"]);
     expect(chartTariffKeys(COMPARISON, null, true, keys)).toEqual(["G11", "G12", "G11-dynamic", "G12-dynamic"]);
+  });
+
+  it("„wszystkie” na wykresie to tylko taryfy z kwotą, a bez porównania każda taryfa z cenami", () => {
+    const comparison = comparisonOf([entry("G11", 300, { is_profile: true }), entry("G11-dynamic", null)]);
+
+    expect(chartTariffKeys(comparison, null, true, ["G11", "G11-dynamic"])).toEqual(["G11"]);
+    expect(chartTariffKeys(null, null, false, ["G11", "G11-dynamic"])).toEqual(["G11", "G11-dynamic"]);
+    expect(keyLabel("G12w-dynamic")).toBe("G12w z ceną dynamiczną");
+    expect(keyLabel("G13")).toBe("G13");
   });
 
   it("dzieli okres na kolumny, które razem dają kwotę brutto", () => {
