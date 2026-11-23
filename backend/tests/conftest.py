@@ -100,6 +100,23 @@ def _offline_geocoder(monkeypatch):
     monkeypatch.setattr(geocoding, "default_geocoder", OfflineGeocoder)
 
 
+class OfflineWeather:
+    def forecast(self, *args):
+        from app.providers.weather import WeatherProviderError
+
+        raise WeatherProviderError("testy nie pytają Open-Meteo", retryable=False)
+
+    archive = forecast
+
+
+@pytest.fixture(autouse=True)
+def _offline_weather(monkeypatch):
+    from app.providers import weather
+
+    monkeypatch.setattr(weather, "default_client", OfflineWeather)
+    monkeypatch.setattr(weather, "interactive_client", OfflineWeather)
+
+
 @pytest.fixture
 def db():
     if DATABASE_ERROR:

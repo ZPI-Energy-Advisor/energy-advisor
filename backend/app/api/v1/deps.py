@@ -17,6 +17,7 @@ from app.repositories.home_event_repository import HomeEventRepository
 from app.repositories.home_repository import HomeRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.weather_repository import WeatherRepository
 from app.services.auth_service import AuthService
 from app.services.calculation_service import CalculationService
 from app.services.device_usage_service import DeviceUsageService
@@ -36,6 +37,7 @@ from app.services.tariff_catalog_service import TariffCatalogService
 from app.services.tariff_costs import TariffCostService
 from app.services.upload_service import UploadService
 from app.services.user_service import UserService
+from app.services.weather_service import WeatherService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.plan_service import PlanService
@@ -69,6 +71,10 @@ def get_user_service(
     definition_repository: TariffDefinitionRepository = Depends(get_tariff_definition_repository),
 ) -> UserService:
     return UserService(repository, definition_repository)
+
+
+def get_weather_service(db: Session = Depends(get_db)) -> WeatherService:
+    return WeatherService(WeatherRepository(db), interactive=True)
 
 
 def get_tariff_catalog_service(

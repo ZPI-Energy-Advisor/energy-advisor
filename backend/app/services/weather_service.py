@@ -1,0 +1,272 @@
+import logging
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Callable, Iterable
+
+from app.models.WeatherObservation import WeatherObservation
+from app.providers import weather as weather_provider
+from app.providers.prices.base import MARKET_TIMEZONE, expected_intervals, local_day_bounds_utc
+from app.providers.weather import Plane, WeatherProviderError
+from app.repositories.weather_repository import WeatherRepository
+from app.schemas.user_profile import HomeLocation, UserProfile, pv_installation
+
+logger = logging.getLogger(__name__)
+
+QUARTER = timedelta(minutes=15)
+FORECAST_DAYS_AHEAD = 2
+FORECAST_MAX_AGE = timedelta(hours=3)
+FORECAST_PAST_DAYS = 60
+FORECAST_RETENTION_DAYS = 100
+ARCHIVE_DELAY_DAYS = 6
+ARCHIVE_CHUNK_DAYS = 366
+FORECAST_CHUNK_DAYS = 31
+EARLIEST_DAY = date(2000, 1, 1)
+
+
+@dataclass(frozen=True)
+class Cell:
+    latitude: Decimal
+    longitude: Decimal
+
+    @classmethod
+    def of(cls, location: HomeLocation) -> "Cell":
+        return cls(Decimal(f"{location.latitude:.1f}"), Decimal(f"{location.longitude:.1f}"))
+
+
+def planes_of(profile: UserProfile) -> list[Plane]:
+    installation = pv_installation(profile.pv_config)
+    if installation is None:
+        return []
+    return sorted({Plane.of(array.tilt, array.azimuth) for array in installation.arrays})
+
+
+@dataclass
+class Quarter:
+    start: datetime
+    source: str | None
+    temperature_c: float | None
+    cloud_cover_pct: int | None
+    ghi_w_m2: float | None
+    tilted_w_m2: list[float | None]
+
+
+@dataclass
+class DayWeather:
+    day: date
+    cell: Cell
+    planes: list[Plane]
+    quarters: list[Quarter]
+    fetched_at: datetime | None
+
+    @property
+    def complete(self) -> bool:
+        return all(quarter.ghi_w_m2 is not None for quarter in self.quarters)
+
+
+class WeatherUnavailableError(Exception):
+    pass
+
+
+def _days(first: date, last: date) -> list[date]:
+    return [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
+
+
+def _ranges(days: Iterable[date], chunk_days: int) -> list[tuple[date, date]]:
+    ranges: list[tuple[date, date]] = []
+    for day in sorted(set(days)):
+        if ranges and day - ranges[-1][1] == timedelta(days=1) and (day - ranges[-1][0]).days < chunk_days:
+            ranges[-1] = (ranges[-1][0], day)
+        else:
+            ranges.append((day, day))
+    return ranges
+
+
+def _quarters(day: date) -> list[datetime]:
+    start, _ = local_day_bounds_utc(day)
+    return [start + QUARTER * index for index in range(expected_intervals(day))]
+
+
+def _by_quarter(rows: Iterable[WeatherObservation]) -> dict[datetime, WeatherObservation]:
+    covered = {}
+    for row in rows:
+        start = row.interval_start.astimezone(timezone.utc)
+        for index in range(row.interval_minutes // 15):
+            covered[start + QUARTER * index] = row
+    return covered
+
+
+def _settled_at(day: date) -> datetime:
+    _, end = local_day_bounds_utc(day)
+    return end + timedelta(days=ARCHIVE_DELAY_DAYS)
+
+
+def _usable(row: WeatherObservation, planes: list[Plane]) -> bool:
+    return row.ghi_w_m2 is not None and all(plane.key in (row.tilted_w_m2 or {}) for plane in planes)
+
+
+def _number(value) -> float | None:
+    return float(value) if value is not None else None
+
+
+class WeatherService:
+    def __init__(
+        self,
+        repository: WeatherRepository,
+        client=None,
+        now: Callable[[], datetime] | None = None,
+        interactive: bool = False,
+    ):
+        self.repository = repository
+        self._client = client
+        self.now = now or (lambda: datetime.now(timezone.utc))
+        self.interactive = interactive
+
+    @property
+    def client(self):
+        if self._client is None:
+            factory = weather_provider.interactive_client if self.interactive else weather_provider.default_client
+            self._client = factory()
+        return self._client
+
+    def today(self) -> date:
+        return self.now().astimezone(MARKET_TIMEZONE).date()
+
+    def latest_day(self) -> date:
+        return self.today() + timedelta(days=FORECAST_DAYS_AHEAD)
+
+    def day(self, cell: Cell, day: date, planes: list[Plane]) -> DayWeather:
+        rows = self._rows(cell, day, day)
+        if self._needs_fetch(day, rows, planes):
+            first, last = self._fetch_window(day)
+            try:
+                self.fetch(cell, first, last, planes)
+                rows = self._rows(cell, day, day)
+            except WeatherProviderError as error:
+                logger.warning("Nie udało się pobrać pogody na %s: %s", day, error)
+        result = self._assemble(cell, day, planes, rows)
+        if all(quarter.source is None for quarter in result.quarters):
+            raise WeatherUnavailableError(f"Brak pogody na {day}")
+        return result
+
+    def _fetch_window(self, day: date) -> tuple[date, date]:
+        today = self.today()
+        if day >= today:
+            return today, self.latest_day()
+        first = day.replace(day=1)
+        last = (first + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        return first, min(last, today - timedelta(days=1))
+
+    def refresh_forecast(self, cell: Cell, planes: list[Plane]) -> int:
+        return self.fetch(cell, self.today(), self.latest_day(), planes)
+
+    def ensure_forecast(self, cell: Cell, planes: list[Plane]) -> int:
+        rows = self._rows(cell, self.today(), self.latest_day())
+        if not any(self._needs_fetch(day, rows, planes) for day in _days(self.today(), self.latest_day())):
+            return 0
+        return self.refresh_forecast(cell, planes)
+
+    def ensure_history(self, cell: Cell, days: Iterable[date], planes: list[Plane]) -> int:
+        today = self.today()
+        past = sorted({day for day in days if EARLIEST_DAY <= day < today})
+        if not past:
+            return 0
+        archive, forecast = self._split(self._rows(cell, past[0], past[-1]))
+        needed = []
+        for day in past:
+            settled = self.now() >= _settled_at(day)
+            if self._complete(archive, day, planes):
+                if settled and not self._final(archive, day):
+                    needed.append(day)
+            elif settled or not self._complete(forecast, day, planes):
+                needed.append(day)
+        return sum(self.fetch(cell, first, last, planes) for first, last in _ranges(needed, ARCHIVE_CHUNK_DAYS))
+
+    def fetch(self, cell: Cell, first: date, last: date, planes: list[Plane]) -> int:
+        today = self.today()
+        first = max(first, EARLIEST_DAY)
+        last = min(last, self.latest_day())
+        if first > last:
+            return 0
+        stored = 0
+        past_last = min(last, today - timedelta(days=1))
+        if first <= past_last:
+            for start, end in _ranges(_days(first, past_last), ARCHIVE_CHUNK_DAYS):
+                stored += self._store(cell, WeatherObservation.SOURCE_ARCHIVE, start, end, planes)
+            archive, forecast = self._split(self._rows(cell, first, past_last))
+            fallback = [
+                day for day in _days(max(first, today - timedelta(days=FORECAST_PAST_DAYS)), past_last)
+                if not self._complete(archive, day, planes) and not self._complete(forecast, day, planes)
+            ]
+            for start, end in _ranges(fallback, FORECAST_CHUNK_DAYS):
+                stored += self._store(cell, WeatherObservation.SOURCE_FORECAST, start, end, planes)
+        if last >= today:
+            stored += self._store(cell, WeatherObservation.SOURCE_FORECAST, max(first, today), last, planes)
+        return stored
+
+    def prune(self) -> int:
+        start, _ = local_day_bounds_utc(self.today() - timedelta(days=FORECAST_RETENTION_DAYS))
+        return self.repository.delete_forecasts_before(start)
+
+    def _store(self, cell: Cell, source: str, first: date, last: date, planes: list[Plane]) -> int:
+        fetch = self.client.archive if source == WeatherObservation.SOURCE_ARCHIVE else self.client.forecast
+        fetched_at = self.now()
+        points = fetch(float(cell.latitude), float(cell.longitude), first - timedelta(days=1), last, planes)
+        start, _ = local_day_bounds_utc(first)
+        _, end = local_day_bounds_utc(last)
+        points = [point for point in points if start <= point.interval_start < end]
+        return self.repository.upsert(cell.latitude, cell.longitude, source, points, fetched_at)
+
+    def _rows(self, cell: Cell, first: date, last: date) -> list[WeatherObservation]:
+        start, _ = local_day_bounds_utc(first)
+        _, end = local_day_bounds_utc(last)
+        return self.repository.between(cell.latitude, cell.longitude, start, end)
+
+    @staticmethod
+    def _split(rows: list[WeatherObservation]) -> tuple[dict, dict]:
+        return (
+            _by_quarter(row for row in rows if row.source == WeatherObservation.SOURCE_ARCHIVE),
+            _by_quarter(row for row in rows if row.source == WeatherObservation.SOURCE_FORECAST),
+        )
+
+    @staticmethod
+    def _complete(covered: dict[datetime, WeatherObservation], day: date, planes: list[Plane]) -> bool:
+        return all(quarter in covered and _usable(covered[quarter], planes) for quarter in _quarters(day))
+
+    @staticmethod
+    def _final(archive: dict[datetime, WeatherObservation], day: date) -> bool:
+        return all(archive[quarter].fetched_at >= _settled_at(day) for quarter in _quarters(day))
+
+    def _needs_fetch(self, day: date, rows: list[WeatherObservation], planes: list[Plane]) -> bool:
+        archive, forecast = self._split(rows)
+        if day < self.today():
+            return not (self._complete(archive, day, planes) or self._complete(forecast, day, planes))
+        if not self._complete(forecast, day, planes):
+            return True
+        oldest = min(row.fetched_at for row in rows if row.source == WeatherObservation.SOURCE_FORECAST)
+        return self.now() - oldest > FORECAST_MAX_AGE
+
+    def _assemble(self, cell: Cell, day: date, planes: list[Plane], rows: list[WeatherObservation]) -> DayWeather:
+        archive, forecast = self._split(rows)
+        preferred, other = (archive, forecast) if day < self.today() else (forecast, archive)
+        quarters, fetched = [], []
+        for start in _quarters(day):
+            candidates = [row for row in (preferred.get(start), other.get(start)) if row is not None]
+            row = next((row for row in candidates if _usable(row, planes)), candidates[0] if candidates else None)
+            if row is None:
+                quarters.append(Quarter(start, None, None, None, None, [None] * len(planes)))
+                continue
+            if row.source == WeatherObservation.SOURCE_FORECAST:
+                fetched.append(row.fetched_at)
+            tilted = row.tilted_w_m2 or {}
+            quarters.append(
+                Quarter(
+                    start=start,
+                    source=row.source,
+                    temperature_c=_number(row.temperature_c),
+                    cloud_cover_pct=row.cloud_cover_pct,
+                    ghi_w_m2=_number(row.ghi_w_m2),
+                    tilted_w_m2=[_number(tilted.get(plane.key)) for plane in planes],
+                )
+            )
+        return DayWeather(day, cell, planes, quarters, min(fetched) if fetched else None)

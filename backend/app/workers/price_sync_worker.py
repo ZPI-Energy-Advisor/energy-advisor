@@ -31,12 +31,14 @@ SYNC_MINUTE = PRICE_PUBLICATION_TIME.minute
 RCEM_SYNC_HOUR, RCEM_SYNC_MINUTE = divmod((SYNC_HOUR * 60 + SYNC_MINUTE + 30) % (24 * 60), 60)
 
 
-def wait_for_database(timeout_seconds: float = 300, interval_seconds: float = 5, sleep=time.sleep) -> bool:
+def wait_for_database(
+    timeout_seconds: float = 300, interval_seconds: float = 5, sleep=time.sleep, table: str = "price_sync_runs"
+) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while True:
         try:
             with engine.connect() as connection:
-                connection.execute(text("SELECT 1 FROM price_sync_runs LIMIT 1"))
+                connection.execute(text(f"SELECT 1 FROM {table} LIMIT 1"))
             return True
         except OperationalError as e:
             reason = f"baza niedostępna ({e.orig})"

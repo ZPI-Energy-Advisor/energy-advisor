@@ -12,6 +12,7 @@ from app.api.v1.tariffs import router as tariffs_router
 from app.api.v1.users import router as users_router
 from app.api.v1.home import router as home_router
 from app.api.v1.planning import router as planning_router
+from app.api.v1.weather import router as weather_router
 from app.config import CORS_ORIGINS
 from app.core.errors import register_error_handlers
 from app.core.smart_home_factory import build_app_hub_client
@@ -49,6 +50,7 @@ v1_router.include_router(tariffs_router)
 v1_router.include_router(users_router)
 v1_router.include_router(home_router)
 v1_router.include_router(planning_router)
+v1_router.include_router(weather_router)
 api_router.include_router(v1_router)
 
 app.add_middleware(
