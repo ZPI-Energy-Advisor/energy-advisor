@@ -2,6 +2,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# Wartość z .env.example: hub skopiowany bez zmian nie może wystartować ze znanym kluczem.
+PLACEHOLDER_API_KEYS = frozenset({"generate_your_own_random_key"})
+
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,8 @@ class HubSettings:
         api_key = os.getenv("HUB_API_KEY")
         if not api_key:
             raise RuntimeError("HUB_API_KEY must be configured")
+        if api_key in PLACEHOLDER_API_KEYS:
+            raise RuntimeError("HUB_API_KEY still has the placeholder value from .env.example")
         return cls(
             api_key=api_key,
             state_dir=Path(os.getenv("HUB_STATE_DIR", "/data")),

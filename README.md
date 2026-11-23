@@ -35,6 +35,13 @@ W pliku `.env` należy uzupełnić co najmniej `POSTGRES_PASSWORD`, `JWT_SECRET_
 `PRICE_SYNC_ADMIN_KEY`. Plik jest wspólny dla Docker Compose, backendu i frontendu.
 Opis zmiennych znajduje się w `.env.example`.
 
+Sekrety (`JWT_SECRET_KEY`, `PRICE_SYNC_ADMIN_KEY`, `HUB_API_KEY`) muszą mieć co najmniej 32 znaki,
+a backend i hub nie wystartują z wartościami-zaślepkami z `.env.example`. Losowe wartości wypisuje:
+
+```bash
+python backend/scripts/generate_secrets.py
+```
+
 ### 2. Kontenery
 
 ```bash

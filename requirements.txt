@@ -21,3 +21,4 @@ requests
 APScheduler>=3.10,<4
 tzdata
 jsonschema>=4.23,<5
+slowapi>=0.1.9,<0.2

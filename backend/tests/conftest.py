@@ -11,7 +11,7 @@ load_dotenv(BACKEND_DIR.parent / ".env")
 _configured_db = os.getenv("POSTGRES_DB", "energy_advisor")
 TEST_DATABASE = _configured_db if _configured_db.endswith("_test") else f"{_configured_db}_test"
 os.environ["POSTGRES_DB"] = TEST_DATABASE
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-only-for-pytest-0123456789")
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
@@ -68,6 +68,28 @@ def _prepare_test_database() -> str | None:
 
 
 DATABASE_ERROR = _prepare_test_database()
+
+
+@pytest.fixture(autouse=True)
+def _rate_limit_off():
+    """Testy rejestrują wielu użytkowników z jednego adresu, więc limity prób są domyślnie wyłączone.
+    Fixture `rate_limited` włącza je dla pojedynczego testu."""
+    from app.core.rate_limit import limiter
+
+    limiter.enabled = False
+    yield
+    limiter.enabled = False
+
+
+@pytest.fixture
+def rate_limited():
+    from app.core.rate_limit import limiter
+
+    limiter.reset()
+    limiter.enabled = True
+    yield limiter
+    limiter.enabled = False
+    limiter.reset()
 
 
 @pytest.fixture(autouse=True)

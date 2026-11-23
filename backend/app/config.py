@@ -5,9 +5,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY must be configured")
+# Wartości z .env.example: aplikacja skopiowana bez zmian nie może wystartować ze znanym sekretem.
+PLACEHOLDER_SECRETS = frozenset({"generate_your_own_random_secret", "generate_your_own_random_key"})
+MIN_SECRET_LENGTH = 32
+SECRET_HINT = 'wygeneruj go: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+
+
+def require_secret(name: str, value: str | None) -> str:
+    """Sekret musi być ustawiony, nie może być zaślepką z .env.example i musi mieć co najmniej 32 znaki."""
+    if not value:
+        raise RuntimeError(f"{name} must be configured ({SECRET_HINT})")
+    if value in PLACEHOLDER_SECRETS:
+        raise RuntimeError(f"{name} still has the placeholder value from .env.example ({SECRET_HINT})")
+    if len(value) < MIN_SECRET_LENGTH:
+        raise RuntimeError(f"{name} must be at least {MIN_SECRET_LENGTH} characters long ({SECRET_HINT})")
+    return value
+
+
+def optional_secret(name: str, value: str | None) -> str | None:
+    """Pusty sekret wyłącza funkcję. Ustawiony musi spełniać te same warunki co wymagany."""
+    return require_secret(name, value) if value else None
+
+
+SECRET_KEY = require_secret("JWT_SECRET_KEY", os.getenv("JWT_SECRET_KEY"))
 
 SIGNATURE_ALGORITHM = os.getenv("SIGNATURE_ALGORITHM", "HS256")
 if SIGNATURE_ALGORITHM != "HS256":
@@ -24,9 +44,14 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
-PRICE_SYNC_ADMIN_KEY = os.getenv("PRICE_SYNC_ADMIN_KEY") or None
+PRICE_SYNC_ADMIN_KEY = optional_secret("PRICE_SYNC_ADMIN_KEY", os.getenv("PRICE_SYNC_ADMIN_KEY"))
 
 HUB_URL = os.getenv("HUB_URL") or None
-HUB_API_KEY = os.getenv("HUB_API_KEY") or None
+HUB_API_KEY = optional_secret("HUB_API_KEY", os.getenv("HUB_API_KEY"))
 HUB_TIMEOUT_SECONDS = float(os.getenv("HUB_TIMEOUT_SECONDS") or 5)
 HUB_HOME_USER_EMAIL = (os.getenv("HUB_HOME_USER_EMAIL") or "").strip().lower() or None
+
+# Limity prób na /auth (ZP-134), format biblioteki limits, np. "5/minute". Liczone na adres IP.
+RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED") or "true").strip().lower() not in {"0", "false", "no"}
+RATE_LIMIT_LOGIN = os.getenv("RATE_LIMIT_LOGIN") or "5/minute"
+RATE_LIMIT_REGISTER = os.getenv("RATE_LIMIT_REGISTER") or "3/hour"
