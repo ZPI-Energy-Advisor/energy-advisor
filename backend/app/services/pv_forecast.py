@@ -60,6 +60,7 @@ class PvForecast:
     approximate_location: bool
     weather_fetched_at: datetime | None
     notes: list[str] = field(default_factory=list)
+    weather: DayWeather | None = None
 
     @property
     def total_kwh(self) -> float:
@@ -258,6 +259,7 @@ class PvForecastService:
             approximate_location=location.approximate,
             weather_fetched_at=day_weather.fetched_at if day_weather else None,
             notes=notes,
+            weather=day_weather,
         )
 
     def _calibration(self, user_id, cell: Cell, arrays: list[PvArray], planes: list[Plane],
@@ -284,3 +286,54 @@ class PvForecastService:
         days = {day for day in days if day < self.weather.today()}
         weather = self.weather.stored_days(cell, days, planes) if days else {}
         return calibrate(arrays, planes, production, weather, inverter_kw)
+
+    def setup(self, user_id, profile: UserProfile) -> "PvSetup":
+        installation = pv_installation(profile.pv_config)
+        if installation is None:
+            raise NoPvInstallationError("Profil nie ma instalacji PV.")
+        location = profile.base_info.location
+        if location is None:
+            raise PvForecastUnavailableError("Profil nie ma lokalizacji domu.")
+        arrays = arrays_of(installation)
+        planes = planes_of_arrays(arrays)
+        cell = Cell.of(location)
+        inverter_kw = installation.inverter_power_kw or self.devices.pv_inverter_kw(user_id)
+        calibration = self._calibration(user_id, cell, arrays, planes, inverter_kw)
+        return PvSetup(installation, cell, arrays, planes, inverter_kw, calibration)
+
+    def modeled(self, setup: "PvSetup", days) -> dict[date, dict[datetime, float]]:
+        """Produkcja z modelu z pogody zapisanej w bazie (bez pobierania), dla dni z pełną pogodą."""
+        result = {}
+        for day, day_weather in self.weather.stored_days(setup.cell, days, setup.planes).items():
+            quarters = {}
+            for quarter in day_weather.quarters:
+                dc = dc_kw(setup.arrays, setup.planes, quarter.tilted_w_m2, quarter.temperature_c)
+                if dc is None:
+                    break
+                quarters[quarter.start] = ac_kwh(dc, setup.calibration.coefficient, setup.inverter_kw)
+            else:
+                result[day] = quarters
+        return result
+
+    def accuracy(self, user_id, setup: "PvSetup") -> list[tuple[date, float, float]]:
+        """Dni z produkcją falownika z plików: (dzień, produkcja z pliku, produkcja z modelu) w kWh."""
+        production = self.devices.pv_production(user_id)
+        actual: dict[date, float] = defaultdict(float)
+        for moment, kwh in production.items():
+            actual[moment.astimezone(MARKET_TIMEZONE).date()] += kwh
+        days = [day for day in actual if day < self.weather.today()]
+        modeled = self.modeled(setup, days)
+        return [
+            (day, round(actual[day], 2), round(sum(modeled[day].values()), 2))
+            for day in sorted(modeled)
+        ]
+
+
+@dataclass
+class PvSetup:
+    installation: PVInstallation
+    cell: Cell
+    arrays: list[PvArray]
+    planes: list[Plane]
+    inverter_kw: float | None
+    calibration: Calibration

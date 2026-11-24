@@ -12,6 +12,7 @@ import {
   FiClock,
   FiZap,
   FiCalendar,
+  FiSun,
 } from "react-icons/fi";
 import apiClient, { clearAuth } from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
@@ -77,6 +78,11 @@ function LayoutShell() {
       path: "/prices",
       label: "Ceny dynamiczne",
       icon: <FiTrendingUp className="mr-3 text-lg" />,
+    },
+    {
+      path: "/pv",
+      label: "Fotowoltaika",
+      icon: <FiSun className="mr-3 text-lg" />,
     },
     {
       path: "/schedule",

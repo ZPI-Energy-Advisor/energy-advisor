@@ -98,3 +98,48 @@ z plikiem.
 
 Kod korzystający z prognozy, np. plan na jutro, wywołuje
 `PvForecastService(weather, devices).forecast(user_id, profile, day)` i dostaje `PvForecast`.
+
+## Ekran „Fotowoltaika” (ZP-150)
+
+Ekran `/pv` (menu „Fotowoltaika”) i karta „Jutro z paneli” na dashboardzie. Kod: `backend/app/services/pv_insights.py`,
+`frontend/src/pages/PvPage.jsx`.
+
+| Część ekranu | Co pokazuje | Endpoint |
+|---|---|---|
+| Nagłówek | Panele z profilu, falownik, rozliczenie, czy prognoza jest dopasowana do plików i jak bardzo się myli | `GET /api/v1/pv/overview` |
+| Najbliższe dni | Dziś, jutro, pojutrze: suma kWh, godziny największej produkcji, zachmurzenie w dzień, temperatura | `GET /api/v1/pv/overview` |
+| Doba | Wykres co 15 min: produkcja z prognozy albo z modelu (dni miniony: pogoda z archiwum), produkcja z pliku, zużycie domu, pasek zachmurzenia; pod spodem bilans i wartość | `GET /api/v1/pv/day?date=` |
+| Trafność | Produkcja z pliku obok modelu w kolejnych dniach (ostatnie 60), kliknięcie otwiera dzień | `GET /api/v1/pv/accuracy` |
+
+Doba może być dowolnym dniem od 2000-01-01 do dziś + 2 dni. Dane z plików bierzemy tylko dla dni minionych; dziś
+i kolejne dni to prognoza, nawet jeśli plik sięga dalej.
+
+**Zużycie domu** w kwadransie:
+
+| Dzień | Źródło (`consumption_source`) | Wzór |
+|---|---|---|
+| Miniony, z produkcją falownika z pliku urządzeń | `devices` | pobór − oddanie + produkcja z pliku |
+| Miniony, tylko licznik | `meter` | pobór − oddanie + produkcja z modelu, nie mniej niż pobór |
+| Dziś, przyszły albo bez odczytów | `typical` | średnia tej samej godziny zegarowej z ostatnich (do 28) dni z plików, najpierw dni tego samego rodzaju (robocze albo weekend) |
+
+Godzina powtórzona przy zmianie czasu ma w odczytach jeden zsumowany kwadrans, który dzielimy po równo.
+
+**Bilans** liczymy w godzinach jak operator: w każdej godzinie autokonsumpcja = min(produkcja, zużycie), reszta
+produkcji to oddanie, a reszta zużycia to pobór z sieci.
+
+**Wartość:**
+- **Autokonsumpcja:** cena z sieci z taryfy z profilu (energia, dystrybucja zmienna, opłaty za kWh, VAT), czyli
+  to, czego dom nie kupił.
+- **Oddanie w net-billingu:** RCE albo RCEm × 1,23 do depozytu, a ujemna cena daje 0. Bez cen z tego dnia
+  bierzemy średnią z tych samych godzin z 14 poprzednich dni (z dopiskiem), a bez żadnych cen oddania nie
+  wyceniamy.
+- **Oddanie w net-meteringu:** współczynnik opustu × cena z sieci.
+
+Depozyt pokrywa tylko część rachunku za energię, co ekran mówi wprost. Godziny bez ceny z sieci (umowa z ceną
+dynamiczną przed publikacją RCE) są pomijane z dopiskiem.
+
+Typowe zużycie jest zapamiętywane w procesie na godzinę, tak jak kalibracja. Czasy odpowiedzi na roku danych:
+- doba miniona: ok. 0,1 s;
+- doba z typowym zużyciem: ok. 0,3 s przy pierwszym zapytaniu, potem szybciej;
+- przegląd: ok. 0,1 s;
+- trafność: ok. 0,4 s.

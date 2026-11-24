@@ -6,6 +6,7 @@ import ImportPage from "./pages/ImportPage";
 import TariffsPage from "./pages/TariffsPage";
 import SchedulePage from "./pages/SchedulePage";
 import DynamicPricesPage from "./pages/DynamicPricesPage";
+import PvPage from "./pages/PvPage";
 import ProfilePage from "./pages/ProfilePage";
 import HomePage from "./pages/HomePage";
 import PlanningPage from "./pages/PlanningPage";
@@ -32,6 +33,7 @@ export function AppRoutes() {
           <Route path="/calculations" element={<Navigate to="/tariffs" replace />} />
           <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/prices" element={<DynamicPricesPage />} />
+          <Route path="/pv" element={<PvPage />} />
           <Route path="/home" element={<HomePage />} />
           <Route path="/plan" element={<PlanningPage />} />
         </Route>
