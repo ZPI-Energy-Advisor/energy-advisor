@@ -1,8 +1,10 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.v1.deps import get_authenticated_user, get_user_service, get_weather_service
+from app.config import RATE_LIMIT_WEATHER
+from app.core.rate_limit import limiter
 from app.models.User import User
 from app.schemas.weather import WeatherDayResponse, WeatherInterval, WeatherPlane
 from app.services.user_service import UserService
@@ -12,7 +14,9 @@ router = APIRouter(prefix="/weather", tags=["Weather"])
 
 
 @router.get("/forecast", response_model=WeatherDayResponse)
+@limiter.limit(RATE_LIMIT_WEATHER)
 def get_weather(
+    request: Request,
     day: date | None = Query(default=None, alias="date", description="Doba lokalna; domyślnie dziś"),
     user: User = Depends(get_authenticated_user),
     users: UserService = Depends(get_user_service),

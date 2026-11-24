@@ -8,6 +8,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.locks import LockNotAcquiredError, PostgresAdvisoryLock
+from app.core.logging_config import configure_logging
 from app.database import SessionLocal, engine
 from app.providers.prices.base import MARKET_TIMEZONE
 from app.services import weather_sync
@@ -91,7 +92,7 @@ def run_scheduler() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    configure_logging()
     parser = argparse.ArgumentParser(description="Pobieranie pogody z Open-Meteo")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("run", help="uruchom harmonogram (domyślne)")

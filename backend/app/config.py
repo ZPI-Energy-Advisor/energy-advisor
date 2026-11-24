@@ -58,3 +58,6 @@ RATE_LIMIT_REGISTER = os.getenv("RATE_LIMIT_REGISTER") or "3/hour"
 # Sprawdzanie adresu w profilu: każde to do 3 zapytań do Nominatim (1/s dla całej aplikacji), więc bez limitu
 # seria zapytań zajęłaby wątki API i groziła blokadą naszego klienta w Nominatim.
 RATE_LIMIT_ADDRESS_LOOKUP = os.getenv("RATE_LIMIT_ADDRESS_LOOKUP") or "20/minute"
+# Pogoda na żądanie (ZP-117): brakujący miesiąc to zapytania do Open-Meteo, którego darmowy limit dzielą
+# wszyscy użytkownicy i worker pogody.
+RATE_LIMIT_WEATHER = os.getenv("RATE_LIMIT_WEATHER") or "30/minute"

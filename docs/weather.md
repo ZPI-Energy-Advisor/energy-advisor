@@ -116,5 +116,7 @@ choćby jednej grupy paneli (np. świeżo dodanej, gdy Open-Meteo nie odpowiada)
 zakresu: 422, brak danych i niedostępne Open-Meteo: 503.
 
 Open-Meteo w darmowej wersji jest do użytku niekomercyjnego (limit 10 000 zapytań na dobę). Odczyt na żądanie
-pobiera cały miesiąc naraz, więc przeglądanie dowolnych dni kosztuje najwyżej jedno zapytanie na miesiąc i płaszczyznę. Adresy można zmienić
+pobiera cały miesiąc naraz, więc przeglądanie dowolnych dni kosztuje najwyżej jedno zapytanie na miesiąc i płaszczyznę.
+Endpoint ma limit prób na adres IP, domyślnie 30 na minutę (`RATE_LIMIT_WEATHER`), żeby przeklikiwanie dat nie zużyło
+limitu Open-Meteo wspólnego dla całej aplikacji i workera. Adresy można zmienić
 przez `OPEN_METEO_FORECAST_URL` i `OPEN_METEO_ARCHIVE_URL`. Testy używają klienta offline (`tests/conftest.py`).
