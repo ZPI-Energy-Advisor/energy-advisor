@@ -9,6 +9,7 @@ import DynamicPricesPage from "./pages/DynamicPricesPage";
 import ProfilePage from "./pages/ProfilePage";
 import HomePage from "./pages/HomePage";
 import PlanningPage from "./pages/PlanningPage";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -20,6 +21,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Login />} />
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/profile" element={<ProfilePage />} />

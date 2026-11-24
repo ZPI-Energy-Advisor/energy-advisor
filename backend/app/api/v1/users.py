@@ -4,7 +4,12 @@ from app.api.v1.deps import get_authenticated_user, get_home_service, get_user_s
 from app.config import RATE_LIMIT_ADDRESS_LOOKUP
 from app.core.rate_limit import limiter
 from app.models.User import User
-from app.schemas.user import CurrentUserResponse, DeleteAccountRequest
+from app.schemas.user import (
+    CurrentUserResponse,
+    DeleteAccountRequest,
+    PrivacyConsentRequest,
+    PrivacyPolicyStatus,
+)
 from app.schemas.user_profile import UserProfile
 from app.services.home_location import AddressLookup, lookup_address
 from app.services.home_service import HomeService
@@ -28,6 +33,16 @@ def get_current_user(
     current = service.get_current_user(user)
     current.home_owner = home_service.is_owner(user)
     return current
+
+
+@router.post("/me/privacy-consent", response_model=PrivacyPolicyStatus)
+def accept_privacy_policy(
+    request: PrivacyConsentRequest,
+    user: User = Depends(get_authenticated_user),
+    service: UserService = Depends(get_user_service),
+):
+    """Akceptacja aktualnej wersji polityki prywatności (po jej zmianie albo dla kont sprzed ZP-129)."""
+    return service.accept_privacy_policy(user, request.version)
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)

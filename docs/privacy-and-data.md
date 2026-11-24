@@ -31,6 +31,7 @@ Podstawy prawne (art. 6 ust. 1 RODO): **b** – niezbędne do świadczenia usłu
 |---|---|---|---|---|---|
 | `users` | `email`, `password_hash` (bcrypt), `provider`, `provider_id` (Google), `created_at`, `last_login_at` | tak | Logowanie i identyfikacja konta | b | Do usunięcia konta, najdłużej 12 miesięcy od ostatniego logowania |
 | `tokens` | `token_hash` (pbkdf2), `expires_at` | tak | Odświeżanie sesji; jeden wiersz na konto, nadpisywany | b | 7 dni od wydania, potem nieważny |
+| `privacy_consents` | `policy_version`, `accepted_at`, `source` (rejestracja, Google, ponowna akceptacja) | tak | Dowód akceptacji polityki prywatności (ZP-129) | b | Do usunięcia konta |
 | `user_profiles` | `base_info` (typ budynku, rok budowy, powierzchnia, liczba domowników, miejscowość, kod pocztowy, współrzędne domu, operator, faza, moc przyłączeniowa, cykl rozliczeń), `consumption_and_tariff`, `pv_config` (rozliczenie i panele) | tak | Rachunki taryf, plan na jutro, ceny kwadransów | b | Do usunięcia konta |
 | `energy_data_files` | `file_name`, daty, liczba rekordów, `error_message` | tak | Lista wgranych plików | b | Do usunięcia pliku lub konta |
 | `energy_readings` | `measured_at`, `energy_kwh`, `exported_kwh` (co 15 min) | tak | Wszystkie wyliczenia kosztów | b | Do usunięcia pliku lub konta |
@@ -128,3 +129,10 @@ Czyszczenie robi codzienne zadanie w workerze (APScheduler, ten sam proces co sy
 Najbardziej wrażliwe są odczyty zużycia i akcje urządzeń, więc szyfrowany jest cały wolumen bazy i kopie
 zapasowe, a nie pojedyncze kolumny (kolumny są potrzebne do wyliczeń). Hasła są przechowywane jako skróty
 bcrypt, a refresh tokeny jako skróty pbkdf2.
+
+## Polityka prywatności
+
+Treść polityki dla użytkowników jest w `backend/app/legal/privacy_policy.md`, a jej wersja (data publikacji)
+w `PRIVACY_POLICY_VERSION` w `backend/app/services/privacy_policy.py`. Po każdej zmianie treści trzeba podbić
+wersję: użytkownicy z akceptacją starszej wersji zobaczą przy najbliższym wejściu okno ponownej akceptacji.
+Zmiany w tym dokumencie, które dotyczą użytkowników, trzeba przenieść także do polityki.

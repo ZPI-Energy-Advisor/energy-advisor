@@ -1,9 +1,11 @@
 import { useState } from "react";
 import apiClient, { isAuthenticated, saveAuthResponse } from "../api/client";
 import { GoogleLogin } from "@react-oauth/google";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { FiCalendar, FiPieChart, FiTrendingDown } from "react-icons/fi";
+import PrivacyPolicyAcceptance from "../components/PrivacyPolicyAcceptance";
+import { PRIVACY_POLICY_PATH, fetchPrivacyPolicy, isPolicyRequiredError } from "../api/privacyPolicy";
 
 // Co daje aplikacja: trzy krótkie korzyści na ekranie logowania (widoczne od szerokiego ekranu).
 const BENEFITS = [
@@ -17,6 +19,7 @@ import logoDark from "../assets/logo/logo-dark.svg";
 const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const SESSION_EXPIRED_MESSAGE = "Sesja wygasła, zaloguj się ponownie.";
 const ACCOUNT_DELETED_MESSAGE = "Konto i wszystkie dane zostały usunięte.";
+const POLICY_NOT_ACCEPTED_MESSAGE = "Bez akceptacji polityki prywatności nie można założyć konta.";
 
 function initialMessage(state) {
   if (state?.accountDeleted) return ACCOUNT_DELETED_MESSAGE;
@@ -36,26 +39,39 @@ function Login() {
   const location = useLocation();
   const [message, setMessage] = useState(initialMessage(location.state));
   const [isRegister, setIsRegister] = useState(false);
+  const [policyAccepted, setPolicyAccepted] = useState(false);
+  // Token Google nowego konta, które czeka na akceptację polityki (backend: 403 privacy_policy_required).
+  const [pendingGoogleToken, setPendingGoogleToken] = useState(null);
   useDocumentTitle(isRegister ? "Rejestracja" : "Logowanie");
   const navigate = useNavigate();
   const redirectTo = getRedirectPath(location.state?.from);
 
-  const handleGoogleSuccess = async (credentialResponse) => {
+  const loginWithGoogle = async (token, acceptedPolicyVersion) => {
     try {
-      const token = credentialResponse.credential;
       const response = await apiClient.post("/auth/google", {
         google_code: token,
+        ...(acceptedPolicyVersion ? { accepted_policy_version: acceptedPolicyVersion } : {}),
       });
 
       saveAuthResponse(response.data, null);
       navigate(redirectTo, { replace: true });
     } catch (error) {
+      if (!acceptedPolicyVersion && isPolicyRequiredError(error)) {
+        setPendingGoogleToken(token);
+        return;
+      }
+      setPendingGoogleToken(null);
       if (error.response && error.response.data.detail) {
         setMessage(`Błąd autoryzacji Google: ${error.response.data.detail}`);
       } else {
         setMessage("Błąd połączenia z serwerem podczas logowania Google.");
       }
     }
+  };
+
+  const handleGoogleSuccess = (credentialResponse) => {
+    setMessage("");
+    return loginWithGoogle(credentialResponse.credential);
   };
 
   const handleGoogleError = () => {
@@ -71,13 +87,20 @@ function Login() {
       return;
     }
 
+    if (isRegister && !policyAccepted) {
+      setMessage("Zaakceptuj politykę prywatności, aby założyć konto.");
+      return;
+    }
+
     try {
       if (isRegister) {
+        const { version } = await fetchPrivacyPolicy();
         const response = await apiClient.post(
           "/auth/register",
           {
             email: email,
             password: password,
+            accepted_policy_version: version,
           },
         );
         saveAuthResponse(response.data, email);
@@ -185,6 +208,34 @@ function Login() {
               </div>
             </div>
 
+            {isRegister && (
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={policyAccepted}
+                    onChange={(e) => setPolicyAccepted(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>
+                    Zapoznałem/am się z{" "}
+                    <Link
+                      to={PRIVACY_POLICY_PATH}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-emerald-600 hover:text-emerald-500"
+                    >
+                      Polityką prywatności
+                    </Link>{" "}
+                    i ją akceptuję.
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500">
+                  Konto, na które nikt nie zaloguje się przez 12 miesięcy, usuwamy razem ze wszystkimi danymi.
+                </p>
+              </div>
+            )}
+
             <button
               type="submit"
               className="flex w-full justify-center rounded-md border border-transparent bg-emerald-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
@@ -236,6 +287,7 @@ function Login() {
               type="button"
               onClick={() => {
                 setIsRegister(!isRegister);
+                setPolicyAccepted(false);
                 setMessage("");
               }}
               className="text-sm font-medium text-emerald-600 hover:text-emerald-500"
@@ -245,8 +297,28 @@ function Login() {
                 : "Nie masz konta? Zarejestruj się"}
             </button>
           </div>
+
+          <p className="text-center text-xs text-gray-500">
+            <Link to={PRIVACY_POLICY_PATH} className="hover:text-gray-700 hover:underline">
+              Polityka prywatności
+            </Link>
+          </p>
         </div>
       </div>
+
+      {pendingGoogleToken && (
+        <PrivacyPolicyAcceptance
+          title="Zakładanie konta przez Google"
+          intro="To pierwsze logowanie tym kontem Google. Przed założeniem konta zapoznaj się z polityką prywatności."
+          acceptLabel="Akceptuję i zakładam konto"
+          onAccept={(version) => loginWithGoogle(pendingGoogleToken, version)}
+          cancelLabel="Anuluj"
+          onCancel={() => {
+            setPendingGoogleToken(null);
+            setMessage(POLICY_NOT_ACCEPTED_MESSAGE);
+          }}
+        />
+      )}
     </div>
   );
 }

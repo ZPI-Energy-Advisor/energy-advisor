@@ -8,9 +8,15 @@ from app.repositories.tariff_definition_repository import TariffDefinitionReposi
 from app.repositories.user_repository import UserRepository
 from app.schemas.other import TariffTypeEnum
 from app.schemas.tariff import TariffOut
-from app.schemas.user import CurrentUserResponse, ProfileTariffSummary
+from app.schemas.user import CurrentUserResponse, PrivacyPolicyStatus, ProfileTariffSummary
 from app.schemas.user_profile import UserProfile
 from app.services.home_location import AddressError, resolve_location, stored_location
+from app.services.privacy_policy import (
+    PRIVACY_POLICY_VERSION,
+    SOURCE_REACCEPT,
+    is_current_version,
+    require_current_version,
+)
 from app.services.tariff_costs import PricingProfile, TariffOption
 
 
@@ -55,7 +61,25 @@ class UserService:
                 needs_update=profile is not None and self._validated(profile) is None,
                 tariff_type=self._tariff_type(profile),
             ),
+            privacy_policy=self.privacy_policy_status(user),
         )
+
+    def privacy_policy_status(self, user: User) -> PrivacyPolicyStatus:
+        consent = self.repository.get_latest_privacy_consent(user.id)
+        accepted_version = consent.policy_version if consent else None
+        return PrivacyPolicyStatus(
+            current_version=PRIVACY_POLICY_VERSION,
+            accepted_version=accepted_version,
+            accepted_at=consent.accepted_at if consent else None,
+            needs_acceptance=not is_current_version(accepted_version),
+        )
+
+    def accept_privacy_policy(self, user: User, version: str) -> PrivacyPolicyStatus:
+        """Ponowna akceptacja po zmianie polityki. Ta sama wersja drugi raz nie dodaje wiersza."""
+        require_current_version(version)
+        if self.privacy_policy_status(user).needs_acceptance:
+            self.repository.add_privacy_consent(user.id, version, SOURCE_REACCEPT)
+        return self.privacy_policy_status(user)
 
     def current_tariff(self, pricing: PricingProfile, today: date) -> TariffOut | None:
         """Definicja taryfy z profilu w nowym cenniku: operator, kod (albo oferta dynamiczna z grupą) i data."""

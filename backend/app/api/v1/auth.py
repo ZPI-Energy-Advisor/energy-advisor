@@ -27,7 +27,7 @@ def authenticate_google(
     payload: GoogleAuthRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
-    return service.authenticate_google_user(payload.google_code)
+    return service.authenticate_google_user(payload.google_code, payload.accepted_policy_version)
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -37,7 +37,7 @@ def register_local(
     payload: RegisterLocalRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
-    return service.register_local_user(payload.email, payload.password)
+    return service.register_local_user(payload.email, payload.password, payload.accepted_policy_version)
 
 
 @router.post("/login", response_model=TokenResponse)
