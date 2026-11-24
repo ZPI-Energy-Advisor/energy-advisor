@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.schemas.other import TariffTypeEnum
-from app.services.energy_file_service import EnergyFileService
+from app.services.energy_file_service import EnergyFileService, _ReadingsSource
 from app.services.new_calculations_service import CalculationsService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.tariff_comparison import Reading, comparison, readings_from_usage, recommendation
@@ -161,10 +161,12 @@ def _data_tariffs(profile, readings, *, definitions=None, market=None):
     return files._usage_tariffs("user", readings, calculations.profile_inputs("user", first_day))
 
 
-def _comparison(profile, readings, *, all_tariffs=True, definitions=None, market=None):
+def _comparison(profile, readings, *, all_tariffs=True, definitions=None, market=None, covered_days=None):
     service = _calculations(profile, None, definitions, market)
     inputs = service.profile_inputs("user", readings[0].measured_at.date())
-    return comparison(service.calculate(readings, inputs, selected_only=not all_tariffs, fallback=True))
+    return comparison(
+        service.calculate(readings, inputs, selected_only=not all_tariffs, fallback=True, covered_days=covered_days)
+    )
 
 
 def _all_tariffs(profile, readings, *, definitions=None, market=None):
@@ -597,3 +599,65 @@ def test_offer_without_market_prices_is_not_recommended():
 
     assert recommended["skipped_tariffs"] == ["G11-dynamic"]
     assert recommended["tariff"] != "G11-dynamic"
+
+
+def test_month_without_published_rcem_is_billed_at_rce_with_warning():
+    # _MarketRepository nie ma żadnej RCEm (jak bieżący miesiąc, zanim PSE ją opublikuje).
+    readings = _with_export(_readings(_usage(date(2026, 6, 1), 30)))
+    rcem_profile = _profile()
+    rcem_profile.pv_config = {"mode": "net_billing", "type_of_price": "RCEm"}
+
+    with_rcem = _comparison(rcem_profile, readings)
+    with_rce = _comparison(_with_pv(_profile(), "net_billing"), readings)
+
+    priced = {entry["key"]: entry["payable_gross"] for entry in with_rcem["tariffs"]}
+    assert all(amount is not None for amount in priced.values())
+    assert priced == {entry["key"]: entry["payable_gross"] for entry in with_rce["tariffs"]}
+    assert any("Brak opublikowanej ceny RCEm za 06.2026" in warning for warning in with_rcem["warnings"])
+    assert not any("RCEm" in warning for warning in with_rce["warnings"])
+
+
+def _cycle_fees(cycle):
+    return sum(cycle[name] for name in ("fixed_network_net", "subscription_net", "capacity_net", "transition_net"))
+
+
+def _covered(usage):
+    return _ReadingsSource(file_ids=["a", "b"], aggregate=True).covered_days(usage)
+
+
+def test_gap_between_files_pays_fixed_fees_and_scales_consumption_only_for_days_with_data():
+    january, march = _usage(date(2026, 1, 1), 15, seed=3), _usage(date(2026, 3, 1), 15, seed=4)
+    together = _comparison(_profile(), _readings({**january, **march}), covered_days=_covered({**january, **march}))
+    parts = [_comparison(_profile(), _readings(usage)) for usage in (january, march)]
+
+    g12 = next(entry for entry in together["tariffs"] if entry["key"] == "G12")
+    assert [cycle["days_billed"] for cycle in g12["cycles"]] == [15, 15]
+    annual = together["annual_consumption"]
+    assert annual.days == 30
+    assert annual.annual_kwh == pytest.approx(annual.consumption_kwh * 365 / 30, rel=1e-5)
+    for key in ("G11", "G12", "G13"):
+        separately = sum(next(e for e in part["tariffs"] if e["key"] == key)["payable_gross"] for part in parts)
+        assert next(e for e in together["tariffs"] if e["key"] == key)["payable_gross"] == pytest.approx(separately, abs=0.02)
+
+
+def test_single_file_pays_fixed_fees_for_whole_range_also_on_days_without_readings():
+    usage = _usage(date(2026, 1, 10), 40)
+    for day in ("2026-01-20", "2026-01-21", "2026-02-05"):
+        usage[day] = [None] * 96
+    assert _ReadingsSource(file_ids=["a"]).covered_days(usage) is None
+
+    compared = _comparison(_profile(), _readings(usage))
+
+    g12 = next(entry for entry in compared["tariffs"] if entry["key"] == "G12")
+    assert [cycle["days_billed"] for cycle in g12["cycles"]] == [22, 18]
+    assert all(_cycle_fees(cycle) > 0 for cycle in g12["cycles"])
+    assert compared["annual_consumption"].days == 40
+
+
+def test_monthly_saving_estimate_uses_days_with_data_not_span_of_dates():
+    january, march = _usage(date(2026, 1, 1), 15, seed=3), _usage(date(2026, 3, 1), 15, seed=4)
+    compared = _comparison(_profile("G11"), _readings({**january, **march}), covered_days=_covered({**january, **march}))
+
+    advice = compared["recommendation"]
+    assert advice["saving"] > 0
+    assert advice["monthly_saving_estimate"] == pytest.approx(advice["saving"] * 365.25 / 12 / 30, abs=0.01)

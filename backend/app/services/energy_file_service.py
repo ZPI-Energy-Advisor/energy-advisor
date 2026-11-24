@@ -64,12 +64,18 @@ LEGACY_FIELDS = (
 class _ReadingsSource:
     file_ids: list[UUID] | None = None
     exports: dict | None = None
+    # Kilka plików: między nimi mogą być dni bez danych, za które nie liczymy opłat miesięcznych.
+    aggregate: bool = False
 
     @classmethod
     def of_aggregate(cls, source_type: str, aggregate: "_Aggregate") -> "_ReadingsSource":
         if source_type == EnergyDataFile.SOURCE_DEVICES:
-            return cls(exports=aggregate.exports)
-        return cls(file_ids=[energy_file.id for energy_file in aggregate.files])
+            return cls(exports=aggregate.exports, aggregate=True)
+        return cls(file_ids=[energy_file.id for energy_file in aggregate.files], aggregate=True)
+
+    def covered_days(self, usage: dict) -> frozenset[date] | None:
+        """Dni objęte plikami agregatu (dni serii zużycia); pojedynczy plik obejmuje cały swój zakres."""
+        return frozenset(date.fromisoformat(day) for day in usage) if self.aggregate else None
 
 
 @dataclass
@@ -125,8 +131,9 @@ class EnergyFileService:
             if all_tariffs:
                 pricing = self._base_pricing(inputs, all_tariffs=True)
             else:
-                readings = self._engine_readings(source or _ReadingsSource(), usage, date_from, date_to)
-                tariffs, pricing = self._usage_tariffs(user_id, readings, inputs)
+                source = source or _ReadingsSource()
+                readings = self._engine_readings(source, usage, date_from, date_to)
+                tariffs, pricing = self._usage_tariffs(user_id, readings, inputs, source.covered_days(usage))
         slot_prices = {}
         if self.tariff_costs is not None and (tariffs or all_tariffs):
             slot_prices = self.tariff_costs.chart_prices(
@@ -148,9 +155,9 @@ class EnergyFileService:
                 return [Reading(*row) for row in rows]
         return readings_from_usage(usage, source.exports)
 
-    def _calculate(self, user_id: UUID, readings: list, inputs, all_tariffs: bool):
+    def _calculate(self, user_id: UUID, readings: list, inputs, all_tariffs: bool, covered_days=None):
         return self.calculations_service.calculate(
-            readings, inputs, selected_only=not all_tariffs, fallback=True, user_id=user_id,
+            readings, inputs, selected_only=not all_tariffs, fallback=True, user_id=user_id, covered_days=covered_days,
         )
 
     @staticmethod
@@ -165,12 +172,12 @@ class EnergyFileService:
             "all_tariffs": all_tariffs,
         }
 
-    def _usage_tariffs(self, user_id: UUID, readings: list, inputs) -> tuple[dict, dict]:
+    def _usage_tariffs(self, user_id: UUID, readings: list, inputs, covered_days=None) -> tuple[dict, dict]:
         pricing = self._base_pricing(inputs, all_tariffs=False)
         if not readings:
             return {}, pricing
         try:
-            run = self._calculate(user_id, readings, inputs, all_tariffs=False)
+            run = self._calculate(user_id, readings, inputs, all_tariffs=False, covered_days=covered_days)
         except HTTPException as error:
             return {}, {**pricing, "note": str(error.detail)}
         total_usage = round(run.details.annual_consumption.consumption_kwh, 2)
@@ -220,7 +227,7 @@ class EnergyFileService:
             date_from=date_from,
             date_to=date_to,
             all_tariffs=all_tariffs,
-            **comparison(self._calculate(user_id, readings, inputs, all_tariffs)),
+            **comparison(self._calculate(user_id, readings, inputs, all_tariffs, source.covered_days(usage))),
         )
 
     def list_files(self, user_id: UUID, page: int, page_size: int) -> EnergyDataFileListResponse:

@@ -83,7 +83,6 @@ export const detailsKey = (comparison, chosenKey) => {
   return comparison?.cheapest_tariff ?? comparison?.tariffs[0]?.key ?? null;
 };
 
-// Linie wykresu: domyślnie Twoja, najtańsza i zaznaczona taryfa; tylko taryfy z cenami na wykresie.
 // Linie wykresu: domyślnie Twoja, najtańsza i zaznaczona taryfa, a „wszystkie” to tylko taryfy z kwotą
 // (bez np. ofert dynamicznych przy net-meteringu). Bez porównania (błąd) wszystkie taryfy z cenami.
 export const chartTariffKeys = (comparison, chosenKey, showAll, chartKeys) => {

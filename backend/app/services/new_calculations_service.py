@@ -161,7 +161,7 @@ class CalculationsService:
         )
         return ProfileInputs(profile_data.pv_config, tariff_data, from_profile=True)
 
-    def _details(self, pv_config, tariff_data, readings, first_day, warnings) -> CalculationDetails:
+    def _details(self, pv_config, tariff_data, readings, first_day, warnings, covered_days=None) -> CalculationDetails:
         if first_day is not None:
             readings = [reading for reading in readings if reading.measured_at.date() >= first_day]
         used_energy_cycles, produced_energy_cycles = self._cycles_from_readings(readings, tariff_data)
@@ -181,7 +181,7 @@ class CalculationsService:
             pv_details=pv_details,
             used_energy_cycles=used_energy_cycles,
             tariff_data=tariff_data,
-            annual_consumption=self._annual_consumption(readings),
+            annual_consumption=self._annual_consumption(readings, covered_days),
             warnings=warnings or None,
         )
 
@@ -221,8 +221,10 @@ class CalculationsService:
 
     def calculate(
         self, readings, inputs: ProfileInputs, *, selected_only: bool = False, fallback: bool = False,
-        user_id: UUID | None = None,
+        user_id: UUID | None = None, covered_days: frozenset[date] | None = None,
     ) -> TariffRun:
+        """`covered_days`: dni objęte plikami („Wszystkie pliki” z przerwą między plikami). Opłaty miesięczne
+        i skalowanie rocznego zużycia liczymy wtedy tylko za te dni; bez tego za każdy dzień zakresu odczytów."""
         if not readings:
             raise HTTPException(status_code=409, detail="Brak odczytów energii w wybranym okresie.")
         tariff_data = inputs.tariff_data
@@ -311,7 +313,8 @@ class CalculationsService:
                 f"więc liczymy taryfę {tariff_label(*selected_key)}."
             )
 
-        base_details = self._details(inputs.pv_config, tariff_data, readings, first_day, warnings)
+        data_days = None if covered_days is None else frozenset(day for day in covered_days if day >= first_day)
+        base_details = self._details(inputs.pv_config, tariff_data, readings, first_day, warnings, data_days)
         # Ceny RCE są potrzebne do ofert dynamicznych, które liczymy, i do wyceny oddania w net-billingu.
         dynamic_needed = (
             selected_key[0] == TariffTypeEnum.DYNAMIC if selected_only
@@ -333,6 +336,7 @@ class CalculationsService:
             last_day=file_last,
             raw_cycles=base_details.used_energy_cycles,
             prosumer=base_details.pv_details is not None,
+            data_days=data_days,
         )
 
         calculations = {}
@@ -372,7 +376,7 @@ class CalculationsService:
                     details.tariff_data.billing_cycle = BillingCycleEnum(months)
                     if months not in cycle_details_by_months:
                         cycle_details_by_months[months] = self._details(
-                            inputs.pv_config, details.tariff_data, readings, first_day, warnings
+                            inputs.pv_config, details.tariff_data, readings, first_day, warnings, data_days
                         )
                     cycle_details = cycle_details_by_months[months]
                     details.used_energy_cycles = cycle_details.used_energy_cycles
@@ -384,6 +388,7 @@ class CalculationsService:
                         last_day=context.last_day,
                         raw_cycles=cycle_details.used_energy_cycles,
                         prosumer=context.prosumer,
+                        data_days=context.data_days,
                     )
                 else:
                     tariff_context = context
@@ -406,6 +411,18 @@ class CalculationsService:
                 status_code=409,
                 detail=" ".join(["Brak kompletnych danych taryfowych dla tego pliku.", *reasons]),
             )
+        replaced = sorted(
+            month for month in getattr(self.market_prices, "rcem_replaced_months", ())
+            if first_day.replace(day=1) <= month <= file_last
+        )
+        if replaced:
+            months_text = ", ".join(month.strftime("%m.%Y") for month in replaced)
+            base_details.warnings = [
+                *(base_details.warnings or []),
+                f"Brak opublikowanej ceny RCEm za {months_text} (PSE podaje ją ok. 10. dnia następnego miesiąca). "
+                "Energię oddaną w tym okresie wyceniamy do tego czasu cenami RCE z każdego kwadransa, "
+                "więc depozyt może się jeszcze trochę zmienić.",
+            ]
         base_details.tariff_calculations = calculations
         base_details.dynamic_calculations = dynamic_calculations or None
         base_details.tariff_calculation_errors = calculation_errors or None
@@ -475,13 +492,16 @@ class CalculationsService:
         )
 
     @staticmethod
-    def _annual_consumption(readings) -> AnnualConsumption:
-        """Pobór z sieci w rozliczanych dniach pliku przeskalowany do roku (próg opłaty mocowej i przejściowej)."""
+    def _annual_consumption(readings, covered_days=None) -> AnnualConsumption:
+        """Pobór z sieci w rozliczanych dniach pliku przeskalowany do roku (próg opłaty mocowej i przejściowej).
+        Z `covered_days` skalujemy po dniach objętych plikami: przerwa między plikami nie zaniża zużycia."""
         if not readings:
             raise HTTPException(status_code=409, detail="Brak surowych odczytów energii dla pliku.")
         first_day = min(reading.measured_at for reading in readings).date()
         last_day = max(reading.measured_at for reading in readings).date()
         days = (last_day - first_day).days + 1
+        if covered_days:
+            days = sum(1 for day in covered_days if first_day <= day <= last_day) or days
         consumption_kwh = sum(float(reading.energy_kwh) for reading in readings)
         return AnnualConsumption(
             data_start=first_day,
