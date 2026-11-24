@@ -3,7 +3,7 @@
 Istniejące konta nie mają akceptacji, więc po wdrożeniu zostaną poproszone o nią przy najbliższym wejściu.
 
 Revision ID: b4e8d1f6a3c9
-Revises: a7d3e9c2b5f1
+Revises: b3e8f1a6c4d2
 """
 from typing import Sequence, Union
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "b4e8d1f6a3c9"
-down_revision: Union[str, Sequence[str], None] = "a7d3e9c2b5f1"
+down_revision: Union[str, Sequence[str], None] = "b3e8f1a6c4d2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
