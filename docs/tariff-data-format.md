@@ -241,7 +241,8 @@ przedpłatowe itd.). Analiza taryf pokazuje je jedną linijką pod tabelą poró
 }
 ```
 
-Progi opłat mocowej i przejściowej dotyczą rocznego zużycia (pobór z pliku przeskalowany do 365 dni), dolna
+Progi opłat mocowej i przejściowej dotyczą rocznego zużycia (pobór z pliku przeskalowany do 365 dni według liczby dni z odczytami, więc przerwa między plikami
+w „Wszystkich plikach” go nie zaniża; opłaty miesięczne też liczymy tylko za dni z odczytami), dolna
 granica włącznie, górna wyłącznie. Okresy nie mogą się nakładać i muszą pokrywać każdy dzień zakresu pliku.
 
 **Opłata przejściowa jest ogólnokrajowa.** Stawki dla gospodarstw domowych ustala ustawa o rozwiązaniu KDT

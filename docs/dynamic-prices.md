@@ -59,6 +59,9 @@ Według nowelizacji ustawy o OZE z 27.11.2024 (Dz.U. 2024 poz. 1847)
 | od 1.02.2025 | RCEm albo RCE, według `pv_config.type_of_price` w profilu | 1,23 |
 
 Ujemna cena daje 0. Ta sama wycena jest stosowana w Optymalizacji dla kwadransów z nadwyżką PV.
+Miesiąc bez opublikowanej RCEm (bieżący zawsze, poprzedni do ok. 11. dnia) wyceniamy cenami RCE z każdego
+kwadransa i dodajemy ostrzeżenie w rachunku; po publikacji RCEm kwota się przelicza. Bez tego plik sięgający
+bieżącego miesiąca nie miałby rachunku żadnej taryfy.
 Zwrotu niewykorzystanej nadpłaty (20% przy RCEm, 30% przy RCE) nie modelujemy.
 
 ## Architektura

@@ -1,3 +1,4 @@
+import logging
 import datetime as dt
 from decimal import Decimal
 
@@ -662,6 +663,32 @@ def test_weather_endpoint_limits(weather_db, weather_api, user_a, client_a, anon
     assert client_a.get("/api/v1/weather/forecast", params={"date": "1999-12-31"}).status_code == 422
     assert client_a.get("/api/v1/weather/forecast").json()["date"] == "2026-11-23"
     assert anonymous_client.get("/api/v1/weather/forecast").status_code == 401
+
+
+def test_weather_endpoint_is_limited_with_polish_message(weather_db, weather_api, user_a, client_a, rate_limited):
+    from app.config import RATE_LIMIT_WEATHER
+
+    _profile(weather_db, user_a)
+    for _ in range(int(RATE_LIMIT_WEATHER.split("/")[0])):
+        assert client_a.get("/api/v1/weather/forecast", params={"date": "2026-11-24"}).status_code == 200
+
+    response = client_a.get("/api/v1/weather/forecast", params={"date": "2026-11-24"})
+
+    assert response.status_code == 429
+    assert response.json()["detail"].startswith("Zbyt wiele prób. Spróbuj ponownie za")
+
+
+def test_weather_worker_masks_personal_data_in_logs(monkeypatch):
+    from app.core.logging_config import RedactingFilter
+    from app.workers import weather_worker
+
+    monkeypatch.setattr(weather_worker, "run_scheduler", lambda: None)
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])
+    monkeypatch.setattr(root, "level", root.level)
+    weather_worker.main(["run"])
+
+    assert any(isinstance(item, RedactingFilter) for handler in root.handlers for item in handler.filters)
 
 
 def test_weather_endpoint_when_open_meteo_does_not_answer(weather_db, user_a, client_a):

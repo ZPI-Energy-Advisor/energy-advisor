@@ -110,4 +110,25 @@ def test_missing_rcem_price_names_the_month():
     resolver = DynamicMarketPriceResolver(_PriceRepository())
 
     with pytest.raises(ValueError, match="Brak ceny RCEm dla miesiąca 2026-03-01"):
+        resolver.rcem(date(2026, 3, 15))
+
+
+def test_month_without_published_rcem_is_valued_at_rce_of_the_quarter_and_remembered():
+    repository = _PriceRepository(rcem={date(2026, 2, 1): Decimal("331.39")})
+    resolver = DynamicMarketPriceResolver(repository)
+
+    published = resolver(datetime(2026, 2, 10, 12, 0), TypeOfMarketEnergyEnum.RCEm)
+    unpublished = resolver(datetime(2026, 3, 15, 12, 0), TypeOfMarketEnergyEnum.RCEm)
+
+    assert published == pytest.approx(0.33139)
+    # 12:00 CET to 11:00 UTC: cena RCE tego kwadransa
+    assert unpublished == pytest.approx(1.1)
+    assert resolver.rcem_replaced_months == {date(2026, 3, 1)}
+
+
+def test_month_without_rcem_and_without_rce_still_fails():
+    resolver = DynamicMarketPriceResolver(_PriceRepository(prices=False))
+
+    with pytest.raises(ValueError, match="Brak ceny RCE dla interwału"):
         resolver(datetime(2026, 3, 15, 12, 0), TypeOfMarketEnergyEnum.RCEm)
+    assert resolver.rcem_replaced_months == set()

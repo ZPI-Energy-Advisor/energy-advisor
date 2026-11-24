@@ -173,11 +173,11 @@ describe("TariffsPage", () => {
     expect(screen.getByRole("region", { name: "Najtańsza" }).textContent).toMatch(/Żadnej taryfy nie udało się policzyć/);
   });
 
-  it("ostrzega, że taryf bez kompletu cen nie rekomendujemy", async () => {
+  it("ostrzega, że taryf, których nie da się policzyć, nie rekomendujemy", async () => {
     respondWith(COMPARISON);
     renderPage();
 
-    const warning = await screen.findByText(/Nie rekomendujemy taryf bez kompletu cen w tym okresie/);
+    const warning = await screen.findByText(/Nie rekomendujemy taryf, których nie da się policzyć w tym okresie/);
     expect(warning.textContent).toMatch(/G13\. Powód jest przy każdej z nich w tabeli/);
     expect(within(warning).getByText("G13").getAttribute("title")).toBe("Brak stawek abonamentowej dla okresu 2 mies.");
   });

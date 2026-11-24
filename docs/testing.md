@@ -32,8 +32,8 @@ ruff check .
 Testy z limitem czasu mają marker `perf`. Limity są mnożone przez `TIME_LIMIT_SCALE` z
 `backend/tests/timing.py`: 1,5 lokalnie i 2 w CI (`CI=true`), razy współczynnik szybkości maszyny.
 Na starcie testy mierzą krótkie zadanie kalibracyjne i porównują je z maszyną, na której dobrano limity;
-wolniejsza maszyna dostaje proporcjonalnie wyższe limity, więc test łapie regresję kodu, a nie wolniejszy
-komputer. Mnożnik widać w nagłówku pytest („limity testów wydajności: ×…”). Można go też ustawić ręcznie,
+wolniejsza maszyna dostaje proporcjonalnie wyższe limity (najwyżej ×4), więc test łapie regresję kodu, a nie
+wolniejszy komputer. Mnożnik widać w nagłówku pytest („limity testów wydajności: ×…”). Można go też ustawić ręcznie,
 a testy wydajności pominąć:
 
 ```bash

@@ -526,3 +526,36 @@ def test_address_lookup_endpoint_does_not_save_profile(client_a, anonymous_clien
     assert client_a.get(url, params={"postal_code": "51515"}).status_code == 422
     assert anonymous_client.get(url, params={"postal_code": "51-515"}).status_code == 401
     assert db.get(UserProfileRow, user_a.id) is None
+
+
+def test_address_lookup_is_limited_with_polish_message(client_a, rate_limited, monkeypatch):
+    from app.config import RATE_LIMIT_ADDRESS_LOOKUP
+
+    monkeypatch.setattr(geocoding, "default_geocoder", FakeGeocoder)
+    url = "/api/v1/users/me/profile/address-lookup"
+    for _ in range(int(RATE_LIMIT_ADDRESS_LOOKUP.split("/")[0])):
+        assert client_a.get(url, params={"postal_code": "51-515"}).status_code == 200
+
+    response = client_a.get(url, params={"postal_code": "51-515"})
+
+    assert response.status_code == 429
+    assert response.json()["detail"].startswith("Zbyt wiele prób. Spróbuj ponownie za")
+
+
+def test_geocoder_remembers_only_latest_answers(monkeypatch):
+    monkeypatch.setattr("app.providers.geocoding.MIN_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(NominatimGeocoder, "_unavailable_until", 0.0)
+    requests = []
+
+    def handler(request):
+        requests.append(request.url.params["postalcode"])
+        return httpx.Response(200, json=[])
+
+    geocoder = _nominatim(handler)
+    geocoder._cache.limit = 2
+    for postal_code in ("50-370", "51-515", "31-001", "50-370"):
+        geocoder.by_postal_code(postal_code)
+
+    # 50-370 wypadło z pamięci po dwóch nowszych kodach, więc pytamy o nie ponownie
+    assert requests == ["50-370", "51-515", "31-001", "50-370"]
+    assert len(geocoder._cache) == 2

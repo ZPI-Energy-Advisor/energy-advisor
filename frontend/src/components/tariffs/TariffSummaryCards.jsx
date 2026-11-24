@@ -144,7 +144,7 @@ function SkippedTariffs({ comparison, keys }) {
     <p className="mb-6 -mt-3 flex items-start gap-2 text-xs md:text-sm text-amber-800">
       <FiAlertCircle aria-hidden="true" className="mt-0.5 shrink-0" />
       <span>
-        Nie rekomendujemy taryf bez kompletu cen w tym okresie:{" "}
+        Nie rekomendujemy taryf, których nie da się policzyć w tym okresie:{" "}
         {skipped.map((entry, index) => (
           <span key={entry.key}>
             {index > 0 && ", "}

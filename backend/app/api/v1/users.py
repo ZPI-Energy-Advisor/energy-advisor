@@ -1,6 +1,8 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 
 from app.api.v1.deps import get_authenticated_user, get_home_service, get_user_service
+from app.config import RATE_LIMIT_ADDRESS_LOOKUP
+from app.core.rate_limit import limiter
 from app.models.User import User
 from app.schemas.user import CurrentUserResponse, DeleteAccountRequest
 from app.schemas.user_profile import UserProfile
@@ -55,7 +57,9 @@ def get_user_profile(
 
 
 @router.get("/me/profile/address-lookup", response_model=AddressLookup)
+@limiter.limit(RATE_LIMIT_ADDRESS_LOOKUP)
 def look_up_address(
+    request: Request,
     town: str | None = Query(default=None, max_length=100),
     postal_code: str | None = Query(default=None, pattern=r"^\d{2}-\d{3}$"),
     user: User = Depends(get_authenticated_user),
