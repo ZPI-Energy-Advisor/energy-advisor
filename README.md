@@ -120,6 +120,11 @@ o 15:30. Ręcznie: `docker compose exec price-worker python -m app.workers.price
 Nie modelujemy zwrotu niewykorzystanej nadpłaty (do 20% przy RCEm, 30% przy RCE) — depozyt pokrywa
 tylko energię czynną.
 
+**Pogoda.** Kontener `weather-worker` pobiera z Open-Meteo prognozę (co 3 h) i historię pogody dla dni
+z wgranych plików (tabela `weather_observations`). Ręcznie:
+`docker compose exec weather-worker python -m app.workers.weather_worker forecast` (albo `history`).
+Szczegóły: [docs/weather.md](docs/weather.md).
+
 ### 6. Frontend
 
 **W kontenerze.** Kontener `frontend` startuje w kroku 2 razem z resztą usług. Aplikacja jest
@@ -148,5 +153,6 @@ Powrót do wersji z kontenera: zatrzymać Vite i wykonać `docker compose start 
 ## Dokumentacja
 
 - [Ceny dynamiczne](docs/dynamic-prices.md): źródło danych, worker synchronizacji, wycena taryfy dynamicznej
+- [Pogoda](docs/weather.md): co trzymamy w bazie, skąd która doba, worker pogody i endpoint
 - [Testy](docs/testing.md): uruchamianie testów, CI, fixtures i testy izolacji danych użytkowników
 - [Jak przechowujemy dane](docs/privacy-and-data.md): jakie dane zbieramy, po co, gdzie, jak długo i kto ma do nich dostęp

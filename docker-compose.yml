@@ -72,6 +72,24 @@ services:
         condition: service_healthy
     command: python -m app.workers.price_sync_worker run
 
+  weather-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: energy_advisor_weather_worker
+    restart: always
+    volumes:
+      - ./backend:/app
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - GEOCODER_USER_AGENT=${GEOCODER_USER_AGENT:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.workers.weather_worker run
+
   frontend:
     build:
       context: ./frontend
