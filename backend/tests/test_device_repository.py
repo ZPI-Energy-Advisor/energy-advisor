@@ -67,6 +67,13 @@ def action_by_id(db, energy_file, action_id: str) -> DeviceAction:
     )
 
 
+def demo_action(device_id: str, day: str) -> dict:
+    return next(
+        action for action in DEMO["energy_usage"]
+        if action["device_id"] == device_id and action["action_start"].startswith(day)
+    )
+
+
 def test_dictionaries_match_validator(db):
     assert {row.code for row in db.query(DeviceCategory)} == DEVICE_CATEGORIES
     assert {row.code for row in db.query(DeviceType)} == DEVICE_TYPES
@@ -121,7 +128,7 @@ def test_device_keeps_flexibility_and_programs(db, user_a, saved_demo):
 
 def test_times_are_stored_in_utc_including_dst_change(db, saved_demo):
     # 25.10.2026: doba ze zmianą czasu ma 100 kwadransów.
-    action = action_by_id(db, saved_demo, "act_0645")
+    action = action_by_id(db, saved_demo, demo_action("dev_fr_01", "2026-10-25")["action_id"])
     slot_starts = [
         slot_start for (slot_start,) in db.query(DeviceSlotUsage.slot_start)
         .filter(DeviceSlotUsage.device_action_id == action.id)
@@ -135,10 +142,11 @@ def test_times_are_stored_in_utc_including_dst_change(db, saved_demo):
 
 
 def test_ev_session_window_is_stored(db, saved_demo):
-    action = action_by_id(db, saved_demo, "act_0115")
+    source = demo_action("dev_ev_01", "2026-10-05")
+    action = action_by_id(db, saved_demo, source["action_id"])
 
-    assert action.plugged_in == datetime(2026, 10, 5, 15, 0, tzinfo=timezone.utc)
-    assert action.deadline == datetime(2026, 10, 6, 5, 30, tzinfo=timezone.utc)
+    assert action.plugged_in == datetime.fromisoformat(source["plugged_in"])
+    assert action.deadline == datetime.fromisoformat(source["deadline"])
 
 
 def delete_file(db, user, energy_file) -> None:

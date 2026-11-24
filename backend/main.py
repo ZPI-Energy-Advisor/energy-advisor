@@ -14,6 +14,7 @@ from app.api.v1.home import router as home_router
 from app.api.v1.planning import router as planning_router
 from app.api.v1.legal import router as legal_router
 from app.api.v1.weather import router as weather_router
+from app.api.v1.pv_forecast import router as pv_forecast_router
 from app.config import CORS_ORIGINS
 from app.core.errors import register_error_handlers
 from app.core.logging_config import configure_logging
@@ -60,6 +61,7 @@ v1_router.include_router(home_router)
 v1_router.include_router(planning_router)
 v1_router.include_router(legal_router)
 v1_router.include_router(weather_router)
+v1_router.include_router(pv_forecast_router)
 api_router.include_router(v1_router)
 
 app.add_middleware(

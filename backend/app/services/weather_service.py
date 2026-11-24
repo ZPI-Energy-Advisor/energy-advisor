@@ -154,6 +154,19 @@ class WeatherService:
             raise WeatherUnavailableError(f"Brak pogody na {day}")
         return result
 
+    def stored_days(self, cell: Cell, days: Iterable[date], planes: list[Plane]) -> dict[date, DayWeather]:
+        days = sorted(set(days))
+        if not days:
+            return {}
+        start, _ = local_day_bounds_utc(days[0])
+        _, end = local_day_bounds_utc(days[-1])
+        by_day: dict[date, list[WeatherObservation]] = {day: [] for day in days}
+        for row in self.repository.between(cell.latitude, cell.longitude, start, end):
+            day = row.interval_start.astimezone(MARKET_TIMEZONE).date()
+            if day in by_day:
+                by_day[day].append(row)
+        return {day: self._assemble(cell, day, planes, rows) for day, rows in by_day.items()}
+
     def _fetch_window(self, day: date) -> tuple[date, date]:
         today = self.today()
         if day >= today:
@@ -254,24 +267,30 @@ class WeatherService:
     def _assemble(self, cell: Cell, day: date, planes: list[Plane], rows: list[WeatherObservation]) -> DayWeather:
         archive, forecast = self._split(rows)
         preferred, other = (archive, forecast) if day < self.today() else (forecast, archive)
+        keys = [plane.key for plane in planes]
+        values: dict[int, tuple] = {}
+
+        def read(row) -> tuple:
+            cached = values.get(id(row))
+            if cached is None:
+                tilted = row.tilted_w_m2 or {}
+                cached = values[id(row)] = (
+                    row.ghi_w_m2 is not None and all(key in tilted for key in keys),
+                    _number(row.temperature_c),
+                    _number(row.ghi_w_m2),
+                    [_number(tilted.get(key)) for key in keys],
+                )
+            return cached
+
         quarters, fetched = [], []
         for start in _quarters(day):
-            candidates = [row for row in (preferred.get(start), other.get(start)) if row is not None]
-            row = next((row for row in candidates if _usable(row, planes)), candidates[0] if candidates else None)
+            first, second = preferred.get(start), other.get(start)
+            row = first if first is not None and read(first)[0] else second if second is not None and read(second)[0] else first or second
             if row is None:
                 quarters.append(Quarter(start, None, None, None, None, [None] * len(planes)))
                 continue
             if row.source == WeatherObservation.SOURCE_FORECAST:
                 fetched.append(row.fetched_at)
-            tilted = row.tilted_w_m2 or {}
-            quarters.append(
-                Quarter(
-                    start=start,
-                    source=row.source,
-                    temperature_c=_number(row.temperature_c),
-                    cloud_cover_pct=row.cloud_cover_pct,
-                    ghi_w_m2=_number(row.ghi_w_m2),
-                    tilted_w_m2=[_number(tilted.get(plane.key)) for plane in planes],
-                )
-            )
+            _, temperature, ghi, tilted = read(row)
+            quarters.append(Quarter(start, row.source, temperature, row.cloud_cover_pct, ghi, list(tilted)))
         return DayWeather(day, cell, planes, quarters, min(fetched) if fetched else None)

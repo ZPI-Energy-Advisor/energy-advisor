@@ -10,6 +10,16 @@ from app.models.WeatherObservation import WeatherObservation
 from app.providers.weather import WeatherPoint
 
 INSERT_CHUNK_ROWS = 2000
+READ_COLUMNS = (
+    WeatherObservation.source,
+    WeatherObservation.interval_start,
+    WeatherObservation.interval_minutes,
+    WeatherObservation.temperature_c,
+    WeatherObservation.cloud_cover_pct,
+    WeatherObservation.ghi_w_m2,
+    WeatherObservation.tilted_w_m2,
+    WeatherObservation.fetched_at,
+)
 
 
 class WeatherRepository:
@@ -61,9 +71,9 @@ class WeatherRepository:
             raise
         return len(rows)
 
-    def between(self, latitude: Decimal, longitude: Decimal, start: datetime, end: datetime) -> list[WeatherObservation]:
+    def between(self, latitude: Decimal, longitude: Decimal, start: datetime, end: datetime) -> list:
         return (
-            self.db.query(WeatherObservation)
+            self.db.query(*READ_COLUMNS)
             .filter(
                 WeatherObservation.latitude == latitude,
                 WeatherObservation.longitude == longitude,
