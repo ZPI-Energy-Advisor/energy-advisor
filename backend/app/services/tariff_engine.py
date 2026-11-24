@@ -62,7 +62,8 @@ class BillingContext:
     """Dane wspólne dla wszystkich taryf jednego pliku.
 
     Opłaty miesięczne są liczone tylko za dni od `first_day` do `last_day` (okres pliku), żeby
-    dotyczyły tego samego czasu co energia. `raw_cycles` to zużycie przed bilansowaniem PV; służy do
+    dotyczyły tego samego czasu co energia; z `data_days` tylko za dni z odczytami (np. „Wszystkie pliki”
+    z przerwą między plikami nie płacą za dni bez danych). `raw_cycles` to zużycie przed bilansowaniem PV; służy do
     podziału energii zbilansowanej w strefach na odcinki z różnymi stawkami. `prosumer` wybiera marżę i
     opłatę handlową prosumenta w ofercie z ceną dynamiczną.
     """
@@ -73,6 +74,7 @@ class BillingContext:
     last_day: date
     raw_cycles: Sequence[tuple[datetime, Any]] = field(default_factory=tuple)
     prosumer: bool = False
+    data_days: frozenset[date] | None = None
 
 
 @dataclass(frozen=True)
@@ -312,8 +314,13 @@ class ZonedTariffCalculationStrategy:
             last = min(cycle_end.date(), context.last_day)
             if first > last:
                 continue
+            billed = days_between(first, last)
+            if context.data_days is not None:
+                billed = [day for day in billed if day in context.data_days]
+                if not billed:
+                    continue
             days_in_cycle = (cycle_end.date() - cycle_start.date()).days + 1
-            segments = self._segments(days_between(first, last), definitions, context.regulatory_periods, tariff_type)
+            segments = self._segments(billed, definitions, context.regulatory_periods, tariff_type)
             self._split_energy(energy, segments, schedule, raw_cycles.get(cycle_start))
 
             totals = dict.fromkeys(COMPONENTS, Decimal("0"))
@@ -333,7 +340,7 @@ class ZonedTariffCalculationStrategy:
                 TariffCycleResult(
                     cycle_start=cycle_start,
                     cycle_end=cycle_end,
-                    days_billed=(last - first).days + 1,
+                    days_billed=len(billed),
                     days_in_cycle=days_in_cycle,
                     active_energy_kwh=sum(
                         (sum(segment.zone_energy, Decimal("0")) for segment in segments), Decimal("0")

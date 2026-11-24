@@ -4,6 +4,8 @@ from pathlib import Path
 
 # Wartość z .env.example: hub skopiowany bez zmian nie może wystartować ze znanym kluczem.
 PLACEHOLDER_API_KEYS = frozenset({"generate_your_own_random_key"})
+# Ta sama reguła co w backendzie (app/config.py): oba czytają ten sam HUB_API_KEY.
+MIN_API_KEY_LENGTH = 32
 
 
 
@@ -31,6 +33,8 @@ class HubSettings:
             raise RuntimeError("HUB_API_KEY must be configured")
         if api_key in PLACEHOLDER_API_KEYS:
             raise RuntimeError("HUB_API_KEY still has the placeholder value from .env.example")
+        if len(api_key) < MIN_API_KEY_LENGTH:
+            raise RuntimeError(f"HUB_API_KEY must be at least {MIN_API_KEY_LENGTH} characters long")
         return cls(
             api_key=api_key,
             state_dir=Path(os.getenv("HUB_STATE_DIR", "/data")),

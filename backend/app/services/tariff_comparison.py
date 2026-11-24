@@ -194,7 +194,8 @@ def comparison(run: TariffRun) -> dict[str, Any]:
         "annual_consumption": details.annual_consumption,
         "cheapest_tariff": cheapest["key"] if cheapest else None,
         "recommendation": recommendation(
-            entries, profile_tariff if run.inputs.from_profile else None, (run.last_day - run.first_day).days + 1
+            # Szacunek miesięczny z dni z odczytami: przerwa między plikami nie rozcieńcza oszczędności.
+            entries, profile_tariff if run.inputs.from_profile else None, details.annual_consumption.days
         ),
         "tariffs": entries,
         "warnings": details.warnings or [],

@@ -55,6 +55,9 @@ Cenniki i ceny rynkowe nie dotyczą użytkowników: `tariff_definitions`, `suppl
 `capacity_fee_thresholds`, `transition_fee_thresholds`, `unsupported_tariffs`, ceny `rce_price_observations`
 i `rcem_price_observations`, przebiegi workera `price_sync_runs`, słowniki `device_types` i `device_categories`.
 
+Pogoda `weather_observations` też nie ma `user_id`: wiersze dotyczą komórki siatki ok. 0,1° (kilka km),
+wspólnej dla domów w okolicy, i zostają po usunięciu konta.
+
 ## Kto ma dostęp
 
 | Kto | Do czego |
@@ -72,7 +75,7 @@ i `rcem_price_observations`, przebiegi workera `price_sync_runs`, słowniki `dev
 | Google (skrypt logowania) | Adres IP przeglądarki: `@react-oauth/google` pobiera skrypt z `accounts.google.com` | Tylko na ekranie logowania i rejestracji |
 | PSE (`api.raporty.pse.pl`, `pse.pl`) | Nic o użytkownikach: pobieramy publiczne ceny RCE i RCEm | Worker cen, codziennie |
 | OpenStreetMap Nominatim (`nominatim.openstreetmap.org`) | Kod pocztowy, a gdy go nie zna, nazwa miejscowości (wyznaczenie współrzędnych); bez danych konta | Zapis profilu po zmianie adresu i pierwszy odczyt profilu bez współrzędnych |
-| Open-Meteo | Same współrzędne domu (prognoza i historia pogody); bez danych konta | Worker pogody (ZP-117) |
+| Open-Meteo (`api.open-meteo.com`, `archive-api.open-meteo.com`) | Współrzędne domu zaokrąglone do 0,1° oraz kierunek i nachylenie paneli; bez danych konta | Worker pogody co 3 h, po imporcie pliku, po zapisie profilu i przy odczycie pogody, której nie ma w bazie |
 
 Żadnemu podmiotowi zewnętrznemu nie przekazujemy odczytów zużycia, profilu ani e-maila.
 

@@ -71,6 +71,8 @@ class DynamicMarketPriceResolver:
         # Ten sam kwadrans pytają bilans PV, oferty dynamiczne i wykres: bez ponownej zamiany stref czasowych.
         self._rce_by_moment: dict[datetime, float] = {}
         self._rcem_months: dict[date, float | None] = {}
+        # Miesiące bez opublikowanej RCEm, w których oddanie wyceniliśmy cenami RCE (ostrzeżenie w rachunku).
+        self.rcem_replaced_months: set[date] = set()
 
     def __call__(
         self,
@@ -78,8 +80,21 @@ class DynamicMarketPriceResolver:
         type_of_market_energy: TypeOfMarketEnergyEnum,
     ) -> float:
         if type_of_market_energy == TypeOfMarketEnergyEnum.RCEm:
-            return self.rcem(timestamp.date())
+            month = timestamp.date().replace(day=1)
+            if self._rcem_price(month) is not None:
+                return self._rcem_months[month]
+            # PSE publikuje RCEm ok. 10. dnia następnego miesiąca, więc bieżący miesiąc nigdy jej nie ma.
+            # Do publikacji wyceniamy oddanie ceną RCE kwadransa (RCEm to cena ważona oddaniem prosumentów).
+            price = self.rce(timestamp)
+            self.rcem_replaced_months.add(month)
+            return price
         return self.rce(timestamp)
+
+    def _rcem_price(self, month: date) -> float | None:
+        if month not in self._rcem_months:
+            price = self.price_repository.get_rcem_price(RCEM_SOURCE, month)
+            self._rcem_months[month] = None if price is None else float(price) / 1000.0
+        return self._rcem_months[month]
 
     def preload_rce(self, start_utc: datetime, end_utc: datetime) -> None:
         """Wczytuje jednym zapytaniem ceny RCE wszystkich jeszcze niewczytanych miesięcy zakresu."""
@@ -142,10 +157,7 @@ class DynamicMarketPriceResolver:
 
     def rcem(self, day: date) -> float:
         month = day.replace(day=1)
-        if month not in self._rcem_months:
-            price = self.price_repository.get_rcem_price(RCEM_SOURCE, month)
-            self._rcem_months[month] = None if price is None else float(price) / 1000.0
-        price = self._rcem_months[month]
+        price = self._rcem_price(month)
         if price is None:
             raise ValueError(f"Brak ceny RCEm dla miesiąca {month.isoformat()}.")
         return price

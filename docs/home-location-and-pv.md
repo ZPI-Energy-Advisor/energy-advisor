@@ -56,7 +56,9 @@ od lokalizacji `manual` do wyznaczonej z kodu. Pole `address` („50-370 Wrocła
 wyznaczono współrzędne.
 
 Nominatim: najwyżej jedno zapytanie na sekundę, identyfikujący `User-Agent` (`GEOCODER_USER_AGENT`), wyniki
-zapamiętane w procesie. Po błędzie sieci, odpowiedzi 403, 429 albo 5xx przez 5 minut nie pytamy Nominatim
+zapamiętane w procesie (ostatnie 1000). Sprawdzanie adresu w formularzu
+(`GET /users/me/profile/address-lookup`) ma limit prób na adres IP, domyślnie 20 na minutę
+(`RATE_LIMIT_ADDRESS_LOOKUP`), bo każde sprawdzenie czeka w kolejce do Nominatim. Po błędzie sieci, odpowiedzi 403, 429 albo 5xx przez 5 minut nie pytamy Nominatim
 i od razu bierzemy przybliżenie z regionu (bez sprawdzenia adresu), żeby zapis profilu nie czekał na kolejne
 timeouty. Adres serwera można zmienić przez `NOMINATIM_URL`. Testy używają geokodera offline
 (`tests/conftest.py`), więc nie wysyłają zapytań.

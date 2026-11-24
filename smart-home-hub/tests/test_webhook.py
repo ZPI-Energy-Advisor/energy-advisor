@@ -9,7 +9,7 @@ from hub.config import HubSettings
 from hub.webhook import EventPublisher
 
 
-API_KEY = "test-hub-key"
+API_KEY = "test-hub-key-long-enough-for-startup-check"
 SIMULATION_ID = "sim_test"
 
 

@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 
 from app.api.v1.deps import get_authenticated_user, get_home_service, get_user_service
+from app.config import RATE_LIMIT_ADDRESS_LOOKUP
+from app.core.rate_limit import limiter
 from app.models.User import User
 from app.schemas.user import (
     CurrentUserResponse,
@@ -12,6 +14,7 @@ from app.schemas.user_profile import UserProfile
 from app.services.home_location import AddressLookup, lookup_address
 from app.services.home_service import HomeService
 from app.services.user_service import UserService
+from app.services.weather_sync import sync_after_profile_change
 
 
 
@@ -69,7 +72,9 @@ def get_user_profile(
 
 
 @router.get("/me/profile/address-lookup", response_model=AddressLookup)
+@limiter.limit(RATE_LIMIT_ADDRESS_LOOKUP)
 def look_up_address(
+    request: Request,
     town: str | None = Query(default=None, max_length=100),
     postal_code: str | None = Query(default=None, pattern=r"^\d{2}-\d{3}$"),
     user: User = Depends(get_authenticated_user),
@@ -84,7 +89,10 @@ def look_up_address(
 @router.put("/me/profile", response_model=UserProfile)
 def save_user_profile(
     profile_data: UserProfile,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_authenticated_user),
     service: UserService = Depends(get_user_service),
 ):
-    return service.save_profile(user, profile_data)
+    saved = service.save_profile(user, profile_data)
+    background_tasks.add_task(sync_after_profile_change, user.id)
+    return saved
