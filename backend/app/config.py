@@ -55,3 +55,6 @@ HUB_HOME_USER_EMAIL = (os.getenv("HUB_HOME_USER_EMAIL") or "").strip().lower() o
 RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED") or "true").strip().lower() not in {"0", "false", "no"}
 RATE_LIMIT_LOGIN = os.getenv("RATE_LIMIT_LOGIN") or "5/minute"
 RATE_LIMIT_REGISTER = os.getenv("RATE_LIMIT_REGISTER") or "3/hour"
+# Sprawdzanie adresu w profilu: każde to do 3 zapytań do Nominatim (1/s dla całej aplikacji), więc bez limitu
+# seria zapytań zajęłaby wątki API i groziła blokadą naszego klienta w Nominatim.
+RATE_LIMIT_ADDRESS_LOOKUP = os.getenv("RATE_LIMIT_ADDRESS_LOOKUP") or "20/minute"

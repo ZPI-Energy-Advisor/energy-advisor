@@ -4,6 +4,7 @@ import os
 import re
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -18,6 +19,8 @@ MIN_INTERVAL_SECONDS = 1.1
 MAX_TOWN_DISTANCE_KM = 250.0
 NEAR_POSTAL_CODE_DEGREES = 0.3
 UNAVAILABLE_PAUSE_SECONDS = 300.0
+# Ile odpowiedzi geokodera pamiętamy w procesie; najstarsze wypadają, żeby losowe zapytania nie zapełniły pamięci.
+CACHE_LIMIT = 1000
 
 POSTAL_REGIONS = {
     "0": ("Warszawa", 52.2297, 21.0122),
@@ -57,6 +60,17 @@ def region_anchor(postal_code: str) -> Place:
     return Place(latitude, longitude, name)
 
 
+class _LimitedCache(OrderedDict):
+    def __init__(self, limit: int = CACHE_LIMIT):
+        super().__init__()
+        self.limit = limit
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        while len(self) > self.limit:
+            self.popitem(last=False)
+
+
 def distance_km(a: Place, b: Place) -> float:
     lat1, lon1, lat2, lon2 = map(math.radians, (a.latitude, a.longitude, b.latitude, b.longitude))
     h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
@@ -71,7 +85,7 @@ class NominatimGeocoder:
     def __init__(self, client: httpx.Client | None = None, base_url: str = NOMINATIM_URL):
         self.client = client or httpx.Client(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT})
         self.base_url = base_url.rstrip("/")
-        self._cache: dict[tuple, object] = {}
+        self._cache: _LimitedCache = _LimitedCache()
 
     def by_postal_code(self, postal_code: str) -> Place | None:
         key = ("postal_code", postal_code)

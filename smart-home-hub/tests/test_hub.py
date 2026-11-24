@@ -18,7 +18,7 @@ from hub.supervisor import DeviceSupervisor, HubError, ManagedDevice
 from device.models import DeviceConfig
 
 
-API_KEY = "test-hub-key"
+API_KEY = "test-hub-key-long-enough-for-startup-check"
 HEADERS = {"X-Hub-Api-Key": API_KEY}
 FIRST_PORT = 19101
 BACKEND_URL = "http://backend.test"
@@ -389,6 +389,13 @@ def test_settings_require_api_key(monkeypatch):
     monkeypatch.delenv("HUB_API_KEY", raising=False)
 
     with pytest.raises(RuntimeError, match="HUB_API_KEY"):
+        HubSettings.from_env()
+
+
+def test_settings_reject_short_api_key(monkeypatch):
+    monkeypatch.setenv("HUB_API_KEY", "x" * 31)
+
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
         HubSettings.from_env()
 
 
