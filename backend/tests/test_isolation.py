@@ -19,6 +19,7 @@ PUBLIC_ENDPOINTS = {
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
     ("POST", "/api/v1/dynamic-prices/sync"),
+    ("GET", "/api/v1/legal/privacy-policy"),
 }
 
 

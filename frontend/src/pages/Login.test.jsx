@@ -85,6 +85,75 @@ describe("Login", () => {
     await waitFor(() => expect(screen.getByText("strona: /dashboard")).toBeTruthy());
   });
 
+  describe("rejestracja", () => {
+    const openRegistration = () => {
+      fireEvent.click(screen.getByRole("button", { name: "Nie masz konta? Zarejestruj się" }));
+      fireEvent.change(screen.getByPlaceholderText("imienazwisko@student.pwr.edu.pl"), {
+        target: { value: "nowy@example.com" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("••••••••"), { target: { value: "Haslo123!" } });
+    };
+    const submit = () => fireEvent.click(screen.getByRole("button", { name: "Zarejestruj się" }));
+    const policyCheckbox = () => screen.getByRole("checkbox", { name: /Polityką prywatności/ });
+
+    it("pokazuje zgodę z linkiem do polityki i informację o usuwaniu nieaktywnych kont", () => {
+      renderLogin();
+      openRegistration();
+
+      expect(policyCheckbox().checked).toBe(false);
+      const link = screen.getByRole("link", { name: "Polityką prywatności" });
+      expect(link.getAttribute("href")).toBe("/privacy");
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(screen.getByText(/przez 12 miesięcy, usuwamy razem ze wszystkimi danymi/)).toBeTruthy();
+    });
+
+    it("bez akceptacji polityki nie wysyła formularza", () => {
+      const post = vi.spyOn(apiClient, "post");
+      renderLogin();
+      openRegistration();
+
+      submit();
+
+      expect(screen.getByRole("alert").textContent).toBe("Zaakceptuj politykę prywatności, aby założyć konto.");
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it("wysyła wersję polityki pobraną z backendu", async () => {
+      vi.spyOn(apiClient, "get").mockResolvedValue({ data: { version: "2026-11-23", content: "" } });
+      const post = mockSuccessfulLogin();
+      renderLogin();
+      openRegistration();
+
+      fireEvent.click(policyCheckbox());
+      submit();
+
+      await waitFor(() => expect(screen.getByText("strona: /dashboard")).toBeTruthy());
+      expect(post).toHaveBeenCalledWith("/auth/register", {
+        email: "nowy@example.com",
+        password: "Haslo123!",
+        accepted_policy_version: "2026-11-23",
+      });
+    });
+
+    it("po przełączeniu na logowanie i z powrotem zgoda jest odznaczona", () => {
+      renderLogin();
+      openRegistration();
+      fireEvent.click(policyCheckbox());
+
+      fireEvent.click(screen.getByRole("button", { name: "Masz już konto? Zaloguj się" }));
+      fireEvent.click(screen.getByRole("button", { name: "Nie masz konta? Zarejestruj się" }));
+
+      expect(policyCheckbox().checked).toBe(false);
+    });
+  });
+
+  it("ma link do polityki prywatności także przy logowaniu", () => {
+    renderLogin();
+
+    expect(screen.getByRole("link", { name: "Polityka prywatności" }).getAttribute("href")).toBe("/privacy");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
   it("zalogowanego użytkownika na „/” przenosi na Dashboard", () => {
     loginAs();
 

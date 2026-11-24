@@ -14,6 +14,7 @@ from app.database import database_url, Base
 # Importy rejestrują modele w Base.metadata (potrzebne do autogenerate).
 from app.models.User import User  # noqa: F401
 from app.models.Token import Token  # noqa: F401
+from app.models.PrivacyConsent import PrivacyConsent  # noqa: F401
 from app.models.EnergyDataFile import EnergyDataFile  # noqa: F401
 from app.models.Simulation import Simulation  # noqa: F401
 from app.models.RcePriceObservation import RcePriceObservation  # noqa: F401

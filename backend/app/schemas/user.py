@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 from app.schemas.tariff import TariffOut
 
@@ -10,6 +12,19 @@ class ProfileTariffSummary(BaseModel):
     needs_update: bool = False
     # Taryfa zapisana w profilu (TariffTypeEnum), także gdy operator nie ma jej stawek w cenniku.
     tariff_type: str | None = None
+
+
+class PrivacyPolicyStatus(BaseModel):
+    current_version: str
+    # Ostatnia wersja zaakceptowana przez użytkownika; None, gdy konto powstało przed ZP-129.
+    accepted_version: str | None = None
+    accepted_at: datetime | None = None
+    # Frontend blokuje aplikację, dopóki użytkownik nie zaakceptuje aktualnej wersji.
+    needs_acceptance: bool
+
+
+class PrivacyConsentRequest(BaseModel):
+    version: str = Field(min_length=1, max_length=32)
 
 
 class DeleteAccountRequest(BaseModel):
@@ -24,3 +39,4 @@ class CurrentUserResponse(BaseModel):
     current_tariff: TariffOut | None = None
     profile: ProfileTariffSummary
     home_owner: bool = False
+    privacy_policy: PrivacyPolicyStatus

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.api.v1.deps import get_user_repository, get_user_service
 from app.models.UserProfile import UserProfile
 from app.schemas.other import TariffTypeEnum
+from app.services.privacy_policy import PRIVACY_POLICY_VERSION
 from app.services.user_service import UserService
 from main import app
 from tariff_helpers import FlatTariffRepository, flat_definition
@@ -65,6 +66,12 @@ def test_me_without_profile_has_no_tariff(client_a, user_a, rates):
         "current_tariff": None,
         "profile": {"exists": False, "needs_update": False, "tariff_type": None},
         "home_owner": False,
+        "privacy_policy": {
+            "current_version": PRIVACY_POLICY_VERSION,
+            "accepted_version": None,
+            "accepted_at": None,
+            "needs_acceptance": True,
+        },
     }
 
 

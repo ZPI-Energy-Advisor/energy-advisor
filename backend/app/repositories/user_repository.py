@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.PrivacyConsent import PrivacyConsent
 from app.models.Token import Token
 from app.models.User import User
 from app.models.UserProfile import UserProfile
@@ -14,9 +15,15 @@ class UserRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, **kwargs) -> User:
+    def create(self, consent: tuple[str, str] | None = None, **kwargs) -> User:
+        """Zakłada konto. `consent` (wersja polityki, źródło) zapisuje akceptację w tej samej transakcji,
+        więc nie powstanie konto bez akceptacji ani akceptacja bez konta."""
         user = User(**kwargs)
         self.db.add(user)
+        if consent is not None:
+            self.db.flush()
+            policy_version, source = consent
+            self.db.add(PrivacyConsent(user_id=user.id, policy_version=policy_version, source=source))
         try:
             self.db.commit()
         except IntegrityError:
@@ -27,7 +34,7 @@ class UserRepository:
 
     def delete(self, user_id: UUID) -> None:
         """Usuwa konto; kaskady w bazie (ON DELETE CASCADE) usuwają profil, pliki, odczyty, urządzenia, plany,
-        przebiegi, zdarzenia symulacji i tokeny, a podłączenie domu dostaje NULL."""
+        przebiegi, zdarzenia symulacji, tokeny i akceptacje polityki prywatności, a podłączenie domu dostaje NULL."""
         self.db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
         self.db.commit()
 
@@ -43,18 +50,28 @@ class UserRepository:
             provider_id=provider_id,
         ).first()
 
-    def get_or_create_user(self, provider_id: str, email: str, provider: str) -> User:
+    def get_or_create_user(
+        self, provider_id: str, email: str, provider: str, consent: tuple[str, str] | None = None
+    ) -> User:
         user = self.db.query(User).filter_by(provider_id=provider_id, provider=provider).first()
         if not user:
-            user = User(provider_id=provider_id, email=email, provider=provider)
-            self.db.add(user)
-            try:
-                self.db.commit()
-            except IntegrityError:
-                self.db.rollback()
-                raise
-            self.db.refresh(user)
+            user = self.create(consent=consent, provider_id=provider_id, email=email, provider=provider)
         return user
+
+    def add_privacy_consent(self, user_id: UUID, policy_version: str, source: str) -> PrivacyConsent:
+        consent = PrivacyConsent(user_id=user_id, policy_version=policy_version, source=source)
+        self.db.add(consent)
+        self.db.commit()
+        self.db.refresh(consent)
+        return consent
+
+    def get_latest_privacy_consent(self, user_id: UUID) -> PrivacyConsent | None:
+        return (
+            self.db.query(PrivacyConsent)
+            .filter(PrivacyConsent.user_id == user_id)
+            .order_by(PrivacyConsent.accepted_at.desc())
+            .first()
+        )
 
     def get_refresh_token(self, user_id: str):
         return self.db.query(Token).filter_by(user_id=user_id).first()

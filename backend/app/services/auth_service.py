@@ -8,6 +8,14 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 
 from app.repositories.user_repository import UserRepository
+from app.services.privacy_policy import (
+    PRIVACY_POLICY_VERSION,
+    SOURCE_GOOGLE,
+    SOURCE_REGISTER,
+    is_current_version,
+    policy_required_error,
+    require_current_version,
+)
 from app.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     CLIENT_ID,
@@ -57,7 +65,8 @@ class AuthService:
     def normalize_email(self, email: str) -> str:
         return email.strip().lower()
     
-    def register_local_user(self, email: str, password: str):
+    def register_local_user(self, email: str, password: str, accepted_policy_version: str | None = None):
+        require_current_version(accepted_policy_version)
         email = self.normalize_email(email)
         existing_user = self.repository.get_by_email(email)
 
@@ -80,6 +89,7 @@ class AuthService:
                 email=email,
                 password_hash=self.get_password_hash(password),
                 provider="local",
+                consent=(PRIVACY_POLICY_VERSION, SOURCE_REGISTER),
             )
         except IntegrityError:
             raise HTTPException(
@@ -102,7 +112,7 @@ class AuthService:
         return self.generate_auth_tokens(user.id)
         
 
-    def authenticate_google_user(self, google_id_token: str):
+    def authenticate_google_user(self, google_id_token: str, accepted_policy_version: str | None = None):
         if not CLIENT_ID:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -125,11 +135,16 @@ class AuthService:
                     detail="Użytkownik o podanym adresie e-mail już istnieje.",
                 )
             
+            # Pierwsze logowanie zakłada konto, więc wymaga akceptacji aktualnej polityki prywatności.
+            if not is_current_version(accepted_policy_version):
+                raise policy_required_error()
+
             try:
                 user = self.repository.get_or_create_user(
                     provider_id=idinfo["sub"],
                     email=email,
                     provider="google",
+                    consent=(PRIVACY_POLICY_VERSION, SOURCE_GOOGLE),
                 )
             except IntegrityError:
                 raise HTTPException(
