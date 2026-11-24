@@ -61,7 +61,12 @@ class DayWeather:
 
     @property
     def complete(self) -> bool:
-        return all(quarter.ghi_w_m2 is not None for quarter in self.quarters)
+        # Komplet do prognozy PV: każdy kwadrans ma GHI i promieniowanie na każdą płaszczyznę paneli z profilu
+        # (jak `_usable`). Sama GHI nie wystarcza, bo np. po dodaniu grupy paneli może brakować jej promieniowania.
+        return all(
+            quarter.ghi_w_m2 is not None and all(value is not None for value in quarter.tilted_w_m2)
+            for quarter in self.quarters
+        )
 
 
 class WeatherUnavailableError(Exception):

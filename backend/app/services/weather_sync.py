@@ -7,6 +7,7 @@ from typing import Callable
 from uuid import UUID
 
 from fastapi import HTTPException
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.EnergyDataFile import EnergyDataFile
@@ -50,10 +51,13 @@ def _file_days(db: Session, user_id: UUID | None) -> dict[UUID, set[date]]:
 
 
 def homes(db: Session, user_id: UUID | None = None) -> list[Home]:
-    query = db.query(UserProfileRow.user_id)
+    file_days = _file_days(db, user_id)
+    # Kandydaci przed odczytem profilu: odczyt profilu bez potwierdzonej lokalizacji pyta geokoder (ZP-116),
+    # więc nie robimy go dla domów, dla których i tak nie pobieramy pogody (bez PV i bez plików).
+    with_pv = func.coalesce(UserProfileRow.pv_config["mode"].astext, "none") != "none"
+    query = db.query(UserProfileRow.user_id).filter(or_(with_pv, UserProfileRow.user_id.in_(list(file_days))))
     if user_id is not None:
         query = query.filter(UserProfileRow.user_id == user_id)
-    file_days = _file_days(db, user_id)
     users = UserService(UserRepository(db))
     found = []
     for (owner,) in query.all():

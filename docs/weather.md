@@ -87,7 +87,8 @@ zapytań (429) i błędne zapytanie nie są ponawiane. Błąd jednej komórki al
 pozostałych. Gdy Open-Meteo nie odpowiada, odczyt zwraca to, co jest w bazie, a bez danych endpoint odpowiada 503.
 
 Profil z lokalizacją przybliżoną (`approximate`) worker przed pobraniem próbuje wyznaczyć ponownie (jak odczyt
-profilu w ZP-116). Profil w starym formacie (do uzupełnienia) jest pomijany.
+profilu w ZP-116). Profil w starym formacie (do uzupełnienia) jest pomijany. Profili bez PV i bez wgranych plików
+worker nie czyta wcale (wybiera je zapytaniem do bazy), więc dla nich nie pyta też geokodera.
 
 ```
 python -m app.workers.weather_worker forecast   # jednorazowo prognoza
@@ -109,7 +110,9 @@ komórki domu zalogowanego użytkownika:
 }
 ```
 
-`tilted_w_m2` ma wartości w kolejności `planes`. Profil bez PV ma puste `planes`. Brak profilu: 404, doba spoza
+`tilted_w_m2` ma wartości w kolejności `planes`. Profil bez PV ma puste `planes`. `complete: true` oznacza, że każdy
+kwadrans ma GHI i promieniowanie na każdą płaszczyznę z `planes`, czyli komplet do prognozy PV; brak promieniowania
+choćby jednej grupy paneli (np. świeżo dodanej, gdy Open-Meteo nie odpowiada) daje `false`. Brak profilu: 404, doba spoza
 zakresu: 422, brak danych i niedostępne Open-Meteo: 503.
 
 Open-Meteo w darmowej wersji jest do użytku niekomercyjnego (limit 10 000 zapytań na dobę). Odczyt na żądanie

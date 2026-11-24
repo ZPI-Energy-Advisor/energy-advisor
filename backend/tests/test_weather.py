@@ -9,6 +9,7 @@ from app.api.v1.deps import get_weather_service
 from app.models.EnergyDataFile import EnergyDataFile
 from app.models.UserProfile import UserProfile as UserProfileRow
 from app.models.WeatherObservation import WeatherObservation
+from app.providers import geocoding
 from app.providers.prices.base import MARKET_TIMEZONE
 from app.providers.weather import OpenMeteoClient, Plane, WeatherLimitError, WeatherPoint, WeatherProviderError
 from app.repositories.weather_repository import WeatherRepository
@@ -265,6 +266,17 @@ def test_stored_weather_is_returned_when_open_meteo_fails(weather_db):
         service(weather_db, FakeClient(error=WeatherLimitError("limit"))).day(CELL, dt.date(2026, 11, 2), [SOUTH])
 
 
+def test_day_without_radiation_for_new_plane_is_not_complete(weather_db):
+    tomorrow = TODAY + dt.timedelta(days=1)
+    service(weather_db, FakeClient()).day(CELL, tomorrow, [SOUTH])
+
+    result = service(weather_db, FakeClient(error=WeatherProviderError("timeout"))).day(CELL, tomorrow, [EAST, SOUTH])
+
+    assert all(quarter.ghi_w_m2 is not None for quarter in result.quarters)
+    assert result.quarters[40].tilted_w_m2 == [None, 135.0]
+    assert not result.complete
+
+
 def test_days_missing_in_archive_are_taken_from_forecast(weather_db):
     recent = dt.date(2026, 11, 21)
     client = FakeClient(missing_archive={recent})
@@ -487,9 +499,31 @@ def test_home_without_pv_and_files_is_not_fetched(weather_db, user_a):
     assert user_a.id not in {home.user_id for home in weather_sync.homes(weather_db)}
 
 
+def test_home_without_pv_and_files_is_not_geocoded(weather_db, user_a, monkeypatch):
+    asked = []
+
+    class CountingGeocoder:
+        def by_postal_code(self, postal_code):
+            asked.append(postal_code)
+            return None
+
+        def by_town(self, town, near=None):
+            asked.append(town)
+            return []
+
+    monkeypatch.setattr(geocoding, "default_geocoder", CountingGeocoder)
+    weather_db.add(UserProfileRow(user_id=user_a.id, **profile_payload()))
+    weather_db.commit()
+
+    assert weather_sync.homes(weather_db, user_id=user_a.id) == []
+    assert asked == []
+
+
 def test_broken_profile_is_skipped_and_others_are_fetched(weather_db, user_a, user_b):
     _profile(weather_db, user_a, pv=PV)
-    weather_db.add(UserProfileRow(user_id=user_b.id, base_info={"town": "Stary"}, consumption_and_tariff={}, pv_config={}))
+    weather_db.add(UserProfileRow(
+        user_id=user_b.id, base_info={"town": "Stary"}, consumption_and_tariff={}, pv_config={"mode": "net_billing"},
+    ))
     weather_db.commit()
 
     owners = {home.user_id for home in weather_sync.homes(weather_db)}
