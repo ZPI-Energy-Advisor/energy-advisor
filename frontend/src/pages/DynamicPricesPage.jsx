@@ -4,6 +4,7 @@ import apiClient from "../api/client";
 import PriceChart from "../components/PriceChart";
 import PriceDataCompleteness from "../components/PriceDataCompleteness";
 import PriceRangeForm from "../components/PriceRangeForm";
+import { PageSkeleton } from "../components/Skeleton";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import TomorrowPriceCards from "../components/TomorrowPriceCards";
 import { countDays, formatDate, getApiErrorMessage } from "../utils/energyFiles";
@@ -92,7 +93,7 @@ function DynamicPricesPage() {
   };
 
   if (isLoading && !history) {
-    return <div className="p-10 text-gray-500">Ładowanie cen dynamicznych...</div>;
+    return <PageSkeleton label="Ładowanie cen dynamicznych..." cards={4} />;
   }
 
   const hasAnyPrices = Boolean(bounds);
@@ -137,7 +138,8 @@ function DynamicPricesPage() {
         </div>
       ) : (
         <>
-          <div className="mb-6 md:mb-8 bg-white border border-gray-100 rounded-lg shadow-sm px-4 py-4">
+          <section aria-label="Okres" className="mb-6 md:mb-8 bg-white border border-gray-100 rounded-lg shadow-sm p-4 md:p-5">
+            <h3 className="font-semibold text-gray-900 mb-4">Wybierz okres</h3>
             <PriceRangeForm
               key={`${appliedRange.from}:${appliedRange.to}`}
               bounds={bounds}
@@ -145,7 +147,7 @@ function DynamicPricesPage() {
               onApply={applyRange}
               isLoading={isLoading}
             />
-            <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs md:text-sm text-gray-500">
+            <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-gray-100 pt-3 text-xs md:text-sm text-gray-500">
               <FiCalendar className="text-emerald-600 shrink-0" />
               <span>
                 Wyświetlany okres:{" "}
@@ -156,7 +158,7 @@ function DynamicPricesPage() {
               </span>
               {isLoading && <span className="text-emerald-600 text-xs">Ładowanie...</span>}
             </div>
-          </div>
+          </section>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
             <StatTile label="Średnia w okresie" value={formatPrice(history.average_price_pln_kwh)} hint="pełna cena kWh brutto" />

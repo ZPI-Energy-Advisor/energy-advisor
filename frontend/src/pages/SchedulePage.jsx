@@ -4,7 +4,7 @@ import { FiCalendar, FiChevronLeft, FiChevronRight, FiShuffle } from "react-icon
 import apiClient from "../api/client";
 import DateRangePicker from "../components/DateRangePicker";
 import ScheduleDayChart from "../components/ScheduleDayChart";
-import SelectedFileBar from "../components/SelectedFileBar";
+import DataContextBar from "../components/DataContextBar";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { randomDay, rangeText, weekdayName } from "../utils/dateRange";
 import { SOURCE_TYPE_DEVICES, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
@@ -405,19 +405,17 @@ function SchedulePage() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="border-b border-gray-200 pb-4 mb-6 md:mb-8">
-        <h2 className="text-xl font-bold text-gray-900">Optymalizacja historyczna</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Sprawdź, ile zaoszczędziłbyś w wybranym okresie z przeszłości, gdyby pralka, zmywarka czy ładowanie auta
+      <DataContextBar
+        title="Optymalizacja historyczna"
+        showRange={false}
+        subtitle="Sprawdź, ile zaoszczędziłbyś w wybranym okresie z przeszłości, gdyby pralka, zmywarka czy ładowanie auta
           pracowały w najtańszych godzinach. Bierzemy prawdziwe zużycie z pliku urządzeń i przesuwamy tylko to, co
-          da się przesunąć, w dozwolonych godzinach. Reszta domu zostaje bez zmian.
-        </p>
-      </div>
-      <SelectedFileBar />
+          da się przesunąć, w dozwolonych godzinach. Reszta domu zostaje bez zmian."
+      />
 
       {!isDevicesFile ? (
         <p className="p-4 text-sm text-gray-600 bg-white rounded-lg border border-gray-100">
-          Wybierz w imporcie danych pojedynczy plik urządzeń, aby zobaczyć optymalizację.
+          Wybierz u góry pojedynczy plik urządzeń, aby zobaczyć optymalizację.
         </p>
       ) : !selectedFile.data_start || !selectedFile.data_end ? (
         // Plik bez odczytów nie ma okresu: kalendarz i „Losowy dzień” nie mają z czego wybierać.

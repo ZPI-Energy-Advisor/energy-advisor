@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { FiAlertCircle } from "react-icons/fi";
-import SelectedFileBar from "../components/SelectedFileBar";
+import DataContextBar from "../components/DataContextBar";
+import { PageSkeleton } from "../components/Skeleton";
 import NoFileData from "../components/NoFileData";
-import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import TariffSummaryCards from "../components/tariffs/TariffSummaryCards";
@@ -42,7 +42,7 @@ function TariffsPage() {
   }, [requireAllTariffs]);
 
   if (!isReady) {
-    return <div className="p-10 text-gray-500">Ładowanie analizy taryf...</div>;
+    return <PageSkeleton label="Ładowanie analizy taryf..." />;
   }
 
   const operator = comparison?.operator ?? results?.pricing?.operator;
@@ -52,24 +52,24 @@ function TariffsPage() {
 
   return (
     <div className="mx-auto max-w-6xl pb-12">
-      <div className="mb-6 border-b border-gray-200 pb-4">
-        <h2 className="text-xl font-bold text-gray-900">Analiza taryf</h2>
-        {operator && (
-          <p className="mt-1 text-sm text-gray-500">
-            Taryfy operatora {OPERATOR_NAMES[operator] ?? operator}
-            {comparison?.from_profile ? " z Twojego profilu" : ""}: rachunek do zapłaty brutto z opłatami miesięcznymi,
-            a przy PV z depozytem prosumenta.
-          </p>
-        )}
-      </div>
+      <DataContextBar
+        title="Analiza taryf"
+        subtitle={
+          operator && (
+            <>
+              Taryfy operatora {OPERATOR_NAMES[operator] ?? operator}
+              {comparison?.from_profile ? " z Twojego profilu" : ""}: rachunek do zapłaty brutto z opłatami
+              miesięcznymi, a przy PV z depozytem prosumenta.
+            </>
+          )
+        }
+      />
 
       <ProfileTariffNotice
         missingProfile=", żebyśmy mogli oznaczyć Twoją taryfę i policzyć rachunek z Twoim okresem rozliczeniowym i PV. Do tego czasu porównujemy taryfy operatora PGE."
         pricingNote={comparison?.selection_note}
       />
 
-      <SelectedFileBar />
-      {selectedFile && <DateRangeFilter />}
 
       {!selectedFile ? (
         <NoFileData

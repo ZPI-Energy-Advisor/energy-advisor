@@ -3,6 +3,9 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import ChartTooltip from "../ChartTooltip";
 import SegmentedControl from "../SegmentedControl";
 import { chartKeysOf, chartTariffKeys, findEntry, keyLabel } from "../../utils/tariffComparison";
+import { formatDate } from "../../utils/energyFiles";
+import { axisUnitLabel, formatAxis, formatNumber } from "../../utils/format";
+import { ChartSkeleton } from "../Skeleton";
 
 const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9", "#ec4899", "#84cc16"];
 const METRIC_OPTIONS = [
@@ -14,7 +17,18 @@ const RESOLUTION_OPTIONS = [
   { value: "15m", label: "15 min" },
 ];
 
-const formatValue = (value) => Number(value).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Krótkie przejście między miarą, rozdzielczością i taryfami (najwyżej kilka linii po 96 punktów).
+const ANIMATION_MS = 400;
+
+// „Typowy dzień”: z ilu dni i z jakiego okresu jest średnia, żeby było jasne, co pokazuje wykres.
+const averageText = (statistics) => {
+  const days = statistics?.days_analyzed;
+  if (!days) return "Typowy dzień w wybranym okresie";
+  const span = statistics.data_start && statistics.data_end
+    ? ` (${formatDate(statistics.data_start)} – ${formatDate(statistics.data_end)})`
+    : "";
+  return `Typowy dzień: średnio z ${days} ${days === 1 ? "dnia" : "dni"}${span}`;
+};
 
 function TooltipValues({ payload, unit, labels }) {
   return (
@@ -26,7 +40,7 @@ function TooltipValues({ payload, unit, labels }) {
             {labels[entry.dataKey]}
           </span>
           <span className="text-sm font-bold text-gray-900">
-            {formatValue(entry.value)} <span className="text-[10px] md:text-xs font-normal text-gray-500">{unit}</span>
+            {formatNumber(entry.value)} <span className="text-[10px] md:text-xs font-normal text-gray-500">{unit}</span>
           </span>
         </div>
       ))}
@@ -55,8 +69,10 @@ function TariffDayChart({ results, comparison, chosenKey, failed = false, onRetr
         <div>
           <h3 id="tariff-chart-title" className="font-semibold text-gray-900">Kiedy płacisz najwięcej</h3>
           <p className="mt-1 text-xs md:text-sm text-gray-500">
-            Średnia doba w wybranym okresie: koszt zużytej energii (zużycie × cena kWh brutto, bez opłat miesięcznych
-            i PV) albo sama cena kWh.
+            {averageText(results?.statistics)}.{" "}
+            {metric === "price"
+              ? "Średnia cena kWh brutto w każdej godzinie."
+              : "Ile średnio płacisz za energię w każdej godzinie (zużycie × cena kWh brutto, bez opłat miesięcznych i PV)."}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -83,13 +99,13 @@ function TariffDayChart({ results, comparison, chosenKey, failed = false, onRetr
           </button>
         </div>
       ) : !ready ? (
-        <p className="py-16 text-center text-sm text-gray-500">Ładowanie wykresu...</p>
+        <ChartSkeleton label="Ładowanie wykresu..." />
       ) : keys.length === 0 || rows.length === 0 ? (
         <p className="py-16 text-center text-sm text-gray-500">Brak cen do wykresu w tym okresie.</p>
       ) : (
         <div className="h-[280px] md:h-[400px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <LineChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis
                 dataKey={resolution === "15m" ? "time" : "hour"}
@@ -99,7 +115,14 @@ function TariffDayChart({ results, comparison, chosenKey, failed = false, onRetr
                 dy={10}
                 minTickGap={20}
               />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#64748b" }} />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: "#64748b" }}
+                tickFormatter={formatAxis}
+                width={52}
+                label={axisUnitLabel(unit)}
+              />
               <Tooltip
                 content={
                   <ChartTooltip
@@ -124,7 +147,7 @@ function TariffDayChart({ results, comparison, chosenKey, failed = false, onRetr
                   strokeWidth={key === chosenKey ? 3.5 : 2}
                   dot={false}
                   activeDot={{ r: 5, strokeWidth: 0 }}
-                  isAnimationActive={false}
+                  animationDuration={ANIMATION_MS}
                 />
               ))}
             </LineChart>

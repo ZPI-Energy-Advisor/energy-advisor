@@ -8,6 +8,7 @@ import { createResponseCache } from "../utils/responseCache";
 const PAGE_SIZE = 20;
 const DATA_CACHE_LIMIT = 10;
 const COMPARISON_CACHE_LIMIT = 10;
+const DEVICE_USAGE_CACHE_LIMIT = 10;
 
 const getStoredUserId = () => {
   try {
@@ -80,6 +81,7 @@ export function EnergyFileProvider({ children }) {
   // Pamięć odpowiedzi żyje tyle co provider, czyli do wylogowania: kolejne konto zaczyna z pustą.
   const [dataCache] = useState(() => createResponseCache(DATA_CACHE_LIMIT));
   const [comparisonCache] = useState(() => createResponseCache(COMPARISON_CACHE_LIMIT));
+  const [deviceUsageCache] = useState(() => createResponseCache(DEVICE_USAGE_CACHE_LIMIT));
 
   const latestRequestRef = useRef(0);
   const latestPageRequestRef = useRef(0);
@@ -97,7 +99,8 @@ export function EnergyFileProvider({ children }) {
     cacheGenerationRef.current += 1;
     dataCache.clear();
     comparisonCache.clear();
-  }, [dataCache, comparisonCache]);
+    deviceUsageCache.clear();
+  }, [dataCache, comparisonCache, deviceUsageCache]);
 
   const invalidateFiles = useCallback(() => {
     clearDataCache();
@@ -392,6 +395,7 @@ export function EnergyFileProvider({ children }) {
       viewSource,
       cacheScope,
       comparisonCache,
+      deviceUsageCache,
 
       isReady,
     }),
@@ -423,6 +427,7 @@ export function EnergyFileProvider({ children }) {
       viewSource,
       cacheScope,
       comparisonCache,
+      deviceUsageCache,
       isReady,
     ],
   );

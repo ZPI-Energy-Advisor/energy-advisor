@@ -113,7 +113,7 @@ def test_comparison_of_whole_file_equals_calculation_results_and_dashboard(db, p
     assert compared["pv_mode"] == (pv or {}).get("mode")
     assert compared["recommendation"] == {
         "tariff": "G11", "is_current": True, "saving": 0.0, "saving_percent": 0.0,
-        "monthly_saving_estimate": None, "difference_to_cheapest": 0.0, "skipped_tariffs": [],
+        "difference_to_cheapest": 0.0, "skipped_tariffs": [],
     }
     if pv is None:
         assert payable == 30 * 20 * 4 * 0.25

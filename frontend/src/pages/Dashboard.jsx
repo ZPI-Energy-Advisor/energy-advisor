@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import SelectedFileBar from "../components/SelectedFileBar";
+import DataContextBar from "../components/DataContextBar";
+import DashboardTariffCard from "../components/DashboardTariffCard";
+import { PageSkeleton } from "../components/Skeleton";
 import DeviceUsagePanel from "../components/DeviceUsagePanel";
 import SegmentedControl from "../components/SegmentedControl";
 import NoFileData from "../components/NoFileData";
-import DateRangeFilter from "../components/DateRangeFilter";
 import NoDataInRange from "../components/NoDataInRange";
 import ChartTooltip from "../components/ChartTooltip";
 import IncompleteDaysNotice from "../components/IncompleteDaysNotice";
@@ -13,6 +13,7 @@ import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { fillMissingDays, hasDataInRange } from "../utils/energyFiles";
 import { describeBreakdown, formatPln } from "../utils/tariffs";
+import { axisUnitLabel, formatAxis, formatNumber } from "../utils/format";
 import { UNAVAILABLE_NO_COMMON_DAYS, UNAVAILABLE_NO_DEVICE_FILES, deviceUsageSource } from "../utils/deviceUsage";
 import {
   BarChart,
@@ -28,7 +29,7 @@ import {
 const INCOMPLETE_DAY_COLOR = "#f59e0b";
 
 function TooltipValue({ point, metric }) {
-  const unit = metric === "kwh" ? "kWh" : "PLN";
+  const unit = metric === "kwh" ? "kWh" : "zł";
 
   return (
     <>
@@ -39,7 +40,7 @@ function TooltipValue({ point, metric }) {
           <span className="text-sm font-medium text-gray-400">Brak danych</span>
         ) : (
           <>
-            {Number(point.value).toFixed(2)}{" "}
+            {formatNumber(point.value)}{" "}
             <span className="text-sm font-normal">{unit}</span>
           </>
         )}
@@ -55,7 +56,7 @@ function TooltipValue({ point, metric }) {
 
 const METRIC_OPTIONS = [
   { value: "kwh", label: "Zużycie (kWh)", activeClassName: "text-emerald-700" },
-  { value: "pln", label: "Koszty (PLN)", activeClassName: "text-blue-700" },
+  { value: "pln", label: "Koszty (zł)", activeClassName: "text-blue-700" },
 ];
 const RESOLUTION_OPTIONS = [
   { value: "15m", label: "15 min" },
@@ -150,22 +151,17 @@ function Dashboard() {
   const chartColor = chartMetric === "kwh" ? "#10b981" : "#3b82f6";
 
   if (!isReady || !isUserReady) {
-    return <div className="p-10 text-gray-500">Ładowanie danych z bazy...</div>;
+    return <PageSkeleton label="Ładowanie danych..." />;
   }
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
-      <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
-        Mój profil zużycia
-      </h2>
+      <DataContextBar title="Mój profil zużycia" showRange={Boolean(simulationData)} />
 
       <ProfileTariffNotice
         missingProfile=", żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy G11 operatora PGE."
         pricingNote={pricing?.note}
       />
-
-      <SelectedFileBar />
-      {simulationData && <DateRangeFilter />}
 
       {!simulationData ? (
         <NoFileData
@@ -225,10 +221,10 @@ function Dashboard() {
                   </p>
                   <div className="flex items-baseline gap-2">
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
-                      {simulationData.estimated_cost_pln ?? "—"}
+                      {formatNumber(simulationData.estimated_cost_pln)}
                     </h3>
                     <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-xs md:text-sm">
-                      PLN
+                      zł
                     </span>
                   </div>
                   {hasCostTariff && (
@@ -245,7 +241,7 @@ function Dashboard() {
                   </p>
                   <div className="flex items-baseline gap-2">
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
-                      {simulationData.total_usage_kwh}
+                      {formatNumber(simulationData.total_usage_kwh)}
                     </h3>
                     <span className="text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded text-xs md:text-sm">
                       kWh
@@ -253,28 +249,12 @@ function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative sm:col-span-2 md:col-span-1">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 rounded-t-lg"></div>
-
-                  <p className="text-sm font-medium text-gray-500 mb-3">
-                    Aktualna taryfa
-                  </p>
-
-                  {/* Taryfę zmienia się wyłącznie w profilu - tu tylko ją pokazujemy. */}
-                  <p className="text-lg md:text-xl font-bold text-gray-900">
-                    {profileTariff?.tariff_type
-                      ? `Taryfa ${currentTariff?.label ?? profileTariff.tariff_type}${currentTariff ? ` · ${currentTariff.operator}` : ""}`
-                      : userLoadError
-                        ? "Nie udało się pobrać taryfy"
-                        : "Nie znamy jeszcze Twojej taryfy"}
-                  </p>
-                  <Link
-                    to="/profile"
-                    className="mt-2 inline-block text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
-                  >
-                    {profileTariff?.exists ? "Zmień w profilu" : userLoadError ? "Przejdź do profilu" : "Uzupełnij profil"}
-                  </Link>
-                </div>
+                <DashboardTariffCard
+                  enabled={hasDataInRange(results)}
+                  profileTariff={profileTariff}
+                  currentTariff={currentTariff}
+                  loadError={userLoadError}
+                />
               </div>
 
               <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
@@ -316,7 +296,7 @@ function Dashboard() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={chartData}
-                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                        margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                       >
                         <CartesianGrid
                           strokeDasharray="3 3"
@@ -335,6 +315,9 @@ function Dashboard() {
                           axisLine={false}
                           tickLine={false}
                           tick={{ fontSize: 10, fill: "#64748b" }}
+                          tickFormatter={formatAxis}
+                          width={48}
+                          label={axisUnitLabel(chartMetric === "kwh" ? "kWh" : "zł")}
                         />
                         <Tooltip
                           content={
