@@ -3,7 +3,12 @@
 Użycie (z katalogu projektu):
     python backend/scripts/generate_devices_file.py --out devices.json
     python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --seed 42 \
-        --devices full --with-pv --out backend/tests/fixtures/devices_demo_30d.json
+        --devices full --with-pv --weather backend/tests/fixtures/weather_demo_30d.json \
+        --out backend/tests/fixtures/devices_demo_30d.json --meter-out backend/tests/fixtures/meter_pv_demo_30d.csv
+
+Produkcja PV wynika z historycznej pogody (Open-Meteo, plik --weather; gdy go nie ma, generator pobiera
+pogodę i zapisuje ją pod tą ścieżką). --meter-out zapisuje plik licznika (CSV Tauron) tego samego domu:
+pobór i oddanie do sieci to suma urządzeń minus produkcja PV w każdym kwadransie.
     python backend/scripts/generate_devices_file.py --from-meter backend/tests/fixtures/meter_demo_30d.csv \
         --out backend/tests/fixtures/devices_from_meter_demo_30d.json
 
@@ -19,9 +24,12 @@ import math
 import random
 import sys
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from pv_weather import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, Array, Weather, day_production, fetch_weather
 
 TZ = ZoneInfo("Europe/Warsaw")
 SLOT = timedelta(minutes=15)
@@ -29,16 +37,11 @@ SLOT_HOURS = 0.25
 # Środek Polski: wystarcza do wyznaczenia wschodu i zachodu słońca z dokładnością do kilkunastu minut.
 LATITUDE = 52.0
 LONGITUDE = 19.0
-PV_PEAK_KWP = 6.0
 
 # Względne zapotrzebowanie pompy ciepła na energię (październik = 1); latem zostaje sama CWU.
 HEATING_FACTOR = {1: 2.0, 2: 1.8, 3: 1.5, 4: 0.9, 5: 0.4, 6: 0.15, 7: 0.12, 8: 0.12, 9: 0.35, 10: 1.0, 11: 1.5, 12: 1.9}
-# Produkcja PV w bezchmurny dzień, kWh na kWp.
-CLEAR_SKY_YIELD = {1: 1.4, 2: 2.4, 3: 3.7, 4: 5.0, 5: 5.8, 6: 6.2, 7: 6.0, 8: 5.3, 9: 4.1, 10: 2.9, 11: 1.7, 12: 1.1}
 DARK_MONTHS = {10, 11, 12, 1, 2}
-# (prawdopodobieństwo, zakres udziału produkcji bezchmurnej, zakres szumu na kwadrans)
-WEATHER_DARK = [(0.25, (0.85, 1.0), (0.95, 1.0)), (0.35, (0.45, 0.7), (0.55, 1.0)), (0.40, (0.1, 0.3), (0.7, 1.0))]
-WEATHER_BRIGHT = [(0.45, (0.85, 1.0), (0.95, 1.0)), (0.35, (0.45, 0.7), (0.55, 1.0)), (0.20, (0.1, 0.3), (0.7, 1.0))]
+DEFAULT_ARRAYS = [Array(6.0, 35, 0)]
 
 FIXED = {"mode": "fixed"}
 DAYTIME_WINDOW = {"from": "07:00", "to": "22:00"}
@@ -187,9 +190,17 @@ class House:
                    for index, value in enumerate(profile))
 
 
+@dataclass
+class PvSetup:
+    weather: Weather
+    arrays: list[Array]
+    inverter_kw: float
+    rng: random.Random
+
+
 class Generator:
-    def __init__(self, house: House, start: date, days: int, rng: random.Random):
-        self.house, self.rng = house, rng
+    def __init__(self, house: House, start: date, days: int, rng: random.Random, pv: PvSetup | None = None):
+        self.house, self.rng, self.pv = house, rng, pv
         self.dates = [start + timedelta(days=offset) for offset in range(days)]
         self.weeks = [self._plan_week() for _ in range(math.ceil(days / 7))]
 
@@ -244,7 +255,7 @@ class Generator:
         self._laundry_and_dishes(day, plan, back, bedtime, dinner, weekend, home_office)
         self._heat_pump(day)
         self._ev(day, plan, back, weekend, home_office)
-        self._pv(day, sunrise, sunset)
+        self._pv(day)
         self._water_heater(day, wake, bedtime)
 
     def _water_heater(self, day: date, wake: float, bedtime: float) -> None:
@@ -371,33 +382,22 @@ class Generator:
         self.house.add("dev_ev_01", start, [energy / slots] * slots, max_delay_slots=96, deadline=deadline,
                        energy=energy, plugged_in=plugged_in)
 
-    def _pv(self, day: date, sunrise: float, sunset: float) -> None:
-        if PV_DEVICE not in self.house.devices:
+    def _pv(self, day: date) -> None:
+        if PV_DEVICE not in self.house.devices or self.pv is None:
             return
-        rng = self.rng
-        weather = WEATHER_DARK if day.month in DARK_MONTHS else WEATHER_BRIGHT
-        draw, cumulative = rng.random(), 0.0
-        for probability, share_range, noise_range in weather:
-            cumulative += probability
-            if draw <= cumulative:
-                break
-        total = PV_PEAK_KWP * CLEAR_SKY_YIELD[day.month] * rng.uniform(*share_range)
-        first, last = math.ceil(sunrise / 15), math.floor(sunset / 15)
-        slots = last - first
-        if slots < 1:
-            return
-        weights = [math.sin(math.pi * (k + 0.5) / slots) for k in range(slots)]
-        slot_limit = self.house.devices[PV_DEVICE]["max_power_kw"] * SLOT_HOURS
+        day_start, day_end = at(day, 0), at(day + timedelta(days=1), 0)
+        production = day_production(self.pv.weather, self.pv.arrays, self.pv.inverter_kw, day_start, day_end,
+                                     self.pv.rng)
         # + 0.0 zamienia -0.0 na 0.0
-        profile = [-round(min(total * w / sum(weights) * rng.uniform(*noise_range), slot_limit), 2) + 0.0
-                   for w in weights]
+        profile = [-round(value, 2) + 0.0 for value in production]
+        first = 0
         while profile and profile[0] == 0:
             profile.pop(0)
             first += 1
         while profile and profile[-1] == 0:
             profile.pop()
         if profile:
-            self.house.add(PV_DEVICE, at(day, first * 15), profile, energy=round(sum(profile), 2),
+            self.house.add(PV_DEVICE, day_start + first * SLOT, profile, energy=round(sum(profile), 2),
                            profile_kwh=profile)
 
 
@@ -697,18 +697,81 @@ def dump(value, indent: int = 0, key: str | None = None, decimals: int = 2) -> s
     return json.dumps(value, ensure_ascii=False)
 
 
-def generate(start: date, days: int, seed: int, device_set: str, with_pv: bool, max_grid_kw: float,
-             with_water_heater: bool = False) -> str:
+def pv_device(arrays: list[Array], inverter_kw: float) -> dict:
+    total = round(sum(array.kwp for array in arrays), 3)
+    return {**next(d for d in DEVICES if d["device_id"] == PV_DEVICE),
+            "device_name": f"Instalacja PV {total:g} kWp", "max_power_kw": inverter_kw}
+
+
+def build_house(start: date, days: int, seed: int, device_set: str, max_grid_kw: float,
+                with_water_heater: bool = False, pv: PvSetup | None = None) -> House:
     devices = {
         d["device_id"]: d for d in DEVICES
-        if (d["device_id"] != PV_DEVICE or with_pv) and (device_set == "full" or d["device_id"] not in FULL_ONLY)
+        if (d["device_id"] != PV_DEVICE or pv) and (device_set == "full" or d["device_id"] not in FULL_ONLY)
         and (d["device_id"] != WATER_HEATER_DEVICE or with_water_heater)
     }
+    if pv:
+        devices[PV_DEVICE] = pv_device(pv.arrays, pv.inverter_kw)
     period_start = datetime.combine(start, time(), TZ).astimezone(timezone.utc)
     period_end = datetime.combine(start + timedelta(days=days), time(), TZ).astimezone(timezone.utc)
     house = House(period_start, period_end, max_grid_kw, devices)
-    Generator(house, start, days, random.Random(seed)).run()
-    return dump(build_document(house)) + "\n"
+    Generator(house, start, days, random.Random(seed), pv).run()
+    return house
+
+
+METER_HEADER = "Nr platnika;Nr punktu poboru energii;Rodzaj energii;Data i godzina;Strefa;Wartosc[kWh/kvar];Kompletnosc[%]"
+METER_PREFIX = "10000002;590000000000001235"
+
+
+def _zone(local_start: datetime) -> int:
+    minutes = local_start.hour * 60 + local_start.minute
+    return 1 if 360 <= minutes < 780 or 900 <= minutes < 1320 else 2
+
+
+def _end_label(local_start: datetime, end: datetime) -> str:
+    """Koniec kwadransu w zapisie licznika: przy cofnięciu zegara godzina 02:00–03:00 ma dwa razy 02:15…03:00."""
+    wall_clock = local_start.replace(tzinfo=None) + SLOT
+    return max(wall_clock, end.astimezone(TZ).replace(tzinfo=None)).strftime("%d.%m.%Y %H:%M")
+
+
+def build_meter_csv(house: House) -> str:
+    """Licznik domu: w każdym kwadransie pobór urządzeń minus produkcja PV, rozdzielone na pobór i oddanie."""
+    production = [0.0] * len(house.load)
+    for action in house.actions:
+        if action["device_id"] == PV_DEVICE:
+            first = int((action["start"] - house.start) / SLOT)
+            for index, value in enumerate(action["profile_kwh"]):
+                production[first + index] -= value
+    lines = [METER_HEADER]
+    for index, consumption in enumerate(house.load):
+        local_start = (house.start + index * SLOT).astimezone(TZ)
+        label = _end_label(local_start, house.start + (index + 1) * SLOT)
+        balance = consumption - production[index]
+        for kind, value in (("Pobór energii czynnej", max(balance, 0.0)), ("Oddanie energii czynnej", max(-balance, 0.0))):
+            amount = f"{value:.3f}".replace(".", ",")
+            lines.append(f"{METER_PREFIX};{kind};{label};{_zone(local_start)};{amount};100")
+    return "\n".join(lines) + "\n"
+
+
+def load_pv(args, parser) -> PvSetup:
+    arrays = [Array.parse(text) for text in args.pv_array] if args.pv_array else DEFAULT_ARRAYS
+    inverter_kw = args.inverter_kw or round(sum(array.kwp for array in arrays), 3)
+    period_start = datetime.combine(args.start, time(), TZ).astimezone(timezone.utc)
+    period_end = datetime.combine(args.start + timedelta(days=args.days), time(), TZ).astimezone(timezone.utc)
+    path = Path(args.weather)
+    if path.exists():
+        weather = Weather.load(path)
+        if (round(weather.latitude, 1), round(weather.longitude, 1)) != (round(args.latitude, 1), round(args.longitude, 1)):
+            parser.error(f"Plik pogody {path} jest dla {weather.latitude}, {weather.longitude}, a dom dla "
+                         f"{args.latitude}, {args.longitude}; podaj inny plik albo usuń ten, żeby pobrać pogodę.")
+    else:
+        print(f"Pobieram pogodę z Open-Meteo do {path}")
+        weather = fetch_weather(args.latitude, args.longitude, period_start, period_end, arrays)
+        path.write_text(weather.to_json(), encoding="utf-8", newline="\n")
+    if not weather.covers(period_start, period_end, [array.key for array in arrays]):
+        parser.error(f"Plik pogody {path} nie obejmuje całego okresu albo wszystkich grup paneli; usuń go, "
+                     "żeby pobrać pogodę ponownie.")
+    return PvSetup(weather, arrays, inverter_kw, random.Random(f"pv-{args.seed}"))
 
 
 def main() -> int:
@@ -718,12 +781,20 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=42, help="ziarno losowania (domyślnie 42)")
     parser.add_argument("--devices", choices=["standard", "full"], default="full",
                         help="standard: bez EV, pompy ciepła i rekuperatora; full: wszystkie urządzenia")
-    parser.add_argument("--with-pv", action="store_true", help="dodaje instalację PV")
+    parser.add_argument("--with-pv", action="store_true", help="dodaje instalację PV (produkcja z pogody, wymaga --weather)")
+    parser.add_argument("--weather", metavar="PLIK",
+                        help="pogoda godzinowa (JSON); gdy pliku nie ma, generator pobiera ją z Open-Meteo i zapisuje")
+    parser.add_argument("--latitude", type=float, default=DEFAULT_LATITUDE, help="szerokość domu (domyślnie Wrocław)")
+    parser.add_argument("--longitude", type=float, default=DEFAULT_LONGITUDE, help="długość domu (domyślnie Wrocław)")
+    parser.add_argument("--pv-array", action="append", metavar="KWP/NACHYLENIE/AZYMUT",
+                        help="grupa paneli, np. 4/35/0 (można podać kilka; domyślnie 6/35/0)")
+    parser.add_argument("--inverter-kw", type=float, help="moc falownika (domyślnie suma kWp)")
     parser.add_argument("--with-water-heater", action="store_true", help="dodaje bojler elektryczny (water_heater)")
     parser.add_argument("--max-grid-kw", type=float, default=9.0, help="limit mocy przyłącza (domyślnie 9 kW)")
     parser.add_argument("--from-meter", metavar="PLIK",
                         help="plik licznika (CSV, np. Tauron); okres i pobór pochodzą z niego, bez PV")
     parser.add_argument("--out", required=True, help="ścieżka pliku wynikowego")
+    parser.add_argument("--meter-out", metavar="PLIK", help="zapisuje też plik licznika (CSV Tauron) tego domu")
     args = parser.parse_args()
     if args.days < 1:
         parser.error("--days musi być dodatnie")
@@ -731,12 +802,27 @@ def main() -> int:
         parser.error("--from-meter nie obsługuje jeszcze PV (--with-pv)")
     if args.from_meter and args.with_water_heater:
         parser.error("--from-meter nie obsługuje jeszcze bojlera (--with-water-heater)")
+    if args.from_meter and args.meter_out:
+        parser.error("--from-meter już ma plik licznika; --meter-out jest dla domu generowanego od zera")
+    if args.with_pv and not args.weather:
+        parser.error("--with-pv wymaga --weather PLIK (pogoda z Open-Meteo, pobierana, gdy pliku nie ma)")
+    if (args.pv_array or args.inverter_kw) and not args.with_pv:
+        parser.error("--pv-array i --inverter-kw wymagają --with-pv")
 
     if args.from_meter:
         content = generate_from_meter(args.from_meter, args.seed, args.devices)
     else:
-        content = generate(args.start, args.days, args.seed, args.devices, args.with_pv, args.max_grid_kw,
-                           args.with_water_heater)
+        try:
+            pv = load_pv(args, parser) if args.with_pv else None
+        except ValueError as error:
+            parser.error(str(error))
+        house = build_house(args.start, args.days, args.seed, args.devices, args.max_grid_kw,
+                            args.with_water_heater, pv)
+        content = dump(build_document(house)) + "\n"
+        if args.meter_out:
+            with open(args.meter_out, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(build_meter_csv(house))
+            print(f"Zapisano {args.meter_out}")
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(content)
     print(f"Zapisano {args.out}")

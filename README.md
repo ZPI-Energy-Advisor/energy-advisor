@@ -154,5 +154,6 @@ Powrót do wersji z kontenera: zatrzymać Vite i wykonać `docker compose start 
 
 - [Ceny dynamiczne](docs/dynamic-prices.md): źródło danych, worker synchronizacji, wycena taryfy dynamicznej
 - [Pogoda](docs/weather.md): co trzymamy w bazie, skąd która doba, worker pogody i endpoint
+- [Prognoza PV](docs/pv-forecast.md): model, kalibracja na historii domu, jakość i co robimy bez pogody
 - [Testy](docs/testing.md): uruchamianie testów, CI, fixtures i testy izolacji danych użytkowników
 - [Jak przechowujemy dane](docs/privacy-and-data.md): jakie dane zbieramy, po co, gdzie, jak długo i kto ma do nich dostęp
