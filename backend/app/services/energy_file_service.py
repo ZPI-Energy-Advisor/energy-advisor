@@ -31,6 +31,7 @@ from app.schemas.tariff_comparison import TariffComparisonResponse
 from app.services.new_calculations_service import profile_key
 from app.services.tariff_comparison import Reading, comparison, readings_from_usage, tariff_entries
 from app.services.tariff_costs import TariffCostService, tariff_key, tariff_label
+from app.services.device_series import forget_user_series
 from app.schemas.energy_file import (
     ALL_DEVICE_FILES_SOURCE_ID,
     ALL_DEVICE_FILES_SOURCE_NAME,
@@ -616,6 +617,7 @@ class EnergyFileService:
         self.file_repository.delete_without_commit(energy_file)
         self.device_repository.refresh_superseded(user_id, device_ids, *period)
         self.file_repository.commit()
+        forget_user_series(user_id)
         if self.home_service:
             # Urządzenia obecne tylko w tym pliku zniknęły z domu, więc hub zatrzymuje ich mikroserwisy.
             self.home_service.sync_after_change(user)

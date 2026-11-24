@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
+import numpy as np
 from fastapi import HTTPException, status
 
 from app.models.DeviceInstance import DeviceInstance
@@ -25,6 +26,7 @@ from app.schemas.device_usage import (
 )
 from app.schemas.energy_file import ALL_DEVICE_FILES_SOURCE_ID, ALL_FILES_SOURCE_ID
 from app.services.calculation_service import CalculationService, has_usage_series
+from app.services.device_series import DeviceSeries, series_cache, source_key
 from app.services.quarter_prices import KwhPrice
 from app.services.tariff_costs import PartsTotal, PricingProfile, TariffCostService, TariffOption
 
@@ -34,6 +36,7 @@ SLOT = timedelta(minutes=15)
 FLEXIBLE_MODES = (DeviceInstance.SHIFTABLE, DeviceInstance.INTERRUPTIBLE)
 EXCEEDED_TOLERANCE_SHARE = 0.01
 EXCEEDED_TOLERANCE_MIN_KWH = 0.05
+ZERO_KWH = Decimal(0)
 
 
 @dataclass
@@ -50,12 +53,6 @@ def _local_midnight(day: date) -> datetime:
     return datetime.combine(day, time(), LOCAL_TIMEZONE).astimezone(timezone.utc)
 
 
-def _local_slot(moment: datetime) -> tuple[str, int]:
-    """Dzień lokalny i numer kwadransu doby, jak w seriach usage_15min i cennikach."""
-    local = moment.astimezone(LOCAL_TIMEZONE)
-    return local.date().isoformat(), local.hour * 4 + local.minute // 15
-
-
 class _Axis:
     """Okresy wykresu: kwadranse, godziny albo doby lokalne między początkiem a końcem zakresu."""
 
@@ -68,7 +65,14 @@ class _Axis:
         else:
             step = SLOT if resolution == DeviceUsageResolution.QUARTER else timedelta(hours=1)
             self.starts = [start + index * step for index in range(int((end - start) / step))]
-        self.index = {self._key(moment): position for position, moment in enumerate(self.starts)}
+        self._index = None
+
+    @property
+    def index(self) -> dict:
+        # Potrzebny tylko „Reszcie domu” (pozycja po czasie odczytu), więc budujemy go dopiero wtedy.
+        if self._index is None:
+            self._index = {self._key(moment): position for position, moment in enumerate(self.starts)}
+        return self._index
 
     def _key(self, moment: datetime):
         if self.resolution == DeviceUsageResolution.DAY:
@@ -91,6 +95,13 @@ class _Accumulator:
         self.cost = [0.0] * size
         self.parts = parts
 
+    @classmethod
+    def of(cls, kwh: np.ndarray, cost: np.ndarray) -> "_Accumulator":
+        """Gotowe sumy okresów (z tablic), do tego samego formatu serii co przy dodawaniu kwadransów."""
+        accumulator = cls(0)
+        accumulator.kwh, accumulator.cost = kwh.tolist(), cost.tolist()
+        return accumulator
+
     def add(self, position: int, kwh: float, price: KwhPrice | None) -> None:
         self.kwh[position] += kwh
         if price is not None:
@@ -99,9 +110,32 @@ class _Accumulator:
                 self.parts.add(Decimal(str(kwh)), price)
 
     def series(self) -> dict:
-        kwh = [round(value, 6) for value in self.kwh]
-        cost = [round(value, 4) for value in self.cost]
+        # Większość okresów to zera (urządzenie nie pracuje): przepisujemy je bez round(), wynik ten sam.
+        kwh = [round(value, 6) if value else value for value in self.kwh]
+        cost = [round(value, 4) if value else value for value in self.cost]
         return {"kwh": kwh, "cost_pln": cost, "total_kwh": round(sum(self.kwh), 4), "total_cost_pln": round(sum(self.cost), 2)}
+
+
+class _RangeUsage:
+    """Wiersze serii z kwadransów zakresu [start, end): kwadrans, urządzenie i kWh, w kolejności serii."""
+
+    def __init__(self, series: DeviceSeries, start: datetime, end: datetime):
+        self.slots = series.slots_between(start, end)
+        rows = self.slots[series.row_slot]
+        self.rows = np.flatnonzero(rows)
+        self.row_slot = series.row_slot[rows]
+        self.row_device = series.row_device[rows]
+        self.kwh = series.kwh[rows]
+        self.present_devices = np.unique(self.row_device)
+
+    def local_net(self, series: DeviceSeries) -> dict[tuple[str, int], float]:
+        """Saldo urządzeń (zużycie − produkcja PV) w kwadransie doby lokalnej, do „Reszty domu”.
+        Powtórzona godzina przy zmianie czasu trafia do jednego kwadransu lokalnego."""
+        net = np.bincount(self.row_slot, weights=self.kwh, minlength=len(series.slot_seconds))
+        by_local: dict[tuple[str, int], float] = defaultdict(float)
+        for slot in np.unique(self.row_slot).tolist():
+            by_local[(series.slot_day[slot], int(series.slot_quarter[slot]))] += float(net[slot])
+        return by_local
 
 
 class DeviceUsageService:
@@ -151,37 +185,64 @@ class DeviceUsageService:
         option, tariff_info = self._tariff(profile, tariff, self.tariff_costs.options(profile.operator, date_from, date_to))
         price = self._price_lookup(option, start, end, profile)
         parts = PartsTotal()
-
-        rows = self.device_repository.slot_usage(file_ids, start, end, current_only=source.current_only)
-        devices = {
-            instance.id: (instance, type_label)
-            for instance, type_label in self.device_repository.instances_with_type_labels(list({row[1] for row in rows}))
-        }
-
         axis = _Axis(date_from, date_to, resolution)
-        groups, members = defaultdict(lambda: _Accumulator(len(axis.starts), parts)), defaultdict(set)
-        production = _Accumulator(len(axis.starts))
-        device_net = defaultdict(float)
-        missing_price_slots = 0
-        for slot_start, instance_id, kwh in rows:
-            instance, _ = devices[instance_id]
-            device_net[_local_slot(slot_start)] += kwh
-            if not self._matches(instance, category, device_type, flexible_only):
-                continue
-            position = axis.position(slot_start)
-            if kwh < 0:
-                production.add(position, -kwh, None)
-                continue
-            slot_price = price(slot_start)
-            missing_price_slots += slot_price is None and kwh > 0
-            key = self._group_key(instance, group_by)
-            groups[key].add(position, kwh, slot_price)
-            members[key].add(instance_id)
 
+        series = self._series(source, user_id, file_ids)
+        usage = _RangeUsage(series, start, end)
+        devices = self._devices(series, usage.present_devices)
+        matched_devices = np.zeros(len(series.device_ids), dtype=bool)
+        for index, (instance, _) in devices.items():
+            matched_devices[index] = self._matches(instance, category, device_type, flexible_only)
+        matched = matched_devices[usage.row_device]
+        positions = self._positions(series, axis, start, date_from)[usage.row_slot]
+        size = len(axis.starts)
+
+        production = _Accumulator(size)
+        produced = matched & (usage.kwh < 0)
+        production.kwh = np.bincount(positions[produced], weights=-usage.kwh[produced], minlength=size).tolist()
+
+        group_keys: dict[str, int] = {}
+        device_group = np.full(len(series.device_ids), -1, dtype=np.int64)
+        for index, (instance, _) in devices.items():
+            if matched_devices[index]:
+                device_group[index] = group_keys.setdefault(self._group_key(instance, group_by), len(group_keys))
+        used = matched & (usage.kwh >= 0)
+        cells = device_group[usage.row_device[used]] * size + positions[used]
+        used_kwh = usage.kwh[used]
+        cells_count = len(group_keys) * size
+        kwh_grid = np.bincount(cells, weights=used_kwh, minlength=cells_count).reshape(len(group_keys), size)
+        slot_prices, gross = self._slot_prices(series, usage.slots, price)
+        used_gross = gross[usage.row_slot[used]]
+        priced = ~np.isnan(used_gross)
+        cost_grid = np.bincount(
+            cells[priced], weights=used_kwh[priced] * used_gross[priced], minlength=cells_count
+        ).reshape(len(group_keys), size)
+        missing_price_slots = int(np.count_nonzero(~priced & (used_kwh > 0)))
+        # Części rachunku są liniowe względem kWh, więc dodajemy cenę raz na kwadrans, ale kWh sumujemy dokładnie
+        # (Decimal każdego wiersza, policzony raz w serii), żeby rozbicie wyszło co do grosza jak przy wierszach.
+        billed = priced & (used_kwh > 0)
+        slot_kwh: dict[int, Decimal] = {}
+        decimals = series.kwh_decimal
+        for row, slot in zip(usage.rows[used][billed].tolist(), usage.row_slot[used][billed].tolist()):
+            slot_kwh[slot] = slot_kwh.get(slot, ZERO_KWH) + decimals[row]
+        for slot, kwh in slot_kwh.items():
+            parts.add(kwh, slot_prices[slot])
+
+        members: dict[int, set[int]] = defaultdict(set)
+        for group, device in set(zip(device_group[usage.row_device[used]].tolist(), usage.row_device[used].tolist())):
+            members[group].add(device)
         group_out = sorted(
-            (self._group(key, groups[key], [devices[device_id] for device_id in members[key]], group_by) for key in groups),
+            (
+                self._group(
+                    key, _Accumulator.of(kwh_grid[group], cost_grid[group]),
+                    [devices[device] for device in members[group]], group_by,
+                )
+                for key, group in group_keys.items()
+                if members[group]
+            ),
             key=lambda group: (-group.total_kwh, group.label),
         )
+        device_net = usage.local_net(series) if meter is not None else {}
         rest = None
         if meter is not None:
             rest = self._rest_of_house(
@@ -206,6 +267,47 @@ class DeviceUsageService:
             cost_breakdown=CostBreakdown(**parts.as_dict()),
             missing_price_slots=missing_price_slots,
         )
+
+    def _series(self, source: _Source, user_id: UUID, file_ids: list[UUID]) -> DeviceSeries:
+        """Seria urządzeń źródła z pamięci procesu albo, przy pierwszym zapytaniu, z bazy (ZP-147)."""
+        key = source_key(source.files, source.current_only)
+        series = series_cache.get(key)
+        if series is None:
+            series = DeviceSeries.from_rows(
+                self.device_repository.slot_usage_series(file_ids, current_only=source.current_only)
+            )
+            series_cache.put(key, user_id, series)
+        return series
+
+    def _devices(self, series: DeviceSeries, indexes: np.ndarray) -> dict[int, tuple[DeviceInstance, str]]:
+        """Urządzenia z wierszy zakresu i etykiety ich typów; opisy czytamy z bazy przy każdym zapytaniu,
+        bo zmieniają się niezależnie od plików (np. tryb pracy urządzenia)."""
+        position = {series.device_ids[index]: index for index in indexes.tolist()}
+        return {
+            position[instance.id]: (instance, type_label)
+            for instance, type_label in self.device_repository.instances_with_type_labels(list(position))
+        }
+
+    @staticmethod
+    def _positions(series: DeviceSeries, axis: _Axis, start: datetime, date_from: date) -> np.ndarray:
+        """Okres osi wykresu dla każdego kwadransu serii (poza zakresem wartości są bez znaczenia)."""
+        if axis.resolution == DeviceUsageResolution.DAY:
+            return series.slot_ordinal - date_from.toordinal()
+        step = int(SLOT.total_seconds()) if axis.resolution == DeviceUsageResolution.QUARTER else 3600
+        # Polska strefa ma przesunięcie w pełnych godzinach, więc godziny lokalne i UTC się pokrywają.
+        return (series.slot_seconds - int(start.timestamp())) // step
+
+    @staticmethod
+    def _slot_prices(series: DeviceSeries, slots: np.ndarray, price) -> tuple[list, np.ndarray]:
+        """Cena każdego kwadransu zakresu (KwhPrice albo None) i jej kwota brutto jako float (NaN bez ceny)."""
+        prices: list[KwhPrice | None] = [None] * len(series.slot_seconds)
+        gross = np.full(len(series.slot_seconds), np.nan)
+        for slot in np.flatnonzero(slots).tolist():
+            slot_price = price(series.slot_datetime(slot))
+            if slot_price is not None:
+                prices[slot] = slot_price
+                gross[slot] = float(slot_price.gross)
+        return prices, gross
 
     def _source(self, source_id: str, user_id: UUID) -> _Source:
         if source_id == ALL_DEVICE_FILES_SOURCE_ID:

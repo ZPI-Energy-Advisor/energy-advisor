@@ -47,4 +47,18 @@ describe("useDeviceUsage", () => {
 
     expect(result.current.data).toEqual({ level: "type" });
   });
+
+  it("po pobraniu widoku dociąga w tle pozostałe rozdzielczości, więc przełączenie nie czeka na serwer", async () => {
+    apiClient.get.mockImplementation((url, config = {}) => Promise.resolve({ data: { resolution: config.params?.resolution } }));
+    const cache = createResponseCache(10);
+    const view = (resolution) => ({ sourceId: "all-devices", params: { level: "category", resolution } });
+    const { result, rerender } = renderUsage(cache, view("1h"));
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(3));
+
+    rerender({ value: view("1d") });
+
+    expect(result.current.data).toEqual({ resolution: "1d" });
+    expect(result.current.isLoading).toBe(false);
+    expect(apiClient.get.mock.calls.map(([, config]) => config.params.resolution)).toEqual(["1h", "15m", "1d"]);
+  });
 });
