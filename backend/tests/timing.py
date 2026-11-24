@@ -7,6 +7,9 @@ from decimal import Decimal
 # więc test dalej łapie regresję względem szybkości tej samej maszyny, a nie samą wolniejszą maszynę.
 REFERENCE_SECONDS = 0.052
 BASE_SCALE = 2.0 if os.getenv("CI") else 1.5
+# Górna granica współczynnika maszyny: na skrajnie obciążonym runnerze kalibracja potrafi wyjść kilka razy
+# wyżej i wtedy test nie złapałby żadnej regresji. Wolniejszą maszynę można zawsze ustawić PERF_TIME_SCALE.
+MAX_MACHINE_FACTOR = 4.0
 
 
 def _calibration_workload() -> Decimal:
@@ -25,7 +28,7 @@ def machine_factor() -> float:
         started = time.perf_counter()
         _calibration_workload()
         best = min(best, time.perf_counter() - started)
-    return max(1.0, best / REFERENCE_SECONDS)
+    return min(MAX_MACHINE_FACTOR, max(1.0, best / REFERENCE_SECONDS))
 
 
 MACHINE_FACTOR = machine_factor()
