@@ -14,9 +14,6 @@ from app.services.tariff_zones import covers
 ZERO = Decimal("0")
 # Różnica mniejsza niż złotówka to remis: zostawiamy taryfę, którą użytkownik już ma.
 TIE_THRESHOLD_PLN = 1.0
-# Szacunek miesięczny tylko z okresu co najmniej miesięcznego; z kilku dni byłby zgadywaniem.
-MIN_DAYS_FOR_MONTHLY_ESTIMATE = 28
-AVERAGE_MONTH_DAYS = 365.25 / 12
 ENERGY_PARTS = {
     "energy": ("active_energy_net",),
     "distribution": ("variable_network_net",),
@@ -139,7 +136,7 @@ def tariff_entries(run: TariffRun) -> list[dict[str, Any]]:
     return entries
 
 
-def recommendation(entries: list[dict], reference_key: str | None, billed_days: int) -> dict[str, Any] | None:
+def recommendation(entries: list[dict], reference_key: str | None) -> dict[str, Any] | None:
     priced = [entry for entry in entries if entry["payable_gross"] is not None]
     skipped = [entry["key"] for entry in entries if entry["payable_gross"] is None]
     cheapest = min(priced, key=lambda entry: entry["payable_gross"], default=None)
@@ -150,21 +147,18 @@ def recommendation(entries: list[dict], reference_key: str | None, billed_days: 
     if reference is None:
         return {
             **base, "tariff": cheapest["key"], "is_current": False,
-            "saving": None, "saving_percent": None, "monthly_saving_estimate": None,
+            "saving": None, "saving_percent": None,
         }
     difference = round(reference["payable_gross"] - cheapest["payable_gross"], 2)
     if difference < TIE_THRESHOLD_PLN:
         return {
             **base, "tariff": reference["key"], "is_current": True, "difference_to_cheapest": difference,
-            "saving": 0.0, "saving_percent": 0.0, "monthly_saving_estimate": None,
+            "saving": 0.0, "saving_percent": 0.0,
         }
     percent = round(difference / reference["payable_gross"] * 100, 1) if reference["payable_gross"] > 0 else None
-    monthly = (
-        round(difference * AVERAGE_MONTH_DAYS / billed_days, 2) if billed_days >= MIN_DAYS_FOR_MONTHLY_ESTIMATE else None
-    )
     return {
         **base, "tariff": cheapest["key"], "is_current": False, "difference_to_cheapest": difference,
-        "saving": difference, "saving_percent": percent, "monthly_saving_estimate": monthly,
+        "saving": difference, "saving_percent": percent,
     }
 
 
@@ -193,10 +187,7 @@ def comparison(run: TariffRun) -> dict[str, Any]:
         "pv_mode": details.pv_details.mode.value if details.pv_details is not None else None,
         "annual_consumption": details.annual_consumption,
         "cheapest_tariff": cheapest["key"] if cheapest else None,
-        "recommendation": recommendation(
-            # Szacunek miesięczny z dni z odczytami: przerwa między plikami nie rozcieńcza oszczędności.
-            entries, profile_tariff if run.inputs.from_profile else None, details.annual_consumption.days
-        ),
+        "recommendation": recommendation(entries, profile_tariff if run.inputs.from_profile else None),
         "tariffs": entries,
         "warnings": details.warnings or [],
         "unsupported_tariffs": details.unsupported_tariffs or [],

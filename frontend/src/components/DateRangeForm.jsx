@@ -1,13 +1,6 @@
 import { useMemo, useState } from "react";
-import { FiCalendar } from "react-icons/fi";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
-import {
-  buildQuickRanges,
-  countDays,
-  formatDate,
-  isSameRange,
-  validateDateRange,
-} from "../utils/energyFiles";
+import { buildQuickRanges, isSameRange, validateDateRange } from "../utils/energyFiles";
 
 const inputClass =
   "w-full sm:w-auto bg-gray-50 border text-gray-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500";
@@ -42,9 +35,11 @@ function QuickRangeSelect({ label, options, appliedRange, onSelect, disabled }) 
   );
 }
 
-// Szkic zakresu żyje lokalnie; wykresy zmieniają się dopiero po zatwierdzeniu.
-function DateRangeForm({ bounds, appliedRange }) {
-  const { applyDateRange, isLoadingData, rangeError, clearRangeError } = useEnergyFiles();
+// Formularz okresu w panelu DataContextBar. Szkic zakresu żyje lokalnie; wykresy zmieniają się dopiero po
+// zatwierdzeniu, a szybki wybór stosuje się od razu. Wyświetlany okres pokazuje przycisk paska, a błąd zakresu
+// pasek pod sobą; `onApplied` zamyka panel.
+function DateRangeForm({ bounds, appliedRange, onApplied }) {
+  const { applyDateRange, isLoadingData } = useEnergyFiles();
   const [draft, setDraft] = useState(appliedRange);
 
   const { months, quarters } = useMemo(() => buildQuickRanges(bounds), [bounds]);
@@ -55,20 +50,19 @@ function DateRangeForm({ bounds, appliedRange }) {
   const apply = (range) => {
     setDraft(range);
     if (!isSameRange(range, appliedRange)) applyDateRange(range);
+    onApplied?.();
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (canApply) applyDateRange(draft);
+    if (!canApply) return;
+    applyDateRange(draft);
+    onApplied?.();
   };
 
   return (
-    <div className="mb-6 md:mb-8 bg-white border border-gray-100 rounded-lg shadow-sm px-4 py-4">
-      <form
-        onSubmit={handleSubmit}
-        noValidate
-        className="flex flex-col lg:flex-row lg:items-end gap-3 lg:gap-4"
-      >
+    <div>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-500">
             Data od
@@ -103,7 +97,7 @@ function DateRangeForm({ bounds, appliedRange }) {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-gray-500 w-full sm:w-auto">Szybki wybór:</span>
           <QuickRangeSelect
             label="Miesiąc"
@@ -130,60 +124,13 @@ function DateRangeForm({ bounds, appliedRange }) {
         </div>
       </form>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs md:text-sm text-gray-500">
-        <FiCalendar className="text-emerald-600 shrink-0" />
-        <span>
-          Wyświetlany okres:{" "}
-          <span className="font-semibold text-gray-800">
-            {formatDate(appliedRange.from)} – {formatDate(appliedRange.to)}
-          </span>{" "}
-          ({countDays(appliedRange)} dni{isWholePeriod ? ", cały okres danych" : ""})
-        </span>
-        {isLoadingData && <span className="text-emerald-600 text-xs">Przeliczanie...</span>}
-      </div>
-
       {validationError && (
         <p role="alert" className="mt-2 text-sm text-red-600">
           {validationError}
         </p>
       )}
-
-      {rangeError && (
-        <div className="mt-2 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
-          <span>{rangeError} Wyświetlane są nadal dane poprzedniego zakresu.</span>
-          <button
-            type="button"
-            onClick={clearRangeError}
-            className="font-medium hover:underline shrink-0"
-            aria-label="Zamknij komunikat"
-          >
-            ✕
-          </button>
-        </div>
-      )}
     </div>
   );
 }
 
-function DateRangeFilter() {
-  const { selectedFile, dateRange } = useEnergyFiles();
-  const dataStart = selectedFile?.data_start;
-  const dataEnd = selectedFile?.data_end;
-  const bounds = useMemo(
-    () => (dataStart && dataEnd ? { from: dataStart, to: dataEnd } : null),
-    [dataStart, dataEnd],
-  );
-
-  if (!bounds || !dateRange) return null;
-
-  // Nowy plik lub nowo zastosowany zakres resetuje szkic w formularzu.
-  return (
-    <DateRangeForm
-      key={`${selectedFile.id}:${dateRange.from}:${dateRange.to}`}
-      bounds={bounds}
-      appliedRange={dateRange}
-    />
-  );
-}
-
-export default DateRangeFilter;
+export default DateRangeForm;

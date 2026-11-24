@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="141.6 160 916.8 714">
+<title>Energy Advisor</title>
+  <path d="M193 532 L600 224 L1007 532" fill="none" stroke="#191c20" stroke-width="38" stroke-linejoin="miter" stroke-miterlimit="10"/>
+  <path d="M799 298 H865 V387 L799 337 Z" fill="#191c20"/>
+  <path d="M302 560 H510 V610 H365 V657 H499 V708 H365 V763 H510 V813 H302 Z" fill="#191c20"/>
+  <path fill-rule="evenodd" d="M707 813 L802 560 H874 L970 813 H902 L885 760 H790 L771 813 Z M807 708 H866 L837 627 Z" fill="#191c20"/>
+  <path d="M664 542 L643 658 H705 L576 834 L609 694 H554 Z" fill="#069669"/>
+</svg>

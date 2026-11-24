@@ -49,7 +49,7 @@ export const entry = (key, payable, overrides = {}) => {
 };
 
 // Te same zasady co `recommendation` w backendzie (app/services/tariff_comparison.py).
-export const recommendationOf = (entries, referenceKey, days) => {
+export const recommendationOf = (entries, referenceKey) => {
   const priced = entries.filter((item) => item.payable_gross != null);
   const skipped = entries.filter((item) => item.payable_gross == null).map((item) => item.key);
   const cheapest = priced.reduce((best, item) => (best && best.payable_gross <= item.payable_gross ? best : item), null);
@@ -57,19 +57,18 @@ export const recommendationOf = (entries, referenceKey, days) => {
   const reference = priced.find((item) => item.key === referenceKey);
   const base = { skipped_tariffs: skipped, difference_to_cheapest: null };
   if (!reference) {
-    return { ...base, tariff: cheapest.key, is_current: false, saving: null, saving_percent: null, monthly_saving_estimate: null };
+    return { ...base, tariff: cheapest.key, is_current: false, saving: null, saving_percent: null };
   }
   const difference = Math.round((reference.payable_gross - cheapest.payable_gross) * 100) / 100;
   if (difference < 1) {
     return {
       ...base, tariff: reference.key, is_current: true, difference_to_cheapest: difference,
-      saving: 0, saving_percent: 0, monthly_saving_estimate: null,
+      saving: 0, saving_percent: 0,
     };
   }
   return {
     ...base, tariff: cheapest.key, is_current: false, difference_to_cheapest: difference, saving: difference,
     saving_percent: Math.round((difference / reference.payable_gross) * 1000) / 10,
-    monthly_saving_estimate: days >= 28 ? Math.round(((difference * 365.25) / 12 / days) * 100) / 100 : null,
   };
 };
 
@@ -97,7 +96,7 @@ export const comparisonOf = (entries, overrides = {}) => {
     pv_mode: null,
     annual_consumption: { annual_kwh: 3650, days: 31, scaled: true, consumption_kwh: 310 },
     cheapest_tariff: cheapest?.key ?? null,
-    recommendation: recommendationOf(entries, fromProfile ? selected : null, 31),
+    recommendation: recommendationOf(entries, fromProfile ? selected : null),
     tariffs: entries.map((item) => ({
       ...item,
       difference_to_profile:

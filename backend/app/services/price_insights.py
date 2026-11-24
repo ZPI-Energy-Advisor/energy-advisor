@@ -1,4 +1,5 @@
-"""Najtańsze i najdroższe okno cenowe jutra — dane do prostych komunikatów („najtaniej jutro 12:00–14:00”).
+"""Najtańsze i najdroższe okno cenowe jutra (albo reszty dzisiejszej doby, zanim ceny na jutro są dostępne) —
+dane do prostych komunikatów („najtaniej jutro 12:00–14:00”).
 
 Ceny kwadransów liczy `SchedulePriceService`, czyli dla klienta z ceną dynamiczną dokładnie te same, co
 w optymalizacji (`GET /energy-files/{id}/schedule`): RCE z marżą, opłaty za kWh, VAT. Klient ze zwykłą taryfą
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Callable
 from uuid import UUID
 
@@ -91,7 +92,29 @@ class PriceInsightsService:
 
     def tomorrow(self, user_id: UUID, window_minutes: int) -> PriceInsightsResponse:
         today = self.now().astimezone(MARKET_TIMEZONE).date()
-        day = today + timedelta(days=1)
+        return self._insights(
+            user_id, window_minutes, today + timedelta(days=1),
+            publication_at=datetime.combine(today, self.publication_time, MARKET_TIMEZONE),
+        )
+
+    def today(self, user_id: UUID, window_minutes: int) -> PriceInsightsResponse:
+        """Okna w pozostałej części dzisiejszej doby (od najbliższego pełnego kwadransa): okno, które już minęło,
+        nic nie daje. Ekran pokazuje je, zanim pojawią się ceny na jutro."""
+        now = self.now().astimezone(timezone.utc)
+        floored = now.replace(minute=now.minute - now.minute % SLOT_MINUTES, second=0, microsecond=0)
+        next_slot = floored if floored == now else floored + SLOT
+        return self._insights(
+            user_id, window_minutes, now.astimezone(MARKET_TIMEZONE).date(), from_moment=next_slot
+        )
+
+    def _insights(
+        self,
+        user_id: UUID,
+        window_minutes: int,
+        day,
+        publication_at: datetime | None = None,
+        from_moment: datetime | None = None,
+    ) -> PriceInsightsResponse:
         start, end = local_day_bounds_utc(day)
         expected = int((end - start) / SLOT)
         common = dict(
@@ -120,17 +143,21 @@ class PriceInsightsService:
         if len(prices) < expected:
             return PriceInsightsResponse(
                 status=PriceInsightsStatus.UNAVAILABLE,
-                expected_publication_at=datetime.combine(today, self.publication_time, MARKET_TIMEZONE),
+                expected_publication_at=publication_at,
                 **common,
             )
 
-        windows = find_price_windows(prices, window_minutes // SLOT_MINUTES)
+        daily_average = math.fsum(prices.values()) / len(prices)
+        remaining = {slot: price for slot, price in prices.items() if from_moment is None or slot >= from_moment}
+        if len(remaining) < window_minutes // SLOT_MINUTES:
+            # Do końca doby zostało mniej niż jedno okno: nie ma czego doradzać.
+            return PriceInsightsResponse(status=PriceInsightsStatus.UNAVAILABLE, **common)
+        windows = find_price_windows(remaining, window_minutes // SLOT_MINUTES)
         if windows is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Okno jest dłuższe niż doba.",
             )
-        daily_average = math.fsum(prices.values()) / len(prices)
 
         def out(window: PriceWindow) -> PriceWindowOut:
             return PriceWindowOut(

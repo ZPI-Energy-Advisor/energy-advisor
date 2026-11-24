@@ -128,11 +128,6 @@ function RecommendationCard({ comparison, recommendation, cheapest }) {
       <p>
         w okresie {period} po przejściu na <span className="font-semibold">{entryLabel(recommended)}</span>
       </p>
-      {recommendation.monthly_saving_estimate != null && (
-        <p className="text-gray-500">
-          Szacunek: średnio ok. {formatPln(recommendation.monthly_saving_estimate)} miesięcznie (z wybranego okresu).
-        </p>
-      )}
     </Card>
   );
 }

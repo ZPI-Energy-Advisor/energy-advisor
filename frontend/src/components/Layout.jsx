@@ -17,6 +17,8 @@ import apiClient, { clearAuth } from "../api/client";
 import { EnergyFileProvider } from "../context/EnergyFileProvider";
 import { CurrentUserProvider } from "../context/CurrentUserProvider";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import logo from "../assets/logo/logo.svg";
 import PrivacyPolicyAcceptance from "./PrivacyPolicyAcceptance";
 import { PRIVACY_POLICY_PATH, acceptPrivacyPolicy } from "../api/privacyPolicy";
 
@@ -88,6 +90,7 @@ function LayoutShell() {
     },
     ...(me?.home_owner ? [HOME_NAV_ITEM] : []),
   ];
+  useDocumentTitle(navItems.find((item) => location.pathname.startsWith(item.path))?.label);
 
   const closeSidebar = () => setIsSidebarOpen(false);
 
@@ -95,8 +98,11 @@ function LayoutShell() {
     <div className="flex flex-col md:flex-row h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden">
       
       <div className="md:hidden flex items-center justify-between bg-white border-b border-gray-200 p-4 z-20">
-        <h1 className="text-xl font-bold tracking-tight">
-          Energy<span className="text-emerald-500">Advisor</span>
+        <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
+          <img src={logo} alt="" className="h-7 w-auto" />
+          <span>
+            Energy<span className="text-emerald-500">Advisor</span>
+          </span>
         </h1>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -117,8 +123,11 @@ function LayoutShell() {
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       }`}>
         <div className="p-6 hidden md:block">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Energy<span className="text-emerald-500">Advisor</span>
+          <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight">
+            <img src={logo} alt="" className="h-9 w-auto" />
+            <span>
+              Energy<span className="text-emerald-500">Advisor</span>
+            </span>
           </h1>
         </div>
 
@@ -160,7 +169,9 @@ function LayoutShell() {
         </div>
       </div>
 
-      <div className="flex-1 p-4 md:p-10 overflow-y-auto h-full w-full">
+      {/* relative: elementy pozycjonowane absolutnie (np. teksty sr-only, panele) liczą się względem przewijanej treści,
+          a nie całego okna; inaczej okno dostaje drugi pasek przewijania. */}
+      <div className="relative flex-1 p-4 md:p-10 overflow-y-auto h-full w-full">
         {!needsPolicyAcceptance && <Outlet />}
       </div>
 

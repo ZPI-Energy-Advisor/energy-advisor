@@ -2,8 +2,19 @@ import { useState } from "react";
 import apiClient, { isAuthenticated, saveAuthResponse } from "../api/client";
 import { GoogleLogin } from "@react-oauth/google";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { FiCalendar, FiPieChart, FiTrendingDown } from "react-icons/fi";
 import PrivacyPolicyAcceptance from "../components/PrivacyPolicyAcceptance";
 import { PRIVACY_POLICY_PATH, fetchPrivacyPolicy, isPolicyRequiredError } from "../api/privacyPolicy";
+
+// Co daje aplikacja: trzy krótkie korzyści na ekranie logowania (widoczne od szerokiego ekranu).
+const BENEFITS = [
+  { Icon: FiPieChart, title: "Porównaj taryfy na swoich danych", text: "Zobacz, ile zapłaciłbyś w każdej taryfie operatora, także z fotowoltaiką." },
+  { Icon: FiTrendingDown, title: "Sprawdź, kiedy prąd jest najtańszy", text: "Ceny dynamiczne na dziś i jutro, godzina po godzinie." },
+  { Icon: FiCalendar, title: "Zaplanuj pracę urządzeń na jutro", text: "Pranie, zmywanie i ładowanie auta w najtańszych godzinach." },
+];
+import logo from "../assets/logo/logo.svg";
+import logoDark from "../assets/logo/logo-dark.svg";
 
 const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const SESSION_EXPIRED_MESSAGE = "Sesja wygasła, zaloguj się ponownie.";
@@ -31,6 +42,7 @@ function Login() {
   const [policyAccepted, setPolicyAccepted] = useState(false);
   // Token Google nowego konta, które czeka na akceptację polityki (backend: 403 privacy_policy_required).
   const [pendingGoogleToken, setPendingGoogleToken] = useState(null);
+  useDocumentTitle(isRegister ? "Rejestracja" : "Logowanie");
   const navigate = useNavigate();
   const redirectTo = getRedirectPath(location.state?.from);
 
@@ -125,6 +137,7 @@ function Login() {
   return (
     <div className="flex min-h-screen w-full bg-white">
       <div className="hidden w-1/2 flex-col items-center justify-center bg-slate-900 px-12 lg:flex">
+        <img src={logoDark} alt="" className="mb-8 h-32 w-auto" />
         <h1 className="mb-4 text-5xl font-bold tracking-tight text-white text-center">
           Energy Advisor
         </h1>
@@ -132,14 +145,30 @@ function Login() {
           Zoptymalizuj koszty prądu w swoim domu
         </p>
         <div className="mt-8 h-1 w-16 rounded bg-emerald-500"></div>
+        <ul className="mt-10 max-w-sm space-y-5">
+          {BENEFITS.map(({ Icon, title, text }) => (
+            <li key={title} className="flex items-start gap-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+                <Icon aria-hidden="true" className="text-xl" />
+              </span>
+              <span>
+                <span className="block font-semibold text-white">{title}</span>
+                <span className="block text-sm text-slate-400">{text}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       <div className="flex w-full flex-col items-center justify-center px-4 sm:px-8 lg:w-1/2">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center sm:text-left">
             {/* Logo widoczne tylko na mobile dla spójności */}
-            <h1 className="lg:hidden mb-8 text-3xl font-bold tracking-tight text-slate-900">
-              Energy<span className="text-emerald-500">Advisor</span>
+            <h1 className="lg:hidden mb-8 flex items-center justify-center gap-3 text-3xl font-bold tracking-tight text-slate-900 sm:justify-start">
+              <img src={logo} alt="" className="h-10 w-auto" />
+              <span>
+                Energy<span className="text-emerald-500">Advisor</span>
+              </span>
             </h1>
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
               {isRegister ? "Rejestracja" : "Logowanie"}

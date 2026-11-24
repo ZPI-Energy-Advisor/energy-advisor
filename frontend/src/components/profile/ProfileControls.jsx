@@ -20,10 +20,13 @@ export function Section({ title, description, children }) {
 }
 
 // Pole formularza. `group` – kontrolka z kilku przycisków (bez <label for>), `wide` – na całą szerokość sekcji.
-export function Field({ id, label, hint, error, missing, wide, group, children }) {
+// `notice`: informacja o wartości wpisanej automatycznie (np. miejscowość uzupełniona z kodu pocztowego),
+// widoczna pod polem mocniej niż zwykła podpowiedź.
+export function Field({ id, label, hint, notice, error, missing, wide, group, children }) {
   const hintId = hint ? `${id}-hint` : undefined;
+  const noticeId = notice && !error ? `${id}-notice` : undefined;
   const messageId = error || missing ? `${id}-message` : undefined;
-  const describedBy = [messageId, hintId].filter(Boolean).join(" ") || undefined;
+  const describedBy = [messageId, noticeId, hintId].filter(Boolean).join(" ") || undefined;
   const LabelTag = group ? "span" : "label";
   return (
     <div className={`text-sm ${wide ? "sm:col-span-2" : ""}`}>
@@ -33,6 +36,11 @@ export function Field({ id, label, hint, error, missing, wide, group, children }
       {children({ id, describedBy, invalid: Boolean(error), borderClass: borderClass(error, missing) })}
       {error && <p id={messageId} className="mt-1.5 text-xs text-red-600">{error}</p>}
       {!error && missing && <p id={messageId} className="mt-1.5 text-xs text-amber-700">Brak w zapisanym profilu.</p>}
+      {noticeId && (
+        <p id={noticeId} role="status" className="mt-1.5 text-xs text-amber-700">
+          {notice}
+        </p>
+      )}
       {hint && <p id={hintId} className="mt-1.5 text-xs text-gray-500">{hint}</p>}
     </div>
   );

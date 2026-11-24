@@ -34,7 +34,6 @@ class TariffRecommendation(BaseModel):
     is_current: bool
     saving: float | None = None
     saving_percent: float | None = None
-    monthly_saving_estimate: float | None = None
     difference_to_cheapest: float | None = None
     skipped_tariffs: list[str] = []
 

@@ -168,7 +168,10 @@ function ProfilePage() {
     apiClient.get("/users/me/profile/address-lookup", { params })
       .then(({ data }) => {
         if (lookupRef.current.id !== id) return;
-        setLookup({ status: data.status, message: data.message });
+        // Pole uzupełnione automatycznie (z samego kodu albo samej miejscowości): komunikat idzie pod nie.
+        const filled =
+          data.status !== "found" ? null : !town && data.town ? "town" : !postalCode && data.postal_code ? "postal_code" : null;
+        setLookup({ status: data.status, message: data.message, filled });
         setFieldErrors((current) => {
           const next = { ...current };
           delete next["base_info.town"];
@@ -368,7 +371,7 @@ function ProfilePage() {
           <Field {...field("base_info.number_of_residents", { group: true })}>
             {(f) => <Stepper field={f} value={base.number_of_residents} onChange={(value) => update("base_info", "number_of_residents", value)} />}
           </Field>
-          <Field {...field("base_info.town")}>
+          <Field {...field("base_info.town", { notice: lookup?.filled === "town" ? lookup.message : null })}>
             {(f) => (
               <input
                 id={f.id}
@@ -383,7 +386,7 @@ function ProfilePage() {
               />
             )}
           </Field>
-          <Field {...field("base_info.postal_code")}>
+          <Field {...field("base_info.postal_code", { notice: lookup?.filled === "postal_code" ? lookup.message : null })}>
             {(f) => (
               <input
                 id={f.id}
@@ -404,7 +407,7 @@ function ProfilePage() {
           <HomeLocationField
             id={fieldId("base_info.location")}
             base={base}
-            lookup={lookup}
+            lookup={lookup?.filled ? { ...lookup, message: null } : lookup}
             error={fieldErrors["base_info.location"]}
             onChange={(location) => update("base_info", "location", location)}
           />
