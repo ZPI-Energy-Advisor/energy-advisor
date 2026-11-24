@@ -131,6 +131,25 @@ describe("TomorrowPriceCards", () => {
     expect(screen.queryByRole("link", { name: "Uzupełnij profil" })).toBeNull();
   });
 
+  it("przed publikacją cen na jutro pokazuje okna z reszty dzisiejszej doby i zapowiedź cen na jutro", async () => {
+    const get = vi.spyOn(apiClient, "get").mockImplementation((url) =>
+      Promise.resolve({ data: url.includes("/today/") ? { ...AVAILABLE, business_date: "2026-11-16" } : UNAVAILABLE }),
+    );
+    render(
+      <MemoryRouter>
+        <CurrentUserContext.Provider value={{ profileTariff: { exists: true, tariff_type: "G11" } }}>
+          <TomorrowPriceCards />
+        </CurrentUserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const cheapest = await screen.findByTestId("price-card-cheapest");
+    expect(cheapest.textContent).toMatch(/^Dziś najtaniej \(do końca dnia\)10:00–12:00/);
+    expect(screen.getByTestId("price-card-most_expensive").textContent).toMatch(/^Dziś najdrożej/);
+    expect(screen.getByText(/Ceny na jutro|Cen na jutro jeszcze nie ma/)).toBeTruthy();
+    expect(get).toHaveBeenCalledWith("/dynamic-prices/today/insights", { params: { window: "2h" } });
+  });
+
   it("pokazuje błąd pobrania i pozwala ponowić", async () => {
     const get = renderCards(Object.assign(new Error("500"), { response: { status: 500, data: {} } }));
 

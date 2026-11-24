@@ -180,15 +180,17 @@ function ImportPage() {
                 </button>
               </div>
 
+              {/* Przykładowe dane: ten sam dom i te same 30 dni w obu plikach, więc działa też „Reszta domu”. */}
               <p className="text-sm text-gray-500 text-center">
-                Masz dane z urządzeń smart home?{" "}
-                <a
-                  href="/samples/devices-example.json"
-                  download
-                  className="text-emerald-700 font-medium hover:underline"
-                >
-                  Pobierz przykładowy plik urządzeń (JSON)
+                Nie masz swojego pliku? Pobierz przykładowe dane z 30 dni:{" "}
+                <a href="/samples/przyklad-licznik-30-dni.csv" download className="text-emerald-700 font-medium hover:underline">
+                  plik z licznika (CSV)
+                </a>{" "}
+                i{" "}
+                <a href="/samples/przyklad-urzadzenia-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
+                  plik urządzeń (JSON)
                 </a>
+                .
               </p>
 
               {error && (

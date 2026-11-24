@@ -379,9 +379,15 @@ describe("ProfilePage", () => {
 
     expect(await screen.findByText("Wronki, 64-510")).toBeTruthy();
     expect(screen.getByLabelText("Miejscowość").value).toBe("Wronki");
-    expect(screen.getByText("Uzupełniliśmy miejscowość z kodu pocztowego.")).toBeTruthy();
+    // Komunikat o automatycznie wpisanej miejscowości jest pod polem miejscowości, a nie w ramce lokalizacji.
+    const notice = screen.getByText("Uzupełniliśmy miejscowość z kodu pocztowego.");
+    expect(screen.getAllByText("Uzupełniliśmy miejscowość z kodu pocztowego.")).toHaveLength(1);
+    expect(screen.getByLabelText("Miejscowość").getAttribute("aria-describedby")).toContain(notice.id);
     expect(apiClient.get).toHaveBeenCalledWith("/users/me/profile/address-lookup", { params: { postal_code: "64-510" } });
     expect(put).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Miejscowość"), { target: { value: "Obrzycko" } });
+    expect(screen.queryByText("Uzupełniliśmy miejscowość z kodu pocztowego.")).toBeNull();
   });
 
   it("po wyjściu z pola miejscowości uzupełnia kod, a niepasujący adres oznacza przy polu", async () => {

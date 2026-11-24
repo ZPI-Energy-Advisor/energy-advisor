@@ -123,3 +123,13 @@ def get_tomorrow_price_insights(
 ):
     """Najtańsze i najdroższe okno cenowe jutra w cenach taryfy z profilu (tych samych, co w optymalizacji)."""
     return service.tomorrow(user.id, window_minutes)
+
+
+@router.get("/today/insights", response_model=PriceInsightsResponse)
+def get_today_price_insights(
+    window_minutes: int = Depends(get_insights_window_minutes),
+    user: User = Depends(get_authenticated_user),
+    service: PriceInsightsService = Depends(get_price_insights_service),
+):
+    """Najtańsze i najdroższe okno w pozostałej części dzisiejszej doby, zanim będą ceny na jutro."""
+    return service.today(user.id, window_minutes)

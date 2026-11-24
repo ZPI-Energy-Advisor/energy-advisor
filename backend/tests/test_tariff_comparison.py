@@ -482,52 +482,52 @@ def _priced(key, payable):
 
 
 @pytest.mark.parametrize(
-    "entries, reference, days, expected",
+    "entries, reference, expected",
     [
         (
-            [_priced("G11", 400.0), _priced("G12", 330.0)], "G11", 61,
+            [_priced("G11", 400.0), _priced("G12", 330.0)], "G11",
             {"tariff": "G12", "is_current": False, "saving": 70.0, "saving_percent": 17.5,
-             "monthly_saving_estimate": round(70 * 365.25 / 12 / 61, 2), "difference_to_cheapest": 70.0},
+             "difference_to_cheapest": 70.0},
         ),
         (
-            [_priced("G11", 300.0), _priced("G12", 330.0)], "G11", 61,
+            [_priced("G11", 300.0), _priced("G12", 330.0)], "G11",
             {"tariff": "G11", "is_current": True, "saving": 0.0, "saving_percent": 0.0,
-             "monthly_saving_estimate": None, "difference_to_cheapest": 0.0},
+             "difference_to_cheapest": 0.0},
         ),
         (
-            [_priced("G11", 300.5), _priced("G12", 299.6)], "G11", 61,
+            [_priced("G11", 300.5), _priced("G12", 299.6)], "G11",
             {"tariff": "G11", "is_current": True, "saving": 0.0, "saving_percent": 0.0,
-             "monthly_saving_estimate": None, "difference_to_cheapest": 0.9},
+             "difference_to_cheapest": 0.9},
         ),
         (
-            [_priced("G11", 301.0), _priced("G12", 300.0)], "G11", 10,
+            [_priced("G11", 301.0), _priced("G12", 300.0)], "G11",
             {"tariff": "G12", "is_current": False, "saving": 1.0, "saving_percent": 0.3,
-             "monthly_saving_estimate": None, "difference_to_cheapest": 1.0},
+             "difference_to_cheapest": 1.0},
         ),
         (
-            [_priced("G11", 400.0), _priced("G12", 330.0)], None, 61,
+            [_priced("G11", 400.0), _priced("G12", 330.0)], None,
             {"tariff": "G12", "is_current": False, "saving": None, "saving_percent": None,
-             "monthly_saving_estimate": None, "difference_to_cheapest": None},
+             "difference_to_cheapest": None},
         ),
     ],
-    ids=["oszczednosc", "aktualna-najtansza", "remis-ponizej-zlotowki", "krotki-okres-bez-szacunku", "bez-profilu"],
+    ids=["oszczednosc", "aktualna-najtansza", "remis-ponizej-zlotowki", "zlotowka-to-juz-oszczednosc", "bez-profilu"],
 )
-def test_recommendation_rules(entries, reference, days, expected):
-    assert recommendation(entries, reference, days) == {**expected, "skipped_tariffs": []}
+def test_recommendation_rules(entries, reference, expected):
+    assert recommendation(entries, reference) == {**expected, "skipped_tariffs": []}
 
 
 def test_recommendation_skips_tariffs_without_full_price_and_unpriced_profile_tariff():
     entries = [_priced("G11", None), _priced("G12", 330.0), _priced("G11-dynamic", None)]
 
-    result = recommendation(entries, "G11", 61)
+    result = recommendation(entries, "G11")
 
     assert result["tariff"] == "G12" and result["saving"] is None and result["is_current"] is False
     assert result["skipped_tariffs"] == ["G11", "G11-dynamic"]
-    assert recommendation([_priced("G11", None)], "G11", 61) is None
+    assert recommendation([_priced("G11", None)], "G11") is None
 
 
 def test_recommendation_without_percent_when_profile_tariff_costs_nothing():
-    result = recommendation([_priced("G11", 0.0), _priced("G12", -5.0)], "G11", 61)
+    result = recommendation([_priced("G11", 0.0), _priced("G12", -5.0)], "G11")
 
     assert result["saving"] == 5.0 and result["saving_percent"] is None
 
@@ -547,7 +547,6 @@ def test_recommendation_compares_payable_amounts_against_profile_tariff():
     assert recommended["tariff"] == cheapest != "G11"
     assert recommended["saving"] == round(payable["G11"] - payable[cheapest], 2)
     assert recommended["saving_percent"] == round(recommended["saving"] / payable["G11"] * 100, 1)
-    assert recommended["monthly_saving_estimate"] == round(recommended["saving"] * 365.25 / 12 / 59, 2)
 
 
 def test_cheapest_profile_tariff_is_confirmed():
@@ -560,7 +559,7 @@ def test_cheapest_profile_tariff_is_confirmed():
 
     assert recommended == {
         "tariff": cheapest, "is_current": True, "saving": 0.0, "saving_percent": 0.0,
-        "monthly_saving_estimate": None, "difference_to_cheapest": 0.0, "skipped_tariffs": [],
+        "difference_to_cheapest": 0.0, "skipped_tariffs": [],
     }
 
 
@@ -653,11 +652,3 @@ def test_single_file_pays_fixed_fees_for_whole_range_also_on_days_without_readin
     assert all(_cycle_fees(cycle) > 0 for cycle in g12["cycles"])
     assert compared["annual_consumption"].days == 40
 
-
-def test_monthly_saving_estimate_uses_days_with_data_not_span_of_dates():
-    january, march = _usage(date(2026, 1, 1), 15, seed=3), _usage(date(2026, 3, 1), 15, seed=4)
-    compared = _comparison(_profile("G11"), _readings({**january, **march}), covered_days=_covered({**january, **march}))
-
-    advice = compared["recommendation"]
-    assert advice["saving"] > 0
-    assert advice["monthly_saving_estimate"] == pytest.approx(advice["saving"] * 365.25 / 12 / 30, abs=0.01)

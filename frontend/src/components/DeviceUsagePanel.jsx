@@ -18,8 +18,13 @@ import {
   usageQuery,
 } from "../utils/deviceUsage";
 import { describeBreakdown } from "../utils/tariffs";
+import { axisUnitLabel, formatAxis } from "../utils/format";
+import { ChartSkeleton } from "./Skeleton";
 
 const RESOLUTION_PREFIX = { "15m": "Średnio o", "1h": "Średnio o", "1d": "Dzień" };
+// Animacja przejścia tylko przy rozsądnej liczbie słupków: przy tysiącach (np. 15 min z roku) Recharts się zacina.
+const ANIMATION_MS = 300;
+const MAX_ANIMATED_BARS = 400;
 const LEVEL_NAMES = ["kategorii", "typów", "urządzeń", "urządzenia"];
 const FLEXIBLE_HINT = "Można przenieść na inne godziny";
 const DEVICE_FILTER_OPTIONS = [
@@ -115,6 +120,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
   const series = buildSeries(data, path, { flexibleOnly });
   const production = productionSeries(data, path);
   const rows = data ? buildChartRows(data.periods, series, production, resolution) : [];
+  const animate = rows.length <= MAX_ANIMATED_BARS;
   const sum = totals(series);
   const shares = ranking(series);
   const crumbs = breadcrumbs(path);
@@ -135,8 +141,8 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
   }
   if (!data) {
     return (
-      <div className="bg-white p-8 rounded-lg border border-gray-100 text-center text-gray-500">
-        Ładowanie zużycia urządzeń...
+      <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100">
+        <ChartSkeleton label="Ładowanie zużycia urządzeń..." />
       </div>
     );
   }
@@ -254,10 +260,17 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
           <>
             <div className="h-[300px] md:h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} stackOffset="sign" margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <BarChart data={rows} stackOffset="sign" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#64748b" }} dy={10} minTickGap={20} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#64748b" }} />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: "#64748b" }}
+                    tickFormatter={formatAxis}
+                    width={48}
+                    label={axisUnitLabel(metric === "kwh" ? "kWh" : "zł")}
+                  />
                   <ReferenceLine y={0} stroke="#94a3b8" />
                   <Tooltip
                     content={<UsageTooltip series={series} resolution={resolution} />}
@@ -272,11 +285,12 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
                       fill={item.color}
                       cursor={item.clickable ? "pointer" : undefined}
                       onClick={() => select(item)}
-                      isAnimationActive={false}
+                      isAnimationActive={animate}
+                      animationDuration={ANIMATION_MS}
                     />
                   ))}
                   {production && metric === "kwh" && (
-                    <Bar dataKey={`${PRODUCTION_KEY}__kwh`} name="Produkcja fotowoltaiki" stackId="usage" fill={PRODUCTION_COLOR} isAnimationActive={false} />
+                    <Bar dataKey={`${PRODUCTION_KEY}__kwh`} name="Produkcja fotowoltaiki" stackId="usage" fill={PRODUCTION_COLOR} isAnimationActive={animate} animationDuration={ANIMATION_MS} />
                   )}
                 </BarChart>
               </ResponsiveContainer>

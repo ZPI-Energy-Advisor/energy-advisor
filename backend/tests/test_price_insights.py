@@ -321,3 +321,61 @@ def test_insights_endpoint_returns_windows_for_default_and_given_window(client):
 @pytest.mark.parametrize("window", ["20min", "13h", "0h", "2", "2 h", "abc", "-2h"])
 def test_insights_endpoint_rejects_invalid_window(client, window):
     assert client.get(URL, params={"window": window}).status_code == 422
+
+
+# --- reszta dzisiejszej doby (zanim są ceny na jutro) ---
+
+
+def _today_service(prices, hour, minute=0):
+    source = _Prices(prices)
+    service = PriceInsightsService(
+        source, flat_spread_pln_kwh=0.05, publication_time=time(15, 0),
+        now=lambda: datetime.combine(DAY, time(hour, minute), WARSAW),
+    )
+    return service, source
+
+
+def test_today_windows_skip_the_part_of_the_day_that_has_passed():
+    # Najtaniej było 3:00–5:00, ale jest już 9:10: zostaje najtańsze okno do końca doby (12:00–14:00).
+    prices = _day_prices(lambda local: 0.1 if 3 <= local.hour < 5 else 0.5 if 12 <= local.hour < 14 else 1.0)
+    service, source = _today_service(prices, 9, 10)
+
+    result = service.today("user-id", 120)
+
+    assert source.calls == [("user-id", *local_day_bounds_utc(DAY), True)]
+    assert (result.status, result.business_date) == ("available", DAY)
+    assert result.cheapest.start == _local(12)
+    # Średnia doby (do procentów) z całej doby, także z minionych godzin.
+    assert result.average_price_pln_kwh == pytest.approx((8 * 0.1 + 8 * 0.5 + 80 * 1.0) / 96, abs=1e-5)
+    assert result.expected_publication_at is None
+
+
+def test_today_window_starts_at_the_next_full_quarter():
+    prices = _day_prices(lambda local: 0.2 if local.hour >= 22 else 1.0)
+    service, _ = _today_service(prices, 21, 45)
+
+    result = service.today("user-id", 120)
+
+    assert result.cheapest.start == _local(22)
+    assert result.most_expensive.start == _local(21, 45)
+
+
+def test_today_late_evening_without_a_whole_window_left_is_unavailable():
+    service, _ = _today_service(_day_prices(), 22, 50)
+
+    result = service.today("user-id", 120)
+
+    assert result.status == "unavailable"
+    assert result.cheapest is None
+
+
+def test_today_insights_endpoint(client):
+    service, _ = _today_service(_day_prices(_between(18, 20, 2.0)), 9)
+    app.dependency_overrides[get_price_insights_service] = lambda: service
+    try:
+        response = client.get("/api/v1/dynamic-prices/today/insights", params={"window": "2h"})
+    finally:
+        app.dependency_overrides.pop(get_price_insights_service, None)
+
+    assert response.status_code == 200
+    assert response.json()["most_expensive"]["start"] == "2026-11-17T18:00:00+01:00"

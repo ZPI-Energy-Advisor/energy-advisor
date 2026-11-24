@@ -100,26 +100,18 @@ describe("TariffsPage", () => {
     expect(within(screen.getByRole("group", { name: "Grupa G13" })).getByText(/niedostępna/)).toBeTruthy();
   });
 
-  it("pokazuje karty: Twoja taryfa, najtańsza i oszczędność w zł i % z oznaczonym szacunkiem miesięcznym", async () => {
+  it("pokazuje karty: Twoja taryfa, najtańsza i oszczędność w zł i % w wybranym okresie, bez szacunku miesięcznego", async () => {
     respondWith(COMPARISON);
     renderPage();
 
     const saving = await screen.findByRole("region", { name: "Możesz zaoszczędzić" });
     expect(saving.textContent).toMatch(/70,00 zł \(17,5%\)/);
     expect(saving.textContent).toMatch(/01\.01\.2026 – 31\.01\.2026 po przejściu na G12 z ceną dynamiczną · Oferta dynamiczna/);
-    expect(saving.textContent).toMatch(/Szacunek: średnio ok\. 68,73 zł miesięcznie/);
+    expect(saving.textContent).not.toMatch(/Szacunek|miesięcznie/);
     const own = screen.getByRole("region", { name: "Twoja taryfa" });
     expect(own.textContent).toMatch(/400,00 zł.*G11.*za kWh 350,00 zł · opłaty mies\. 50,00 zł/);
     const cheapest = screen.getByRole("region", { name: "Najtańsza" });
     expect(cheapest.textContent).toMatch(/330,00 zł.*G12 z ceną dynamiczną · Oferta dynamiczna.*za kWh 280,00 zł/);
-  });
-
-  it("bez szacunku miesięcznego, gdy backend go nie podał (krótki okres)", async () => {
-    respondWith({ ...COMPARISON, recommendation: { ...COMPARISON.recommendation, monthly_saving_estimate: null } });
-    renderPage();
-
-    const saving = await screen.findByRole("region", { name: "Możesz zaoszczędzić" });
-    expect(saving.textContent).not.toMatch(/Szacunek/);
   });
 
   it("potwierdza, gdy Twoja taryfa jest najtańsza", async () => {

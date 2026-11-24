@@ -4,16 +4,19 @@ import { WEEKDAY_SHORT, addMonths, monthOf, monthTitle, monthWeeks } from "../ut
 
 // Kalendarz miesiąca do wyboru zakresu dni w granicach pliku: pierwsze kliknięcie wybiera jeden dzień,
 // drugie kończy zakres (w dowolnej kolejności). Dni spoza pliku są wyłączone.
-function DateRangePicker({ min, max, from, to, onChange }) {
-  const [month, setMonth] = useState(monthOf(from || min));
+// `showEnd`: kalendarz pokazuje miesiąc końca zakresu zamiast początku (ceny: liczą się ostatnie dni).
+function DateRangePicker({ min, max, from, to, onChange, showEnd = false }) {
+  const focusOf = (range) => (showEnd ? range.to : range.from);
+  const [month, setMonth] = useState(monthOf(focusOf({ from, to }) || (showEnd ? max : min)));
   const [anchor, setAnchor] = useState(null);
-  const [shownFrom, setShownFrom] = useState(from);
-  // Okres zmieniony z zewnątrz (cały okres, losowy dzień): kalendarz pokazuje jego miesiąc,
+  const [shown, setShown] = useState({ from, to });
+  // Okres zmieniony z zewnątrz (cały okres, losowy dzień, szybki wybór): kalendarz pokazuje jego miesiąc,
   // a rozpoczęte kliknięciem zaznaczanie się kończy.
-  if (from !== shownFrom) {
-    setShownFrom(from);
-    if (from && monthOf(from) !== month) setMonth(monthOf(from));
+  if (from !== shown.from || to !== shown.to) {
+    const focus = focusOf({ from, to });
+    if (focus && focus !== focusOf(shown) && monthOf(focus) !== month) setMonth(monthOf(focus));
     if (anchor !== null && (from !== anchor || to !== anchor)) setAnchor(null);
+    setShown({ from, to });
   }
   const canGoBack = month > monthOf(min);
   const canGoForward = month < monthOf(max);
