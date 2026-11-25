@@ -93,6 +93,16 @@ def rate_limited():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_device_series():
+    # Seria urządzeń źródła jest w pamięci procesu (ZP-147): każdy test zaczyna z pustą.
+    from app.services.device_series import series_cache
+
+    series_cache.clear()
+    yield
+    series_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_price_cache():
     # Testy wstawiają różne ceny RCE dla tych samych miesięcy, więc pamięć cen nie może przechodzić między nimi.
     from app.services.pv_service import clear_rce_cache

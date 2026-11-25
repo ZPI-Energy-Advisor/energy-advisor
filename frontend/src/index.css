@@ -26,3 +26,21 @@
   .house-device-halo, .house-wire-flow, .house-ev-indeterminate { animation: none; }
   .house-device-tile, .house-room { transition: none; }
 }
+
+/* Zmiana danych na wykresie urządzeń (ZP-147): krótkie przejście przezroczystości liczone przez przeglądarkę,
+   zamiast animacji setek słupków w Recharts, która klatkowała. */
+@keyframes chart-fade-in {
+  from { opacity: 0.2; }
+  to { opacity: 1; }
+}
+/* Dwie nazwy tej samej animacji: zmiana klasy restartuje przejście bez montowania wykresu od nowa. */
+@keyframes chart-fade-in-alt {
+  from { opacity: 0.2; }
+  to { opacity: 1; }
+}
+.chart-fade-in { animation: chart-fade-in 220ms ease-out; }
+.chart-fade-in-alt { animation: chart-fade-in-alt 220ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-fade-in, .chart-fade-in-alt { animation: none; }
+}

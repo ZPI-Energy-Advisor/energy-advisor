@@ -22,9 +22,14 @@ import { axisUnitLabel, formatAxis } from "../utils/format";
 import { ChartSkeleton } from "./Skeleton";
 
 const RESOLUTION_PREFIX = { "15m": "Średnio o", "1h": "Średnio o", "1d": "Dzień" };
-// Animacja przejścia tylko przy rozsądnej liczbie słupków: przy tysiącach (np. 15 min z roku) Recharts się zacina.
-const ANIMATION_MS = 300;
-const MAX_ANIMATED_BARS = 400;
+// Wykres jest skumulowany, więc Recharts animuje osobno każdy kawałek słupka (okres × grupa). Przy małej liczbie
+// kawałków (np. doba godzinowo: 24 × 7) słupki płynnie zmieniają wysokość jak na „Łącznie”; przy dużej (15 min,
+// dni długiego okresu: setki i tysiące kawałków) animacja w JS klatkowała, więc zamiast niej jest krótkie przejście
+// przezroczystości (CSS, chart-fade-in).
+const MAX_ANIMATED_PIECES = 2500;
+const BAR_ANIMATION_MS = 1000;
+// Systemowe „ogranicz ruch” wyłącza też animację słupków (przejście CSS wyłącza index.css).
+const REDUCED_MOTION = typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 const LEVEL_NAMES = ["kategorii", "typów", "urządzeń", "urządzenia"];
 const FLEXIBLE_HINT = "Można przenieść na inne godziny";
 const DEVICE_FILTER_OPTIONS = [
@@ -120,7 +125,6 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
   const series = buildSeries(data, path, { flexibleOnly });
   const production = productionSeries(data, path);
   const rows = data ? buildChartRows(data.periods, series, production, resolution) : [];
-  const animate = rows.length <= MAX_ANIMATED_BARS;
   const sum = totals(series);
   const shares = ranking(series);
   const crumbs = breadcrumbs(path);
@@ -131,6 +135,15 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
   const selfConsumption = withPv ? Math.max(sum.kwh - gridImport.kwh, 0) : null;
   const gridCost = gridImport?.cost != null && gridImport.tariff === data?.tariff.key ? gridImport.cost : null;
   const breakdown = data ? describeBreakdown(data.cost_breakdown, formatPln) : null;
+  // Nowe dane (poziom, okres, rozdzielczość, miara, filtr): przejście CSS restartujemy zmianą nazwy animacji,
+  // bez przebudowy wykresu (zmiana `key` budowałaby od zera tysiące słupków widoku „Dni”).
+  const viewKey = data
+    ? [data.date_from, data.date_to, data.group_by, data.resolution, metric, sum.kwh, ...series.map((item) => item.key)].join("|")
+    : "";
+  const [fade, setFade] = useState({ key: viewKey, odd: false });
+  if (fade.key !== viewKey) setFade({ key: viewKey, odd: !fade.odd });
+  const animateBars = !REDUCED_MOTION && rows.length * (series.length + (production ? 1 : 0)) <= MAX_ANIMATED_PIECES;
+  const fadeClass = animateBars ? "" : fade.odd ? "chart-fade-in" : "chart-fade-in-alt";
 
   const select = (item) => {
     if (item.clickable) setPath([...path, { key: item.key, label: item.label }]);
@@ -258,7 +271,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
           </div>
         ) : (
           <>
-            <div className="h-[300px] md:h-[400px] w-full">
+            <div className={`${fadeClass} h-[300px] md:h-[400px] w-full`}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={rows} stackOffset="sign" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -285,12 +298,12 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
                       fill={item.color}
                       cursor={item.clickable ? "pointer" : undefined}
                       onClick={() => select(item)}
-                      isAnimationActive={animate}
-                      animationDuration={ANIMATION_MS}
+                      isAnimationActive={animateBars}
+                      animationDuration={BAR_ANIMATION_MS}
                     />
                   ))}
                   {production && metric === "kwh" && (
-                    <Bar dataKey={`${PRODUCTION_KEY}__kwh`} name="Produkcja fotowoltaiki" stackId="usage" fill={PRODUCTION_COLOR} isAnimationActive={animate} animationDuration={ANIMATION_MS} />
+                    <Bar dataKey={`${PRODUCTION_KEY}__kwh`} name="Produkcja fotowoltaiki" stackId="usage" fill={PRODUCTION_COLOR} isAnimationActive={animateBars} animationDuration={BAR_ANIMATION_MS} />
                   )}
                 </BarChart>
               </ResponsiveContainer>

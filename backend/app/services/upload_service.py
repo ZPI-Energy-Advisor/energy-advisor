@@ -11,6 +11,7 @@ from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.calculation_service import IMPORT_REPORT_KEY, CalculationService, public_results
 from app.services.home_service import HomeService
+from app.services.device_series import forget_user_series
 
 
 MAX_UPLOAD_SIZE_MB = 10
@@ -90,6 +91,8 @@ class UploadService:
             energy_data_file_id=energy_file.id,
             results=simulation_results,
         )
+        # Nowy plik zmienia dane „Wszystkich plików urządzeń” (także przykrycie starszych): zwalniamy ich serie.
+        forget_user_series(user_id)
         # Po zatwierdzeniu importu: niedostępny hub nie cofa go, a w odpowiedzi jest ostrzeżenie.
         home_sync = self.home_service.sync_after_change(user) if self.home_service else None
 

@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import DateTime, Integer, and_, bindparam, case, cast, delete, exists, extract, func, insert, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID, insert as upsert
 from sqlalchemy.orm import Session
+from sqlalchemy.types import BigInteger
 
 from app.models.DeviceAction import DeviceAction
 from app.models.DeviceCategory import DeviceCategory  # noqa: F401 - rejestruje tabelę dla FK
@@ -348,6 +349,22 @@ class DeviceRepository:
                 DeviceSlotUsage.slot_start >= _utc(start_utc),
                 DeviceSlotUsage.slot_start < _utc(end_utc),
             )
+        )
+        if current_only:
+            query = query.where(DeviceSlotUsage.superseded.is_(False))
+        return self.db.execute(query).all()
+
+    def slot_usage_series(self, file_ids: list[UUID], *, current_only: bool) -> list[tuple[int, UUID, float]]:
+        """Wszystkie kwadranse urządzeń plików jako (początek w sekundach UTC, urządzenie, kWh), w kolejności
+        wierszy jak w `slot_usage`; do tablicowej serii źródła (ZP-147), którą serwis trzyma w pamięci."""
+        query = (
+            select(
+                cast(extract("epoch", DeviceSlotUsage.slot_start), BigInteger),
+                DeviceAction.device_instance_id,
+                DeviceSlotUsage.kwh,
+            )
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .where(DeviceSlotUsage.energy_data_file_id.in_(file_ids))
         )
         if current_only:
             query = query.where(DeviceSlotUsage.superseded.is_(False))
