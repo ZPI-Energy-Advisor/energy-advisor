@@ -8,25 +8,27 @@ import PvDayChart from "../components/pv/PvDayChart";
 import { formatDate, getApiErrorMessage } from "../utils/energyFiles";
 import { formatNumber } from "../utils/format";
 import {
-  CONSUMPTION_SOURCES,
   addDays,
   dayName,
   describeAccuracy,
   describeArray,
+  describeConsumption,
   describeSettlement,
+  describeWeatherSource,
   formatDayLong,
   formatKwh,
   formatPercent,
   formatPln,
-  formatTemperature,
-  formatWindow,
+  formatTemperatureRange,
   selfShare,
 } from "../utils/pv";
 
 const EARLIEST_DAY = "2000-01-01";
+const DAY_LOAD_DELAY_MS = 250;
 
 function DayCard({ summary, today, selected, onSelect }) {
   const name = dayName(summary.date, today);
+  const temperature = formatTemperatureRange(summary.temperature_min_c, summary.temperature_max_c);
   return (
     <button
       type="button"
@@ -46,16 +48,15 @@ function DayCard({ summary, today, selected, onSelect }) {
             <span className="text-2xl font-bold text-gray-900">{formatNumber(summary.total_kwh, 1)}</span>
             <span className="text-sm font-semibold text-amber-700">kWh</span>
           </p>
-          <p className="mt-1 text-xs text-gray-600">
-            {summary.peak ? `Najwięcej ${formatWindow(summary.peak)}` : "Prawie bez produkcji"}
-          </p>
           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
             {summary.cloud_cover_pct != null && (
-              <span className="flex items-center gap-1"><FiCloud aria-hidden="true" /> zachmurzenie {summary.cloud_cover_pct}%</span>
+              <span className="flex items-center gap-1" title="Średnie zachmurzenie nieba w godzinach ze słońcem">
+                <FiCloud aria-hidden="true" /> zachmurzenie w dzień {summary.cloud_cover_pct}%
+              </span>
             )}
-            {summary.temperature_min_c != null && (
-              <span className="flex items-center gap-1">
-                <FiThermometer aria-hidden="true" /> {formatTemperature(summary.temperature_min_c)} … {formatTemperature(summary.temperature_max_c)}
+            {temperature && (
+              <span className="flex items-center gap-1" title="Najniższa i najwyższa temperatura w ciągu doby">
+                <FiThermometer aria-hidden="true" /> {temperature}
               </span>
             )}
           </p>
@@ -80,16 +81,31 @@ function Tile({ label, value, hint }) {
   );
 }
 
-function Balance({ detail, installation }) {
+function missingConsumptionText(detail, overview) {
+  if (!overview.first_data_day) {
+    return (
+      <>
+        <Link to="/upload" className="text-emerald-700 underline">Wgraj plik z licznika albo urządzeń</Link>, żeby zobaczyć, ile prądu z paneli dom zużyje sam, a ile odda do sieci.
+      </>
+    );
+  }
+  const range = `${formatDate(overview.first_data_day)} – ${formatDate(overview.last_data_day)}`;
+  if (detail.kind === "past") {
+    return `W Twoich plikach nie ma odczytów z tego dnia (pliki obejmują ${range}), więc nie pokazujemy zużycia domu ani bilansu.`;
+  }
+  return `Zużycie szacujemy z odczytów z ostatnich 60 dni przed tym dniem, a Twoje pliki obejmują ${range}. Wgraj nowszy plik, żeby zobaczyć bilans.`;
+}
+
+function Balance({ detail, overview }) {
+  const { installation } = overview;
   const { balance } = detail;
-  const production = detail.actual_kwh ?? detail.model_kwh;
+  const estimated = detail.consumption_source === "typical";
+  const productionLabel = detail.actual_kwh != null ? "Produkcja z pliku" : detail.kind === "past" ? "Produkcja z modelu" : "Produkcja z prognozy";
   if (!balance) {
     return (
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Tile label={detail.actual_kwh != null ? "Produkcja z pliku" : "Produkcja z prognozy"} value={formatKwh(production)} />
-        <p className="self-center text-sm text-gray-500">
-          Wgraj plik z licznika albo urządzeń, żeby zobaczyć, ile prądu z paneli dom zużyje sam, a ile odda do sieci.
-        </p>
+        <Tile label={productionLabel} value={formatKwh(detail.actual_kwh ?? detail.model_kwh)} />
+        <p className="self-center text-sm text-gray-600">{missingConsumptionText(detail, overview)}</p>
       </div>
     );
   }
@@ -97,13 +113,19 @@ function Balance({ detail, installation }) {
   const settlement = installation.settlement === "net_billing" ? "do depozytu" : "w opuście";
   return (
     <>
+      {estimated && (
+        <p className="mt-4 text-sm text-gray-600">
+          Nie znamy jeszcze zużycia domu w tym dniu, więc bilans liczymy ze średniego zużycia z Twoich plików
+          (linia przerywana na wykresie).
+        </p>
+      )}
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Tile
-          label={detail.actual_kwh != null ? "Produkcja z pliku" : "Produkcja z prognozy"}
+          label={productionLabel}
           value={formatKwh(balance.production_kwh)}
           hint={detail.actual_kwh != null && detail.model_kwh != null ? `model: ${formatKwh(detail.model_kwh)}` : null}
         />
-        <Tile label="Zużycie domu" value={formatKwh(balance.consumption_kwh)} hint={CONSUMPTION_SOURCES[detail.consumption_source]} />
+        <Tile label={estimated ? "Zużycie domu (szacunek)" : "Zużycie domu"} value={formatKwh(balance.consumption_kwh)} hint={describeConsumption(detail)} />
         <Tile label="Zużyte od razu" value={formatKwh(balance.self_kwh)} hint={`${formatPercent(selfShare(balance))} produkcji`} />
         <Tile label="Oddane do sieci" value={formatKwh(balance.export_kwh)} hint={`z sieci: ${formatKwh(balance.import_kwh)}`} />
         <Tile
@@ -114,20 +136,53 @@ function Balance({ detail, installation }) {
             : `${formatPln(value.self_pln)} mniej za prąd + ${formatPln(value.export_pln)} ${settlement}`}
         />
       </div>
-      {value && (value.purchase_price != null || value.export_price != null) && (
-        <p className="mt-3 text-sm text-gray-600">
-          {value.purchase_price != null && <>1 kWh z paneli zużyty od razu oszczędza ok. <strong>{formatPln(value.purchase_price)}</strong> (cena z sieci z dystrybucją). </>}
-          {value.export_price != null && (
-            <>
-              Oddany do sieci daje ok. <strong>{formatPln(value.export_price)}</strong> {settlement}
-              {value.export_price_estimated && " (szacunek z ostatnich dni)"}.{" "}
-            </>
-          )}
-          {installation.settlement === "net_billing" &&
-            "Depozyt pokrywa tylko część rachunku za energię, bez opłat dystrybucyjnych."}
-        </p>
-      )}
+      <p className="mt-3 text-sm text-gray-600">
+        Liczymy w godzinach, jak operator: w każdej godzinie prąd z paneli najpierw pokrywa zużycie domu w tej godzinie,
+        a nadwyżka idzie do sieci. Każdą godzinę wyceniamy jej własną ceną, a poniżej są średnie z tego dnia.{" "}
+        {value?.purchase_price != null && (
+          <>
+            1 kWh zużyta od razu oszczędza średnio ok. <strong>{formatPln(value.purchase_price)}</strong> w godzinach,
+            w których zużywasz prąd z paneli (cena z sieci z dystrybucją i VAT).{" "}
+          </>
+        )}
+        {value?.export_price != null && (
+          <>
+            1 kWh oddana do sieci daje średnio ok. <strong>{formatPln(value.export_price)}</strong> {settlement} w godzinach,
+            w których oddajesz
+            {value.export_price_estimated && " (szacunek z ostatnich dni)"}.{" "}
+          </>
+        )}
+        {value && installation.settlement === "net_billing" &&
+          "Depozyt pokrywa tylko część rachunku za energię, bez opłat dystrybucyjnych."}
+      </p>
     </>
+  );
+}
+
+function AccuracyBody({ accuracy, onSelect }) {
+  if (accuracy?.days?.length) {
+    return (
+      <>
+        <PvAccuracyChart days={accuracy.days} onSelect={onSelect} />
+        {accuracy.days_without_weather > 0 && (
+          <p className="mt-2 text-xs text-gray-500">
+            Dla {accuracy.days_without_weather} dni z produkcją pogoda z archiwum jeszcze się pobiera; pojawią się po odświeżeniu.
+          </p>
+        )}
+      </>
+    );
+  }
+  if (accuracy?.days_without_weather > 0) {
+    return (
+      <p className="text-sm text-gray-500">
+        Pobieramy pogodę z archiwum dla {accuracy.days_without_weather} dni z produkcją z Twoich plików. Odśwież stronę za kilka minut.
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-gray-500">
+      Nie ma jeszcze dni z produkcją z falownika. <Link to="/upload" className="text-emerald-700 underline">Wgraj plik urządzeń z instalacją PV</Link>, żeby dopasować prognozę do Twojego domu.
+    </p>
   );
 }
 
@@ -140,11 +195,11 @@ function PvPage() {
   const [isLoadingDay, setIsLoadingDay] = useState(false);
   const [accuracy, setAccuracy] = useState(null);
   const dayRequest = useRef(0);
+  const dayTimer = useRef(null);
   const daySection = useRef(null);
 
   const loadDay = useCallback((day) => {
     const request = ++dayRequest.current;
-    setIsLoadingDay(true);
     apiClient.get("/pv/day", { params: { date: day } })
       .then(({ data }) => {
         if (request !== dayRequest.current) return;
@@ -161,10 +216,15 @@ function PvPage() {
       });
   }, []);
 
-  const selectDay = useCallback((day) => {
+  const selectDay = useCallback((day, { immediate = false } = {}) => {
     setSelected(day);
-    loadDay(day);
+    setIsLoadingDay(true);
+    clearTimeout(dayTimer.current);
+    if (immediate) loadDay(day);
+    else dayTimer.current = setTimeout(() => loadDay(day), DAY_LOAD_DELAY_MS);
   }, [loadDay]);
+
+  useEffect(() => () => clearTimeout(dayTimer.current), []);
 
   const loadOverview = useCallback(() => {
     let cancelled = false;
@@ -172,7 +232,7 @@ function PvPage() {
       .then(({ data }) => {
         if (cancelled) return;
         setOverview(data);
-        selectDay(data.today);
+        selectDay(data.today, { immediate: true });
       })
       .catch((error) => {
         if (!cancelled) setOverviewError({ status: error.response?.status, message: getApiErrorMessage(error, null) });
@@ -203,12 +263,16 @@ function PvPage() {
       ? "Profil nie ma instalacji fotowoltaicznej."
       : status === 409
         ? overviewError.message ?? "Uzupełnij profil."
-        : "Nie udało się połączyć z serwerem.";
+        : status === 429
+          ? overviewError.message
+          : "Nie udało się połączyć z serwerem.";
     const text = status === 404
       ? "Dodaj panele w profilu (moc, kierunek i nachylenie), a pokażemy prognozę produkcji na najbliższe dni, ile prądu z paneli zużyje dom i ile to jest warte."
       : status === 409
         ? "Do prognozy potrzebujemy lokalizacji domu i paneli z profilu."
-        : "Sprawdź połączenie i spróbuj ponownie za chwilę.";
+        : status === 429
+          ? "Odczekaj chwilę i spróbuj ponownie."
+          : "Sprawdź połączenie i spróbuj ponownie za chwilę.";
     return (
       <div className="mx-auto max-w-3xl pb-12">
         <h2 className="mb-4 text-xl font-bold text-gray-900">Fotowoltaika</h2>
@@ -232,7 +296,10 @@ function PvPage() {
   const { installation, calibration, today } = overview;
   const minDay = EARLIEST_DAY;
   const isPast = detail?.kind === "past";
-  const modelLabel = isPast ? "Produkcja z modelu (pogoda z archiwum)" : "Prognoza produkcji";
+  const modelLabel = isPast ? "Produkcja z modelu (z pogody)" : "Prognoza produkcji";
+  const estimatedConsumption = detail?.consumption_source === "typical";
+  const consumptionLabel = estimatedConsumption ? "Szacowane zużycie domu" : "Zużycie domu";
+  const weatherSource = detail ? describeWeatherSource(detail) : null;
 
   return (
     <div className="mx-auto max-w-6xl pb-12">
@@ -270,10 +337,8 @@ function PvPage() {
           <h3 id="pv-day" className="font-bold text-gray-900">
             {selected && (dayName(selected, today) ? `${dayName(selected, today)}, ` : "")}
             {selected && formatDayLong(selected)}
-            {detail && (
-              <span className="ml-2 text-sm font-normal text-gray-500">
-                {isPast ? "pogoda z archiwum" : "prognoza"}
-              </span>
+            {weatherSource && detail.date === selected && (
+              <span className="ml-2 text-sm font-normal text-gray-500">{weatherSource}</span>
             )}
           </h3>
           <div className="flex items-center gap-2">
@@ -300,7 +365,9 @@ function PvPage() {
 
         <p className="-mt-2 mb-3 text-xs text-gray-500">
           Możesz cofnąć się do dowolnego dnia: pogoda jest wtedy z archiwum
-          {overview.first_data_day ? `, a od ${formatDate(overview.first_data_day)} są też produkcja i zużycie z Twoich plików` : ""}.
+          {overview.first_data_day
+            ? `, a od ${formatDate(overview.first_data_day)} do ${formatDate(overview.last_data_day)} są też produkcja i zużycie z Twoich plików (wszystkie pliki razem)`
+            : ""}.
         </p>
 
         {detailError ? (
@@ -309,13 +376,13 @@ function PvPage() {
           <ChartSkeleton label="Ładowanie dnia..." className="h-[300px]" />
         ) : (
           <div className={`transition-opacity ${isLoadingDay ? "opacity-60" : ""}`} aria-busy={isLoadingDay}>
-            <PvDayChart intervals={detail.intervals} modelLabel={modelLabel} />
-            {detail.peak && !isPast && (
-              <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                Najwięcej prądu z paneli: <strong>{formatWindow(detail.peak)}</strong>. Wtedy najlepiej włączać pralkę, zmywarkę albo ładowanie auta.
-              </p>
-            )}
-            <Balance detail={detail} installation={installation} />
+            <PvDayChart
+              intervals={detail.intervals}
+              modelLabel={modelLabel}
+              consumptionLabel={consumptionLabel}
+              consumptionEstimated={estimatedConsumption}
+            />
+            <Balance detail={detail} overview={overview} />
             {detail.notes.length > 0 && (
               <ul className="mt-3 space-y-1 text-xs text-gray-500">
                 {detail.notes.map((note) => <li key={note}>{note}</li>)}
@@ -330,19 +397,13 @@ function PvPage() {
         <p className="mb-4 text-sm text-gray-600">
           Produkcja z Twoich plików urządzeń obok tego, co model policzył z pogody z tych dni.
         </p>
-        {accuracy?.days?.length ? (
-          <PvAccuracyChart
-            days={accuracy.days}
-            onSelect={(day) => {
-              selectDay(day);
-              daySection.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-            }}
-          />
-        ) : (
-          <p className="text-sm text-gray-500">
-            Nie ma jeszcze dni z produkcją z falownika. <Link to="/upload" className="text-emerald-700 underline">Wgraj plik urządzeń z instalacją PV</Link>, żeby dopasować prognozę do Twojego domu.
-          </p>
-        )}
+        <AccuracyBody
+          accuracy={accuracy}
+          onSelect={(day) => {
+            selectDay(day, { immediate: true });
+            daySection.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+          }}
+        />
       </section>
     </div>
   );

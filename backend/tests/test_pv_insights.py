@@ -22,7 +22,14 @@ from app.repositories.weather_repository import WeatherRepository
 from app.schemas.user_profile import UserProfile
 from app.services.calculation_service import CalculationService
 from app.services.pv_forecast import PvForecastService, clear_calibrations
-from app.services.pv_insights import PvInsightsService, Window, _window, clear_typical_profiles, hourly_balance
+from app.services.pv_insights import (
+    PvInsightsService,
+    _naive_local,
+    clear_typical_profiles,
+    device_day,
+    hourly_balance,
+    meter_day,
+)
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.weather_service import Cell, WeatherService
@@ -62,11 +69,31 @@ def test_hourly_balance_nets_production_and_consumption_within_the_hour():
                      (at(11), pytest.approx(0.2), pytest.approx(0.0), pytest.approx(0.3))]
 
 
-def test_peak_window_is_around_the_maximum():
-    values = {at(9): 0.1, at(9, 15): 0.6, at(9, 30): 1.0, at(9, 45): 0.7, at(10): 0.2, at(10, 15): 0.9}
+def test_device_day_without_inverter_slots_is_zero_production_when_inverter_is_in_the_file():
+    quarters = [at(10), at(10, 15)]
+    slots = {at(10): (0.3, 0.0)}
 
-    assert _window(values) == Window(at(9, 15), at(10))
-    assert _window({at(9): 0.0}) is None
+    covered = device_day(quarters, slots, inverter_in_file=True)
+    without_inverter = device_day(quarters, slots, inverter_in_file=False)
+
+    assert covered.actual == {at(10): 0.0, at(10, 15): 0.0}
+    assert covered.consumption == {at(10): 0.3, at(10, 15): 0.0}
+    assert without_inverter.actual is None
+
+
+def test_meter_file_without_any_export_is_treated_as_house_before_panels():
+    quarters = [at(10), at(10, 15)]
+    naive = [_naive_local(q) for q in quarters]
+    readings = {naive[0]: (0.4, 0.0, "old"), naive[1]: (0.1, 0.2, "new")}
+    model = {at(10): 0.5, at(10, 15): 0.5}
+
+    before_panels = meter_day(quarters, {naive[0]: readings[naive[0]]}, model, files_with_export={"new"})
+    with_panels = meter_day(quarters, readings, model, files_with_export={"new"})
+
+    assert before_panels.source == "meter_without_pv"
+    assert before_panels.consumption == {at(10): 0.4, at(10, 15): 0.0}
+    assert with_panels.source == "meter"
+    assert with_panels.consumption == {at(10): pytest.approx(0.9), at(10, 15): pytest.approx(0.4)}
 
 
 def _profile(pv=PV, tariff="G11"):
@@ -108,6 +135,15 @@ def house(db, user_a):
     db.commit()
     yield user_a
     clean()
+
+
+def add_weather(db, day, source="forecast"):
+    start, end = local_day_bounds_utc(day)
+    WeatherRepository(db).upsert(CELL.latitude, CELL.longitude, source, [
+        WeatherPoint(start + dt.timedelta(minutes=15 * q), 15, 5.0, 20, 300.0 if 32 <= q < 64 else 0.0,
+                     {"35/0": 300.0 if 32 <= q < 64 else 0.0})
+        for q in range(int((end - start) / dt.timedelta(minutes=15)))
+    ], NOW)
 
 
 def add_rce(db, day):
@@ -182,19 +218,16 @@ def test_dst_day_has_100_quarters_with_split_repeated_hour(db, house):
 
 def test_future_day_uses_forecast_and_typical_consumption_with_estimated_export_price(db, house):
     tomorrow = dt.date(2026, 11, 24)
-    start, end = local_day_bounds_utc(tomorrow)
-    WeatherRepository(db).upsert(CELL.latitude, CELL.longitude, "forecast", [
-        WeatherPoint(start + dt.timedelta(minutes=15 * q), 15, 5.0, 20, 300.0 if 32 <= q < 64 else 0.0,
-                     {"35/0": 300.0 if 32 <= q < 64 else 0.0})
-        for q in range(int((end - start) / dt.timedelta(minutes=15)))
-    ], NOW)
+    add_weather(db, tomorrow)
     for back in range(1, 4):
         add_rce(db, tomorrow - dt.timedelta(days=back))
 
     day = detail(db, house, tomorrow)
 
     assert (day.kind, day.consumption_source, day.actual_kwh) == ("future", "typical", None)
-    assert day.model_kwh > 5 and day.peak is not None
+    assert day.model_kwh > 5
+    assert (day.typical.kind, day.typical.last_day) == ("workday", dt.date(2026, 10, 30))
+    assert day.typical.days == 22
     assert day.balance.value.export_price_estimated
     assert day.balance.value.export_price == pytest.approx(0.5 * 1.23)
     assert any("14 poprzednich dni" in note for note in day.notes)
@@ -267,6 +300,45 @@ def test_day_without_weather_and_file_is_unavailable(db, house):
         detail(db, house, dt.date(2026, 6, 1))
 
 
+def test_past_day_without_readings_has_no_made_up_consumption(db, house):
+    day_without_files = dt.date(2026, 11, 10)
+    add_weather(db, day_without_files, "archive")
+
+    day = detail(db, house, day_without_files)
+
+    assert (day.kind, day.consumption_source, day.consumption_kwh, day.balance) == ("past", None, None, None)
+    assert all(i.consumption_kwh is None for i in day.intervals)
+    assert day.model_kwh > 0
+
+
+def test_typical_consumption_is_not_guessed_from_old_files(db, house):
+    later = dt.datetime(2027, 1, 10, 10, 0, tzinfo=UTC)
+    add_weather(db, later.date())
+
+    day = detail(db, house, later.date(), now=later)
+
+    assert (day.consumption_source, day.typical, day.balance) == (None, None, None)
+
+
+def test_same_devices_file_uploaded_twice_is_not_counted_twice(db, house):
+    before = detail(db, house, DEMO_DAY)
+    files = EnergyDataFileRepository(db)
+    copy = files.create(user_id=house.id, file_name="dom-kopia.json")
+    with DEVICES_DEMO.open("rb") as handle:
+        parsed = parse_energy_file(handle)
+    DeviceRepository(db).save_for_file(user_id=house.id, energy_data_file_id=copy.id, devices=parsed.devices)
+    copy.status, copy.source_type = EnergyDataFile.STATUS_COMPLETED, EnergyDataFile.SOURCE_DEVICES
+    copy.data_start, copy.data_end = dt.date(2026, 10, 1), dt.date(2026, 10, 30)
+    files.save(copy)
+    db.commit()
+    clear_calibrations()
+
+    after = detail(db, house, DEMO_DAY)
+
+    assert after.actual_kwh == pytest.approx(before.actual_kwh)
+    assert after.consumption_kwh == pytest.approx(before.consumption_kwh)
+
+
 def test_file_data_for_today_and_future_is_ignored(db, house):
     late_now = dt.datetime(2026, 10, 13, 6, 0, tzinfo=UTC)
 
@@ -291,9 +363,12 @@ def test_pv_screen_endpoints(db, house, client_a, pv_api):
     body = overview.json()
     assert body["installation"]["total_kwp"] == 6.0 and body["installation"]["settlement"] == "net_billing"
     assert [d["date"] for d in body["days"]] == ["2026-11-23", "2026-11-24", "2026-11-25"]
-    assert body["first_data_day"] == "2026-10-01" and body["calibration"]["source"] == "history"
+    assert (body["first_data_day"], body["last_data_day"]) == ("2026-10-01", "2026-10-30")
+    assert body["calibration"]["source"] == "history" and "peak" not in body["days"][0]
     assert day.status_code == 200 and len(day.json()["intervals"]) == 96 and day.json()["kind"] == "past"
     assert accuracy.status_code == 200 and len(accuracy.json()["days"]) == 30
+    assert accuracy.json()["days_without_weather"] == 0
+    assert "peak" not in day.json()
 
 
 def test_pv_screen_endpoint_errors(db, house, client_a, client_b, anonymous_client, pv_api):

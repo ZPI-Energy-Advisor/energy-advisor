@@ -8,7 +8,6 @@ const day = (date, total, extra = {}) => ({
   date,
   available: true,
   total_kwh: total,
-  peak: { start: `${date}T09:30:00Z`, end: `${date}T12:00:00Z` },
   cloud_cover_pct: 40,
   temperature_min_c: -0.4,
   temperature_max_c: 3.2,
@@ -32,6 +31,7 @@ const OVERVIEW = {
   calibration: { coefficient: 0.83, source: "history", days: 30, mape: 0.04 },
   days: [day("2026-11-24", 1.8), day("2026-11-25", 2.4), { ...day("2026-11-26", null), available: false }],
   first_data_day: "2026-10-01",
+  last_data_day: "2026-11-22",
   today: "2026-11-24",
   latest_day: "2026-11-26",
 };
@@ -64,7 +64,7 @@ const DETAIL = {
     import_kwh: 19.4,
     value: { self_pln: 1.46, export_pln: 0.12, purchase_price: 0.97, export_price: 0.4, export_price_estimated: true },
   },
-  peak: { start: "2026-11-24T10:15:00Z", end: "2026-11-24T11:00:00Z" },
+  typical: { days: 28, first_day: "2026-10-14", last_day: "2026-11-20", kind: "workday" },
   notes: ["Brak cen RCE z tego dnia: wartość oddania to średnia z tych samych godzin z 14 poprzednich dni."],
   interval_minutes: 15,
   intervals: [interval("2026-11-23T23:00:00Z"), interval("2026-11-24T10:00:00Z")],
@@ -73,14 +73,25 @@ const DETAIL = {
 const ACCURACY = {
   calibration: OVERVIEW.calibration,
   days: [{ date: "2026-10-13", actual_kwh: 24.3, model_kwh: 24.6 }],
+  days_without_weather: 0,
 };
 
-function mockApi({ overview = OVERVIEW, details = {}, dayError = null } = {}) {
+const PAST = {
+  ...DETAIL,
+  date: "2026-11-23",
+  kind: "past",
+  weather_source: "archive",
+  actual_kwh: 1.2,
+  consumption_source: "devices",
+  typical: null,
+};
+
+function mockApi({ overview = OVERVIEW, details = {}, dayError = null, accuracy = ACCURACY } = {}) {
   return vi.spyOn(apiClient, "get").mockImplementation((url, config) => {
     if (url === "/pv/overview") {
       return overview instanceof Error ? Promise.reject(overview) : Promise.resolve({ data: overview });
     }
-    if (url === "/pv/accuracy") return Promise.resolve({ data: ACCURACY });
+    if (url === "/pv/accuracy") return Promise.resolve({ data: accuracy });
     if (url === "/pv/day") {
       if (dayError) return Promise.reject(dayError);
       const date = config.params.date;
@@ -107,11 +118,13 @@ describe("PvPage", () => {
     expect(cards).toHaveLength(3);
     expect(within(cards[0]).getByText(/Dziś/)).toBeTruthy();
     expect(within(cards[0]).getByText("1,8")).toBeTruthy();
-    expect(within(cards[0]).getByText(/0°C … 3°C/)).toBeTruthy();
+    expect(within(cards[0]).getByText(/od 0 do 3°C/)).toBeTruthy();
+    expect(within(cards[0]).getByText(/zachmurzenie w dzień 40%/)).toBeTruthy();
+    expect(within(cards[0]).queryByText(/Najwięcej/)).toBeNull();
     expect(within(cards[2]).getByText("Brak prognozy pogody.")).toBeTruthy();
   });
 
-  it("dla wybranego dnia pokazuje bilans, wartość i godziny największej produkcji", async () => {
+  it("dla dnia bez odczytów pokazuje bilans ze szacowanym zużyciem i mówi, skąd ono jest", async () => {
     mockApi();
     renderPage();
 
@@ -121,13 +134,15 @@ describe("PvPage", () => {
     expect(within(section).getByText("83% produkcji")).toBeTruthy();
     expect(within(section).getByText("1,58 zł")).toBeTruthy();
     expect(within(section).getByText(/1,46 zł mniej za prąd \+ 0,12 zł do depozytu/)).toBeTruthy();
-    expect(within(section).getByText(/Najwięcej prądu z paneli:/).textContent).toMatch(/11:15–12:00/);
-    expect(within(section).getByText(/typowe zużycie domu/)).toBeTruthy();
+    expect(within(section).getByText("Zużycie domu (szacunek)")).toBeTruthy();
+    expect(within(section).getByText("szacunek: średnia z 28 dni roboczych z plików (14.10–20.11)")).toBeTruthy();
+    expect(within(section).getByText(/Liczymy w godzinach, jak operator/)).toBeTruthy();
+    expect(within(section).queryByText(/pralkę/)).toBeNull();
     expect(within(section).getByText(/\(szacunek z ostatnich dni\)/)).toBeTruthy();
   });
 
   it("przełącza dzień kartą i strzałkami, także w przeszłość", async () => {
-    const get = mockApi({ details: { "2026-11-23": { ...DETAIL, date: "2026-11-23", kind: "past", actual_kwh: 1.2, consumption_source: "devices" } } });
+    const get = mockApi({ details: { "2026-11-23": PAST } });
     renderPage();
 
     const cards = await screen.findAllByRole("button", { name: /Jutro/ });
@@ -138,8 +153,31 @@ describe("PvPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Poprzedni dzień" }));
     expect(await screen.findByText("pogoda z archiwum")).toBeTruthy();
     expect(screen.getByText("model: 1,8 kWh")).toBeTruthy();
-    expect(screen.queryByText(/Najwięcej prądu z paneli:/)).toBeNull();
+    expect(screen.getByText("z pliku urządzeń")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Następny dzień" }).disabled).toBe(false);
+    const dayCalls = get.mock.calls.filter(([url]) => url === "/pv/day").map(([, config]) => config.params.date);
+    expect(dayCalls).toEqual(["2026-11-24", "2026-11-25", "2026-11-23"]);
+  });
+
+  it("miniony dzień bez odczytów nie ma zmyślonego zużycia", async () => {
+    const empty = { ...PAST, actual_kwh: null, consumption_kwh: null, consumption_source: null, balance: null,
+      intervals: [interval("2026-11-23T10:00:00Z", { consumption_kwh: null })] };
+    mockApi({ details: { "2026-11-23": empty } });
+    renderPage();
+
+    await screen.findAllByRole("button", { name: /Jutro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Poprzedni dzień" }));
+
+    expect(await screen.findByText(/nie ma odczytów z tego dnia \(pliki obejmują 01.10.2026 – 22.11.2026\)/)).toBeTruthy();
+    expect(screen.getByText("Produkcja z modelu")).toBeTruthy();
+    expect(screen.queryByText("Zużyte od razu")).toBeNull();
+  });
+
+  it("trafność mówi, że pogoda z archiwum jeszcze się pobiera", async () => {
+    mockApi({ accuracy: { ...ACCURACY, days: [], days_without_weather: 120 } });
+    renderPage();
+
+    expect(await screen.findByText(/Pobieramy pogodę z archiwum dla 120 dni/)).toBeTruthy();
   });
 
   it("bez instalacji PV kieruje do profilu", async () => {

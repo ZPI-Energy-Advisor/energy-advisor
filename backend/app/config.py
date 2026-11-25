@@ -61,3 +61,6 @@ RATE_LIMIT_ADDRESS_LOOKUP = os.getenv("RATE_LIMIT_ADDRESS_LOOKUP") or "20/minute
 # Pogoda na żądanie (ZP-117): brakujący miesiąc to zapytania do Open-Meteo, którego darmowy limit dzielą
 # wszyscy użytkownicy i worker pogody.
 RATE_LIMIT_WEATHER = os.getenv("RATE_LIMIT_WEATHER") or "30/minute"
+# Ekran „Fotowoltaika” (ZP-150) czyta głównie bazę, a ten sam brakujący zakres pogody pobiera najwyżej raz na 5 minut,
+# więc limit jest tylko zabezpieczeniem przed zalewem zapytań, a nie przy przeglądaniu dni.
+RATE_LIMIT_PV_SCREEN = os.getenv("RATE_LIMIT_PV_SCREEN") or "300/minute"

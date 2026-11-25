@@ -1,16 +1,20 @@
 """Dane ekranu „Fotowoltaika” (ZP-150): najbliższe dni, szczegóły doby (także z przeszłości) i trafność prognozy.
 
-Doba łączy prognozę albo model z pogody (ZP-118), produkcję falownika z pliku urządzeń, zużycie domu z plików
-oraz podział produkcji na autokonsumpcję i oddanie do sieci. Operator bilansuje pobór i oddanie w każdej godzinie,
-więc dzielimy w godzinach. Wartość autokonsumpcji to cena z sieci (energia, dystrybucja zmienna, opłaty, VAT),
-a oddania: net-billing RCE albo RCEm × 1,23 do depozytu (ujemna cena = 0), net-metering opust × cena z sieci.
+Doba łączy prognozę albo model z pogody (ZP-118), produkcję i zużycie domu z plików oraz podział produkcji
+na autokonsumpcję i oddanie do sieci. Operator bilansuje pobór i oddanie w każdej godzinie, więc dzielimy
+w godzinach. Wartość autokonsumpcji to cena z sieci (energia, dystrybucja zmienna, opłaty, VAT), a oddania:
+net-billing RCE albo RCEm × 1,23 do depozytu (ujemna cena = 0), net-metering opust × cena z sieci.
+
+Pliki są zawsze łączone: urządzenia jak „Wszystkie pliki urządzeń” (kwadrans urządzenia z najnowszego pliku),
+licznik jak „Wszystkie pliki” (przy nakładaniu wygrywa nowszy plik). Dzień z plikiem urządzeń bierze dane
+z urządzeń, a pozostałe z licznika.
 """
 
 import logging
 import threading
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException
 
@@ -29,16 +33,13 @@ from app.services.weather_service import DayWeather
 logger = logging.getLogger(__name__)
 
 QUARTER = timedelta(minutes=15)
-HOUR = timedelta(hours=1)
 FORECAST_DAYS = 3
 TYPICAL_DAYS = 28
-TYPICAL_LOOKBACK_DAYS = 365
+TYPICAL_MAX_AGE_DAYS = 60
 PRICE_LOOKBACK_DAYS = 14
-PEAK_SHARE = 0.6
-MIN_SURPLUS_KWH = 0.02
 DAYLIGHT_W_M2 = 1.0
-EARLIEST_READINGS = datetime(2000, 1, 1)
 TYPICAL_CACHE_SIZE = 256
+NO_DEVICE_DATA = (0.0, 0.0)
 _typical_profiles: OrderedDict = OrderedDict()
 _typical_lock = threading.Lock()
 
@@ -49,16 +50,9 @@ def clear_typical_profiles() -> None:
 
 
 @dataclass
-class Window:
-    start: datetime
-    end: datetime
-
-
-@dataclass
 class DaySummary:
     day: date
     total_kwh: float | None = None
-    peak: Window | None = None
     cloud_cover_pct: int | None = None
     temperature_min_c: float | None = None
     temperature_max_c: float | None = None
@@ -97,6 +91,22 @@ class Balance:
 
 
 @dataclass
+class Typical:
+    days: int
+    first_day: date
+    last_day: date
+    kind: str
+    by_clock: dict[tuple[int, int], float]
+
+
+@dataclass
+class DayData:
+    consumption: dict[datetime, float]
+    actual: dict[datetime, float] | None
+    source: str
+
+
+@dataclass
 class DayDetail:
     day: date
     kind: str
@@ -109,7 +119,7 @@ class DayDetail:
     basis: str | None
     intervals: list[Interval]
     balance: Balance | None
-    peak: Window | None
+    typical: Typical | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -123,23 +133,13 @@ def _naive_local(moment: datetime) -> datetime:
     return moment.astimezone(MARKET_TIMEZONE).replace(tzinfo=None)
 
 
-def _window(values: dict[datetime, float]) -> Window | None:
-    """Godziny, w których wartość jest blisko szczytu: najdłuższy ciągły przedział wokół maksimum
-    z wartościami co najmniej 60% maksimum."""
-    if not values:
-        return None
-    ordered = sorted(values)
-    peak_at = max(ordered, key=lambda moment: values[moment])
-    peak = values[peak_at]
-    if peak <= MIN_SURPLUS_KWH:
-        return None
-    index = ordered.index(peak_at)
-    first = last = index
-    while first > 0 and values[ordered[first - 1]] >= PEAK_SHARE * peak:
-        first -= 1
-    while last < len(ordered) - 1 and values[ordered[last + 1]] >= PEAK_SHARE * peak:
-        last += 1
-    return Window(ordered[first], ordered[last] + QUARTER)
+def _local_day(moment: datetime) -> date:
+    return moment.astimezone(MARKET_TIMEZONE).date()
+
+
+def _clock(moment: datetime) -> tuple[int, int]:
+    local = moment.astimezone(MARKET_TIMEZONE)
+    return local.hour, local.minute
 
 
 def _weather_summary(weather: DayWeather | None) -> tuple[int | None, float | None, float | None]:
@@ -174,6 +174,45 @@ def hourly_balance(production: dict[datetime, float], consumption: dict[datetime
     return result
 
 
+def _kind_of(days: list[date]) -> str:
+    kinds = {d.weekday() >= 5 for d in days}
+    return "all" if len(kinds) > 1 else "weekend" if True in kinds else "workday"
+
+
+def device_day(quarters: list[datetime], slots: dict[datetime, tuple[float, float]], inverter_in_file: bool) -> DayData:
+    """Doba z pliku urządzeń: zużycie to suma urządzeń poza falownikiem. Gdy falownik jest w pliku, kwadranse bez
+    jego wpisu to zero produkcji; bez falownika produkcję bierzemy z modelu."""
+    consumption = {q: max(slots.get(q, NO_DEVICE_DATA)[0], 0.0) for q in quarters}
+    has_inverter = inverter_in_file or any(produced > 0 for _, produced in slots.values())
+    actual = {q: slots.get(q, NO_DEVICE_DATA)[1] for q in quarters} if has_inverter else None
+    return DayData(consumption, actual, "devices")
+
+
+def meter_day(
+    quarters: list[datetime],
+    readings: dict[datetime, tuple[float, float, object]],
+    model: dict[datetime, float],
+    files_with_export: set,
+) -> DayData | None:
+    """Doba z licznika: zużycie = pobór − oddanie + produkcja z modelu, nie mniej niż pobór. Plik, który w całym
+    okresie nie ma oddania do sieci, pochodzi sprzed paneli: zużycie to wtedy sam pobór. Godzina powtórzona
+    przy zmianie czasu ma w odczytach jeden zsumowany kwadrans, który dzielimy po równo."""
+    local = [_naive_local(moment) for moment in quarters]
+    found = [readings[moment] for moment in local if moment in readings]
+    if not found:
+        return None
+    without_pv = all(file_id not in files_with_export for _, _, file_id in found)
+    counts: dict[datetime, int] = defaultdict(int)
+    for moment in local:
+        counts[moment] += 1
+    consumption = {}
+    for moment, naive in zip(quarters, local):
+        used, exported, _ = readings.get(naive, (0.0, 0.0, None))
+        used, exported = used / counts[naive], exported / counts[naive]
+        consumption[moment] = used if without_pv else max(used, used - exported + model.get(moment, 0.0))
+    return DayData(consumption, None, "meter_without_pv" if without_pv else "meter")
+
+
 class PvInsightsService:
     def __init__(self, forecasts: PvForecastService, readings, files, prices, market):
         self.forecasts = forecasts
@@ -186,17 +225,18 @@ class PvInsightsService:
     def weather(self):
         return self.forecasts.weather
 
+    @property
+    def devices(self):
+        return self.forecasts.devices
+
     def setup(self, user_id, profile: UserProfile) -> PvSetup:
         return self.forecasts.setup(user_id, profile)
 
-    def first_data_day(self, user_id) -> date | None:
-        starts = [
-            energy_file.data_start
-            for source in (EnergyDataFile.SOURCE_METER, EnergyDataFile.SOURCE_DEVICES)
-            for energy_file in self.files.list_completed_by_user_id(user_id, source)
-            if energy_file.data_start
-        ]
-        return min(starts) if starts else None
+    def data_range(self, user_id) -> tuple[date | None, date | None]:
+        files = self._files(user_id)
+        starts = [f.data_start for f in files if f.data_start]
+        ends = [f.data_end for f in files if f.data_end]
+        return (min(starts) if starts else None, max(ends) if ends else None)
 
     def days(self, user_id, profile: UserProfile) -> list[DaySummary]:
         today = self.weather.today()
@@ -212,7 +252,6 @@ class PvInsightsService:
             summaries.append(DaySummary(
                 day=day,
                 total_kwh=forecast.total_kwh,
-                peak=_window({q.start: q.kwh for q in forecast.quarters}),
                 cloud_cover_pct=cloud,
                 temperature_min_c=low,
                 temperature_max_c=high,
@@ -235,18 +274,30 @@ class PvInsightsService:
             notes.append("Nie ma pogody na ten dzień, więc nie ma produkcji z modelu.")
         model = {q.start: q.kwh for q in forecast.quarters if q.basis} if forecast else {}
 
-        production_all = self.forecasts.devices.pv_production(user_id) if kind == "past" else {}
-        actual = {q: production_all.get(q, 0.0) for q in quarters} if any(q in production_all for q in quarters) else None
+        files = self._files(user_id)
+        measured = self._measured(user_id, files, day, quarters, model) if kind == "past" and files else None
+        actual = measured.actual if measured else None
         if forecast is None and actual is None:
             raise PvForecastUnavailableError(f"Brak pogody i produkcji z pliku na {day}.")
 
-        consumption, consumption_source = self._consumption(user_id, setup, day, quarters, model, actual, kind)
+        typical = None
+        consumption = consumption_source = None
+        if measured is not None:
+            consumption, consumption_source = measured.consumption, measured.source
+            if consumption_source == "meter_without_pv":
+                notes.append("Plik z licznika z tego okresu nie ma oddania do sieci, więc panele chyba jeszcze nie "
+                             "działały: zużycie domu to pobór z sieci, a produkcja i bilans pokazują, ile dałyby panele.")
+        elif kind != "past" and files:
+            typical = self._typical(user_id, setup, files, day)
+            if typical is not None:
+                consumption = {q: typical.by_clock[_clock(q)] for q in quarters if _clock(q) in typical.by_clock}
+                consumption_source = "typical"
+
         weather = forecast.weather if forecast else None
         weather_by_quarter = {q.start: q for q in weather.quarters} if weather else {}
-
         production = actual if actual is not None else model
         balance = None
-        if consumption is not None and production:
+        if consumption and production:
             balance = self._balance(user_id, profile, day, production, consumption, notes)
 
         intervals = []
@@ -256,7 +307,7 @@ class PvInsightsService:
                 start=moment,
                 model_kwh=round(model[moment], 4) if moment in model else None,
                 actual_kwh=round(actual[moment], 4) if actual is not None else None,
-                consumption_kwh=round(consumption[moment], 4) if consumption is not None and moment in consumption else None,
+                consumption_kwh=round(consumption[moment], 4) if consumption and moment in consumption else None,
                 cloud_cover_pct=quarter_weather.cloud_cover_pct if quarter_weather else None,
                 temperature_c=quarter_weather.temperature_c if quarter_weather else None,
             ))
@@ -265,115 +316,107 @@ class PvInsightsService:
             kind=kind,
             model_kwh=round(sum(model.values()), 2) if model else None,
             actual_kwh=round(sum(actual.values()), 2) if actual is not None else None,
-            consumption_kwh=round(sum(consumption.values()), 2) if consumption is not None else None,
+            consumption_kwh=round(sum(consumption.values()), 2) if consumption else None,
             consumption_source=consumption_source,
             weather_source=_weather_source(weather),
             weather_fetched_at=forecast.weather_fetched_at if forecast else None,
             basis=forecast.basis if forecast else None,
             intervals=intervals,
             balance=balance,
-            peak=_window(production) if production else None,
+            typical=typical,
             notes=notes,
         )
 
-    def _file_ids(self, user_id) -> list:
+    def _files(self, user_id) -> list[EnergyDataFile]:
         files = [
             energy_file
             for source in (EnergyDataFile.SOURCE_METER, EnergyDataFile.SOURCE_DEVICES)
             for energy_file in self.files.list_completed_by_user_id(user_id, source)
         ]
-        return [energy_file.id for energy_file in sorted(files, key=lambda f: (f.uploaded_at, str(f.id)))]
+        return sorted(files, key=lambda f: (f.uploaded_at, str(f.id)))
 
-    def _readings(self, file_ids: list, start: datetime, end: datetime) -> dict[datetime, tuple[float, float]]:
-        return {measured_at: (used, exported) for measured_at, used, exported in self.readings.merged_for_files(file_ids, start, end)}
+    @staticmethod
+    def _meter_ids(files: list[EnergyDataFile]) -> list:
+        return [f.id for f in files if f.source_type == EnergyDataFile.SOURCE_METER]
 
-    def _day_consumption(
-        self,
-        quarters: list[datetime],
-        readings: dict[datetime, tuple[float, float]],
-        model: dict[datetime, float],
-        actual: dict[datetime, float] | None,
-    ) -> dict[datetime, float] | None:
-        """Zużycie domu w kwadransach doby: pobór − oddanie + produkcja. Bez produkcji z pliku bierzemy produkcję
-        z modelu, ale zużycie nie może być mniejsze od poboru z sieci. Godzina powtórzona przy zmianie czasu
-        ma w odczytach jeden zsumowany kwadrans, który dzielimy po równo."""
-        local = [_naive_local(moment) for moment in quarters]
-        counts = defaultdict(int)
-        for moment in local:
-            counts[moment] += 1
-        if not any(moment in readings for moment in local):
+    def _meter_readings(self, meter_ids: list, first: date, end: date) -> dict[datetime, tuple[float, float, object]]:
+        start_local = _naive_local(local_day_bounds_utc(first)[0])
+        end_local = _naive_local(local_day_bounds_utc(end)[0])
+        return {
+            measured_at: (used, exported, file_id)
+            for measured_at, used, exported, file_id in self.readings.merged_with_file(meter_ids, start_local, end_local)
+        }
+
+    def _measured(self, user_id, files: list[EnergyDataFile], day: date, quarters: list[datetime], model) -> DayData | None:
+        slots = self.devices.home_quarters(user_id, quarters[0], quarters[-1] + QUARTER)
+        if slots:
+            spans = self.devices.pv_inverter_file_spans(user_id)
+            return device_day(quarters, slots, any(first <= day <= last for first, last in spans))
+        meter_ids = self._meter_ids(files)
+        if not meter_ids:
             return None
-        consumption = {}
-        for moment, naive in zip(quarters, local):
-            used, exported = readings.get(naive, (0.0, 0.0))
-            used, exported = used / counts[naive], exported / counts[naive]
-            if actual is not None:
-                consumption[moment] = max(used - exported + actual.get(moment, 0.0), 0.0)
-            else:
-                consumption[moment] = max(used, used - exported + model.get(moment, 0.0))
-        return consumption
+        readings = self._meter_readings(meter_ids, day, day + timedelta(days=1))
+        return meter_day(quarters, readings, model, self.readings.files_with_export(meter_ids))
 
-    def _consumption(self, user_id, setup: PvSetup, day: date, quarters, model, actual, kind):
-        file_ids = self._file_ids(user_id)
-        if not file_ids:
-            return None, None
-        start = _naive_local(quarters[0])
-        end = _naive_local(quarters[-1]) + QUARTER
-        day_readings = self._readings(file_ids, start, end) if kind == "past" else {}
-        measured = self._day_consumption(quarters, day_readings, model, actual) if kind == "past" else None
-        if measured is not None:
-            return measured, "devices" if actual is not None else "meter"
-        typical = self._typical(user_id, setup, file_ids, day, quarters)
-        return (typical, "typical") if typical is not None else (None, None)
-
-    def _typical(self, user_id, setup: PvSetup, file_ids: list, day: date, quarters: list[datetime]) -> dict[datetime, float] | None:
+    def _typical(self, user_id, setup: PvSetup, files: list[EnergyDataFile], day: date) -> Typical | None:
         end_day = min(day, self.weather.today())
         weekend = day.weekday() >= 5
         hour = self.weather.now().replace(minute=0, second=0, microsecond=0)
-        key = (user_id, tuple(file_ids), tuple(setup.arrays), setup.calibration.coefficient, weekend, end_day, hour)
+        key = (user_id, tuple(f.id for f in files), tuple(setup.arrays), setup.calibration.coefficient,
+               weekend, end_day, hour)
         with _typical_lock:
-            profile = _typical_profiles.get(key)
-        if profile is None:
-            profile = self._typical_profile(user_id, setup, file_ids, weekend, end_day)
-            with _typical_lock:
-                _typical_profiles[key] = profile
-                while len(_typical_profiles) > TYPICAL_CACHE_SIZE:
-                    _typical_profiles.popitem(last=False)
-        if not profile:
-            return None
-        typical = {}
-        for moment in quarters:
-            local = moment.astimezone(MARKET_TIMEZONE)
-            if (local.hour, local.minute) in profile:
-                typical[moment] = profile[(local.hour, local.minute)]
+            if key in _typical_profiles:
+                return _typical_profiles[key]
+        typical = self._typical_profile(user_id, setup, files, weekend, end_day)
+        with _typical_lock:
+            _typical_profiles[key] = typical
+            while len(_typical_profiles) > TYPICAL_CACHE_SIZE:
+                _typical_profiles.popitem(last=False)
         return typical
 
-    def _typical_profile(self, user_id, setup: PvSetup, file_ids: list, weekend: bool, end_day: date) -> dict[tuple[int, int], float]:
-        """Typowe zużycie: średnia z tej samej godziny zegarowej z ostatnich dni z plików (do 28), najpierw
-        z dni tego samego rodzaju (robocze albo weekend)."""
-        end = datetime.combine(end_day, time())
-        readings = self._readings(file_ids, end - timedelta(days=TYPICAL_LOOKBACK_DAYS), end)
-        if not readings:
-            readings = self._readings(file_ids, EARLIEST_READINGS, end)
-        if not readings:
-            return {}
-        by_day: dict[date, dict[datetime, tuple[float, float]]] = defaultdict(dict)
-        for moment, values in readings.items():
-            by_day[moment.date()][moment] = values
-        same_kind = [d for d in by_day if (d.weekday() >= 5) == weekend]
-        candidates = sorted(same_kind if len(same_kind) >= 3 else by_day, reverse=True)[:TYPICAL_DAYS]
-        production = self.forecasts.devices.pv_production(user_id)
-        modeled = self.forecasts.modeled(setup, candidates)
+    def _typical_profile(self, user_id, setup: PvSetup, files: list[EnergyDataFile], weekend: bool, end_day: date) -> Typical | None:
+        """Typowe zużycie: średnia z tej samej godziny zegarowej z ostatnich (do 28) dni z odczytami, nie starszych
+        niż 60 dni, najpierw z dni tego samego rodzaju (robocze albo weekend)."""
+        first = end_day - timedelta(days=TYPICAL_MAX_AGE_DAYS)
+        slots = self.devices.home_quarters(user_id, local_day_bounds_utc(first)[0], local_day_bounds_utc(end_day)[0])
+        device_slots: dict[date, dict[datetime, tuple[float, float]]] = defaultdict(dict)
+        for moment, values in slots.items():
+            device_slots[_local_day(moment)][moment] = values
+        meter_ids = self._meter_ids(files)
+        readings = self._meter_readings(meter_ids, first, end_day) if meter_ids else {}
+        meter_days = {moment.date() for moment in readings} - set(device_slots)
+
+        available = sorted(set(device_slots) | meter_days)
+        same_kind = [d for d in available if (d.weekday() >= 5) == weekend]
+        candidates = (same_kind if len(same_kind) >= 3 else available)[-TYPICAL_DAYS:]
+        if not candidates:
+            return None
+        modeled = self.forecasts.modeled(setup, [d for d in candidates if d in meter_days])
+        spans = self.devices.pv_inverter_file_spans(user_id) if device_slots else []
+        with_export = self.readings.files_with_export(meter_ids) if meter_days else set()
+
         sums: dict[tuple[int, int], list[float]] = defaultdict(list)
+        used_days = []
         for candidate in candidates:
-            candidate_quarters = _quarters(candidate)
-            actual = ({q: production.get(q, 0.0) for q in candidate_quarters}
-                      if any(q in production for q in candidate_quarters) else None)
-            consumption = self._day_consumption(candidate_quarters, by_day[candidate], modeled.get(candidate, {}), actual)
-            for moment, kwh in (consumption or {}).items():
-                local = moment.astimezone(MARKET_TIMEZONE)
-                sums[(local.hour, local.minute)].append(kwh)
-        return {clock: sum(values) / len(values) for clock, values in sums.items()}
+            quarters = _quarters(candidate)
+            if candidate in device_slots:
+                data = device_day(quarters, device_slots[candidate], any(a <= candidate <= b for a, b in spans))
+            else:
+                data = meter_day(quarters, readings, modeled.get(candidate, {}), with_export)
+            if data is None:
+                continue
+            used_days.append(candidate)
+            for moment, kwh in data.consumption.items():
+                sums[_clock(moment)].append(kwh)
+        if not used_days:
+            return None
+        return Typical(
+            days=len(used_days),
+            first_day=used_days[0],
+            last_day=used_days[-1],
+            kind=_kind_of(used_days),
+            by_clock={clock: sum(values) / len(values) for clock, values in sums.items()},
+        )
 
     def _balance(self, user_id, profile: UserProfile, day: date, production, consumption, notes) -> Balance:
         hours = hourly_balance(production, consumption)

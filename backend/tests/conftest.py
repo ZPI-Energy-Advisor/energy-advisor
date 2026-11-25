@@ -139,6 +139,15 @@ def _offline_weather(monkeypatch):
     monkeypatch.setattr(weather, "interactive_client", OfflineWeather)
 
 
+@pytest.fixture(autouse=True)
+def _fresh_fetch_attempts():
+    from app.services.weather_service import clear_fetch_attempts
+
+    clear_fetch_attempts()
+    yield
+    clear_fetch_attempts()
+
+
 @pytest.fixture
 def db():
     if DATABASE_ERROR:

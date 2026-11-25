@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { FiSun } from "react-icons/fi";
 import apiClient from "../api/client";
 import { formatNumber } from "../utils/format";
-import { addDays, formatWindow } from "../utils/pv";
+import { addDays } from "../utils/pv";
 
 function DashboardPvCard() {
   const [tomorrow, setTomorrow] = useState(null);
@@ -29,8 +29,7 @@ function DashboardPvCard() {
     >
       <FiSun aria-hidden="true" className="shrink-0 text-xl text-amber-500" />
       <span>
-        Jutro z paneli ok. <strong>{formatNumber(tomorrow.total_kwh, 1)} kWh</strong>
-        {tomorrow.peak ? `, najwięcej ${formatWindow(tomorrow.peak)}` : ""}.
+        Jutro z paneli ok. <strong>{formatNumber(tomorrow.total_kwh, 1)} kWh</strong>.
         <span className="ml-1 font-medium underline">Prognoza PV</span>
       </span>
     </Link>

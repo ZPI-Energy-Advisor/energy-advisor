@@ -32,11 +32,6 @@ class PvForecastResponse(BaseModel):
     intervals: list[PvForecastQuarter]
 
 
-class PvWindowOut(BaseModel):
-    start: datetime
-    end: datetime
-
-
 class PvArrayOut(BaseModel):
     kwp: float
     tilt: int
@@ -57,7 +52,6 @@ class PvDaySummaryOut(BaseModel):
     date: date
     available: bool
     total_kwh: float | None
-    peak: PvWindowOut | None
     cloud_cover_pct: int | None
     temperature_min_c: float | None
     temperature_max_c: float | None
@@ -72,6 +66,7 @@ class PvOverviewResponse(BaseModel):
     calibration: PvCalibrationOut
     days: list[PvDaySummaryOut]
     first_data_day: date | None
+    last_data_day: date | None
     today: date
     latest_day: date
 
@@ -102,18 +97,25 @@ class PvBalanceOut(BaseModel):
     value: PvValueOut | None
 
 
+class PvTypicalOut(BaseModel):
+    days: int
+    first_day: date
+    last_day: date
+    kind: Literal["workday", "weekend", "all"]
+
+
 class PvDayResponse(BaseModel):
     date: date
     kind: Literal["past", "today", "future"]
     model_kwh: float | None
     actual_kwh: float | None
     consumption_kwh: float | None
-    consumption_source: Literal["devices", "meter", "typical"] | None
+    consumption_source: Literal["devices", "meter", "meter_without_pv", "typical"] | None
     weather_source: str | None
     weather_fetched_at: datetime | None
     basis: Literal["weather", "recent_days", "mixed"] | None
     balance: PvBalanceOut | None
-    peak: PvWindowOut | None
+    typical: PvTypicalOut | None
     notes: list[str]
     interval_minutes: int = 15
     intervals: list[PvIntervalOut]
@@ -128,3 +130,4 @@ class PvAccuracyDayOut(BaseModel):
 class PvAccuracyResponse(BaseModel):
     calibration: PvCalibrationOut
     days: list[PvAccuracyDayOut]
+    days_without_weather: int

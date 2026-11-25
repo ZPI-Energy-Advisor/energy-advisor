@@ -46,11 +46,18 @@ class EnergyReadingRepository:
 
         `file_ids` są posortowane od najstarszego do najnowszego uploadu, jak przy scalaniu serii.
         """
+        return [row[:3] for row in self.merged_with_file(file_ids, start, end)]
+
+    def merged_with_file(
+        self, file_ids: list[UUID], start: datetime, end: datetime
+    ) -> list[tuple[datetime, float, float, UUID]]:
+        """Jak `merged_for_files`, z plikiem, z którego pochodzi odczyt."""
         if not file_ids:
             return []
         order = case({file_id: index for index, file_id in enumerate(file_ids)}, value=EnergyReading.energy_data_file_id)
         rows = self.db.execute(
-            select(EnergyReading.measured_at, EnergyReading.energy_kwh, EnergyReading.exported_kwh)
+            select(EnergyReading.measured_at, EnergyReading.energy_kwh, EnergyReading.exported_kwh,
+                   EnergyReading.energy_data_file_id)
             .where(
                 EnergyReading.energy_data_file_id.in_(file_ids),
                 EnergyReading.measured_at >= start,
@@ -59,7 +66,15 @@ class EnergyReadingRepository:
             .order_by(EnergyReading.measured_at, order.desc())
             .distinct(EnergyReading.measured_at)
         ).all()
-        return [(measured_at, float(used), float(exported)) for measured_at, used, exported in rows]
+        return [(measured_at, float(used), float(exported), file_id) for measured_at, used, exported, file_id in rows]
+
+    def files_with_export(self, file_ids: list[UUID]) -> set[UUID]:
+        if not file_ids:
+            return set()
+        return set(self.db.execute(
+            select(EnergyReading.energy_data_file_id).distinct()
+            .where(EnergyReading.energy_data_file_id.in_(file_ids), EnergyReading.exported_kwh > 0)
+        ).scalars())
 
     def list_for_file(self, energy_data_file_id: UUID) -> list[EnergyReading]:
         return (

@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.v1.deps import get_authenticated_user, get_pv_forecast_service, get_pv_insights_service, get_user_service
-from app.config import RATE_LIMIT_WEATHER
+from app.config import RATE_LIMIT_PV_SCREEN, RATE_LIMIT_WEATHER
 from app.core.rate_limit import limiter
 from app.models.User import User
 from app.schemas.pv_forecast import (
@@ -19,8 +19,8 @@ from app.schemas.pv_forecast import (
     PvInstallationOut,
     PvIntervalOut,
     PvOverviewResponse,
+    PvTypicalOut,
     PvValueOut,
-    PvWindowOut,
 )
 from app.services.pv_forecast import NoPvInstallationError, PvForecastService, PvForecastUnavailableError
 from app.services.pv_insights import PvInsightsService
@@ -34,10 +34,6 @@ def _calibration_out(calibration) -> PvCalibrationOut:
     return PvCalibrationOut(
         coefficient=calibration.coefficient, source=calibration.source, days=calibration.days, mape=calibration.mape
     )
-
-
-def _window(window) -> PvWindowOut | None:
-    return PvWindowOut(start=window.start, end=window.end) if window else None
 
 
 def _check_day(day: date, latest: date) -> None:
@@ -94,7 +90,7 @@ def _setup(service: PvInsightsService, user: User, profile):
 
 
 @router.get("/overview", response_model=PvOverviewResponse)
-@limiter.limit(RATE_LIMIT_WEATHER)
+@limiter.limit(RATE_LIMIT_PV_SCREEN)
 def get_pv_overview(
     request: Request,
     user: User = Depends(get_authenticated_user),
@@ -106,6 +102,7 @@ def get_pv_overview(
     installation = setup.installation
     pv = profile.pv_config
     location = profile.base_info.location
+    first_data_day, last_data_day = service.data_range(user.id)
     return PvOverviewResponse(
         installation=PvInstallationOut(
             total_kwp=installation.total_kwp,
@@ -124,7 +121,6 @@ def get_pv_overview(
                 date=summary.day,
                 available=summary.available,
                 total_kwh=summary.total_kwh,
-                peak=_window(summary.peak),
                 cloud_cover_pct=summary.cloud_cover_pct,
                 temperature_min_c=summary.temperature_min_c,
                 temperature_max_c=summary.temperature_max_c,
@@ -133,14 +129,15 @@ def get_pv_overview(
             )
             for summary in service.days(user.id, profile)
         ],
-        first_data_day=service.first_data_day(user.id),
+        first_data_day=first_data_day,
+        last_data_day=last_data_day,
         today=service.weather.today(),
         latest_day=service.weather.latest_day(),
     )
 
 
 @router.get("/day", response_model=PvDayResponse)
-@limiter.limit(RATE_LIMIT_WEATHER)
+@limiter.limit(RATE_LIMIT_PV_SCREEN)
 def get_pv_day(
     request: Request,
     day: date | None = Query(default=None, alias="date", description="Doba lokalna; domyślnie dziś"),
@@ -178,14 +175,19 @@ def get_pv_day(
             import_kwh=balance.import_kwh,
             value=PvValueOut(**vars(balance.value)) if balance.value else None,
         ) if balance else None,
-        peak=_window(detail.peak),
+        typical=PvTypicalOut(
+            days=detail.typical.days,
+            first_day=detail.typical.first_day,
+            last_day=detail.typical.last_day,
+            kind=detail.typical.kind,
+        ) if detail.typical else None,
         notes=detail.notes,
         intervals=[PvIntervalOut(**vars(interval)) for interval in detail.intervals],
     )
 
 
 @router.get("/accuracy", response_model=PvAccuracyResponse)
-@limiter.limit(RATE_LIMIT_WEATHER)
+@limiter.limit(RATE_LIMIT_PV_SCREEN)
 def get_pv_accuracy(
     request: Request,
     user: User = Depends(get_authenticated_user),
@@ -194,10 +196,9 @@ def get_pv_accuracy(
 ):
     profile = users.get_profile(user)
     setup = _setup(service, user, profile)
+    rows, days_without_weather = service.forecasts.accuracy(user.id, setup)
     return PvAccuracyResponse(
         calibration=_calibration_out(setup.calibration),
-        days=[
-            PvAccuracyDayOut(date=day, actual_kwh=actual, model_kwh=model)
-            for day, actual, model in service.forecasts.accuracy(user.id, setup)
-        ],
+        days=[PvAccuracyDayOut(date=day, actual_kwh=actual, model_kwh=model) for day, actual, model in rows],
+        days_without_weather=days_without_weather,
     )

@@ -315,18 +315,17 @@ class PvForecastService:
                 result[day] = quarters
         return result
 
-    def accuracy(self, user_id, setup: "PvSetup") -> list[tuple[date, float, float]]:
-        """Dni z produkcją falownika z plików: (dzień, produkcja z pliku, produkcja z modelu) w kWh."""
+    def accuracy(self, user_id, setup: "PvSetup") -> tuple[list[tuple[date, float, float]], int]:
+        """Dni z produkcją falownika z plików: (dzień, produkcja z pliku, produkcja z modelu) w kWh oraz liczba
+        dni z produkcją, dla których w bazie nie ma jeszcze pełnej pogody."""
         production = self.devices.pv_production(user_id)
         actual: dict[date, float] = defaultdict(float)
         for moment, kwh in production.items():
             actual[moment.astimezone(MARKET_TIMEZONE).date()] += kwh
         days = [day for day in actual if day < self.weather.today()]
         modeled = self.modeled(setup, days)
-        return [
-            (day, round(actual[day], 2), round(sum(modeled[day].values()), 2))
-            for day in sorted(modeled)
-        ]
+        rows = [(day, round(actual[day], 2), round(sum(modeled[day].values()), 2)) for day in sorted(modeled)]
+        return rows, len(days) - len(rows)
 
 
 @dataclass

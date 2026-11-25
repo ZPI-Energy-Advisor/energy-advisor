@@ -9,8 +9,13 @@ export const formatKwh = (value, digits = 1) => (value == null ? "—" : `${form
 export const formatPln = (value) => (value == null ? "—" : `${formatNumber(value, 2)} zł`);
 export const formatPercent = (share) => (share == null ? "—" : `${formatNumber(share * 100, 0)}%`);
 export const formatClock = (iso) => timeFormatter.format(new Date(iso));
-export const formatTemperature = (value) => (value == null ? "—" : `${formatNumber(Math.round(value) + 0, 0)}°C`);
-export const formatWindow = (window) => (window ? `${formatClock(window.start)}–${formatClock(window.end)}` : null);
+const roundDegrees = (value) => formatNumber(Math.round(value) + 0, 0);
+
+export const formatTemperatureRange = (low, high) => {
+  if (low == null || high == null) return null;
+  if (Math.round(low) === Math.round(high)) return `${roundDegrees(low)}°C`;
+  return `od ${roundDegrees(low)} do ${roundDegrees(high)}°C`;
+};
 
 const atNoon = (isoDate) => new Date(`${isoDate}T12:00:00Z`);
 
@@ -48,10 +53,35 @@ export const describeAccuracy = (calibration) => {
   return `Prognoza dopasowana do produkcji z Twoich plików (${calibration.days} ${days}); dzienną produkcję myli średnio o ${formatPercent(calibration.mape)}.`;
 };
 
-export const CONSUMPTION_SOURCES = {
-  devices: "zużycie domu z pliku urządzeń",
-  meter: "zużycie domu z licznika (produkcja z modelu)",
-  typical: "typowe zużycie domu z Twoich plików",
+const dayMonthNumeric = new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
+const formatDayMonth = (isoDate) => dayMonthNumeric.format(atNoon(isoDate));
+
+const TYPICAL_KINDS = {
+  workday: ["dnia roboczego", "dni roboczych"],
+  weekend: ["dnia weekendowego", "dni weekendowych"],
+  all: ["dnia", "dni"],
+};
+
+export const describeTypical = (typical) => {
+  const [one, many] = TYPICAL_KINDS[typical.kind] ?? TYPICAL_KINDS.all;
+  const days = typical.days === 1 ? `1 ${one}` : `${typical.days} ${many}`;
+  return `średnia z ${days} z plików (${formatDayMonth(typical.first_day)}–${formatDayMonth(typical.last_day)})`;
+};
+
+export const describeConsumption = (detail) => {
+  if (detail.consumption_source === "devices") return "z pliku urządzeń";
+  if (detail.consumption_source === "meter") return "z licznika i produkcji z modelu";
+  if (detail.consumption_source === "meter_without_pv") return "pobór z licznika, dom jeszcze bez paneli";
+  if (detail.consumption_source === "typical" && detail.typical) return `szacunek: ${describeTypical(detail.typical)}`;
+  return null;
+};
+
+export const describeWeatherSource = (detail) => {
+  if (detail.kind !== "past") return "prognoza pogody";
+  if (detail.weather_source === "archive") return "pogoda z archiwum";
+  if (detail.weather_source === "forecast") return "pogoda z prognozy";
+  if (detail.weather_source === "mixed") return "pogoda z archiwum i prognozy";
+  return null;
 };
 
 // Punkty wykresu doby: moc średnia w kwadransie (kW = kWh × 4), zużycie i zachmurzenie.
