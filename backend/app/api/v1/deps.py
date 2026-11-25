@@ -39,6 +39,7 @@ from app.services.upload_service import UploadService
 from app.services.user_service import UserService
 from app.services.weather_service import WeatherService
 from app.services.pv_forecast import PvForecastService
+from app.services.pv_insights import PvInsightsService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.plan_service import PlanService
@@ -365,3 +366,14 @@ def get_home_owner(
     """Zalogowany właściciel domu Smart Home; inne konta dostają 403, a przy wyłączonym hubie 503."""
     service.require_owner(user)
     return user
+
+
+def get_pv_insights_service(
+    db: Session = Depends(get_db),
+    forecasts: PvForecastService = Depends(get_pv_forecast_service),
+    prices: SchedulePriceService = Depends(get_schedule_price_service),
+) -> PvInsightsService:
+    return PvInsightsService(
+        forecasts, EnergyReadingRepository(db), EnergyDataFileRepository(db), prices,
+        DynamicMarketPriceResolver(DynamicPriceRepository(db)),
+    )

@@ -15,7 +15,7 @@ from app.providers.prices.base import MARKET_TIMEZONE
 from app.providers.weather import OpenMeteoClient, Plane, WeatherLimitError, WeatherPoint, WeatherProviderError
 from app.repositories.weather_repository import WeatherRepository
 from app.services import weather_sync
-from app.services.weather_service import Cell, WeatherService, WeatherUnavailableError, planes_of
+from app.services.weather_service import Cell, WeatherService, WeatherUnavailableError, clear_fetch_attempts, planes_of
 from main import app
 from test_users_api import profile_payload, rates  # noqa: F401
 
@@ -321,6 +321,22 @@ def test_forecast_api_is_not_asked_for_days_it_no_longer_has(weather_db):
         service(weather_db, client).day(CELL, old, [SOUTH])
 
     assert [call[0] for call in client.calls] == ["archive"]
+
+
+def test_user_request_asks_open_meteo_for_a_missing_range_at_most_once_per_five_minutes(weather_db):
+    old = TODAY - dt.timedelta(days=70)
+    client = FakeClient(missing_archive={old})
+    weather = WeatherService(WeatherRepository(weather_db), client=client, now=lambda: NOW, interactive=True)
+
+    for _ in range(3):
+        with pytest.raises(WeatherUnavailableError):
+            weather.day(CELL, old, [SOUTH])
+    assert len(client.calls) == 1
+
+    clear_fetch_attempts()
+    with pytest.raises(WeatherUnavailableError):
+        weather.day(CELL, old, [SOUTH])
+    assert len(client.calls) == 2
 
 
 def test_past_day_on_demand_fetches_its_whole_month_once(weather_db):

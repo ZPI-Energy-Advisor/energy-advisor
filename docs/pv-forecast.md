@@ -98,3 +98,62 @@ z plikiem.
 
 Kod korzystający z prognozy, np. plan na jutro, wywołuje
 `PvForecastService(weather, devices).forecast(user_id, profile, day)` i dostaje `PvForecast`.
+
+## Ekran „Fotowoltaika” (ZP-150)
+
+Ekran `/pv` (menu „Fotowoltaika”) i karta „Jutro z paneli” na dashboardzie. Kod: `backend/app/services/pv_insights.py`,
+`frontend/src/pages/PvPage.jsx`.
+
+| Część ekranu | Co pokazuje | Endpoint |
+|---|---|---|
+| Nagłówek | Panele z profilu, falownik, rozliczenie, czy prognoza jest dopasowana do plików i jak bardzo się myli | `GET /api/v1/pv/overview` |
+| Najbliższe dni | Dziś, jutro, pojutrze: suma kWh, średnie zachmurzenie w godzinach ze słońcem, najniższa i najwyższa temperatura doby | `GET /api/v1/pv/overview` |
+| Doba | Wykres co 15 min: produkcja z prognozy albo z modelu (dni minione: pogoda z archiwum), produkcja z pliku, zużycie domu, pasek zachmurzenia; pod spodem bilans i wartość | `GET /api/v1/pv/day?date=` |
+| Trafność | Produkcja z pliku obok modelu w kolejnych dniach (ostatnie 60), kliknięcie otwiera dzień; `days_without_weather` mówi, dla ilu dni pogoda z archiwum jeszcze się pobiera | `GET /api/v1/pv/accuracy` |
+
+Doba może być dowolnym dniem od 2000-01-01 do dziś + 2 dni. Dane z plików bierzemy tylko dla dni minionych; dziś
+i kolejne dni to prognoza, nawet jeśli plik sięga dalej.
+
+Ekran nie ma wyboru pliku: zawsze łączy wszystkie gotowe pliki. Pliki urządzeń łączymy jak „Wszystkie pliki
+urządzeń” (kwadrans urządzenia z najnowszego pliku, który je zawiera), więc ten sam plik wgrany dwa razy nie liczy
+się podwójnie. Pliki licznika łączymy jak „Wszystkie pliki” (przy nakładaniu wygrywa nowszy). Dzień z danymi
+urządzeń bierze je z urządzeń, a pozostałe dni z licznika.
+
+**Zużycie domu** w kwadransie:
+
+| Dzień | Źródło (`consumption_source`) | Wzór |
+|---|---|---|
+| Miniony, z pliku urządzeń | `devices` | suma urządzeń poza falownikiem; produkcja to falownik z pliku (gdy falownik jest w pliku z tego okresu, brak jego wpisów to 0, np. śnieg), a bez falownika model |
+| Miniony, tylko licznik | `meter` | pobór − oddanie + produkcja z modelu, nie mniej niż pobór |
+| Miniony, licznik bez żadnego oddania w całym pliku | `meter_without_pv` | sam pobór: plik jest sprzed paneli, a produkcja i bilans pokazują, ile dałyby panele |
+| Miniony bez odczytów | brak | nie pokazujemy zużycia ani bilansu, tylko produkcję z modelu |
+| Dziś albo przyszły | `typical` | średnia tej samej godziny zegarowej z ostatnich (do 28) dni z odczytami, nie starszych niż 60 dni, najpierw dni tego samego rodzaju (robocze albo weekend); pole `typical` mówi, z ilu i jakich dni |
+
+Typowe zużycie jest takie samo dla wszystkich dni roboczych (i osobno weekendów), bo to ta sama średnia. Gdy
+ostatnie odczyty są starsze niż 60 dni, zużycia nie szacujemy.
+
+Godzina powtórzona przy zmianie czasu ma w odczytach jeden zsumowany kwadrans, który dzielimy po równo.
+
+**Bilans** liczymy w godzinach jak operator: w każdej godzinie autokonsumpcja = min(produkcja, zużycie), reszta
+produkcji to oddanie, a reszta zużycia to pobór z sieci.
+
+**Wartość:**
+- **Autokonsumpcja:** cena z sieci z taryfy z profilu (energia, dystrybucja zmienna, opłaty za kWh, VAT), czyli
+  to, czego dom nie kupił.
+- **Oddanie w net-billingu:** RCE albo RCEm × 1,23 do depozytu, a ujemna cena daje 0. Bez cen z tego dnia
+  bierzemy średnią z tych samych godzin z 14 poprzednich dni (z dopiskiem), a bez żadnych cen oddania nie
+  wyceniamy.
+- **Oddanie w net-meteringu:** współczynnik opustu × cena z sieci.
+
+Depozyt pokrywa tylko część rachunku za energię, co ekran mówi wprost. Godziny bez ceny z sieci (umowa z ceną
+dynamiczną przed publikacją RCE) są pomijane z dopiskiem.
+
+Ekran czyta bazę, więc ma osobny, wysoki limit zapytań (`RATE_LIMIT_PV_SCREEN`, 300 na minutę), a przeglądanie
+dni strzałkami go nie wyczerpie. Zapytanie użytkownika pobiera z Open-Meteo ten sam brakujący zakres pogody
+najwyżej raz na 5 minut. Bez tego dzień, którego archiwum jeszcze nie ma, pytałby o niego przy każdym kliknięciu.
+
+Typowe zużycie jest zapamiętywane w procesie na godzinę, tak jak kalibracja. Czasy odpowiedzi na roku danych:
+- doba miniona: ok. 0,1 s;
+- doba z typowym zużyciem: ok. 0,3 s przy pierwszym zapytaniu, potem szybciej;
+- przegląd: ok. 0,1 s;
+- trafność: ok. 0,4 s.

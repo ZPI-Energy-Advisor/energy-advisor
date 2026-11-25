@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import DateTime, Integer, and_, bindparam, cast, delete, exists, extract, func, insert, select, text, tuple_, update
+from sqlalchemy import DateTime, Integer, and_, bindparam, case, cast, delete, exists, extract, func, insert, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID, insert as upsert
 from sqlalchemy.orm import Session
 
@@ -367,6 +367,44 @@ class DeviceRepository:
             .group_by(DeviceSlotUsage.slot_start)
         ).all()
         return {_utc(start): -kwh for start, kwh in rows if kwh < 0}
+
+    def home_quarters(self, user_id: UUID, start_utc: datetime, end_utc: datetime) -> dict[datetime, tuple[float, float]]:
+        """Kwadranse domu z obowiązujących wersji wszystkich plików urządzeń: (zużycie urządzeń poza falownikiem,
+        produkcja falowników), w kWh."""
+        is_pv = DeviceInstance.device_type == PV_INVERTER
+        rows = self.db.execute(
+            select(
+                DeviceSlotUsage.slot_start,
+                func.sum(case((is_pv, 0.0), else_=DeviceSlotUsage.kwh)),
+                func.sum(case((is_pv, -DeviceSlotUsage.kwh), else_=0.0)),
+            )
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceSlotUsage.superseded.is_(False),
+                DeviceSlotUsage.slot_start >= _utc(start_utc),
+                DeviceSlotUsage.slot_start < _utc(end_utc),
+            )
+            .group_by(DeviceSlotUsage.slot_start)
+        ).all()
+        return {_utc(start): (float(used), max(float(produced), 0.0)) for start, used, produced in rows}
+
+    def pv_inverter_file_spans(self, user_id: UUID) -> list[tuple]:
+        """Okresy (pierwszy, ostatni dzień) gotowych plików urządzeń z falownikiem. W tych dniach brak kwadransów
+        falownika to zero produkcji, np. panele pod śniegiem."""
+        return [tuple(row) for row in self.db.execute(
+            select(EnergyDataFile.data_start, EnergyDataFile.data_end).distinct()
+            .join(DeviceInstanceFile, DeviceInstanceFile.energy_data_file_id == EnergyDataFile.id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceInstanceFile.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceInstance.device_type == PV_INVERTER,
+                EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
+                EnergyDataFile.data_start.is_not(None),
+                EnergyDataFile.data_end.is_not(None),
+            )
+        ).all()]
 
     def completed_file_ids(self, user_id: UUID) -> tuple[UUID, ...]:
         return tuple(sorted(self.db.execute(

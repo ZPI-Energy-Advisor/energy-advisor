@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DataContextBar from "../components/DataContextBar";
+import DashboardPvCard from "../components/DashboardPvCard";
 import DashboardTariffCard from "../components/DashboardTariffCard";
 import { PageSkeleton } from "../components/Skeleton";
 import DeviceUsagePanel from "../components/DeviceUsagePanel";
@@ -162,6 +163,8 @@ function Dashboard() {
         missingProfile=", żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy G11 operatora PGE."
         pricingNote={pricing?.note}
       />
+
+      <DashboardPvCard />
 
       {!simulationData ? (
         <NoFileData

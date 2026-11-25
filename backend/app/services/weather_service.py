@@ -1,4 +1,6 @@
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -22,6 +24,15 @@ ARCHIVE_DELAY_DAYS = 6
 ARCHIVE_CHUNK_DAYS = 366
 FORECAST_CHUNK_DAYS = 31
 EARLIEST_DAY = date(2000, 1, 1)
+INTERACTIVE_RETRY = timedelta(minutes=5)
+ATTEMPTS_LIMIT = 10_000
+_attempts: dict[tuple, float] = {}
+_attempts_lock = threading.Lock()
+
+
+def clear_fetch_attempts() -> None:
+    with _attempts_lock:
+        _attempts.clear()
 
 
 @dataclass(frozen=True)
@@ -142,7 +153,7 @@ class WeatherService:
 
     def day(self, cell: Cell, day: date, planes: list[Plane]) -> DayWeather:
         rows = self._rows(cell, day, day)
-        if self._needs_fetch(day, rows, planes):
+        if self._needs_fetch(day, rows, planes) and self._may_fetch(cell, *self._fetch_window(day), planes):
             first, last = self._fetch_window(day)
             try:
                 self.fetch(cell, first, last, planes)
@@ -153,6 +164,23 @@ class WeatherService:
         if all(quarter.source is None for quarter in result.quarters):
             raise WeatherUnavailableError(f"Brak pogody na {day}")
         return result
+
+    def _may_fetch(self, cell: Cell, first: date, last: date, planes: list[Plane]) -> bool:
+        """Zapytanie użytkownika pobiera ten sam zakres najwyżej raz na INTERACTIVE_RETRY. Bez tego dzień, którego
+        Open-Meteo jeszcze nie ma (np. archiwum sprzed kilku dni), pytałby o niego przy każdym kliknięciu."""
+        if not self.interactive:
+            return True
+        key = (cell, first, last, tuple(planes))
+        now = time.monotonic()
+        with _attempts_lock:
+            last_attempt = _attempts.get(key)
+            if last_attempt is not None and now - last_attempt < INTERACTIVE_RETRY.total_seconds():
+                return False
+            _attempts[key] = now
+            if len(_attempts) > ATTEMPTS_LIMIT:
+                for stale in [k for k, at in _attempts.items() if now - at >= INTERACTIVE_RETRY.total_seconds()]:
+                    del _attempts[stale]
+        return True
 
     def stored_days(self, cell: Cell, days: Iterable[date], planes: list[Plane]) -> dict[date, DayWeather]:
         days = sorted(set(days))
