@@ -19,6 +19,8 @@ import { CurrentUserProvider } from "../context/CurrentUserProvider";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import logo from "../assets/logo/logo.svg";
+import PrivacyPolicyAcceptance from "./PrivacyPolicyAcceptance";
+import { PRIVACY_POLICY_PATH, acceptPrivacyPolicy } from "../api/privacyPolicy";
 
 const HOME_NAV_ITEM = { path: "/home", label: "Mój dom", icon: <FiZap className="mr-3 text-lg" /> };
 
@@ -46,7 +48,9 @@ function LayoutShell() {
 
   const isActive = (path) => location.pathname === path;
   // Dom Smart Home ma jednego właściciela (HUB_HOME_USER_EMAIL); pozostali nie widzą tej pozycji.
-  const { me } = useCurrentUser();
+  const { me, refresh } = useCurrentUser();
+  // Konto bez akceptacji aktualnej polityki (zmiana wersji albo konto sprzed ZP-129) nie korzysta z aplikacji.
+  const needsPolicyAcceptance = Boolean(me?.privacy_policy?.needs_acceptance);
 
   const navItems = [
     {
@@ -146,6 +150,14 @@ function LayoutShell() {
         </nav>
 
         <div className="p-4 border-t border-gray-200">
+          <Link
+            to={PRIVACY_POLICY_PATH}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block px-4 pb-2 text-xs text-gray-500 hover:text-gray-700 hover:underline"
+          >
+            Polityka prywatności
+          </Link>
           <button
             onClick={handleLogout}
             data-leaves-page
@@ -160,8 +172,22 @@ function LayoutShell() {
       {/* relative: elementy pozycjonowane absolutnie (np. teksty sr-only, panele) liczą się względem przewijanej treści,
           a nie całego okna; inaczej okno dostaje drugi pasek przewijania. */}
       <div className="relative flex-1 p-4 md:p-10 overflow-y-auto h-full w-full">
-        <Outlet />
+        {!needsPolicyAcceptance && <Outlet />}
       </div>
+
+      {needsPolicyAcceptance && (
+        <PrivacyPolicyAcceptance
+          title="Zmiana polityki prywatności"
+          intro="Aby dalej korzystać z Energy Advisora, zapoznaj się z aktualną polityką prywatności i ją zaakceptuj."
+          acceptLabel="Akceptuję"
+          onAccept={async (version) => {
+            await acceptPrivacyPolicy(version);
+            await refresh();
+          }}
+          cancelLabel="Wyloguj się"
+          onCancel={handleLogout}
+        />
+      )}
     </div>
   );
 }

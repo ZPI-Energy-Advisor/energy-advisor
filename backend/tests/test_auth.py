@@ -3,6 +3,8 @@ from datetime import timedelta
 
 import pytest
 
+from app.services.privacy_policy import PRIVACY_POLICY_VERSION
+
 
 AUTH = "/api/v1/auth"
 PROTECTED = "/api/v1/energy-files"
@@ -10,7 +12,10 @@ PASSWORD = "Haslo123!"
 
 
 def _register(client, email, password=PASSWORD):
-    return client.post(f"{AUTH}/register", json={"email": email, "password": password})
+    return client.post(
+        f"{AUTH}/register",
+        json={"email": email, "password": password, "accepted_policy_version": PRIVACY_POLICY_VERSION},
+    )
 
 
 def _login(client, email, password=PASSWORD):

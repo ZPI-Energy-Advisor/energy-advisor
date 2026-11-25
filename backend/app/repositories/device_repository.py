@@ -4,9 +4,10 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, Integer, and_, bindparam, cast, delete, exists, extract, func, insert, select, text, tuple_, update
+from sqlalchemy import DateTime, Integer, and_, bindparam, cast, delete, exists, extract, func, insert, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID, insert as upsert
 from sqlalchemy.orm import Session
+from sqlalchemy.types import BigInteger
 
 from app.models.DeviceAction import DeviceAction
 from app.models.DeviceCategory import DeviceCategory  # noqa: F401 - rejestruje tabelę dla FK
@@ -21,6 +22,7 @@ from app.parsers.devices import LOCAL_TIMEZONE
 
 
 SLOT = timedelta(minutes=15)
+PV_INVERTER = "pv_inverter"
 # Pola urządzenia i programu, które kolejny import nadpisuje (najnowszy plik wygrywa).
 DEVICE_SETTINGS = (
     "name", "device_type", "device_category", "max_power_kw",
@@ -367,6 +369,36 @@ class DeviceRepository:
         if current_only:
             query = query.where(DeviceSlotUsage.superseded.is_(False))
         return self.db.execute(query).all()
+
+    def pv_production(self, user_id: UUID) -> dict[datetime, float]:
+        """Produkcja falowników domu na kwadrans (kWh, dodatnia), bez wersji przykrytych nowszym plikiem."""
+        rows = self.db.execute(
+            select(DeviceSlotUsage.slot_start, func.sum(DeviceSlotUsage.kwh))
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceInstance.device_type == PV_INVERTER,
+                DeviceSlotUsage.superseded.is_(False),
+            )
+            .group_by(DeviceSlotUsage.slot_start)
+        ).all()
+        return {_utc(start): -kwh for start, kwh in rows if kwh < 0}
+
+    def completed_file_ids(self, user_id: UUID) -> tuple[UUID, ...]:
+        return tuple(sorted(self.db.execute(
+            select(EnergyDataFile.id).where(
+                EnergyDataFile.user_id == user_id, EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED
+            )
+        ).scalars()))
+
+    def pv_inverter_kw(self, user_id: UUID) -> float | None:
+        total = self.db.execute(
+            select(func.sum(DeviceInstance.max_power_kw)).where(
+                DeviceInstance.user_id == user_id, DeviceInstance.device_type == PV_INVERTER
+            )
+        ).scalar()
+        return float(total) if total else None
 
     def instances_with_type_labels(self, instance_ids: list[UUID]) -> list[tuple[DeviceInstance, str]]:
         return self.db.execute(

@@ -26,13 +26,14 @@ python backend/scripts/validate_devices_file.py plik.json --max-grid-kw 12
 
 Dłuższe, realistyczne dane w tym formacie tworzy `backend/scripts/generate_devices_file.py`.
 Symuluje domowników (dni robocze, praca zdalna, weekendy), pracę urządzeń według pór dnia,
-zmierzchu i pory roku oraz produkcję PV w dni słoneczne i pochmurne. Ten sam seed i te same
-parametry dają identyczny plik, a wynik zawsze przechodzi walidację.
+zmierzchu i pory roku oraz produkcję PV z historycznej pogody. Ten sam seed, te same parametry
+i ten sam plik pogody dają identyczny plik, a wynik zawsze przechodzi walidację.
 
 ```bash
 python backend/scripts/generate_devices_file.py --out devices.json
 python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --seed 42 \
-    --devices full --with-pv --out backend/tests/fixtures/devices_demo_30d.json
+    --devices full --with-pv --weather backend/tests/fixtures/weather_demo_30d.json \
+    --out backend/tests/fixtures/devices_demo_30d.json --meter-out backend/tests/fixtures/meter_pv_demo_30d.csv
 ```
 
 | Parametr | Domyślnie | Znaczenie |
@@ -41,10 +42,41 @@ python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --s
 | `--days` | `30` | liczba dób |
 | `--seed` | `42` | ziarno losowania |
 | `--devices` | `full` | `standard`: bez EV, pompy ciepła i rekuperatora; `full`: wszystkie urządzenia |
-| `--with-pv` | wyłączone | dodaje instalację PV |
+| `--with-pv` | wyłączone | dodaje instalację PV; produkcja z pogody z `--weather` |
+| `--weather` | wymagany z `--with-pv` | plik pogody (JSON); gdy go nie ma, generator pobiera pogodę z Open-Meteo i go zapisuje |
+| `--latitude`, `--longitude` | `51.1`, `17.0` (Wrocław) | miejsce domu przy pobieraniu pogody |
+| `--pv-array` | `6/35/0` | grupa paneli `KWP/NACHYLENIE/AZYMUT` (0 = południe, −90 = wschód); można podać kilka |
+| `--inverter-kw` | suma kWp | moc falownika: górny limit produkcji (`max_power_kw` urządzenia PV) |
+| `--meter-out` | wyłączone | zapisuje też plik licznika (CSV Tauron) tego samego domu |
 | `--max-grid-kw` | `9` | limit przyłącza; generator przesuwa akcje, żeby go nie przekroczyć |
 | `--from-meter` | wyłączone | plik licznika (CSV, np. Tauron, godzinowy albo co 15 min); urządzenia są dopasowane do niego |
 | `--out` | wymagany | plik wynikowy |
+
+### Produkcja PV z pogody
+
+Pogoda to godzinowe promieniowanie na płaszczyznę każdej grupy paneli (`global_tilted_irradiance`)
+i temperatura z Open-Meteo Archive (ERA5), zapisane w pliku `--weather` (wartość dotyczy godziny
+zaczynającej się w `start + i h`). Produkcja w kwadransie:
+
+- moc grupy = kWp × promieniowanie / 1000, pomniejszona przy nagrzanych ogniwach (−0,37%/°C powyżej
+  25°C; ogniwo = powietrze + 0,03°C na W/m²) i przy słabym świetle (do −15% poniżej 200 W/m²);
+- suma grup × 0,83 (straty instalacji i falownika) × losowy współczynnik dnia (ok. ±4%: zabrudzenie,
+  dostępność), obcięta do mocy falownika;
+- godzina z pogody jest rozłożona na 4 kwadranse z losową zmiennością chmur (ok. ±12%), która nie
+  zmienia energii godziny;
+- śnieg na panelach (0–30% produkcji), gdy w ciągu ostatnich 48 h spadł co najmniej 1 cm śniegu
+  (`snowfall` z archiwum), a średnia temperatura dnia nie przekracza 1°C.
+
+Dla całego 2025 roku we Wrocławiu (6 kWp, południe, 35°) generator daje ok. 1150 kWh z kWp przy
+współczynniku wydajności 0,79, w granicach realnych instalacji w Polsce. Plik pogody z innego miejsca
+niż `--latitude`/`--longitude` jest odrzucany, a błąd pobierania pogody kończy generator czytelnym komunikatem.
+
+Model jest celowo bogatszy od prognozy PV (ZP-118): produkcja wynika z pogody, ale nie jest jej
+liniową funkcją, więc kalibracja prognozy uczy się na danych z sensem i ma realny błąd.
+
+Z `--meter-out` powstaje plik licznika tego samego domu: w każdym kwadransie pobór urządzeń minus
+produkcja PV, dodatnia reszta jako „Pobór energii czynnej”, ujemna jako „Oddanie energii czynnej”.
+Zapis dat i stref jak w pliku Tauron, także przy zmianie czasu.
 
 ### Plik urządzeń dopasowany do licznika
 
@@ -72,10 +104,13 @@ Para plików demo `meter_demo_30d.csv` i `devices_from_meter_demo_30d.json` w
 `backend/tests/fixtures` (październik 2026, ze zmianą czasu) służy do testów trybu łączonego
 licznika z urządzeniami (patrz [device-usage.md](device-usage.md)).
 
-Plik demo `backend/tests/fixtures/devices_demo_30d.json` (30 dób od 1.10.2026, z PV) służy
-jako fixtures do testów i dane do prezentacji. Obejmuje zmianę czasu 25.10.2026 (doba ze 100
-kwadransami). Test pilnuje, że plik odpowiada generatorowi, więc po zmianie generatora trzeba go
-wygenerować ponownie powyższym poleceniem.
+Plik demo `backend/tests/fixtures/devices_demo_30d.json` (30 dób od 1.10.2026, z PV 6 kWp na
+południe, pogoda z Wrocławia w `weather_demo_30d.json`) i plik licznika tego domu
+`meter_pv_demo_30d.csv` służą jako fixtures do testów i dane do prezentacji (te same pliki są w
+`frontend/public/samples` jako `przyklad-urzadzenia-pv-30-dni.json` i `przyklad-licznik-pv-30-dni.csv`).
+Obejmują zmianę czasu 25.10.2026 (doba ze 100 kwadransami). Testy pilnują, że pliki odpowiadają
+generatorowi, więc po zmianie generatora trzeba je wygenerować ponownie powyższym poleceniem
+i skopiować do `frontend/public/samples`.
 
 ## Model danych: zdarzenia, nie szereg czasowy
 

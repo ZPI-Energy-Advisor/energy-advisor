@@ -38,6 +38,7 @@ from app.services.tariff_costs import TariffCostService
 from app.services.upload_service import UploadService
 from app.services.user_service import UserService
 from app.services.weather_service import WeatherService
+from app.services.pv_forecast import PvForecastService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.plan_service import PlanService
@@ -75,6 +76,13 @@ def get_user_service(
 
 def get_weather_service(db: Session = Depends(get_db)) -> WeatherService:
     return WeatherService(WeatherRepository(db), interactive=True)
+
+
+def get_pv_forecast_service(
+    db: Session = Depends(get_db),
+    weather: WeatherService = Depends(get_weather_service),
+) -> PvForecastService:
+    return PvForecastService(weather, DeviceRepository(db))
 
 
 def get_tariff_catalog_service(

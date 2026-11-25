@@ -2,6 +2,7 @@ import pytest
 
 from app.config import RATE_LIMIT_LOGIN, RATE_LIMIT_REGISTER
 from app.core.rate_limit import rate_limit_message, retry_after_text
+from app.services.privacy_policy import PRIVACY_POLICY_VERSION
 
 AUTH = "/api/v1/auth"
 PASSWORD = "Haslo123!"
@@ -26,9 +27,9 @@ def test_login_is_limited_with_polish_message(anonymous_client, rate_limited, ne
 
 def test_register_is_limited(anonymous_client, rate_limited, new_email):
     for i in range(_allowed(RATE_LIMIT_REGISTER)):
-        anonymous_client.post(f"{AUTH}/register", json={"email": f"{i}-{new_email}", "password": PASSWORD})
+        anonymous_client.post(f"{AUTH}/register", json={"email": f"{i}-{new_email}", "password": PASSWORD, "accepted_policy_version": PRIVACY_POLICY_VERSION})
 
-    response = anonymous_client.post(f"{AUTH}/register", json={"email": f"x-{new_email}", "password": PASSWORD})
+    response = anonymous_client.post(f"{AUTH}/register", json={"email": f"x-{new_email}", "password": PASSWORD, "accepted_policy_version": PRIVACY_POLICY_VERSION})
 
     assert response.status_code == 429
 
@@ -38,7 +39,7 @@ def test_login_limit_does_not_block_registration(anonymous_client, rate_limited,
     for _ in range(_allowed(RATE_LIMIT_LOGIN) + 1):
         anonymous_client.post(f"{AUTH}/login", json=body)
 
-    response = anonymous_client.post(f"{AUTH}/register", json={"email": new_email, "password": PASSWORD})
+    response = anonymous_client.post(f"{AUTH}/register", json={"email": new_email, "password": PASSWORD, "accepted_policy_version": PRIVACY_POLICY_VERSION})
 
     assert response.status_code == 200
 

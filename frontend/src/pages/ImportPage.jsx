@@ -190,6 +190,14 @@ function ImportPage() {
                 <a href="/samples/przyklad-urzadzenia-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
                   plik urządzeń (JSON)
                 </a>
+                . Dom z fotowoltaiką 6 kWp (produkcja z prawdziwej pogody we Wrocławiu, październik 2026):{" "}
+                <a href="/samples/przyklad-licznik-pv-30-dni.csv" download className="text-emerald-700 font-medium hover:underline">
+                  licznik (CSV)
+                </a>{" "}
+                i{" "}
+                <a href="/samples/przyklad-urzadzenia-pv-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
+                  urządzenia (JSON)
+                </a>
                 .
               </p>
 
