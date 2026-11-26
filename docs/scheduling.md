@@ -228,6 +228,16 @@ do kosztu bojlera.
   plan minimalizuje niedogrzanie, a `shortfall` i uwaga mówią, o ile woda będzie chłodniejsza.
 - W odpowiedzi `water_heaters[]`: parametry i `temperatures` (na końcu każdego kwadransu: `before`, `after`).
 
+**Co pracuje samo** (`day_background.py`, ZP-120): plan liczy dobę urządzeń spoza planu i zapisuje ją
+w wyniku (`background`: przebiegi `runs` i urządzenia `devices` ze źródłem `forecast` albo `history`).
+Symulacja wysyła do huba dokładnie to, więc plan i symulacja mają tę samą energię.
+
+| Urządzenie | Doba w planie i symulacji |
+|---|---|
+| PV | Prognoza produkcji (ZP-118) na dobę planu; dla doby minionej pogoda z archiwum. Kilka falowników dzieli ją według produkcji w dniu referencyjnym. Bez pogody, bez paneli w profilu albo bez profilu: dzień referencyjny i uwaga dlaczego |
+| Pompa ciepła spoza planu | Przebiegi dnia referencyjnego przeskalowane do temperatury doby planu (ZP-119), w mocy pompy; nadwyżka ponad dzień referencyjny wchodzi do zapasu w limicie przyłącza |
+| Bojler spoza planu | Dzień referencyjny (zależy od zwyczajów, nie od pogody) |
+
 **Historia pompy ciepła** (`plan_history.py`): ostatni dzień w plikach przed dniem planu, bo ogrzewanie
 zależy od pogody, a wczoraj jest bliżej jutra niż ten sam dzień tygodnia sprzed tygodnia. Z tego dnia
 są godziny grzania; ilość energii zmienia się o różnicę zużycia przy temperaturze dnia planu i dnia historii

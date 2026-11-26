@@ -25,14 +25,19 @@ class PlanRunReplay(BaseModel):
 
 
 class PlanRunHistoryDeviceOut(BaseModel):
-    """Urządzenie odtwarzane z dnia referencyjnego: energia z historii i w symulacji (ujemna dla PV)."""
+    """Urządzenie pracujące samo: energia wysłana do huba i zużyta w symulacji (ujemna dla PV)."""
 
     device_id: str
     device_name: str
-    # Dzień referencyjny tego urządzenia, jak w planie: liczony osobno dla każdego urządzenia.
-    history_day: date
+    # Dzień referencyjny tego urządzenia, jak w planie: liczony osobno dla każdego urządzenia. None dla PV
+    # z prognozy bez historii w plikach.
+    history_day: date | None = None
+    # Energia wysłana do huba: z prognozy pogody (`source = forecast`) albo z dnia referencyjnego.
     history_kwh: float
     actual_kwh: float
+    source: Literal["forecast", "history"] = "history"
+    # Energia dnia referencyjnego, gdy doba jest z prognozy; None w przebiegach sprzed ZP-120.
+    reference_kwh: float | None = None
 
 
 class PlanRunActionOut(BaseModel):

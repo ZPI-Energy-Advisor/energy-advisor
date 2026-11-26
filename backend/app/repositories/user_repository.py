@@ -1,6 +1,7 @@
 from uuid import UUID
 from datetime import datetime
 
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -95,6 +96,16 @@ class UserRepository:
         self.db.delete(token)
         self.db.commit()
         return True
+
+    def valid_profile(self, user_id: UUID) -> UserProfileSchema | None:
+        """Profil jako schemat; None bez profilu albo z profilem w starszym formacie, który trzeba uzupełnić."""
+        profile = self.get_profile(user_id)
+        if profile is None:
+            return None
+        try:
+            return UserProfileSchema.model_validate(profile)
+        except ValidationError:
+            return None
 
     def get_profile(self, user_id: UUID) -> UserProfile | None:
         return (

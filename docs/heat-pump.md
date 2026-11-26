@@ -109,7 +109,10 @@ Odpowiedź planu ma `heat_pumps`:
 Ekran planu pokazuje to na karcie „Ogrzewanie”.
 
 Wykonanie planu w symulacji (ZP-113) wysyła pompie profil z planu, więc też jest dopasowane do pogody. Pompa
-odznaczona w planie (pracuje sama na termostacie) i produkcja PV w symulacji to dalej dzień referencyjny (ZP-120).
+odznaczona w planie (pracuje sama na termostacie) też jest dopasowana do temperatury, tą samą funkcją
+(`day_background.py`, ZP-120): przebiegi dnia referencyjnego zachowują kształt, a nadmiar przy mocy pompy
+wydłuża przebieg do następnego albo do końca doby. To, o ile pobierze więcej niż w dniu referencyjnym, plan
+dolicza do zapasu w limicie przyłącza.
 
 ## Generator plików
 

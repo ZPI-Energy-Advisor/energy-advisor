@@ -163,6 +163,21 @@ describe("PlanRunCard (raport przebiegu)", () => {
     expect(history.textContent).not.toContain("-0,00");
   });
 
+  it("PV z prognozy i pompa dopasowana do pogody mówią, skąd jest ich doba", () => {
+    const [pv, heatPump] = RUN.replayed_devices;
+    render(<PlanRunCard run={{ ...RUN, replayed_devices: [
+      { ...pv, source: "forecast", history_kwh: -8.2, actual_kwh: -2.1, reference_kwh: -6.4 },
+      { ...heatPump, source: "forecast", history_kwh: 14.5, actual_kwh: 3.2, reference_kwh: 9.5 },
+    ] }} />);
+
+    const history = screen.getByRole("region", { name: "Z dnia referencyjnego" });
+    expect(history.textContent).toContain("Pracują same:");
+    expect(history.textContent).toContain("Instalacja PV (z prognozy pogody): 2,10 kWh z 8,20 kWh produkcji");
+    expect(history.textContent).toContain(
+      "Pompa ciepła (dopasowana do pogody, godziny jak 12 października 2026): 3,20 kWh z 14,50 kWh",
+    );
+  });
+
   it("przebieg w trakcie pokazuje postęp i odchylenia zamiast rachunku", () => {
     render(<PlanRunCard run={{ ...RUN, status: "running", actual_kwh: 0.6, cost: { ...COST, complete: false } }} />);
 
