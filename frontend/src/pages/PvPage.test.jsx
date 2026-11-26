@@ -28,10 +28,14 @@ const OVERVIEW = {
   },
   location_label: "Wrocław",
   approximate_location: false,
-  calibration: { coefficient: 0.83, source: "history", days: 30, mape: 0.04 },
+  calibration: { coefficient: 0.83, source: "history", days: 30, mape: 0.04, candidate_days: 30 },
   days: [day("2026-11-24", 1.8), day("2026-11-25", 2.4), { ...day("2026-11-26", null), available: false }],
-  first_data_day: "2026-10-01",
+  first_data_day: "2025-06-13",
   last_data_day: "2026-11-22",
+  data_periods: [
+    { first_day: "2025-06-13", last_day: "2025-08-08" },
+    { first_day: "2026-10-01", last_day: "2026-11-22" },
+  ],
   today: "2026-11-24",
   latest_day: "2026-11-26",
 };
@@ -168,7 +172,9 @@ describe("PvPage", () => {
     await screen.findAllByRole("button", { name: /Jutro/ });
     fireEvent.click(screen.getByRole("button", { name: "Poprzedni dzień" }));
 
-    expect(await screen.findByText(/nie ma odczytów z tego dnia \(pliki obejmują 01.10.2026 – 22.11.2026\)/)).toBeTruthy();
+    // Pliki mają przerwę (sierpień 2025 – wrzesień 2026): pokazujemy okresy, a nie jeden zakres od–do.
+    expect(await screen.findByText(/nie ma odczytów z tego dnia.*Pliki obejmują: 13\.06\.2025–08\.08\.2025, 01\.10\.2026–22\.11\.2026\./)).toBeTruthy();
+    expect(screen.getByText(/produkcja i zużycie z Twoich plików są w dniach: 13\.06\.2025–08\.08\.2025, 01\.10\.2026–22\.11\.2026/)).toBeTruthy();
     expect(screen.getByText("Produkcja z modelu")).toBeTruthy();
     expect(screen.queryByText("Zużyte od razu")).toBeNull();
   });
@@ -231,5 +237,25 @@ describe("PvPage", () => {
     expect(await screen.findByText(/Panele są szacunkowe/)).toBeTruthy();
     expect(screen.getByText(/pogoda dotyczy regionu/)).toBeTruthy();
     expect(screen.getByText(/nie jest jeszcze dopasowana/)).toBeTruthy();
+  });
+
+  it("jedna grupa paneli bez powtórzonej mocy", async () => {
+    mockApi({ overview: { ...OVERVIEW, installation: { ...OVERVIEW.installation, arrays: [{ kwp: 6, tilt: 35, azimuth: 0 }] } } });
+    renderPage();
+
+    expect(await screen.findByText(/^6,00 kWp, południe, 35°, falownik 5,0 kW/)).toBeTruthy();
+  });
+
+  it("trafność mówi, ile dni pominęło dopasowanie", async () => {
+    const calibration = { coefficient: 0.83, source: "history", days: 25, mape: 0.17, candidate_days: 73 };
+    mockApi({
+      overview: { ...OVERVIEW, calibration },
+      accuracy: { ...ACCURACY, calibration },
+    });
+    renderPage();
+
+    expect(await screen.findByText(
+      "Prognoza dopasowana do 25 z 73 dni z produkcją z Twoich plików. 48 dni pominęliśmy, bo produkcja nie pasowała do pogody (np. śnieg, awaria, błąd w pliku). Na pozostałych dzienną produkcję myli średnio o 17%.",
+    )).toBeTruthy();
   });
 });

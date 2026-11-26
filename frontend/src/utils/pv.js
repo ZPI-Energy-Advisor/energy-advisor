@@ -44,13 +44,41 @@ const DIRECTIONS = { 0: "południe", "-90": "wschód", 90: "zachód", 180: "pó�
 export const describeArray = (array) =>
   `${formatNumber(array.kwp, 2)} kWp, ${DIRECTIONS[array.azimuth] ?? `azymut ${array.azimuth}°`}, ${array.tilt}°`;
 
-// Błąd prognozy w zdaniu: MAPE z kalibracji (np. 0,04) jako „średnio o 4%”.
+// Jedna grupa paneli: „6,00 kWp, południe, 35°”; kilka: suma i grupy w nawiasie.
+export const describePanels = (installation) =>
+  installation.arrays.length === 1
+    ? describeArray(installation.arrays[0])
+    : `${formatNumber(installation.total_kwp, 2)} kWp (${installation.arrays.map(describeArray).join("; ")})`;
+
+const formatShortDate = (isoDate) => `${isoDate.slice(8, 10)}.${isoDate.slice(5, 7)}.${isoDate.slice(0, 4)}`;
+const MAX_LISTED_PERIODS = 4;
+
+// Okresy z plików: „13.06.2025–08.08.2025, 01.10.2026–12.11.2026”; przy wielu tylko najnowsze.
+export const describePeriods = (periods) => {
+  const listed = periods.slice(-MAX_LISTED_PERIODS).map((period) =>
+    period.first_day === period.last_day
+      ? formatShortDate(period.first_day)
+      : `${formatShortDate(period.first_day)}–${formatShortDate(period.last_day)}`);
+  const hidden = periods.length - listed.length;
+  return hidden > 0 ? `${listed.join(", ")} (i ${hidden} wcześniejszych okresów)` : listed.join(", ");
+};
+
+const daysWord = (count) => (count === 1 ? "dnia" : "dni");
+
+// Opis dopasowania: z ilu dni z produkcją skorzystaliśmy, ile pominęliśmy i o ile prognoza myli dzienną produkcję
+// (MAPE z kalibracji, np. 0,04 jako „o 4%”). Pominięte to dni, w których produkcja nie pasowała do pogody.
 export const describeAccuracy = (calibration) => {
   if (calibration.source !== "history") {
     return "Prognoza nie jest jeszcze dopasowana do Twojej instalacji: zakładamy typowe straty (sprawność 0,8).";
   }
-  const days = calibration.days === 1 ? "dniu" : "dniach";
-  return `Prognoza dopasowana do produkcji z Twoich plików (${calibration.days} ${days}); dzienną produkcję myli średnio o ${formatPercent(calibration.mape)}.`;
+  const error = `dzienną produkcję myli średnio o ${formatPercent(calibration.mape)}`;
+  const skipped = (calibration.candidate_days ?? 0) - calibration.days;
+  if (skipped > 0) {
+    return `Prognoza dopasowana do ${calibration.days} z ${calibration.candidate_days} dni z produkcją z Twoich plików. `
+      + `${skipped} ${skipped === 1 ? "dzień" : "dni"} pominęliśmy, bo produkcja nie pasowała do pogody (np. śnieg, awaria, błąd w pliku). `
+      + `Na pozostałych ${error}.`;
+  }
+  return `Prognoza dopasowana do produkcji z ${calibration.days} ${daysWord(calibration.days)} z Twoich plików; ${error}.`;
 };
 
 const dayMonthNumeric = new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", day: "2-digit", month: "2-digit" });

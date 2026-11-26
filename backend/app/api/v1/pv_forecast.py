@@ -12,6 +12,7 @@ from app.schemas.pv_forecast import (
     PvArrayOut,
     PvBalanceOut,
     PvCalibrationOut,
+    PvDataPeriodOut,
     PvDayResponse,
     PvDaySummaryOut,
     PvForecastQuarter,
@@ -32,7 +33,8 @@ router = APIRouter(prefix="/pv", tags=["PV"])
 
 def _calibration_out(calibration) -> PvCalibrationOut:
     return PvCalibrationOut(
-        coefficient=calibration.coefficient, source=calibration.source, days=calibration.days, mape=calibration.mape
+        coefficient=calibration.coefficient, source=calibration.source, days=calibration.days, mape=calibration.mape,
+        candidate_days=calibration.candidate_days,
     )
 
 
@@ -102,7 +104,7 @@ def get_pv_overview(
     installation = setup.installation
     pv = profile.pv_config
     location = profile.base_info.location
-    first_data_day, last_data_day = service.data_range(user.id)
+    periods = service.data_periods(user.id)
     return PvOverviewResponse(
         installation=PvInstallationOut(
             total_kwp=installation.total_kwp,
@@ -129,8 +131,9 @@ def get_pv_overview(
             )
             for summary in service.days(user.id, profile)
         ],
-        first_data_day=first_data_day,
-        last_data_day=last_data_day,
+        first_data_day=periods[0][0] if periods else None,
+        last_data_day=periods[-1][1] if periods else None,
+        data_periods=[PvDataPeriodOut(first_day=first, last_day=last) for first, last in periods],
         today=service.weather.today(),
         latest_day=service.weather.latest_day(),
     )

@@ -41,6 +41,8 @@ class Calibration:
     days: int = 0
     mape: float | None = None
     note: str | None = None
+    # Dni z produkcją i pełną pogodą przed odrzuceniem odstających (days to te, które zostały w dopasowaniu).
+    candidate_days: int = 0
 
 
 @dataclass
@@ -153,7 +155,7 @@ def calibrate(
     kept = {day: values for day, values in days.items()
             if OUTLIER_RANGE[0] * median <= values[0] / values[1] <= OUTLIER_RANGE[1] * median}
     if len(kept) < MIN_CALIBRATION_DAYS:
-        return Calibration(DEFAULT_COEFFICIENT, "default", days=len(kept),
+        return Calibration(DEFAULT_COEFFICIENT, "default", days=len(kept), candidate_days=len(days),
                            note=f"Za mało dni z produkcją i pogodą do kalibracji ({len(kept)}, potrzeba {MIN_CALIBRATION_DAYS}).")
     total_actual = sum(actual for actual, _ in kept.values())
     total_model = sum(model for _, model in kept.values())
@@ -168,7 +170,8 @@ def calibrate(
         note = (f"Produkcja z pliku nie pasuje do paneli z profilu (współczynnik {coefficient:.2f}). "
                 "Sprawdź moc, kierunek i nachylenie paneli.")
         coefficient = min(max(coefficient, low), high)
-    return Calibration(round(coefficient, 3), "history", days=len(kept), mape=round(sum(errors) / len(errors), 3), note=note)
+    return Calibration(round(coefficient, 3), "history", days=len(kept), mape=round(sum(errors) / len(errors), 3), note=note,
+                       candidate_days=len(days))
 
 
 def _wall_clock(moment: datetime) -> tuple[int, int]:

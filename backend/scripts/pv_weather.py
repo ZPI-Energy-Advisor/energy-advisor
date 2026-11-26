@@ -31,6 +31,15 @@ DAY_VARIABILITY = 0.04
 SNOW_MIN_CM = 1.0
 SNOW_MAX_TEMPERATURE = 1.0
 SNOW_WINDOW = timedelta(hours=48)
+# Opcja --weather-error: pogoda z archiwum to przybliżenie dla obszaru kilku km, a nie pomiar nad dachem, więc
+# dzienna produkcja odbiega od niej tym bardziej, im więcej chmur (słonecznie ok. ±5%, pochmurno ok. ±30%).
+# Jasność dnia to nasłonecznienie dnia względem najjaśniejszego dnia z ±15 dni (przybliżenie bezchmurnego nieba).
+WEATHER_ERROR_CLEAR = 0.05
+WEATHER_ERROR_OVERCAST = 0.30
+CLEAR_SKY_WINDOW_DAYS = 15
+# Mniej więcej raz na dwa miesiące falownik nie pracuje przez kilka godzin (awaria, wyłączenie, aktualizacja).
+OUTAGE_PROBABILITY = 1 / 60
+OUTAGE_QUARTERS = (12, 40)
 
 
 @dataclass(frozen=True)
@@ -182,14 +191,48 @@ def _snow_on_panels(weather: Weather, day_start: datetime, day_end: datetime, te
     return sum(cm or 0.0 for cm in weather.snowfall_cm[first:last + 1]) >= SNOW_MIN_CM
 
 
+def _day_irradiance(weather: Weather, arrays: list[Array], first_hour: int, hours: int) -> float | None:
+    if first_hour < 0:
+        return None
+    total = 0.0
+    for array in arrays:
+        values = weather.tilted_w_m2[array.key][first_hour:first_hour + hours]
+        if len(values) < hours or any(value is None for value in values):
+            return None
+        total += array.kwp * sum(values)
+    return total
+
+
+def day_clearness(weather: Weather, arrays: list[Array], day_start: datetime, day_end: datetime) -> float:
+    """Jasność dnia 0–1: nasłonecznienie dnia względem najjaśniejszego dnia z ±CLEAR_SKY_WINDOW_DAYS dni."""
+    first = weather.hour_index(day_start)
+    hours = weather.hour_index(day_end - QUARTER) + 1 - first
+    today = _day_irradiance(weather, arrays, first, hours) or 0.0
+    window = (_day_irradiance(weather, arrays, first + 24 * shift, hours)
+              for shift in range(-CLEAR_SKY_WINDOW_DAYS, CLEAR_SKY_WINDOW_DAYS + 1))
+    brightest = max((value for value in window if value is not None), default=0.0)
+    return min(1.0, today / brightest) if brightest > 0 else 1.0
+
+
 def day_production(weather: Weather, arrays: list[Array], inverter_kw: float, day_start: datetime,
-                   day_end: datetime, rng: random.Random) -> list[float]:
-    """Energia z falownika (kWh, dodatnia) na każdy kwadrans [day_start, day_end)."""
+                   day_end: datetime, rng: random.Random, weather_error: bool = False) -> list[float]:
+    """Energia z falownika (kWh, dodatnia) na każdy kwadrans [day_start, day_end).
+
+    Z weather_error dzień dostaje błąd danych pogodowych zależny od zachmurzenia, a rzadko kilkugodzinną
+    przerwę falownika. Bez tej opcji losowanie jest takie jak wcześniej (te same pliki dla tego samego seeda)."""
     hours = range(weather.hour_index(day_start), weather.hour_index(day_end - QUARTER) + 1)
     temperatures = [weather.temperature_c[hour] for hour in hours]
     day_factor = math.exp(rng.gauss(0, DAY_VARIABILITY)) * SYSTEM_EFFICIENCY
     if _snow_on_panels(weather, day_start, day_end, temperatures):
         day_factor *= rng.uniform(0.0, 0.3)
+    outage = range(0)
+    if weather_error:
+        clearness = day_clearness(weather, arrays, day_start, day_end)
+        spread = WEATHER_ERROR_CLEAR + (WEATHER_ERROR_OVERCAST - WEATHER_ERROR_CLEAR) * (1 - clearness)
+        day_factor *= math.exp(rng.gauss(0, spread))
+        if rng.random() < OUTAGE_PROBABILITY:
+            first_quarter = rng.randrange(6 * 4, 16 * 4)  # start przerwy między 6:00 a 16:00
+            outage = range(first_quarter, first_quarter + rng.randint(*OUTAGE_QUARTERS))
     production = []
     moment = day_start
     while moment < day_end:
@@ -203,7 +246,7 @@ def day_production(weather: Weather, arrays: list[Array], inverter_kw: float, da
                 _array_kw(array, weather.tilted_w_m2[array.key][hour] * factors[offset], temperature)
                 for array in arrays
             )
-            production.append(min(dc * day_factor, inverter_kw) * 0.25)
+            production.append(0.0 if len(production) in outage else min(dc * day_factor, inverter_kw) * 0.25)
             moment += QUARTER
     return production
 
