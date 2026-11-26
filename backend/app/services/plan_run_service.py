@@ -4,12 +4,11 @@ Uruchomienie zaczyna w hubie dobę planu od północy i wysyła jednym żądanie
 
 - pozycje planu: program pralki czy zmywarki jako `start_program`, a auto, bojler i pompa ciepła jako
   `run_profile` z profilem z planu (zera w przerwach ładowania), każda ze startem z planu w `start_at`;
-- przebiegi z historii dnia referencyjnego, przeniesione na te same godziny doby planu (bez nocy po niej):
-  produkcja PV, od której zależy, czy plan się opłaca (pralka w południe z paneli), oraz pompa ciepła
-  i bojler odznaczone w planie, bo plan zakłada, że pracują same na termostacie i liczy na nie miejsce
-  w limicie przyłącza. Dzień referencyjny to „wczoraj” jak w planie (`plan_history.reference_day`), dla
-  każdego urządzenia osobno: ostatni dzień z jego historią przed dobą planu, a bez takiego ostatni w ogóle.
-  Docelowo PV z prognozy pogody.
+- urządzenia, które pracują same (bez nocy po dobie planu): produkcja PV, od której zależy, czy plan się
+  opłaca (pralka w południe z paneli), oraz pompa ciepła i bojler odznaczone w planie, bo plan zakłada, że
+  pracują same na termostacie i liczy na nie miejsce w limicie przyłącza. Bierzemy je z planu (`background`,
+  ZP-120): PV z prognozy pogody, pompa dopasowana do temperatury, a bojler i to, czego nie dało się policzyć
+  z pogody, z dnia referencyjnego. Plan sprzed ZP-120 nie ma `background`: wtedy wszystko z dnia referencyjnego.
 
 Urządzenia stałe (światło, TV, czajnik…) startują wyłączone i włącza je użytkownik z ekranu „Mój dom”:
 widać wtedy, jak plan i ręczne włączenia razem obciążają przyłącze.
@@ -63,11 +62,10 @@ from app.services.home_control_service import (
     send_batch,
     update_hub_clock,
 )
-from app.services.home_replay import ReplayRun, moved_runs, replay_commands, replay_runs, replay_summary
+from app.services.day_background import HISTORY, PV_TYPE, THERMOSTAT_TYPES, BackgroundDevice, DayBackground, history_runs
+from app.services.home_replay import ReplayRun, replay_commands, replay_summary
 from app.services.home_state_service import DayEnergy, day_energy
-from app.services.plan_history import local_day
 from app.services.plan_run_report import RunEnergy, cost_report, profile_cost
-from app.services.planning_service import HEAT_PUMP_TYPE, WATER_HEATER_TYPE
 
 
 logger = logging.getLogger(__name__)
@@ -79,9 +77,6 @@ PLAN_OUTDATED_MESSAGE = (
     "Ten plan ułożono, zanim można było go uruchomić w symulacji. Ułóż go ponownie i zatwierdź."
 )
 PLAN_FAILED_MESSAGE = "Doba planu została ustawiona, ale hub nie przyjął planu. Uruchom plan ponownie."
-PV_TYPE = "pv_inverter"
-# Urządzenia pracujące same na termostacie, gdy plan ich nie układa: odtwarzamy je z historii jak PV.
-THERMOSTAT_TYPES = (HEAT_PUMP_TYPE, WATER_HEATER_TYPE)
 MAX_REPORTED_ERRORS = 50
 # Tyle po zamknięciu przebiegu raport jeszcze się przelicza: hub wysyła zdarzenia partiami z kolejki i ponawia je,
 # gdy backend nie odpowiada, więc ostatnie kwadranse mogą dojść po końcu planu.
@@ -147,7 +142,8 @@ class PlanRunService:
         prices = _prices(tariff)
         horizon_start = datetime.fromisoformat(plan.result["horizon_start"])
         horizon_end = self._run_end(plan, [item for item, _ in planned])
-        history_days, runs = self._history(owner, plan, {item.device_id for item in items})
+        background = self._background(owner, plan, {item.device_id for item in items})
+        runs = background.runs
 
         # Blokada wiersza domu: dwa równoczesne „Uruchom” (albo uruchomienie i wysyłka rejestru) nie przeplatają
         # zmian w hubie. Trzymamy ją do zapisu przebiegu.
@@ -165,7 +161,7 @@ class PlanRunService:
             # Zegar sprzed nowej doby: przebieg, który hub już doprowadził do końca planu, jest wykonany.
             if not self._refresh(owner, previous, paused):
                 self._close(owner, previous, PlanRun.SUPERSEDED, now)
-        replayed = self._history_energy(runs, replay_results, history_days)
+        replayed = self._history_energy(runs, replay_results, background.devices)
         run = self.run_repository.add(PlanRun(
             user_id=owner.id,
             day_plan_id=plan.id,
@@ -175,7 +171,9 @@ class PlanRunService:
             horizon_start=horizon_start,
             horizon_end=horizon_end,
             # Najnowszy z dni referencyjnych urządzeń (zwykle wszystkie mają ten sam).
-            history_day=max((date.fromisoformat(entry["history_day"]) for entry in replayed), default=None),
+            history_day=max(
+                (date.fromisoformat(entry["history_day"]) for entry in replayed if entry["history_day"]), default=None,
+            ),
             items=[
                 self._action(item, result, prices).model_dump(mode="json")
                 for (item, _), result in zip(planned, plan_results, strict=True)
@@ -221,48 +219,52 @@ class PlanRunService:
             planned.append((item, command))
         return planned
 
-    def _history(
-        self, owner: User, plan: DayPlan, planned_devices: set[str],
-    ) -> tuple[dict[str, date], list[ReplayRun]]:
-        """PV oraz pompa ciepła i bojler spoza planu: doba dnia referencyjnego przeniesiona na dobę planu.
+    def _background(self, owner: User, plan: DayPlan, planned_devices: set[str]) -> DayBackground:
+        """Urządzenia, które pracują same: z migawki planu (ZP-120), a w planie sprzed niej z dnia referencyjnego
+        każdego urządzenia (PV oraz pompa ciepła i bojler spoza planu).
 
-        Dzień referencyjny liczymy dla każdego urządzenia osobno, jak plan (`plan_history.reference_day`):
-        dzień startu jego ostatniej akcji przed dobą planu, a bez takiej (plan demo sprzed całej historii)
-        ostatniej w ogóle. Tylko doba 00:00–24:00, bez nocy po niej, tak jak plan liczy pompę i bojler, gdy
-        są zaznaczone. Noc należy do planu na kolejny dzień, a porównanie z planem (ZP-114) ma po obu
-        stronach ten sam zakres. Zwraca dzień referencyjny każdego urządzenia i przebiegi po starcie.
+        Przebiegi obejmują tylko dobę 00:00–24:00, bez nocy po niej, tak jak plan liczy pompę i bojler, gdy są
+        zaznaczone. Noc należy do planu na kolejny dzień, a porównanie z planem (ZP-114) ma po obu stronach ten
+        sam zakres.
         """
-        # PV nigdy nie jest w planie, więc odrzucenie pozycji planu zostawia PV i odznaczone pompę i bojler.
+        if plan.result.get("background") is not None:
+            background = DayBackground.from_json(plan.result["background"])
+            background.runs = [run for run in background.runs if run.device_id not in planned_devices]
+            background.runs.sort(key=lambda run: (run.start, run.device_id))
+            return background
         devices = [
             device_id for device_id in self.home_repository.device_ids_of_types(owner.id, (PV_TYPE, *THERMOSTAT_TYPES))
             if device_id not in planned_devices
         ]
-        plan_start = day_midnight(plan.plan_date).astimezone(timezone.utc)
-        starts = self.home_repository.last_action_starts(owner.id, devices, plan_start)
-        starts |= self.home_repository.last_action_starts(owner.id, [d for d in devices if d not in starts])
-        days = {device_id: local_day(start) for device_id, start in starts.items()}
-        runs: list[ReplayRun] = []
-        for device_id, source in days.items():
-            slots = self.home_repository.action_slots(
-                owner.id,
-                [device_id],
-                day_midnight(source).astimezone(timezone.utc),
-                day_midnight(source + timedelta(days=1)).astimezone(timezone.utc),
-            )
-            runs.extend(moved_runs(replay_runs(slots), source, plan.plan_date))
-        return days, sorted(runs, key=lambda run: (run.start, run.device_id))
+        days, by_device = history_runs(self.home_repository, owner.id, plan.plan_date, devices)
+        runs = sorted((run for device_runs in by_device.values() for run in device_runs),
+                      key=lambda run: (run.start, run.device_id))
+        devices_out = [
+            BackgroundDevice(device_id, "", HISTORY, day, sum(sum(run.profile_kwh) for run in by_device[device_id]),
+                             sum(sum(run.profile_kwh) for run in by_device[device_id]))
+            for device_id, day in days.items()
+        ]
+        return DayBackground(runs=runs, devices=devices_out)
 
     @staticmethod
     def _history_energy(
-        runs: list[ReplayRun], results: list[HubCommandResult], days: dict[str, date],
+        runs: list[ReplayRun], results: list[HubCommandResult], devices: list[BackgroundDevice],
     ) -> list[dict]:
-        """Urządzenia, których przebiegi hub przyjął: dzień referencyjny i energia z historii do raportu."""
+        """Urządzenia, których przebiegi hub przyjął: skąd jest ich doba, dzień referencyjny, energia wysłana
+        do huba (`history_kwh`) i energia dnia referencyjnego do raportu."""
         energy: dict[str, float] = defaultdict(float)
         for run, result in zip(runs, results, strict=True):
             if result.status != HubCommandStatus.REJECTED:
                 energy[run.device_id] += sum(run.profile_kwh)
+        info = {device.device_id: device for device in devices}
         return [
-            {"device_id": device_id, "history_day": days[device_id].isoformat(), "history_kwh": _kwh(kwh)}
+            {
+                "device_id": device_id,
+                "history_day": info[device_id].history_day.isoformat() if device_id in info and info[device_id].history_day else None,
+                "history_kwh": _kwh(kwh),
+                "source": info[device_id].source if device_id in info else HISTORY,
+                "reference_kwh": _kwh(info[device_id].reference_kwh) if device_id in info else None,
+            }
             for device_id, kwh in sorted(energy.items())
         ]
 
@@ -445,6 +447,8 @@ class PlanRunService:
                 device_name=names.get(device_id, device_id),
                 history_day=entry["history_day"],
                 history_kwh=entry["history_kwh"],
+                source=entry.get("source", HISTORY),
+                reference_kwh=entry.get("reference_kwh"),
                 actual_kwh=_kwh(actual.get(device_id, 0.0)),
             )
             for device_id, entry in history.items()

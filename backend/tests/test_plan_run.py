@@ -179,7 +179,7 @@ def test_pv_produces_like_reference_day_moved_to_plan_day(home):
     assert run["history_day"] == "2026-10-05"
     assert run["replayed_devices"] == [{
         "device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_day": "2026-10-05",
-        "history_kwh": -6.4, "actual_kwh": 0.0,
+        "history_kwh": -6.4, "actual_kwh": 0.0, "source": "history", "reference_kwh": -6.4,
     }]
 
 

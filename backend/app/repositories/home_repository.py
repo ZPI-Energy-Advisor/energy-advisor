@@ -188,6 +188,18 @@ class HomeRepository:
             .order_by(DeviceInstance.source_device_id)
         ).scalars())
 
+    def device_info(self, user_id: UUID, device_ids: list[str]) -> dict[str, tuple[str, float | None]]:
+        """Typ i moc maksymalna (kW) urządzeń o podanych identyfikatorach z pliku."""
+        if not device_ids:
+            return {}
+        return {
+            device_id: (device_type, float(max_power) if max_power is not None else None)
+            for device_id, device_type, max_power in self.db.execute(
+                select(DeviceInstance.source_device_id, DeviceInstance.device_type, DeviceInstance.max_power_kw)
+                .where(DeviceInstance.user_id == user_id, DeviceInstance.source_device_id.in_(device_ids))
+            ).all()
+        }
+
     def device_names(self, user_id: UUID) -> dict[str, str]:
         return dict(self.db.execute(
             select(DeviceInstance.source_device_id, DeviceInstance.name).where(DeviceInstance.user_id == user_id)

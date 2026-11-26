@@ -15,22 +15,32 @@ const historyEnergy = (device) =>
     ? `${formatKwh(Math.abs(device.actual_kwh))} z ${formatKwh(Math.abs(device.history_kwh))} produkcji`
     : `${formatKwh(device.actual_kwh)} z ${formatKwh(device.history_kwh)}`;
 
-// PV oraz pompa ciepła i bojler spoza planu pracują same, jak w dniu referencyjnym. Dzień liczymy dla każdego
-// urządzenia osobno (jak plan); zwykle jest wspólny, więc wtedy podajemy go raz, w nagłówku.
+// PV z prognozy pogody i pompa ciepła spoza planu dopasowana do temperatury (ZP-120).
+const forecastOrigin = (device) =>
+  device.history_kwh < 0
+    ? "z prognozy pogody"
+    : `dopasowana do pogody, godziny jak ${fullDay(device.history_day)}`;
+
+// PV oraz pompa ciepła i bojler spoza planu pracują same: z prognozy pogody albo jak w dniu referencyjnym. Dzień
+// liczymy dla każdego urządzenia osobno (jak plan); gdy wszystkie są z jednego dnia, podajemy go raz, w nagłówku.
 function HistoryDevices({ run }) {
   const devices = run.replayed_devices;
   if (!devices.length) return null;
-  const sameDay = devices.every((device) => device.history_day === devices[0].history_day);
+  const fromHistory = devices.every((device) => (device.source ?? "history") === "history");
+  const sameDay = fromHistory && devices.every((device) => device.history_day === devices[0].history_day);
+  const header = sameDay
+    ? `Pracują same, tak jak ${fullDay(devices[0].history_day)}:`
+    : fromHistory ? "Pracują same, tak jak w dniu referencyjnym:" : "Pracują same:";
   return (
     <section className="mt-4" aria-label="Z dnia referencyjnego">
-      <p className="text-sm text-gray-700">
-        {sameDay ? `Pracują same, tak jak ${fullDay(devices[0].history_day)}:` : "Pracują same, tak jak w dniu referencyjnym:"}
-      </p>
+      <p className="text-sm text-gray-700">{header}</p>
       <ul className="mt-1 space-y-0.5 text-sm text-gray-600">
         {devices.map((device) => (
           <li key={device.device_id}>
             {device.device_name}
-            {!sameDay && ` (jak ${fullDay(device.history_day)})`}: {historyEnergy(device)}
+            {device.source === "forecast"
+              ? ` (${forecastOrigin(device)})`
+              : !sameDay && ` (jak ${fullDay(device.history_day)})`}: {historyEnergy(device)}
           </li>
         ))}
       </ul>

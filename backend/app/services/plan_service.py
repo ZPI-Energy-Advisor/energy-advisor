@@ -14,8 +14,9 @@ podłączenia auta, termostat bojlera, bloki pompy z historii.
 - pompa ciepła: bloki grzania z historii dopasowane do prognozowanej temperatury (ZP-119, heat_pump.py),
   każdy przesuwany najwyżej o `shift_hours`.
 
-Urządzenia stałe i produkcja PV nie wchodzą do planu (brak prognozy), więc oszczędność dotyczy tylko
-planowanych urządzeń, a limit przyłącza sprawdzamy tylko dla nich.
+Urządzenia stałe i produkcja PV nie wchodzą do kosztu planu, więc oszczędność dotyczy tylko planowanych urządzeń.
+To, co w dobie planu pracuje samo (PV z prognozy pogody, pompa ciepła i bojler spoza planu), plan zapisuje
+w `background` (ZP-120, day_background.py), a symulacja wysyła do huba dokładnie to.
 """
 
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from app.repositories.planning_repository import PlanningRepository
 from app.schemas.day_plan import DayPlanOut, PlanItemOut
 from app.schemas.planning import PlanningDevice
 from app.schemas.schedule import ChargingPeriodOut, SchedulePriceOut
+from app.services.day_background import FORECAST, PV_TYPE, DayBackground, DayBackgroundService
 from app.services.heat_pump import Block, HeatPumpDay, HeatPumpService, Home, scale_blocks
 from app.services.plan_history import clock_minute, day_actions, moved_to, peak_by_clock, reference_day
 from app.services.planning_service import (
@@ -77,6 +79,11 @@ RESERVE_DAYS = 7
 DEFAULT_EV_POWER_KW = 3.7
 DEFAULT_WATER_HEATER_POWER_KW = 2.0
 PRICE_PUBLICATION = "PSE publikuje ceny na kolejny dzień ok. 14:00, u nas są najpóźniej o 15:00."
+PV_HISTORY_REASONS = {
+    "no_weather": "nie ma pogody na ten dzień",
+    "no_installation": "profil nie ma paneli (dodaj je w profilu, żeby liczyć produkcję z pogody)",
+    "no_profile": "profil nie jest uzupełniony",
+}
 # „w poniedziałek 6 października”: dzień tygodnia i data słowami, bez skrótów.
 WEEKDAYS = ["w poniedziałek", "we wtorek", "w środę", "w czwartek", "w piątek", "w sobotę", "w niedzielę"]
 MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września",
@@ -247,12 +254,14 @@ class PlanService:
         dynamic_price_repository,
         today=tomorrow,
         heat_pumps: HeatPumpService | None = None,
+        background: DayBackgroundService | None = None,
     ):
         self.planning_repository = planning_repository
         self.plan_repository = plan_repository
         self.price_service = price_service
         self.dynamic_price_repository = dynamic_price_repository
         self.heat_pumps = heat_pumps
+        self.background = background
         # Domyślny dzień planu: jutro (w testach stały).
         self.default_date = today
 
@@ -273,6 +282,11 @@ class PlanService:
         approximate_from = self._approximate_night(prices, plan_date, day_end, end)
 
         build = _Build(plan_date)
+        base_info = self.planning_repository.base_info(user.id)
+        background = (
+            self.background.build(user.id, plan_date, {device.device_id for device in enabled}, base_info)
+            if self.background is not None else None
+        )
         raw = {device.source_device_id: (device, programs) for device, programs in self.planning_repository.flexible_devices(user.id)}
         history = self.planning_repository.device_actions(
             [raw[device.device_id][0].id for device in enabled if device.kind in (HEAT_PUMP_TYPE, "program")]
@@ -298,7 +312,9 @@ class PlanService:
                 device for device in preferences.devices
                 if not device.preference.enabled and device.kind in (HEAT_PUMP_TYPE, WATER_HEATER_TYPE)
             ]
-            load = self._reserve_for_rest_of_home(build, user, slots, pricing.max_grid_kw, unplanned, raw)
+            load = self._reserve_for_rest_of_home(
+                build, user, slots, pricing.max_grid_kw, unplanned, raw, background.extra_load if background else {},
+            )
         for device in enabled:
             instance, programs = raw[device.device_id]
             if device.kind == "program":
@@ -318,6 +334,8 @@ class PlanService:
             build.notes.append(
                 f"Bez planu: {_list(build.window_start)} startuje na początku podanych godzin, bo nie ma w historii."
             )
+        if background is not None:
+            build.notes.extend(self._background_notes(user, plan_date, background))
         result = schedule(build.actions, prices, pricing.max_grid_kw)
         result.actions.extend(build.extra)
         result.cost_before += sum(item.cost_before for item in build.extra)
@@ -328,6 +346,8 @@ class PlanService:
                 "Koszt nocy jest przybliżony."
             ))
         body = self._result(build, result, prices, pricing, start, end, approximate_from)
+        if background is not None:
+            body["background"] = background.to_json()
         plan = self.plan_repository.save(user.id, plan_date, body)
         return self._out(plan)
 
@@ -343,11 +363,13 @@ class PlanService:
 
     def _reserve_for_rest_of_home(
         self, build: _Build, user: User, slots: list[datetime], max_grid_kw: float,
-        unplanned: list[PlanningDevice], raw: dict,
+        unplanned: list[PlanningDevice], raw: dict, extra_load: dict[datetime, float],
     ) -> list[float]:
         """Pozostałe urządzenia jako obciążenie domu w limicie przyłącza: o każdej porze dnia największy ich
         pobór z ostatnich dni w plikach. To urządzenia stałe oraz odznaczone pompa ciepła i bojler (`unplanned`),
         które pracują same na termostacie. Plan ich nie przesuwa, ale nie może ich wypchnąć ponad limit.
+
+        `extra_load`: o ile pompa spoza planu pobierze więcej niż w dniu referencyjnym (zimniejszy dzień, ZP-120).
 
         Zwraca rezerwę w kWh na każdy kwadrans `slots` (same zera, gdy nie znamy reszty domu)."""
         usage = self.planning_repository.fixed_slot_usage(
@@ -359,7 +381,7 @@ class PlanService:
                 "Nie znamy zużycia pozostałych urządzeń w domu, więc moc przyłącza sprawdzamy tylko dla urządzeń z planu."
             )
             return [0.0] * len(slots)
-        profile = [peaks.get(clock_minute(slot), 0.0) for slot in slots]
+        profile = [peaks.get(clock_minute(slot), 0.0) + extra_load.get(slot, 0.0) for slot in slots]
         build.actions.append(ScheduleAction(
             action_id="rest_of_home", device_id="rest_of_home", start=slots[0], profile_kwh=profile, load_only=True,
         ))
@@ -712,6 +734,35 @@ class PlanService:
                 mode=SHIFTABLE,
                 allowed_starts=frozenset(starts),
             ), device, f"grzanie {_part_of_day(history_block.action_start)}")
+
+    def _background_notes(self, user: User, plan_date: date, background: DayBackground) -> list[str]:
+        names = self.background.home.device_names(user.id)
+        weather = "pogody z archiwum" if background.past else "prognozy pogody"
+        notes = []
+        for device in background.devices:
+            name = names.get(device.device_id, device.device_id)
+            since = f"{_day_text(device.history_day)}: {_kwh(abs(device.reference_kwh))} kWh" if device.history_day else ""
+            if device.device_type == PV_TYPE and device.source == FORECAST:
+                estimate = " (część pogody to średnia z ostatnich dni)" if device.reason in ("recent_days", "mixed") else ""
+                notes.append(
+                    f"{name} w symulacji: produkcja z {weather}{estimate}, ok. {_kwh(abs(device.kwh))} kWh"
+                    + (f" ({since})." if since else ".")
+                )
+            elif device.device_type == PV_TYPE:
+                reason = PV_HISTORY_REASONS.get(device.reason)
+                if reason:
+                    notes.append(f"{name} w symulacji: produkcja jak {_day_text(device.history_day)}, bo {reason}.")
+            elif device.source == FORECAST:
+                notes.append(
+                    f"{name} pracuje sama, poza planem: przy pogodzie {_day_text(plan_date)} zużyje ok. "
+                    f"{_kwh(device.kwh)} kWh ({since})."
+                )
+            elif device.reason == "no_weather":
+                notes.append(
+                    f"{name} pracuje sama, poza planem: grzeje jak {_day_text(device.history_day)}, bo nie mamy "
+                    "pogody albo danych domu z profilu, żeby dopasować grzanie do temperatury."
+                )
+        return notes
 
     def _heating(self, user_id, source: date, reference_kwh: float, plan_date: date) -> HeatPumpDay | None:
         if self.heat_pumps is None:

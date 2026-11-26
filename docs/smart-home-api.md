@@ -715,9 +715,12 @@ jutro” (szkic: `409`, plan sprzed ZP-113 bez profili: `409` z prośbą o ponow
    - pozycje planu ze startem z planu w `start_at`: program jako `start_program` z `program_id`,
      a auto, bojler i pompa ciepła jako `run_profile` z profilem z planu (zera w przerwach ładowania),
      bez `ref`, bo z komendą łączy je `command_id`,
-   - historię **dnia referencyjnego** jako `run_profile`: produkcję PV (od niej zależy, czy plan się
+   - urządzenia, które pracują same, jako `run_profile`: produkcję PV (od niej zależy, czy plan się
      opłaca, np. pralka w południe z paneli) oraz pompę ciepła i bojler **odznaczone w planie**, bo plan
-     zakłada, że pracują same na termostacie, i liczy na nie miejsce w limicie przyłącza.
+     zakłada, że pracują same na termostacie, i liczy na nie miejsce w limicie przyłącza. Od ZP-120 to
+     migawka z planu (`background`): PV z prognozy pogody na dobę planu (`ref` = `pv_forecast_RRRR-MM-DD`),
+     pompa dopasowana do temperatury, a bojler i to, czego nie dało się policzyć z pogody, z dnia
+     referencyjnego, jak niżej. Plan sprzed ZP-120 nie ma migawki: wtedy wszystko z dnia referencyjnego.
      Dzień referencyjny to „wczoraj” jak w planie, liczony dla każdego urządzenia osobno: dzień startu
      jego ostatniej akcji przed dobą planu, a bez takiej (plan sprzed całej historii) ostatniej w ogóle.
      Doba tego dnia (00:00–24:00, bez nocy po niej) trafia na te same godziny doby planu. `profile_kwh` to kwadranse akcji z `device_slot_usage`
@@ -727,7 +730,6 @@ jutro” (szkic: `409`, plan sprzed ZP-113 bez profili: `409` z prośbą o ponow
 
    Urządzenia stałe (światło, TV, czajnik, piekarnik…) startują wyłączone i reagują tylko na ręczne
    włączenie z ekranu „Mój dom”: widać wtedy, jak plan i ręczne włączenia razem obciążają przyłącze.
-   Docelowo PV pójdzie z prognozy pogody zamiast z historii,
 3. zapisuje przebieg (`plan_runs`) z migawką pozycji planu i wynikiem ich komend,
 4. uruchamia zegar z bieżącym tempem i `stop_at` na koniec przebiegu, więc hub sam staje. Koniec przebiegu
    (`horizon_end`) to północ po dobie planu albo koniec ostatniej wysłanej pozycji planu, jeśli pracuje dłużej
@@ -748,9 +750,9 @@ Odpowiedź (`201`, a w `GET …/latest` i `POST …/end` `200`):
   "replay": { "actions": 2, "devices": 2, "skipped_devices": [], "rejected_actions": 0 },
   "replayed_devices": [
     { "device_id": "dev_pv_01", "device_name": "Instalacja PV", "history_day": "2026-10-05",
-      "history_kwh": -18.2, "actual_kwh": -7.9 },
+      "history_kwh": -12.6, "actual_kwh": -7.9, "source": "forecast", "reference_kwh": -18.2 },
     { "device_id": "dev_hp_01", "device_name": "Pompa ciepła", "history_day": "2026-10-05",
-      "history_kwh": 9.5, "actual_kwh": 4.1 }
+      "history_kwh": 9.5, "actual_kwh": 4.1, "source": "history", "reference_kwh": 9.5 }
   ],
   "planned_kwh": 6.4, "actual_kwh": 0.6,
   "devices": [{
@@ -770,7 +772,7 @@ Odpowiedź (`201`, a w `GET …/latest` i `POST …/end` `200`):
 | `devices` | Urządzenia z planu: energia według planu i zużyta w symulacji (zdarzenia `energy_report` przebiegu od początku planu do `sim_time`) |
 | `history_day` | Najnowszy z dni referencyjnych w `replayed_devices` (zwykle wszystkie urządzenia mają ten sam); `null`, gdy nie było czego odtwarzać |
 | `replay` | Przebiegi z historii: `actions` i `devices` przyjęte przez hub, `skipped_devices` spoza rejestru huba (`device_not_found`, np. przy zaległej wysyłce rejestru), `rejected_actions` odrzucone z innego powodu (np. `409 invalid_state`) |
-| `replayed_devices` | Urządzenia, których historię hub przyjął: ich dzień referencyjny (`history_day`), energia z niego (`history_kwh`) i zużyta w symulacji (`actual_kwh`), ujemne dla PV. Nie wchodzą do `planned_kwh` i `actual_kwh` przebiegu, które dotyczą tylko urządzeń planu |
+| `replayed_devices` | Urządzenia pracujące same, których przebiegi hub przyjął: dzień referencyjny (`history_day`, `null` dla PV z prognozy bez historii), energia wysłana do huba (`history_kwh`), zużyta w symulacji (`actual_kwh`) i energia dnia referencyjnego (`reference_kwh`), ujemne dla PV. `source`: `forecast` (PV z prognozy pogody, pompa dopasowana do temperatury) albo `history` (doba dnia referencyjnego). Nie wchodzą do `planned_kwh` i `actual_kwh` przebiegu, które dotyczą tylko urządzeń planu |
 | `errors` | Do 50 ostatnich `device_error` przebiegu, np. komenda, której urządzenie nie wykonało o `start_at` |
 | `prices` | Ceny kwadransów planu (`start`, `price_pln_kwh`) z migawki przy starcie przebiegu: pasek czasu i cena teraz na ekranie „Mój dom” (ZP-110). Puste w przebiegach sprzed tej zmiany |
 | `water_heaters` | Bojlery z planu: `device_id`, `device_name` i temperatura wody według planu na końcu każdego kwadransu (`temperatures[]`: `start`, `temp_c`). Zaplanowana, nie zmierzona: hub nie liczy temperatury |

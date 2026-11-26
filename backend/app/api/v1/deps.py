@@ -43,6 +43,7 @@ from app.services.pv_insights import PvInsightsService
 from app.services.pv_service import DynamicMarketPriceResolver
 from app.services.schedule_prices import SchedulePriceService
 from app.services.heat_pump import HeatPumpService
+from app.services.day_background import DayBackgroundService
 from app.services.plan_service import PlanService
 from app.services.price_insights import PriceInsightsService
 from app.repositories.day_plan_repository import DayPlanRepository
@@ -264,9 +265,14 @@ def get_plan_service(
     dynamic_price_repository: DynamicPriceRepository = Depends(get_dynamic_price_repository),
     weather: WeatherService = Depends(get_weather_service),
 ) -> PlanService:
+    heat_pumps = HeatPumpService(weather, DeviceRepository(db))
     return PlanService(
         PlanningRepository(db), DayPlanRepository(db), price_service, dynamic_price_repository,
-        heat_pumps=HeatPumpService(weather, DeviceRepository(db)),
+        heat_pumps=heat_pumps,
+        background=DayBackgroundService(
+            HomeRepository(db), UserRepository(db).valid_profile,
+            PvForecastService(weather, DeviceRepository(db)), heat_pumps,
+        ),
     )
 
 
