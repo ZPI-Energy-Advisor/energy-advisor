@@ -20,14 +20,13 @@ from fastapi import HTTPException
 
 from app.models.EnergyDataFile import EnergyDataFile
 from app.providers.prices.base import MARKET_TIMEZONE, local_day_bounds_utc
-from app.schemas.other import TypeOfMarketEnergyEnum
 from app.schemas.user_profile import UserProfile
 from app.services.pv_forecast import (
     PvForecastService,
     PvForecastUnavailableError,
     PvSetup,
 )
-from app.services.pv_service import NET_BILLING_REFORM_FROM, PVBalancingEngine
+from app.services.prosumer import PRICE_LOOKBACK_DAYS, ExportValuation
 from app.services.weather_service import DayWeather
 
 logger = logging.getLogger(__name__)
@@ -36,7 +35,6 @@ QUARTER = timedelta(minutes=15)
 FORECAST_DAYS = 3
 TYPICAL_DAYS = 28
 TYPICAL_MAX_AGE_DAYS = 60
-PRICE_LOOKBACK_DAYS = 14
 DAYLIGHT_W_M2 = 1.0
 TYPICAL_CACHE_SIZE = 256
 NO_DEVICE_DATA = (0.0, 0.0)
@@ -443,6 +441,7 @@ class PvInsightsService:
             notes.append("Bez wyceny w złotówkach: brak cen rynkowych do taryfy.")
             return balance
 
+        valuation = ExportValuation(self.market, profile)
         estimated = missing = False
         unpriced_kwh = 0.0
         self_value = export_value = 0.0
@@ -457,7 +456,7 @@ class PvInsightsService:
             own_total += own
             if exported <= 0:
                 continue
-            export_price, guessed = self._export_price(profile, hour, price)
+            export_price, guessed = valuation.hour_price(hour, price)
             if export_price is None:
                 missing = True
                 continue
@@ -471,10 +470,10 @@ class PvInsightsService:
             notes.append("Brak cen RCE z tego okresu, więc energii oddanej do sieci nie wyceniamy.")
         elif estimated:
             reason = ("RCEm za ten miesiąc nie jest jeszcze opublikowana, a cen RCE z tego dnia też nie ma"
-                      if self._rcem_replaced(profile, day) else "Brak cen RCE z tego dnia")
+                      if valuation.rcem_replaced(day) else "Brak cen RCE z tego dnia")
             notes.append(f"{reason}: wartość oddania to średnia RCE z tych samych godzin z {PRICE_LOOKBACK_DAYS} "
                          "poprzednich dni.")
-        elif exported_total > 0 and self._rcem_replaced(profile, day):
+        elif exported_total > 0 and valuation.rcem_replaced(day):
             # PSE publikuje RCEm ok. 10. dnia następnego miesiąca; do tego czasu resolver wycenia oddanie po RCE.
             notes.append("RCEm za ten miesiąc nie jest jeszcze opublikowana, więc oddanie wyceniamy cenami RCE "
                          "z poszczególnych godzin. Po publikacji wartość może się zmienić.")
@@ -488,35 +487,3 @@ class PvInsightsService:
             export_price_estimated=estimated and not missing,
         )
         return balance
-
-    def _rcem_replaced(self, profile: UserProfile, day: date) -> bool:
-        """Umowa z RCEm, a RCEm miesiąca tego dnia jeszcze nie ma: oddanie wyceniamy cenami RCE."""
-        return (
-            profile.pv_config.mode != "net_metering"
-            and profile.pv_config.type_of_price == TypeOfMarketEnergyEnum.RCEm
-            and day >= NET_BILLING_REFORM_FROM
-            and not self.market.rcem_published(day)
-        )
-
-    def _export_price(self, profile: UserProfile, hour: datetime, purchase_price: float) -> tuple[float | None, bool]:
-        """Wartość kWh oddanej w godzinie: net-metering opust × cena z sieci; net-billing RCE/RCEm × 1,23
-        (ujemna = 0), a bez opublikowanej ceny średnia z tych samych godzin z ostatnich dni."""
-        if profile.pv_config.mode == "net_metering":
-            return purchase_price * profile.pv_config.effective_k_factor, False
-        engine = PVBalancingEngine(self.market)
-        price_type = profile.pv_config.type_of_price or TypeOfMarketEnergyEnum.RCE
-        quarters = [_naive_local(hour + QUARTER * index) for index in range(4)]
-        try:
-            return sum(engine.get_price_for_pv_energy(q, price_type) for q in quarters) / 4, False
-        except ValueError:
-            pass
-        past = []
-        for days_back in range(1, PRICE_LOOKBACK_DAYS + 1):
-            for quarter in quarters:
-                try:
-                    past.append(engine.get_price_for_pv_energy(quarter - timedelta(days=days_back), TypeOfMarketEnergyEnum.RCE))
-                except ValueError:
-                    continue
-        if not past:
-            return None, True
-        return sum(past) / len(past), True

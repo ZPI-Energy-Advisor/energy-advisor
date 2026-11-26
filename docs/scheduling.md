@@ -238,6 +238,38 @@ Symulacja wysyła do huba dokładnie to, więc plan i symulacja mają tę samą 
 | Pompa ciepła spoza planu | Przebiegi dnia referencyjnego przeskalowane do temperatury doby planu (ZP-119), w mocy pompy; nadwyżka ponad dzień referencyjny wchodzi do zapasu w limicie przyłącza |
 | Bojler spoza planu | Dzień referencyjny (zależy od zwyczajów, nie od pogody) |
 
+**Nadwyżka PV** (`pv_balance.py`, `prosumer.py`, ZP-121). Gdy plan ma prognozę PV, koszt urządzeń to zmiana
+rachunku domu w godzinach, a nie cena kwadransu razy energia. Operator bilansuje pobór i oddanie w każdej
+godzinie, więc w godzinie:
+
+- zużycie C to reszta domu i urządzenia z planu, a produkcja P to prognoza PV;
+- gdy C > P, dom płaci ceny kwadransów za część zużycia, której nie pokryły panele: (C − P) / C × Σ zużycie × cena;
+- gdy C ≤ P, dom nic nie pobiera, a oddaje P − C po wartości oddania.
+
+Bez produkcji to dokładnie energia × cena, więc plan domu bez paneli się nie zmienia. Urządzenie w godzinie
+z nadwyżką kosztuje tyle, ile dom traci na oddaniu, więc plan przesuwa je pod słońce także w G11. Gdy oddanie jest
+warte więcej niż prąd z sieci (wysoka RCE), plan unika nadwyżki.
+
+| Składnik | Skąd |
+|---|---|
+| Reszta domu | Średnie zużycie urządzeń stałych o każdej porze z 7 ostatnich dni w plikach (`average_by_clock`; zapas w limicie przyłącza bierze maksimum), pompa i bojler spoza planu z `background` i bojler z planu |
+| Produkcja | Migawka prognozy z `background.pv_forecast` (także bez falownika w pliku, gdy profil ma panele) pomniejszona o średni błąd prognozy: MAPE z kalibracji, a bez niej 20% (najwyżej 50%) |
+| Cena zakupu | Ceny kwadransów taryfy, jak dotąd |
+| Wartość oddania | `ExportValuation`, wspólne z ekranem „Fotowoltaika”: net-billing RCE (albo RCEm) × 1,23 ze średniej 4 kwadransów godziny, ujemna cena = 0, bez cen na ten dzień średnia RCE z tych samych godzin z 14 dni (szacunek), RCEm przed publikacją wyceniana po RCE; net-metering opust × cena zakupu. Bez żadnych cen oddanie nic nie jest warte (z uwagą) |
+
+Harmonogram (`schedule(..., balance)`) wybiera miejsce grupy po zmianie rachunku przy już ułożonych akcjach,
+a ładowanie auta wypełnia kwadranse, w których kWh najmniej podnosi rachunek. Bojler plan układa przed resztą,
+z ceną kwadransów obniżoną do wartości oddania w godzinach, w których nadwyżka reszty domu pokryje grzałkę.
+Na koniec koszt każdej pozycji to zmiana rachunku godzin bez planu i według planu (`allocate`): zmiana w godzinie
+dzieli się między urządzenia według zużycia × ceny kwadransu, więc pozycje sumują się do kosztu planu.
+
+W odpowiedzi planu `pv`: prognoza (`forecast_kwh`), na ile plan liczy (`planned_kwh`, `uncertainty`, `uncertainty_source`),
+skąd pogoda (`basis`, `weather_fetched_at`), wycena oddania (`export_estimated`, `export_unpriced`) i bilans paneli
+bez planu i według planu (`before`, `after`: `self_kwh`, `export_kwh`, `import_kwh`, `plan_from_pv_kwh`, `export_pln`).
+W planie jest też `balance` (reszta domu, produkcja i wartość oddania). Raport z symulacji (ZP-114) bierze koszty
+pozycji z planu, a zmierzone zużycie urządzeń z planu wycenia tym samym rachunkiem. Bez prognozy PV (brak pogody)
+plan liczy się bez paneli i mówi o tym w uwagach.
+
 **Historia pompy ciepła** (`plan_history.py`): ostatni dzień w plikach przed dniem planu, bo ogrzewanie
 zależy od pogody, a wczoraj jest bliżej jutra niż ten sam dzień tygodnia sprzed tygodnia. Z tego dnia
 są godziny grzania; ilość energii zmienia się o różnicę zużycia przy temperaturze dnia planu i dnia historii

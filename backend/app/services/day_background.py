@@ -58,12 +58,18 @@ class DayBackground:
     extra_load: dict[datetime, float] = field(default_factory=dict)
     # Doba planu jest już miniona (plan demo), więc pogoda jest z archiwum, a nie z prognozy.
     past: bool = False
+    # Prognoza produkcji PV domu na dobę planu (ZP-121): z paneli w profilu, także gdy plik nie ma falownika.
+    pv_forecast: dict | None = None
+    # Dlaczego nie ma prognozy PV: no_installation, no_weather, no_profile albo no_forecast.
+    pv_reason: str | None = None
 
     def history_days(self) -> dict[str, date]:
         return {device.device_id: device.history_day for device in self.devices if device.history_day}
 
     def to_json(self) -> dict:
         return {
+            "pv_forecast": self.pv_forecast,
+            "pv_reason": self.pv_reason,
             "runs": [
                 {"device_id": run.device_id, "start": run.start.isoformat(), "ref": run.ref,
                  "profile_kwh": [round(kwh, 4) + 0.0 for kwh in run.profile_kwh]}
@@ -81,6 +87,8 @@ class DayBackground:
     @classmethod
     def from_json(cls, data: dict) -> "DayBackground":
         return cls(
+            pv_forecast=data.get("pv_forecast"),
+            pv_reason=data.get("pv_reason"),
             runs=[
                 ReplayRun(device_id=run["device_id"], start=datetime.fromisoformat(run["start"]), ref=run["ref"],
                           profile_kwh=list(run["profile_kwh"]))
@@ -155,6 +163,26 @@ def scale_runs(runs: list[ReplayRun], target_kwh: float, cap_kwh: float | None, 
     return result
 
 
+def _forecast_snapshot(forecast) -> dict:
+    """Migawka prognozy PV w planie: produkcja kwadransów (UTC), skąd pogoda i jak bardzo prognoza się myli."""
+    calibration = forecast.calibration
+    return {
+        "quarters": [[q.start.isoformat(), q.kwh] for q in forecast.quarters if q.kwh > 0],
+        "total_kwh": forecast.total_kwh,
+        "basis": forecast.basis,
+        "weather_fetched_at": forecast.weather_fetched_at.isoformat() if forecast.weather_fetched_at else None,
+        "coefficient": calibration.coefficient,
+        "calibration_source": calibration.source,
+        "mape": calibration.mape,
+    }
+
+
+def forecast_production(snapshot: dict | None) -> dict[datetime, float]:
+    if not snapshot:
+        return {}
+    return {datetime.fromisoformat(start): kwh for start, kwh in snapshot["quarters"]}
+
+
 def _pv_runs(quarters, devices: list[str], shares: dict[str, float], plan_date: date) -> list[ReplayRun]:
     runs = []
     for device_id in devices:
@@ -184,21 +212,24 @@ class DayBackgroundService:
         self.heat_pumps = heat_pumps
 
     def build(self, user_id, plan_date: date, planned_devices: set[str], base_info: dict | None = None) -> DayBackground:
+        background = DayBackground(past=self.pv_forecasts is not None and plan_date < self.pv_forecasts.weather.today())
+        forecast, background.pv_reason = self._forecast(user_id, plan_date)
+        if forecast is not None:
+            background.pv_forecast = _forecast_snapshot(forecast)
         devices = [
             device_id for device_id in self.home.device_ids_of_types(user_id, (PV_TYPE, *THERMOSTAT_TYPES))
             if device_id not in planned_devices
         ]
         if not devices:
-            return DayBackground()
+            return background
         info = self.home.device_info(user_id, devices)
         types = {device_id: device_type for device_id, (device_type, _) in info.items()}
         days, history = history_runs(self.home, user_id, plan_date, devices)
-        background = DayBackground(past=self.pv_forecasts is not None and plan_date < self.pv_forecasts.weather.today())
         day_end = day_midnight(plan_date + timedelta(days=1)).astimezone(timezone.utc)
 
         pv = [device_id for device_id in devices if types.get(device_id) == PV_TYPE]
         if pv:
-            self._pv(background, user_id, plan_date, pv, days, history)
+            self._pv(background, forecast, plan_date, pv, days, history)
         for device_id in devices:
             if device_id in pv or device_id not in days:
                 continue
@@ -221,29 +252,31 @@ class DayBackgroundService:
         background.runs.sort(key=lambda run: (run.start, run.device_id))
         return background
 
-    def _pv(self, background: DayBackground, user_id, plan_date: date, devices: list[str],
+    def _forecast(self, user_id, plan_date: date):
+        """Prognoza PV na dobę planu i powód, gdy jej nie ma."""
+        if self.pv_forecasts is None:
+            return None, "no_forecast"
+        profile = self.profile_of(user_id)
+        if profile is None:
+            return None, "no_profile"
+        try:
+            return self.pv_forecasts.forecast(user_id, profile, plan_date), None
+        except NoPvInstallationError:
+            return None, "no_installation"
+        except PvForecastUnavailableError:
+            return None, "no_weather"
+
+    def _pv(self, background: DayBackground, forecast, plan_date: date, devices: list[str],
             days: dict[str, date], history: dict[str, list[ReplayRun]]) -> None:
         reference = {device_id: _energy(history.get(device_id, [])) for device_id in devices}
-        forecast, reason = None, None
-        profile = self.profile_of(user_id)
-        if self.pv_forecasts is None:
-            reason = "no_forecast"
-        elif profile is None:
-            reason = "no_profile"
-        else:
-            try:
-                forecast = self.pv_forecasts.forecast(user_id, profile, plan_date)
-            except NoPvInstallationError:
-                reason = "no_installation"
-            except PvForecastUnavailableError:
-                reason = "no_weather"
         if forecast is None:
             for device_id in devices:
                 runs = history.get(device_id, [])
                 background.runs.extend(runs)
                 if device_id in days:
                     background.devices.append(BackgroundDevice(device_id, PV_TYPE, HISTORY, days[device_id],
-                                                               reference[device_id], reference[device_id], reason))
+                                                               reference[device_id], reference[device_id],
+                                                               background.pv_reason))
             return
         produced = -sum(reference.values())
         shares = {

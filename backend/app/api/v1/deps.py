@@ -273,6 +273,7 @@ def get_plan_service(
             HomeRepository(db), UserRepository(db).valid_profile,
             PvForecastService(weather, DeviceRepository(db)), heat_pumps,
         ),
+        market=DynamicMarketPriceResolver(dynamic_price_repository),
     )
 
 

@@ -66,6 +66,7 @@ from app.services.day_background import HISTORY, PV_TYPE, THERMOSTAT_TYPES, Back
 from app.services.home_replay import ReplayRun, replay_commands, replay_summary
 from app.services.home_state_service import DayEnergy, day_energy
 from app.services.plan_run_report import RunEnergy, cost_report, profile_cost
+from app.services.pv_balance import HouseBalance
 
 
 logger = logging.getLogger(__name__)
@@ -126,6 +127,9 @@ class PlanRunService:
             "prices": plan.result["prices"],
             # Od tej chwili ceny nocy po dniu planu są przybliżone (te same godziny dnia planu), gdy nie było cen.
             "approximate_from": plan.result.get("approximate_from"),
+            # Rachunek domu z PV z planu (ZP-121): reszta domu, prognoza PV i wartość oddania. Raport liczy koszt
+            # urządzeń tym samym rachunkiem; None w planach bez PV.
+            "balance": plan.result.get("balance"),
             # Temperatura wody według planu do wskaźnika na ekranie „Mój dom” (ZP-110). Migawka, bo ponowne
             # ułożenie planu nadpisuje jego wiersz.
             "water_heaters": [
@@ -175,7 +179,7 @@ class PlanRunService:
                 (date.fromisoformat(entry["history_day"]) for entry in replayed if entry["history_day"]), default=None,
             ),
             items=[
-                self._action(item, result, prices).model_dump(mode="json")
+                self._action(item, result, prices, with_pv=tariff["balance"] is not None).model_dump(mode="json")
                 for (item, _), result in zip(planned, plan_results, strict=True)
             ],
             replay=replay_summary(runs, replay_results).model_dump(mode="json"),
@@ -269,15 +273,17 @@ class PlanRunService:
         ]
 
     @staticmethod
-    def _action(item: PlanItemOut, result: HubCommandResult, prices: dict[datetime, float]) -> PlanRunActionOut:
+    def _action(item: PlanItemOut, result: HubCommandResult, prices: dict[datetime, float],
+                with_pv: bool = False) -> PlanRunActionOut:
         """Pozycja planu z wynikiem komendy i kosztami do rachunku: bez planu (od startu bazowego) i według planu.
 
         Koszty liczymy cenami kwadransów planu z pełną dokładnością (w planie są zaokrąglone do grosza);
-        bez ceny któregoś kwadransu zostaje koszt z planu.
+        bez ceny któregoś kwadransu zostaje koszt z planu. Plan z PV (ZP-121) ma koszty z rachunku domu
+        w godzinach, których nie da się policzyć z samej pozycji, więc bierzemy je z planu.
         """
         original = item.original_profile_kwh or []
-        cost_before = profile_cost(original, item.original_start, prices)
-        planned_cost = profile_cost(item.profile_kwh or [], item.start, prices)
+        cost_before = None if with_pv else profile_cost(original, item.original_start, prices)
+        planned_cost = None if with_pv else profile_cost(item.profile_kwh or [], item.start, prices)
         return PlanRunActionOut(
             action_id=item.action_id,
             device_id=item.device_id,
@@ -508,10 +514,13 @@ class PlanRunService:
     def _cost(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> PlanRunCostOut:
         actions = [PlanRunActionOut.model_validate(item) for item in run.items]
         pv_devices = set(self.home_repository.device_ids_of_types(owner.id, (PV_TYPE,)))
+        prices = _prices(run.tariff)
+        balance = run.tariff.get("balance")
         return cost_report(RunEnergy(
             actions=actions,
-            prices=_prices(run.tariff),
+            prices=prices,
             max_grid_kw=run.tariff.get("max_grid_kw"),
+            balance=HouseBalance.from_json(balance, prices) if balance else None,
             energy=energy,
             events=self.event_repository.device_actions(
                 owner.id, run.simulation_id, sorted({action.device_id for action in actions}), until,

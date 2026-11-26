@@ -263,6 +263,27 @@ describe("PlanningPage", () => {
     expect(within(heating).queryByText(/zmieści się/)).toBeNull();
   });
 
+  it("plan z PV pokazuje prognozę, na ile liczy i bilans paneli bez planu i według planu", async () => {
+    const pv = {
+      forecast_kwh: 14.2, planned_kwh: 12.5, uncertainty: 0.12, uncertainty_source: "history", basis: "weather",
+      weather_fetched_at: "2026-11-12T14:20:00Z", coefficient: 0.83, settlement: "net_billing",
+      export_estimated: true, export_unpriced: false,
+      before: { self_kwh: 4.1, export_kwh: 8.4, import_kwh: 20.2, plan_from_pv_kwh: 0.3, export_pln: 2.52 },
+      after: { self_kwh: 6.0, export_kwh: 6.5, import_kwh: 18.3, plan_from_pv_kwh: 2.2, export_pln: 1.95 },
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
+
+    const card = await screen.findByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText(/Prognoza 14,2 kWh, plan liczy na 12,5 kWh \(o 12% mniej/)).toBeTruthy();
+    const row = within(card).getByText("Urządzenia z planu biorą z paneli").closest("tr");
+    expect(within(row).getByText("0,3 kWh")).toBeTruthy();
+    expect(within(row).getByText("2,2 kWh")).toBeTruthy();
+    const value = within(card).getByText("Wartość oddania do depozytu").closest("tr");
+    expect(within(value).getByText("2,52 zł")).toBeTruthy();
+    expect(within(value).getByText("1,95 zł")).toBeTruthy();
+    expect(within(card).getByText(/wartość oddania to średnia z ostatnich dni/)).toBeTruthy();
+  });
+
   it("pompa z modelem z profilu i za małą mocą mówi o tym wprost", async () => {
     const pump = {
       ...HEAT_PUMP_PLAN, kwh: 30, target_kwh: 41.5,
