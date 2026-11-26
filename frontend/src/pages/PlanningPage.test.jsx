@@ -68,6 +68,15 @@ const PLAN = {
   }],
 };
 
+const HEAT_PUMP_PLAN = {
+  device_id: "dev_hp_01", device_name: "Pompa ciepła",
+  plan_temperature: { mean_c: -2.2, min_c: -5.6, max_c: 1.2, source: "forecast" },
+  reference_day: "2026-11-06",
+  reference_temperature: { mean_c: 9.1, min_c: 5, max_c: 12, source: "archive" },
+  reference_kwh: 11.2, target_kwh: 21.4, kwh: 21.4, heat_kwh: 61.8, hot_water_heat_kwh: 5.8, hdd: 20.2, cop: 2.83,
+  model: { source: "history", heat_per_hdd: 2.77, hot_water_kwh: 5.6, floor_heating: true, days: 120, heating_days: 90, mape: 0.07 },
+};
+
 // GET ustawień i ostatniego planu (domyślnie bez planu).
 const mockGet = (body = BODY, plan = null) =>
   vi.spyOn(apiClient, "get").mockImplementation((url) =>
@@ -237,6 +246,36 @@ describe("PlanningPage", () => {
     expect(await within(washer).findByText("Przedziały godzin nachodzą na siebie.")).toBeTruthy();
   });
 
+  it("plan z pompą ciepła pokazuje temperaturę, ciepło dla domu i prąd pompy", async () => {
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [HEAT_PUMP_PLAN] });
+
+    const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
+    expect(within(heating).getByText(/Prognoza na ten dzień: średnio -2°C \(od -6 do 1°C\)/)).toBeTruthy();
+    expect(within(heating).getByText(/W piątek 6 listopada, z którego bierzemy godziny grzania, było średnio 9°C/)).toBeTruthy();
+    expect(within(heating).getByText("62 kWh")).toBeTruthy();
+    expect(within(heating).getByText("20,2 stopniodni")).toBeTruthy();
+    expect(within(heating).getByText("2,8")).toBeTruthy();
+    expect(within(heating).getByText("ogrzewanie podłogowe")).toBeTruthy();
+    expect(within(heating).getByText("21,4 kWh")).toBeTruthy();
+    expect(within(heating).getByText("wtedy 11,2 kWh")).toBeTruthy();
+    expect(within(heating).getByText(/Dopasowane do zużycia pompy z Twoich plików \(120 dni, w tym 90 z ogrzewaniem\)/)).toBeTruthy();
+    expect(within(heating).getByText(/myli średnio o 7%/)).toBeTruthy();
+    expect(within(heating).queryByText(/zmieści się/)).toBeNull();
+  });
+
+  it("pompa z modelem z profilu i za małą mocą mówi o tym wprost", async () => {
+    const pump = {
+      ...HEAT_PUMP_PLAN, kwh: 30, target_kwh: 41.5,
+      model: { ...HEAT_PUMP_PLAN.model, source: "building", days: 0, heating_days: 0, mape: null, floor_heating: false },
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [pump] });
+
+    const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
+    expect(within(heating).getByText("grzejniki")).toBeTruthy();
+    expect(within(heating).getByText(/ok. 41,5 kWh prądu pompy, ale przy jej mocy zmieści się 30,0 kWh/)).toBeTruthy();
+    expect(within(heating).getByText(/Liczone z profilu \(rok budowy i metraż\)/)).toBeTruthy();
+  });
+
   it("od razu pokazuje plan ułożony po ostatnim zapisie i pozwala go zatwierdzić", async () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, PLAN);
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({
@@ -338,7 +377,7 @@ describe("PlanningPage", () => {
     const pump = await card("Pompa ciepła");
     const boiler = await card("Bojler");
     expect(screen.getByRole("heading", { name: "Ogrzewanie i ciepła woda" })).toBeTruthy();
-    expect(within(pump).getByText(/grzanie jak w piątek 6 listopada/)).toBeTruthy();
+    expect(within(pump).getByText(/godziny grzania jak w piątek 6 listopada, ilość według prognozy temperatury/)).toBeTruthy();
     expect(within(pump).queryByText("Kiedy może pracować")).toBeNull();
     fireEvent.change(within(pump).getByRole("combobox"), { target: { value: "2" } });
     expect(within(boiler).getByText(/ciepłą wodę liczymy dla 3 osób z profilu/)).toBeTruthy();

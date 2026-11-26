@@ -114,6 +114,11 @@ class PlanningRepository:
         value = (profile.base_info or {}).get("number_of_residents") if profile else None
         return int(value) if value else None
 
+    def base_info(self, user_id: UUID) -> dict:
+        """Dane domu z profilu (rok budowy, metraż, liczba osób, lokalizacja); pusty słownik bez profilu."""
+        profile = self.db.get(UserProfile, user_id)
+        return dict(profile.base_info or {}) if profile else {}
+
     def get_template(self, user_id: UUID) -> PlanningTemplate | None:
         return self.db.get(PlanningTemplate, user_id)
 

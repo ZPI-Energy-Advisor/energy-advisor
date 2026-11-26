@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
 import Dialog from "./Dialog";
+import HeatPumpPlanCard from "./HeatPumpPlanCard";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
 import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
@@ -102,6 +103,8 @@ function DayPlanView({
           ))}
         </ul>
       )}
+
+      {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} />)}
 
       <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-300" /> bez planu</span>

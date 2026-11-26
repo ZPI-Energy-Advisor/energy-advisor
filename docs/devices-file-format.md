@@ -43,7 +43,8 @@ python backend/scripts/generate_devices_file.py --start 2026-10-01 --days 30 --s
 | `--seed` | `42` | ziarno losowania |
 | `--devices` | `full` | `standard`: bez EV, pompy ciepła i rekuperatora; `full`: wszystkie urządzenia |
 | `--with-pv` | wyłączone | dodaje instalację PV; produkcja z pogody z `--weather` |
-| `--weather` | wymagany z `--with-pv` | plik pogody (JSON); gdy go nie ma, generator pobiera pogodę z Open-Meteo i go zapisuje |
+| `--weather` | wymagany z `--with-pv` | plik pogody (JSON); gdy go nie ma, generator pobiera pogodę z Open-Meteo i go zapisuje. Bez PV daje temperaturę pompie ciepła |
+| `--area-m2`, `--year-built`, `--residents` | `120`, `2010`, `3` | dom dla pompy ciepła: zużycie z temperatury według modelu z [heat-pump.md](heat-pump.md) |
 | `--latitude`, `--longitude` | `51.1`, `17.0` (Wrocław) | miejsce domu przy pobieraniu pogody |
 | `--pv-array` | `6/35/0` | grupa paneli `KWP/NACHYLENIE/AZYMUT` (0 = południe, −90 = wschód); można podać kilka |
 | `--inverter-kw` | suma kWp | moc falownika: górny limit produkcji (`max_power_kw` urządzenia PV) |

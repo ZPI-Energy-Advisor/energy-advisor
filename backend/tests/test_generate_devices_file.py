@@ -324,3 +324,22 @@ def test_weather_file_for_another_place_is_rejected(tmp_path):
     result = run_script(GENERATOR, *PV, "--latitude", 52.2, "--longitude", 21.0, "--out", tmp_path / "a.json")
 
     assert result.returncode != 0 and "jest dla" in result.stderr
+
+
+def test_weather_without_pv_drives_heat_pump(tmp_path):
+    with_weather = json.loads(generate(tmp_path / "a.json", "--weather", WEATHER).decode("utf-8"))
+    climate = json.loads(generate(tmp_path / "b.json").decode("utf-8"))
+
+    def pump(document):
+        return [action["energy_kwh"] for action in document["energy_usage"] if action["device_id"] == "dev_hp_01"]
+
+    assert "dev_pv_01" not in {device["device_id"] for device in with_weather["devices"]}
+    assert pump(with_weather) and pump(climate) and pump(with_weather) != pump(climate)
+
+
+@pytest.mark.parametrize("option, value", [("--area-m2", 0), ("--residents", -1), ("--year-built", 1700)])
+def test_house_parameters_are_checked(tmp_path, option, value):
+    result = run_script(GENERATOR, option, value, "--out", tmp_path / "dom.json")
+
+    assert result.returncode != 0
+    assert "--area-m2" in result.stderr

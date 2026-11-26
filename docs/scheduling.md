@@ -202,7 +202,7 @@ kosztu bez planu tych samych urządzeń.
 | „Wykonaj po” | Łańcuch z poprzednikiem: start zaraz po jego końcu (przesuwają się razem), koniec przed `finish_by` i przed 06:00. Przerwa 0 min daje najwcześniejszy koniec, więc mieści się zawsze, gdy mieści się przerwa do 60 min |
 | Ładowarka EV | Sesja `interruptible` w kwadransach przedziałów podłączenia; bez mocy w pliku 3,7 kW. Energia, która nie mieści się do 06:00, trafia do uwag („Zabraknie X kWh”) |
 | Bojler | Magazyn ciepła z temperaturą wody (`water_heater.py`, niżej); układany poza rdzeniem, a jego grzanie obciąża dom w limicie przyłącza, zanim plan ułoży resztę |
-| Pompa ciepła | Bloki grzania z dnia historii przeniesione na dzień planu; każdy blok `shiftable` przesuwany najwyżej o `shift_hours` |
+| Pompa ciepła | Bloki grzania z dnia historii przeniesione na dzień planu, z energią dopasowaną do prognozowanej temperatury ([heat-pump.md](heat-pump.md)); każdy blok `shiftable` przesuwany najwyżej o `shift_hours` |
 
 **Bojler** (`water_heater.py`): temperatura wody kwadrans po kwadransie w dobie planu (00:00–24:00).
 Grzanie na poranek kolejnego dnia należy do planu na kolejny dzień, więc noc po dobie planu nie wchodzi
@@ -229,8 +229,9 @@ do kosztu bojlera.
 - W odpowiedzi `water_heaters[]`: parametry i `temperatures` (na końcu każdego kwadransu: `before`, `after`).
 
 **Historia pompy ciepła** (`plan_history.py`): ostatni dzień w plikach przed dniem planu, bo ogrzewanie
-zależy od pogody, a wczoraj jest bliżej jutra niż ten sam dzień tygodnia sprzed tygodnia. Bez prognozy
-pogody to przybliżenie.
+zależy od pogody, a wczoraj jest bliżej jutra niż ten sam dzień tygodnia sprzed tygodnia. Z tego dnia
+są godziny grzania; ilość energii zmienia się o różnicę zużycia przy temperaturze dnia planu i dnia historii
+(ZP-119, [heat-pump.md](heat-pump.md)). Bez pogody energia zostaje jak w dniu historii.
 
 **Ceny** z taryfy profilu (`SchedulePriceService`). Brak ceny w którymkolwiek kwadransie dnia planu:
 przy cenie dynamicznej `409` z `detail = {code: "no_prices", message, latest_price_date}` (PSE publikuje
