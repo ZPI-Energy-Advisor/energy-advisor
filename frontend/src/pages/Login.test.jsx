@@ -96,7 +96,7 @@ describe("Login", () => {
     const submit = () => fireEvent.click(screen.getByRole("button", { name: "Zarejestruj się" }));
     const policyCheckbox = () => screen.getByRole("checkbox", { name: /Polityką prywatności/ });
 
-    it("pokazuje zgodę z linkiem do polityki i informację o usuwaniu nieaktywnych kont", () => {
+    it("pokazuje zgodę z linkiem do polityki", () => {
       renderLogin();
       openRegistration();
 
@@ -104,7 +104,7 @@ describe("Login", () => {
       const link = screen.getByRole("link", { name: "Polityką prywatności" });
       expect(link.getAttribute("href")).toBe("/privacy");
       expect(link.getAttribute("target")).toBe("_blank");
-      expect(screen.getByText(/przez 12 miesięcy, usuwamy razem ze wszystkimi danymi/)).toBeTruthy();
+      expect(screen.queryByText(/12 miesięcy/)).toBeNull();
     });
 
     it("bez akceptacji polityki nie wysyła formularza", () => {

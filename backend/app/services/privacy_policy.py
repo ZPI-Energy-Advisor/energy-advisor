@@ -8,7 +8,7 @@ from app.core.errors import ContractError
 
 # Wersja polityki prywatności (data publikacji). Po każdej zmianie treści w app/legal/privacy_policy.md
 # trzeba ją podbić: użytkownicy z akceptacją starszej wersji zostaną poproszeni o ponowną akceptację.
-PRIVACY_POLICY_VERSION = "2026-11-23"
+PRIVACY_POLICY_VERSION = "2026-11-27"
 
 POLICY_FILE = Path(__file__).resolve().parents[1] / "legal" / "privacy_policy.md"
 

@@ -40,13 +40,10 @@ aplikacja nie wyliczy rachunków ani planu.
 
 ## Jak długo przechowujemy dane
 
-- **Konto i wszystkie jego dane:** do usunięcia konta. Konto, na które nikt nie zalogował się przez
-  **12 miesięcy**, usuwamy razem ze wszystkimi danymi (bez wcześniejszego powiadomienia e-mailem).
+- **Konto i wszystkie jego dane:** do usunięcia konta. Usunięcie konta w profilu usuwa od razu wszystkie
+  powiązane z nim dane.
 - **Pliki z odczytami:** do usunięcia pliku lub konta.
-- **Zdarzenia symulacji domu:** 30 dni.
-- **Plany dnia bez przebiegu symulacji:** 90 dni.
-- **Logi serwera:** 14 dni.
-- **Kopie zapasowe bazy:** 30 dni; usunięte konto znika z kopii najpóźniej po tym czasie.
+- **Sesja logowania:** token odświeżania jest ważny 7 dni; przy kolejnym logowaniu zastępuje go nowy.
 
 ## Komu przekazujemy dane
 
@@ -60,7 +57,7 @@ Korzystamy z następujących usług zewnętrznych:
   współrzędnych domu.
 - **Open-Meteo** – same współrzędne domu (bez danych konta) do prognozy pogody i produkcji fotowoltaiki.
 
-Dostęp do serwera, bazy, kopii zapasowych i logów ma wyłącznie zespół projektu.
+Dostęp do serwera, bazy i logów ma wyłącznie zespół projektu.
 Dane nie są przekazywane poza Europejski Obszar Gospodarczy, z wyjątkiem logowania przez Google, które
 odbywa się na zasadach Google.
 
@@ -86,7 +83,7 @@ wyłącznie podpowiedzią.
 
 ## Bezpieczeństwo
 
-Hasła przechowujemy jako skróty bcrypt. Każde zapytanie do aplikacji zwraca wyłącznie dane zalogowanego
+Hasła przechowujemy jako skróty bcrypt, a tokeny odświeżania sesji jako skróty pbkdf2. Każde zapytanie do aplikacji zwraca wyłącznie dane zalogowanego
 użytkownika.
 
 ## Zmiany polityki
