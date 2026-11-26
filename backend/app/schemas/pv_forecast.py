@@ -15,6 +15,12 @@ class PvCalibrationOut(BaseModel):
     source: Literal["history", "default"]
     days: int
     mape: float | None
+    candidate_days: int = 0
+
+
+class PvDataPeriodOut(BaseModel):
+    first_day: date
+    last_day: date
 
 
 class PvForecastResponse(BaseModel):
@@ -67,6 +73,7 @@ class PvOverviewResponse(BaseModel):
     days: list[PvDaySummaryOut]
     first_data_day: date | None
     last_data_day: date | None
+    data_periods: list[PvDataPeriodOut]
     today: date
     latest_day: date
 

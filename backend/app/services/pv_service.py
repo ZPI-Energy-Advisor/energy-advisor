@@ -90,6 +90,9 @@ class DynamicMarketPriceResolver:
             return price
         return self.rce(timestamp)
 
+    def rcem_published(self, month: date) -> bool:
+        return self._rcem_price(month.replace(day=1)) is not None
+
     def _rcem_price(self, month: date) -> float | None:
         if month not in self._rcem_months:
             price = self.price_repository.get_rcem_price(RCEM_SOURCE, month)

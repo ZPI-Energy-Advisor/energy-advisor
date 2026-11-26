@@ -94,6 +94,8 @@ def test_calibration_ignores_snow_day_and_clipped_quarters():
     small_inverter = calibrate(ARRAYS, [SOUTH], {m: min(kwh, 0.5) for m, kwh in production.items()}, days, 2.0)
 
     assert with_snow.days == 29 and abs(with_snow.coefficient - clean.coefficient) < 0.01
+    # Dzień ze śniegiem jest wśród dni z danymi, ale nie w dopasowaniu.
+    assert (with_snow.candidate_days, with_snow.days) == (30, 29)
     assert abs(small_inverter.coefficient - clean.coefficient) < 0.05
 
 

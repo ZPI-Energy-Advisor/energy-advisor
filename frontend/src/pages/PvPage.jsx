@@ -11,7 +11,8 @@ import {
   addDays,
   dayName,
   describeAccuracy,
-  describeArray,
+  describePanels,
+  describePeriods,
   describeConsumption,
   describeSettlement,
   describeWeatherSource,
@@ -89,11 +90,10 @@ function missingConsumptionText(detail, overview) {
       </>
     );
   }
-  const range = `${formatDate(overview.first_data_day)} – ${formatDate(overview.last_data_day)}`;
   if (detail.kind === "past") {
-    return `W Twoich plikach nie ma odczytów z tego dnia (pliki obejmują ${range}), więc nie pokazujemy zużycia domu ani bilansu.`;
+    return `W Twoich plikach nie ma odczytów z tego dnia, więc nie pokazujemy zużycia domu ani bilansu. Pliki obejmują: ${describePeriods(overview.data_periods)}.`;
   }
-  return `Zużycie szacujemy z odczytów z ostatnich 60 dni przed tym dniem, a Twoje pliki obejmują ${range}. Wgraj nowszy plik, żeby zobaczyć bilans.`;
+  return `Zużycie szacujemy z odczytów z ostatnich 60 dni przed tym dniem, a najnowsze dane w Twoich plikach są z ${formatDate(overview.last_data_day)}. Wgraj nowszy plik, żeby zobaczyć bilans.`;
 }
 
 function Balance({ detail, overview }) {
@@ -306,7 +306,7 @@ function PvPage() {
       <div className="mb-6 border-b border-gray-200 pb-4">
         <h2 className="text-xl font-bold text-gray-900">Fotowoltaika</h2>
         <p className="mt-1 text-sm text-gray-600">
-          {formatNumber(installation.total_kwp, 2)} kWp ({installation.arrays.map(describeArray).join("; ")})
+          {describePanels(installation)}
           {installation.inverter_kw ? `, falownik ${formatNumber(installation.inverter_kw, 1)} kW` : ""} · {describeSettlement(installation)}
           {overview.location_label ? ` · ${overview.location_label}` : ""}
         </p>
@@ -365,8 +365,8 @@ function PvPage() {
 
         <p className="-mt-2 mb-3 text-xs text-gray-500">
           Możesz cofnąć się do dowolnego dnia: pogoda jest wtedy z archiwum
-          {overview.first_data_day
-            ? `, a od ${formatDate(overview.first_data_day)} do ${formatDate(overview.last_data_day)} są też produkcja i zużycie z Twoich plików (wszystkie pliki razem)`
+          {overview.data_periods.length
+            ? `, a produkcja i zużycie z Twoich plików są w dniach: ${describePeriods(overview.data_periods)}`
             : ""}.
         </p>
 
