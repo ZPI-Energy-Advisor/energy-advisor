@@ -9,6 +9,11 @@ Użycie (z katalogu projektu):
 Produkcja PV wynika z historycznej pogody (Open-Meteo, plik --weather; gdy go nie ma, generator pobiera
 pogodę i zapisuje ją pod tą ścieżką). --meter-out zapisuje plik licznika (CSV Tauron) tego samego domu:
 pobór i oddanie do sieci to suma urządzeń minus produkcja PV w każdym kwadransie.
+
+Pompa ciepła zużywa tyle, ile wynika z modelu aplikacji (app/services/heat_pump_model.py, ZP-119): ciepło na
+stopniodzień z roku budowy i metrażu (--year-built, --area-m2), ciepła woda z liczby osób (--residents), COP
+zależny od temperatury. Temperatura godzinowa pochodzi z --weather, a bez niego ze średnich miesięcznych dla
+Polski z losowymi wahaniami z dnia na dzień.
     python backend/scripts/generate_devices_file.py --from-meter backend/tests/fixtures/meter_demo_30d.csv \
         --out backend/tests/fixtures/devices_from_meter_demo_30d.json
 
@@ -35,6 +40,16 @@ from zoneinfo import ZoneInfo
 
 from pv_weather import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, Array, Weather, day_production, fetch_weather
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
+from app.services.heat_pump_model import (  # noqa: E402
+    HeatModel,
+    building_model,
+    heating_cop,
+    heating_degree_days,
+    hot_water_cop,
+)
+
 TZ = ZoneInfo("Europe/Warsaw")
 SLOT = timedelta(minutes=15)
 SLOT_HOURS = 0.25
@@ -42,8 +57,18 @@ SLOT_HOURS = 0.25
 LATITUDE = 52.0
 LONGITUDE = 19.0
 
-# Względne zapotrzebowanie pompy ciepła na energię (październik = 1); latem zostaje sama CWU.
-HEATING_FACTOR = {1: 2.0, 2: 1.8, 3: 1.5, 4: 0.9, 5: 0.4, 6: 0.15, 7: 0.12, 8: 0.12, 9: 0.35, 10: 1.0, 11: 1.5, 12: 1.9}
+# Średnia temperatura miesięcy w środkowej Polsce (°C, w przybliżeniu norma 1991–2020), gdy nie ma pliku pogody.
+CLIMATE_C = {1: -1.5, 2: -0.5, 3: 3.0, 4: 8.5, 5: 13.5, 6: 17.0, 7: 19.0, 8: 18.5, 9: 14.0, 10: 9.0, 11: 4.0, 12: 0.0}
+DAILY_SWING_C = 3.5
+ANOMALY_SD_C = 3.0
+ANOMALY_PERSISTENCE = 0.7
+HEAT_PUMP_DEVICE = "dev_hp_01"
+HEAT_PUMP_POWER_KW = 4.5
+HEAT_PUMP_BLOCK_HOURS = (0, 6, 12, 18)
+DESIGN_TEMPERATURE_C = -18.0
+DEFAULT_AREA_M2 = 120.0
+DEFAULT_YEAR_BUILT = 2010
+DEFAULT_RESIDENTS = 3
 DARK_MONTHS = {10, 11, 12, 1, 2}
 DEFAULT_ARRAYS = [Array(6.0, 35, 0)]
 
@@ -203,14 +228,37 @@ class PvSetup:
     weather_error: bool = False
 
 
+@dataclass
+class HeatingSetup:
+    model: HeatModel
+    weather: Weather | None
+    rng: random.Random
+
+
+def heat_pump_power_kw(model: HeatModel) -> float:
+    """Moc pompy dobrana do domu: ciepło przy temperaturze projektowej z zapasem; najmniej typowe 4,5 kW."""
+    heat_kw = model.heat_per_hdd * heating_degree_days(DESIGN_TEMPERATURE_C) / 24
+    needed = 1.25 * heat_kw / heating_cop(DESIGN_TEMPERATURE_C, model.floor_heating)
+    return max(HEAT_PUMP_POWER_KW, math.ceil(needed * 2) / 2)
+
+
 class Generator:
     def __init__(self, house: House, start: date, days: int, rng: random.Random, pv: PvSetup | None = None,
-                 ev_per_week: int | None = None):
-        self.house, self.rng, self.pv = house, rng, pv
+                 heating: HeatingSetup | None = None, ev_per_week: int | None = None):
+        self.house, self.rng, self.pv, self.heating = house, rng, pv, heating
         # Ile razy w tygodniu ładujemy auto; bez opcji 3–4 razy (jak dotąd, ten sam plik dla tego samego seeda).
         self.ev_per_week = ev_per_week
         self.dates = [start + timedelta(days=offset) for offset in range(days)]
         self.weeks = [self._plan_week() for _ in range(math.ceil(days / 7))]
+        self.anomalies = self._anomalies() if heating and heating.weather is None else {}
+
+    def _anomalies(self) -> dict:
+        """Odchyłka temperatury doby od średniej miesiąca: zimne i ciepłe okresy trwają kilka dni."""
+        value, result = 0.0, {}
+        for day in self.dates:
+            value = ANOMALY_PERSISTENCE * value + self.heating.rng.gauss(0.0, ANOMALY_SD_C * math.sqrt(1 - ANOMALY_PERSISTENCE ** 2))
+            result[day] = value
+        return result
 
     def _plan_week(self) -> dict:
         rng = self.rng
@@ -361,15 +409,55 @@ class Generator:
         dishwasher_start = rng.choice([dinner + 60, dinner + 90, bedtime - 60, bedtime - 30])
         self.house.add_program("dev_dw_01", "eco", at(day, dishwasher_start), max_delay_slots=4)
 
+    def _temperatures(self, quarters: list[datetime], day: date) -> list[float]:
+        weather = self.heating.weather
+        if weather is not None:
+            return [weather.temperature_c[weather.hour_index(moment)] for moment in quarters]
+        base = CLIMATE_C[day.month] + self.anomalies[day]
+        return [
+            base - DAILY_SWING_C * math.cos(2 * math.pi * (moment.astimezone(TZ).hour + moment.astimezone(TZ).minute / 60 - 3) / 24)
+            for moment in quarters
+        ]
+
     def _heat_pump(self, day: date) -> None:
-        rng = self.rng
-        factor = HEATING_FACTOR[day.month]
-        for start_min, base_kwh in ((rng.choice([210, 225, 240, 255, 270]), 5.0),
-                                    (rng.choice([990, 1005, 1020, 1035, 1050]), 3.8)):
-            energy = floor2(base_kwh * factor * rng.uniform(0.85, 1.15))
-            slots = max(4, min(28, math.ceil(energy / (1.6 * SLOT_HOURS))))
-            start = at(day, start_min)
-            self.house.add_constant("dev_hp_01", start, start + slots * SLOT, energy, max_delay_slots=4)
+        """Pompa ciepła z modelu: ogrzewanie rozłożone na kwadranse według tego, jak zimno jest w danej chwili,
+        i ciepła woda rano i wieczorem; prąd to ciepło przez COP przy temperaturze kwadransu. Cztery bloki na dobę
+        (od 0, 6, 12 i 18), każdy przycięty do mocy pompy i limitu przyłącza."""
+        if HEAT_PUMP_DEVICE not in self.house.devices or self.heating is None:
+            return
+        model, rng = self.heating.model, self.heating.rng
+        day_start, day_end = at(day, 0), at(day + timedelta(days=1), 0)
+        quarters = [day_start + index * SLOT for index in range(int((day_end - day_start) / SLOT))]
+        temperatures = self._temperatures(quarters, day)
+        mean = sum(temperatures) / len(temperatures)
+        space_heat = model.heat_per_hdd * heating_degree_days(mean) * rng.uniform(0.88, 1.12)
+        weights = [max(18.0 - value, 0.5) for value in temperatures]
+        total_weight = sum(weights)
+        energy = [
+            space_heat * weight / total_weight / heating_cop(value, model.floor_heating)
+            for weight, value in zip(weights, temperatures)
+        ]
+        hot_water = model.hot_water_kwh * rng.uniform(0.85, 1.15)
+        for start_min, share in ((rng.choice([330, 345, 360, 375, 390]), 0.6), (rng.choice([1110, 1140, 1170, 1200]), 0.4)):
+            first = int((at(day, start_min) - day_start) / SLOT)
+            for index in range(first, min(first + 4, len(quarters))):
+                energy[index] += hot_water * share / 4 / hot_water_cop(temperatures[index])
+        cap = self.house.devices[HEAT_PUMP_DEVICE]["max_power_kw"] * SLOT_HOURS
+        offset = int((day_start - self.house.start) / SLOT)
+        values = [
+            floor2(max(0.0, min(value, cap, self.house.limit - self.house.load[offset + index])))
+            for index, value in enumerate(energy)
+        ]
+        bounds = [int((at(day, hour * 60) - day_start) / SLOT) for hour in HEAT_PUMP_BLOCK_HOURS] + [len(values)]
+        for first, last in zip(bounds, bounds[1:]):
+            while first < last and values[first] == 0:
+                first += 1
+            while last > first and values[last - 1] == 0:
+                last -= 1
+            profile = values[first:last]
+            if sum(profile) >= 0.05:
+                self.house.add(HEAT_PUMP_DEVICE, day_start + first * SLOT, profile, energy=round(sum(profile), 2),
+                               profile_kwh=profile)
 
     def _ev(self, day, plan, back, weekend, home_office) -> None:
         if not plan["ev"] or "dev_ev_01" not in self.house.devices:
@@ -409,7 +497,6 @@ class Generator:
                            profile_kwh=profile)
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
 OTHER_DEVICE_ID = "dev_other_01"
 METER_DECIMALS = 3
 # Urządzenia o dużej mocy dostają akcje tam, gdzie licznik pokazuje nadwyżkę poboru; pozostałe
@@ -712,7 +799,9 @@ def pv_device(arrays: list[Array], inverter_kw: float) -> dict:
 
 
 def build_house(start: date, days: int, seed: int, device_set: str, max_grid_kw: float,
-                with_water_heater: bool = False, pv: PvSetup | None = None, ev_per_week: int | None = None) -> House:
+                with_water_heater: bool = False, pv: PvSetup | None = None, weather: Weather | None = None,
+                area_m2: float = DEFAULT_AREA_M2, year_built: int = DEFAULT_YEAR_BUILT,
+                residents: int = DEFAULT_RESIDENTS, ev_per_week: int | None = None) -> House:
     devices = {
         d["device_id"]: d for d in DEVICES
         if (d["device_id"] != PV_DEVICE or pv) and (device_set == "full" or d["device_id"] not in FULL_ONLY)
@@ -720,10 +809,15 @@ def build_house(start: date, days: int, seed: int, device_set: str, max_grid_kw:
     }
     if pv:
         devices[PV_DEVICE] = pv_device(pv.arrays, pv.inverter_kw)
+    heating = None
+    if HEAT_PUMP_DEVICE in devices:
+        model = building_model(year_built, area_m2, residents, hot_water=not with_water_heater)
+        heating = HeatingSetup(model, weather, random.Random(f"heat-{seed}"))
+        devices[HEAT_PUMP_DEVICE] = {**devices[HEAT_PUMP_DEVICE], "max_power_kw": heat_pump_power_kw(model)}
     period_start = datetime.combine(start, time(), TZ).astimezone(timezone.utc)
     period_end = datetime.combine(start + timedelta(days=days), time(), TZ).astimezone(timezone.utc)
     house = House(period_start, period_end, max_grid_kw, devices)
-    Generator(house, start, days, random.Random(seed), pv, ev_per_week).run()
+    Generator(house, start, days, random.Random(seed), pv, heating=heating, ev_per_week=ev_per_week).run()
     return house
 
 
@@ -761,9 +855,8 @@ def build_meter_csv(house: House) -> str:
     return "\n".join(lines) + "\n"
 
 
-def load_pv(args, parser) -> PvSetup:
-    arrays = [Array.parse(text) for text in args.pv_array] if args.pv_array else DEFAULT_ARRAYS
-    inverter_kw = args.inverter_kw or round(sum(array.kwp for array in arrays), 3)
+def load_weather(args, parser, arrays: list[Array]) -> Weather:
+    """Pogoda godzinowa z pliku --weather; gdy pliku nie ma, pobiera ją z Open-Meteo i zapisuje."""
     period_start = datetime.combine(args.start, time(), TZ).astimezone(timezone.utc)
     period_end = datetime.combine(args.start + timedelta(days=args.days), time(), TZ).astimezone(timezone.utc)
     path = Path(args.weather)
@@ -774,12 +867,22 @@ def load_pv(args, parser) -> PvSetup:
                          f"{args.latitude}, {args.longitude}; podaj inny plik albo usuń ten, żeby pobrać pogodę.")
     else:
         print(f"Pobieram pogodę z Open-Meteo do {path}")
-        weather = fetch_weather(args.latitude, args.longitude, period_start, period_end, arrays)
+        weather = fetch_weather(args.latitude, args.longitude, period_start, period_end, arrays or DEFAULT_ARRAYS)
         path.write_text(weather.to_json(), encoding="utf-8", newline="\n")
     if not weather.covers(period_start, period_end, [array.key for array in arrays]):
         parser.error(f"Plik pogody {path} nie obejmuje całego okresu albo wszystkich grup paneli; usuń go, "
                      "żeby pobrać pogodę ponownie.")
+    return weather
+
+
+def load_pv(args, weather: Weather) -> PvSetup:
+    arrays = pv_arrays(args)
+    inverter_kw = args.inverter_kw or round(sum(array.kwp for array in arrays), 3)
     return PvSetup(weather, arrays, inverter_kw, random.Random(f"pv-{args.seed}"), args.weather_error)
+
+
+def pv_arrays(args) -> list[Array]:
+    return [Array.parse(text) for text in args.pv_array] if args.pv_array else DEFAULT_ARRAYS
 
 
 def main() -> int:
@@ -803,6 +906,12 @@ def main() -> int:
     parser.add_argument("--ev-charges-per-week", type=int, choices=range(1, 8), metavar="1-7",
                         help="ile razy w tygodniu ładujemy auto (domyślnie losowo 3–4)")
     parser.add_argument("--with-water-heater", action="store_true", help="dodaje bojler elektryczny (water_heater)")
+    parser.add_argument("--area-m2", type=float, default=DEFAULT_AREA_M2,
+                        help=f"ogrzewana powierzchnia domu (domyślnie {DEFAULT_AREA_M2:g} m²)")
+    parser.add_argument("--year-built", type=int, default=DEFAULT_YEAR_BUILT,
+                        help=f"rok budowy domu (domyślnie {DEFAULT_YEAR_BUILT})")
+    parser.add_argument("--residents", type=int, default=DEFAULT_RESIDENTS,
+                        help=f"liczba mieszkańców (domyślnie {DEFAULT_RESIDENTS})")
     parser.add_argument("--max-grid-kw", type=float, default=9.0, help="limit mocy przyłącza (domyślnie 9 kW)")
     parser.add_argument("--from-meter", metavar="PLIK",
                         help="plik licznika (CSV, np. Tauron); okres i pobór pochodzą z niego, bez PV")
@@ -823,16 +932,20 @@ def main() -> int:
         parser.error("--pv-array, --inverter-kw i --weather-error wymagają --with-pv")
     if args.ev_charges_per_week and (args.from_meter or args.devices != "full"):
         parser.error("--ev-charges-per-week działa dla domu generowanego od zera z --devices full (z autem)")
+    if args.area_m2 <= 0 or args.residents < 0 or not 1800 < args.year_built <= 2027:
+        parser.error("--area-m2 musi być dodatnie, --residents nieujemne, a --year-built od 1801 do 2027")
 
     if args.from_meter:
         content = generate_from_meter(args.from_meter, args.seed, args.devices)
     else:
         try:
-            pv = load_pv(args, parser) if args.with_pv else None
+            weather = load_weather(args, parser, pv_arrays(args) if args.with_pv else []) if args.weather else None
         except ValueError as error:
             parser.error(str(error))
+        pv = load_pv(args, weather) if args.with_pv else None
         house = build_house(args.start, args.days, args.seed, args.devices, args.max_grid_kw,
-                            args.with_water_heater, pv, args.ev_charges_per_week)
+                            args.with_water_heater, pv, weather, args.area_m2, args.year_built, args.residents,
+                            ev_per_week=args.ev_charges_per_week)
         content = dump(build_document(house)) + "\n"
         if args.meter_out:
             with open(args.meter_out, "w", encoding="utf-8", newline="\n") as handle:

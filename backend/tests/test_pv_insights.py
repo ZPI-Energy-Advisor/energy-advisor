@@ -208,12 +208,26 @@ def test_consumption_on_device_days_adds_back_what_panels_covered(db, house):
     assert day.consumption_kwh > day.balance.import_kwh
 
 
-def test_dst_day_has_100_quarters_with_split_repeated_hour(db, house):
+def test_dst_day_from_devices_has_100_quarters_each_with_its_own_value(db, house):
     day = detail(db, house, dt.date(2026, 10, 25))
 
-    repeated = [i for i in day.intervals if i.start in (dt.datetime(2026, 10, 25, 0, 0, tzinfo=UTC), dt.datetime(2026, 10, 25, 1, 0, tzinfo=UTC))]
     assert len(day.intervals) == 100
-    assert repeated[0].consumption_kwh == pytest.approx(repeated[1].consumption_kwh)
+    assert all(i.consumption_kwh is not None for i in day.intervals)
+    assert sum(i.consumption_kwh for i in day.intervals) == pytest.approx(day.consumption_kwh, abs=0.01)
+
+
+def test_dst_day_from_meter_splits_the_repeated_hour_evenly():
+    quarters = [dt.datetime(2026, 10, 24, 22, 0, tzinfo=UTC) + dt.timedelta(minutes=15 * i) for i in range(100)]
+    readings = {}
+    for moment in quarters:
+        readings.setdefault(_naive_local(moment), (0.4, 0.0, "plik"))
+
+    day = meter_day(quarters, readings, {}, files_with_export={"plik"})
+
+    repeated = [day.consumption[dt.datetime(2026, 10, 25, hour, 0, tzinfo=UTC)] for hour in (0, 1)]
+    assert len(day.consumption) == 100
+    assert repeated == [pytest.approx(0.2), pytest.approx(0.2)]
+    assert day.consumption[quarters[0]] == pytest.approx(0.4)
 
 
 def test_future_day_uses_forecast_and_typical_consumption_with_estimated_export_price(db, house):

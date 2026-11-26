@@ -191,7 +191,7 @@ function AutoDeviceCard({ device, preference, errors, onChange }) {
                 ? "ile ciepłej wody zużywacie, bierzemy z historii"
                 : `ciepłą wodę liczymy dla ${device.residents} ${device.residents === 1 ? "osoby" : "osób"} z profilu`
               : device.history_day
-                ? `grzanie jak ${onDay(device.history_day)}`
+                ? `godziny grzania jak ${onDay(device.history_day)}, ilość według prognozy temperatury`
                 : "nie ma jej w historii zużycia, plan ją pominie"}
           </p>
         </div>
@@ -218,8 +218,8 @@ function AutoDeviceCard({ device, preference, errors, onChange }) {
             {SHIFT_OPTIONS.map((hours) => <option key={hours} value={hours}>{hours} h</option>)}
           </select>
           <span className="mt-1 block text-xs text-gray-500">
-            Pompa grzeje tyle co zwykle, tylko trochę wcześniej albo później, kiedy prąd jest tańszy. Dom trzyma
-            ciepło, więc nie poczujesz różnicy.
+            Pompa grzeje tyle, ile dom potrzebuje przy prognozowanej temperaturze, tylko trochę wcześniej albo
+            później, kiedy prąd jest tańszy. Dom trzyma ciepło, więc nie poczujesz różnicy.
           </span>
           <FieldError message={errors.shift_hours} />
         </label>

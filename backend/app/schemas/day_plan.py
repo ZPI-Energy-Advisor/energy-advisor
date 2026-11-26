@@ -60,6 +60,40 @@ class WaterHeaterPlanOut(BaseModel):
     temperatures: list[WaterTemperatureOut]
 
 
+class HeatPumpTemperatureOut(BaseModel):
+    mean_c: float
+    min_c: float
+    max_c: float
+    source: str
+
+
+class HeatPumpModelOut(BaseModel):
+    # "history": dopasowany do zużycia pompy z plików, "building": z profilu, "mixed": ogrzewanie z profilu, woda z plików.
+    source: Literal["history", "building", "mixed"]
+    heat_per_hdd: float
+    hot_water_kwh: float
+    floor_heating: bool
+    days: int
+    heating_days: int
+    mape: float | None = None
+
+
+class HeatPumpPlanOut(BaseModel):
+    device_id: str
+    device_name: str
+    plan_temperature: HeatPumpTemperatureOut
+    reference_day: date
+    reference_temperature: HeatPumpTemperatureOut
+    reference_kwh: float
+    target_kwh: float
+    kwh: float
+    heat_kwh: float
+    hot_water_heat_kwh: float
+    hdd: float
+    cop: float
+    model: HeatPumpModelOut
+
+
 class DayPlanOut(BaseModel):
     id: UUID
     plan_date: date
@@ -84,3 +118,4 @@ class DayPlanOut(BaseModel):
     items: list[PlanItemOut]
     prices: list[SchedulePriceOut]
     water_heaters: list[WaterHeaterPlanOut] = []
+    heat_pumps: list[HeatPumpPlanOut] = []

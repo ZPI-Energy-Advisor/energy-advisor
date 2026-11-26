@@ -423,6 +423,27 @@ class DeviceRepository:
             )
         ).all()]
 
+    def daily_energy_by_type(self, user_id: UUID, device_type: str) -> dict:
+        """Energia urządzeń danego typu na dobę lokalną (kWh), bez wersji przykrytych nowszym plikiem."""
+        day, _ = _local_day_and_slot(DeviceSlotUsage.slot_start)
+        rows = self.db.execute(
+            select(day.label("day"), func.sum(DeviceSlotUsage.kwh))
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceInstance.device_type == device_type,
+                DeviceSlotUsage.superseded.is_(False),
+            )
+            .group_by("day")
+        ).all()
+        return {datetime.strptime(text_day, "%Y-%m-%d").date(): float(kwh) for text_day, kwh in rows}
+
+    def has_device_type(self, user_id: UUID, device_type: str) -> bool:
+        return self.db.execute(
+            select(DeviceInstance.id).where(DeviceInstance.user_id == user_id, DeviceInstance.device_type == device_type).limit(1)
+        ).first() is not None
+
     def completed_file_ids(self, user_id: UUID) -> tuple[UUID, ...]:
         return tuple(sorted(self.db.execute(
             select(EnergyDataFile.id).where(
