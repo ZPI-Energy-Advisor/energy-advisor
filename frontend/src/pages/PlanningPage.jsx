@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import DayPlanView, { FlatTariffNote } from "../components/DayPlanView";
 import { useCurrentUser } from "../hooks/useCurrentUser";
-import { noPricesFrom, onDay } from "../utils/dayPlan";
+import { noPricesFrom } from "../utils/dayPlan";
 import { getApiErrorMessage } from "../utils/energyFiles";
 import { formatDayMonth } from "../utils/schedule";
 import { DEVICE_TYPE_LABELS } from "../utils/home";
@@ -171,13 +171,56 @@ function EvEnergy({ device, preference, errors, efficiency, onChange }) {
 }
 
 const AUTO_KINDS = new Set(["heat_pump", "water_heater"]);
-const SHIFT_OPTIONS = [1, 2, 3];
+const DEFAULT_INDOOR_C = 21;
+const INDOOR_OPTIONS = [18, 19, 20, 21, 22, 23, 24];
+
+// Godziny „woda gotowa na”: bojler wymaga co najmniej jednej, pompa ciepła może nie mieć żadnej.
+function ReadyTimesEditor({ device, times, error, required, onChange }) {
+  const setTime = (index, value) => onChange(times.map((time, position) => (position === index ? value : time)));
+  return (
+    <>
+      <ul className="mt-2 flex flex-wrap gap-3">
+        {times.map((time, index) => (
+          <li key={index} className="flex items-center gap-1">
+            <input
+              type="time"
+              step={900}
+              className={INPUT}
+              aria-label={`${device.device_name}: woda gotowa na (${index + 1})`}
+              value={time}
+              onChange={(event) => setTime(index, event.target.value)}
+            />
+            {(times.length > 1 || !required) && (
+              <button
+                type="button"
+                className="p-1.5 text-gray-400 hover:text-red-600"
+                aria-label={`Usuń godzinę ${index + 1}: ${device.device_name}`}
+                onClick={() => onChange(times.filter((_, position) => position !== index))}
+              >
+                <FiTrash2 aria-hidden="true" />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <FieldError message={error} />
+      <button
+        type="button"
+        className={`${LINK_BUTTON} mt-2`}
+        disabled={times.length >= MAX_WINDOWS}
+        onClick={() => onChange([...times, nextReadyTime(times)])}
+      >
+        <FiPlus aria-hidden="true" /> Dodaj godzinę
+      </button>
+    </>
+  );
+}
 
 // Pompa ciepła i bojler (ZP-112): bez przedziałów i programów, energia z historii zużycia w plikach.
-function AutoDeviceCard({ device, preference, errors, onChange }) {
+function AutoDeviceCard({ device, preference, errors, hasWaterHeater, onChange }) {
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type] ?? device.device_category;
   const times = preference.ready_times ?? [];
-  const setTime = (index, value) => onChange({ ready_times: times.map((time, position) => (position === index ? value : time)) });
+  const setTimes = (value) => onChange({ ready_times: value });
 
   return (
     <section className={CARD} aria-label={device.device_name} data-has-error={Object.keys(errors).length ? "" : undefined}>
@@ -190,9 +233,7 @@ function AutoDeviceCard({ device, preference, errors, onChange }) {
               ? device.hot_water_source === "history"
                 ? "ile ciepłej wody zużywacie, bierzemy z historii"
                 : `ciepłą wodę liczymy dla ${device.residents} ${device.residents === 1 ? "osoby" : "osób"} z profilu`
-              : device.history_day
-                ? `godziny grzania jak ${onDay(device.history_day)}, ilość według prognozy temperatury`
-                : "nie ma jej w historii zużycia, plan ją pominie"}
+              : "plan trzyma temperaturę w domu według prognozy pogody"}
           </p>
         </div>
         <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -207,22 +248,36 @@ function AutoDeviceCard({ device, preference, errors, onChange }) {
       </div>
 
       {preference.enabled && device.kind === "heat_pump" && (
-        <label className="mt-4 block text-sm text-gray-700">
-          <span className="block font-medium mb-1">Można przesunąć grzanie o</span>
-          <select
-            className={`${INPUT} w-full sm:w-auto`}
-            value={preference.shift_hours ?? ""}
-            onChange={(event) => onChange({ shift_hours: event.target.value ? Number(event.target.value) : null })}
-          >
-            <option value="">Wybierz</option>
-            {SHIFT_OPTIONS.map((hours) => <option key={hours} value={hours}>{hours} h</option>)}
-          </select>
-          <span className="mt-1 block text-xs text-gray-500">
-            Pompa grzeje tyle, ile dom potrzebuje przy prognozowanej temperaturze, tylko trochę wcześniej albo
-            później, kiedy prąd jest tańszy. Dom trzyma ciepło, więc nie poczujesz różnicy.
-          </span>
-          <FieldError message={errors.shift_hours} />
-        </label>
+        <div className="mt-4 space-y-4 text-sm text-gray-700">
+          <label className="block">
+            <span className="block font-medium mb-1">Temperatura w domu</span>
+            <select
+              className={`${INPUT} w-full sm:w-auto`}
+              value={preference.indoor_temp_c ?? DEFAULT_INDOOR_C}
+              onChange={(event) => onChange({ indoor_temp_c: Number(event.target.value) })}
+            >
+              {INDOOR_OPTIONS.map((degrees) => (
+                <option key={degrees} value={degrees}>
+                  {degrees}°C{degrees === DEFAULT_INDOOR_C ? " (jak zwykle)" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-gray-500">
+              Plan trzyma w domu tę temperaturę (± 1°C), a grzeje głównie w tańszych godzinach.
+            </span>
+            <FieldError message={errors.indoor_temp_c} />
+          </label>
+          {!hasWaterHeater && (
+          <div>
+            <p className="font-medium">Ciepła woda z pompy gotowa na</p>
+            <p className="text-xs text-gray-500">
+              Pompa nagrzeje wodę w zasobniku na te godziny, kiedy prąd jest tani.{" "}
+              {times.length ? QUARTER_HINT : "Bez godzin woda będzie gotowa na 6:00 i 18:00."}
+            </p>
+            <ReadyTimesEditor device={device} times={times} error={errors.ready_times} onChange={setTimes} />
+          </div>
+          )}
+        </div>
       )}
 
       {preference.enabled && device.kind === "water_heater" && (
@@ -260,39 +315,7 @@ function AutoDeviceCard({ device, preference, errors, onChange }) {
             O tych godzinach woda będzie gorąca, a poza nimi nigdy zimna. Plan nagrzeje ją na zapas, kiedy prąd jest
             tani. {QUARTER_HINT}
           </p>
-          <ul className="mt-2 flex flex-wrap gap-3">
-            {times.map((time, index) => (
-              <li key={index} className="flex items-center gap-1">
-                <input
-                  type="time"
-                  step={900}
-                  className={INPUT}
-                  aria-label={`${device.device_name}: woda gotowa na (${index + 1})`}
-                  value={time}
-                  onChange={(event) => setTime(index, event.target.value)}
-                />
-                {times.length > 1 && (
-                  <button
-                    type="button"
-                    className="p-1.5 text-gray-400 hover:text-red-600"
-                    aria-label={`Usuń godzinę ${index + 1}: ${device.device_name}`}
-                    onClick={() => onChange({ ready_times: times.filter((_, position) => position !== index) })}
-                  >
-                    <FiTrash2 aria-hidden="true" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          <FieldError message={errors.ready_times} />
-          <button
-            type="button"
-            className={`${LINK_BUTTON} mt-2`}
-            disabled={times.length >= MAX_WINDOWS}
-            onClick={() => onChange({ ready_times: [...times, nextReadyTime(times)] })}
-          >
-            <FiPlus aria-hidden="true" /> Dodaj godzinę
-          </button>
+          <ReadyTimesEditor device={device} times={times} error={errors.ready_times} required onChange={setTimes} />
         </div>
       )}
     </section>
@@ -593,6 +616,8 @@ function PlanningPage() {
   const hasErrors = Object.values(errors).some((deviceErrors) => Object.keys(deviceErrors ?? {}).length);
   const scheduled = devices.filter((device) => !AUTO_KINDS.has(device.kind));
   const automatic = devices.filter((device) => AUTO_KINDS.has(device.kind));
+  // W domu z bojlerem wodę grzeje bojler, więc przy pompie nie pytamy o godziny ciepłej wody.
+  const hasWaterHeater = devices.some((device) => device.kind === "water_heater");
   const card = (device) => {
     const shared = {
       device,
@@ -601,7 +626,7 @@ function PlanningPage() {
       onChange: (change) => changeDevice(device.device_id, change),
     };
     return AUTO_KINDS.has(device.kind)
-      ? <AutoDeviceCard key={device.device_id} {...shared} />
+      ? <AutoDeviceCard key={device.device_id} {...shared} hasWaterHeater={hasWaterHeater} />
       : (
         <DeviceCard
           key={device.device_id}
@@ -618,8 +643,7 @@ function PlanningPage() {
     <div className="max-w-4xl mx-auto pb-12">
       <h2 ref={topRef} className="text-xl font-bold text-gray-900">Plan na jutro</h2>
       <p className="mt-1 mb-6 border-b border-gray-200 pb-4 text-sm text-gray-500">
-        Powiedz, które urządzenia mają jutro pracować i kiedy mogą to robić. Na tej podstawie ułożymy najtańszy plan.
-        Ustawienia zapamiętamy, więc kolejnego dnia wystarczy zmienić to, co trzeba.
+        Zaznacz, co ma jutro pracować i kiedy. Ułożymy najtańszy plan, a ustawienia zapamiętamy.
       </p>
 
       {loadError && <p className="p-3 rounded bg-red-50 text-sm text-red-700" role="alert">{loadError}</p>}

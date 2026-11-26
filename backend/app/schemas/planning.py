@@ -13,6 +13,8 @@ QUARTER_TIME = r"^([01]\d|2[0-3]):(00|15|30|45)$"
 MAX_WINDOWS = 4
 MAX_READY_TIMES = 4
 MAX_SHIFT_HOURS = 3
+MIN_INDOOR_C = 16
+MAX_INDOOR_C = 25
 # Rodzaj urządzenia w planie: z programem, ładowarka EV albo planowane automatycznie z historii.
 DeviceKind = Literal["program", "ev", "heat_pump", "water_heater"]
 
@@ -47,9 +49,12 @@ class DevicePreference(BaseModel):
     target_percent: int | None = Field(default=None, ge=0, le=100)
     # Pompa ciepła: bloki grzania z historii można przesunąć najwyżej o tyle godzin w obie strony.
     shift_hours: int | None = Field(default=None, ge=1, le=MAX_SHIFT_HOURS)
+    # Pompa ciepła: temperatura w domu; bez wartości 21 °C (tyle odpowiada zużyciu z historii).
+    indoor_temp_c: int | None = Field(default=None, ge=MIN_INDOOR_C, le=MAX_INDOOR_C)
     # Bojler: godziny, na które woda ma być ciepła (pobór ciepłej wody zaczyna się o tych godzinach).
+    # Pompa ciepła: to samo dla wody z jej zasobnika; bez godzin woda grzeje się jak w dniu referencyjnym.
     ready_times: list[str] = Field(default_factory=list, max_length=MAX_READY_TIMES)
-    # Bojler: pojemność zbiornika; bez wartości domyślna dla liczby osób z profilu.
+    # Bojler: pojemność zbiornika; bez wartości domyślna dla liczby osób z profilu (pompa: 200 l).
     tank_liters: int | None = Field(default=None, ge=30, le=500)
 
     @field_validator("ready_times")

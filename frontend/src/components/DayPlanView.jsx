@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
 import Dialog from "./Dialog";
 import HeatPumpPlanCard from "./HeatPumpPlanCard";
+import IndoorTemperatureChart from "./IndoorTemperatureChart";
+import MoreInfo from "./MoreInfo";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
 import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
@@ -54,6 +56,10 @@ function DayPlanView({
 }) {
   const [waterHeater, setWaterHeater] = useState(null);
   const closeWaterHeater = useCallback(() => setWaterHeater(null), []);
+  // Pompa ciepła, której temperaturę w domu pokazuje okienko (jak temperatura wody bojlera).
+  const [indoorPump, setIndoorPump] = useState(null);
+  const closeIndoorPump = useCallback(() => setIndoorPump(null), []);
+  const indoorPumps = (plan.heat_pumps ?? []).filter((pump) => pump.mode === "indoor" && pump.temperatures?.length);
   const approved = plan.status === "approved";
   const outdated = plan.plan_date < localTomorrow();
   const rows = planRows(plan.items);
@@ -104,7 +110,7 @@ function DayPlanView({
         </ul>
       )}
 
-      {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} />)}
+      {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} planDate={plan.plan_date} />)}
 
       <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-300" /> bez planu</span>
@@ -210,23 +216,32 @@ function DayPlanView({
             <FiDroplet aria-hidden="true" /> Temperatura wody
           </button>
         ))}
+        {indoorPumps.map((pump) => (
+          <button key={pump.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setIndoorPump(pump)}>
+            <FiHome aria-hidden="true" /> Temperatura w domu
+          </button>
+        ))}
         {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
         {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
       </div>
 
 
       {plan.notes.length > 0 && (
-        <section>
-          <h4 className="text-sm font-medium text-gray-700">Jak ułożyliśmy plan</h4>
-          <ul className="mt-2 p-3 text-sm text-gray-700 bg-gray-50 rounded-lg space-y-1 list-disc pl-6">
+        <MoreInfo summary="Jak ułożyliśmy plan">
+          <ul className="p-3 text-sm text-gray-700 bg-gray-50 rounded-lg space-y-1 list-disc pl-6">
             {plan.notes.map((note) => <li key={note}>{note}</li>)}
           </ul>
-        </section>
+        </MoreInfo>
       )}
 
       {waterHeater && (
         <Dialog title={`Temperatura wody: ${waterHeater.device_name}`} onClose={closeWaterHeater}>
           <WaterTemperatureChart heater={waterHeater} />
+        </Dialog>
+      )}
+      {indoorPump && (
+        <Dialog title={`Temperatura w domu: ${indoorPump.device_name}`} onClose={closeIndoorPump}>
+          <IndoorTemperatureChart pump={indoorPump} />
         </Dialog>
       )}
     </div>

@@ -47,6 +47,9 @@ class BackgroundDevice:
     reference_kwh: float
     kwh: float
     reason: str | None = None
+    # PV z prognozy przy panelach szacunkowych: True, a `effective_kwp` to moc dopasowana do produkcji z plików.
+    estimated_panels: bool = False
+    effective_kwp: float | None = None
 
 
 @dataclass
@@ -73,7 +76,8 @@ class DayBackground:
                 {"device_id": device.device_id, "device_type": device.device_type, "source": device.source,
                  "history_day": device.history_day.isoformat() if device.history_day else None,
                  "reference_kwh": round(device.reference_kwh, 2) + 0.0, "kwh": round(device.kwh, 2) + 0.0,
-                 "reason": device.reason}
+                 "reason": device.reason, "estimated_panels": device.estimated_panels,
+                 "effective_kwp": device.effective_kwp}
                 for device in self.devices
             ],
         }
@@ -91,6 +95,7 @@ class DayBackground:
                     device_id=device["device_id"], device_type=device["device_type"], source=device["source"],
                     history_day=date.fromisoformat(device["history_day"]) if device.get("history_day") else None,
                     reference_kwh=device["reference_kwh"], kwh=device["kwh"], reason=device.get("reason"),
+                    estimated_panels=device.get("estimated_panels", False), effective_kwp=device.get("effective_kwp"),
                 )
                 for device in data.get("devices", [])
             ],
@@ -254,8 +259,10 @@ class DayBackgroundService:
         background.runs.extend(runs)
         for device_id in devices:
             energy = _energy([run for run in runs if run.device_id == device_id])
-            background.devices.append(BackgroundDevice(device_id, PV_TYPE, FORECAST, days.get(device_id),
-                                                       reference[device_id], energy, forecast.basis))
+            background.devices.append(BackgroundDevice(
+                device_id, PV_TYPE, FORECAST, days.get(device_id), reference[device_id], energy, forecast.basis,
+                estimated_panels=forecast.estimated_installation, effective_kwp=forecast.calibration.effective_kwp,
+            ))
 
     def _heat_pump(self, user_id, plan_date: date, source: date, runs: list[ReplayRun], reference: float,
                    power_kw: float | None, day_end: datetime, base_info: dict | None) -> list[ReplayRun] | None:

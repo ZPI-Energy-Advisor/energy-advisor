@@ -34,7 +34,7 @@ router = APIRouter(prefix="/pv", tags=["PV"])
 def _calibration_out(calibration) -> PvCalibrationOut:
     return PvCalibrationOut(
         coefficient=calibration.coefficient, source=calibration.source, days=calibration.days, mape=calibration.mape,
-        candidate_days=calibration.candidate_days,
+        candidate_days=calibration.candidate_days, effective_kwp=calibration.effective_kwp,
     )
 
 

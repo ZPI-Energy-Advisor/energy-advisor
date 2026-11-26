@@ -150,12 +150,10 @@ function TomorrowPriceCards() {
       {/* Bez cennika nie ma czego porównywać, więc nie odsyłamy do analizy taryf. */}
       {insights && !insights.profile_dynamic && insights.status !== "no_tariff_data" && (
         <p className="mt-3 text-xs md:text-sm text-gray-500">
-          To ceny taryfy dynamicznej
-          {profileTariff?.tariff_type ? `, a Ty masz taryfę ${profileTariff.tariff_type}` : ", której teraz nie masz"}.{" "}
+          To ceny taryfy dynamicznej.{" "}
           <Link to="/tariffs" className={LINK}>
-            Sprawdź w analizie taryf
+            Czy by Ci się opłacała?
           </Link>
-          , czy taryfa dynamiczna by Ci się opłacała.
         </p>
       )}
     </section>

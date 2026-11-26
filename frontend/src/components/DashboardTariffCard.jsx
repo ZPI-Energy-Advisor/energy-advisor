@@ -18,20 +18,26 @@ function CompareLink({ children = "Porównaj taryfy" }) {
 }
 
 // Dotychczasowa treść karty: sama taryfa z profilu (gdy porównania nie ma albo się nie udało).
-function CurrentTariff({ title, profileTariff, currentTariff, loadError }) {
+// `compareLink`: link do Analizy taryf w tej samej linii co „Zmień w profilu”, żeby karta nie była wyższa od
+// sąsiednich (karty Dashboardu mają wspólną wysokość).
+function CurrentTariff({ title, profileTariff, currentTariff, loadError, status = null, compareLink = false }) {
   return (
     <>
-      <p className="text-sm font-medium text-gray-500 mb-3">{title}</p>
-      <p className="text-lg md:text-xl font-bold text-gray-900">
+      <p className="text-sm font-medium text-gray-500 mb-2">{title}</p>
+      <p className="text-base md:text-lg font-bold text-gray-900">
         {profileTariff?.tariff_type
           ? `Taryfa ${currentTariff?.label ?? profileTariff.tariff_type}${currentTariff ? ` · ${currentTariff.operator}` : ""}`
           : loadError
             ? "Nie udało się pobrać taryfy"
             : "Nie znamy jeszcze Twojej taryfy"}
       </p>
-      <Link to="/profile" className="mt-2 inline-block text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline">
-        {profileTariff?.exists ? "Zmień w profilu" : loadError ? "Przejdź do profilu" : "Uzupełnij profil"}
-      </Link>
+      {status}
+      <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <Link to="/profile" className="text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline">
+          {profileTariff?.exists ? "Zmień w profilu" : loadError ? "Przejdź do profilu" : "Uzupełnij profil"}
+        </Link>
+        {compareLink && <CompareLink />}
+      </p>
     </>
   );
 }
@@ -63,14 +69,17 @@ function DashboardTariffCard({ enabled, profileTariff, currentTariff, loadError 
       return (
         <div className={CARD}>
           {accent}
-          <CurrentTariff title="Twoja taryfa" {...current} />
-          <p className="mt-3 flex items-start gap-2 text-sm text-emerald-700">
-            <FiCheckCircle aria-hidden="true" className="mt-0.5 shrink-0" />
-            Najkorzystniejsza z taryf operatora w tym okresie.
-          </p>
-          <div className="mt-2">
-            <CompareLink />
-          </div>
+          <CurrentTariff
+            title="Twoja taryfa"
+            {...current}
+            compareLink
+            status={(
+              <p className="mt-1 flex items-start gap-1.5 text-sm text-emerald-700">
+                <FiCheckCircle aria-hidden="true" className="mt-0.5 shrink-0" />
+                Najkorzystniejsza z taryf operatora.
+              </p>
+            )}
+          />
         </div>
       );
     }

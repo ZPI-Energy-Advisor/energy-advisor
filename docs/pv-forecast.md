@@ -35,6 +35,9 @@ Historię pobiera worker po imporcie (ZP-117).
    zostaje 0,8 z dopiskiem.
 4. Współczynnik poza zakresem 0,4–1,1 oznacza, że plik nie pasuje do paneli z profilu, np. inna moc albo
    kierunek. Ucinamy go do zakresu i dopisujemy to w `notes`.
+   Wyjątek: panele szacunkowe („Nie znam parametrów”, typowe 6 kWp). Wtedy współczynnik dopasowuje do pliku
+   także moc instalacji (zakres 0,05–8), bez dopisku o niezgodności, a `effective_kwp` (moc × współczynnik / 0,8)
+   mówi, jaką moc wyszła z produkcji. Ekran PV i uwagi planu podają ją jako szacunek.
 5. Błąd (MAPE dobowy) liczymy metodą „bez jednego dnia”: dzień oceniamy współczynnikiem policzonym
    bez niego.
 

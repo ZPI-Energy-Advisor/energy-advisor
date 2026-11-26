@@ -1,4 +1,3 @@
-import re
 import jwt
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
@@ -41,14 +40,15 @@ class AuthService:
             raise ValueError("Hasło może mieć maksymalnie 72 bajty.")
         if len(password) < 8:
             raise ValueError("Hasło musi mieć co najmniej 8 znaków.")
-        if not re.search(r"[A-Z]", password):
+        # Litery także polskie (Ł, ą); znak specjalny to każdy znak, który nie jest literą ani cyfrą (np. - _ ! ?).
+        if not any(char.isupper() for char in password):
             raise ValueError("Hasło musi zawierać co najmniej jedną wielką literę.")
-        if not re.search(r"[a-z]", password):
+        if not any(char.islower() for char in password):
             raise ValueError("Hasło musi zawierać co najmniej jedną małą literę.")
-        if not re.search(r"\d", password):
+        if not any(char.isdigit() for char in password):
             raise ValueError("Hasło musi zawierać co najmniej jedną cyfrę.")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-            raise ValueError("Hasło musi zawierać co najmniej jeden znak specjalny (!@#$...).")
+        if all(char.isalnum() for char in password):
+            raise ValueError("Hasło musi zawierać co najmniej jeden znak specjalny, np. ! ? # -.")
         
 
     def get_password_hash(self, password: str) -> str:

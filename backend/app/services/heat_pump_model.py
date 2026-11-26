@@ -1,7 +1,8 @@
 """Zużycie prądu przez pompę ciepła w zależności od temperatury na zewnątrz (ZP-119). Opis: docs/heat-pump.md.
 
 Ciepło do ogrzania domu w dobie jest proporcjonalne do stopniodni grzania (Eurostat: 18 °C − średnia temperatura
-doby, gdy średnia nie przekracza 15 °C), a prąd pompy to ciepło podzielone przez COP. COP pompy powietrznej
+doby, gdy średnia nie przekracza 15 °C; między 15 a 18 °C ogrzewanie maleje płynnie do zera), a prąd pompy to
+ciepło podzielone przez COP. Stopniodni zależą też od temperatury w domu: próg 18 °C odpowiada ok. 21 °C w środku. COP pompy powietrznej
 liczymy jak w When2Heat (Ruhnau, Hirth, Praktiknjo 2019, Scientific Data 6:189): kwadratowa funkcja różnicy
 temperatur wody i powietrza, razy 0,85 na straty w praktyce (odszranianie, pompy obiegowe).
 
@@ -12,6 +13,9 @@ from dataclasses import dataclass
 
 HDD_BASE_C = 18.0
 HEATING_LIMIT_C = 15.0
+# Temperatura w domu, której odpowiada próg 18 °C (zyski ciepła od ludzi, urządzeń i słońca dają resztę).
+# Inna temperatura w domu przesuwa próg i granicę ogrzewania o tyle samo stopni.
+DEFAULT_INDOOR_C = 21
 COP_AIR = (6.08, -0.0941, 0.000464)
 COP_CORRECTION = 0.85
 MIN_LIFT_K = 15.0
@@ -30,6 +34,9 @@ HEAT_DEMAND_BY_YEAR = (
     (2020, 65.0),
 )
 NEWEST_HEAT_DEMAND = 45.0
+# Zapotrzebowanie na m² w zestawieniach dotyczy domów wolnostojących. Mieszkanie w bloku ma sąsiadów za ścianami,
+# nad i pod sobą, a szeregowiec dwie ściany wspólne, więc traci mniej ciepła na m² (przybliżenie typologii budynków).
+PROPERTY_TYPE_DEMAND = {"apartment": 0.55, "terrace_house": 0.8}
 # Typowy rok w Polsce, stopniodni według Eurostatu. Wrocław 2026 z archiwum Open-Meteo: ok. 3100.
 REFERENCE_HDD = 3300.0
 # Ciepła woda: tyle co w modelu bojlera (1,6 kWh ciepła na osobę na dobę) i ok. 20% strat zasobnika i cyrkulacji.
@@ -37,8 +44,16 @@ HOT_WATER_KWH_PER_PERSON = 1.6
 HOT_WATER_LOSSES = 1.2
 
 
-def heating_degree_days(mean_c: float) -> float:
-    return HDD_BASE_C - mean_c if mean_c <= HEATING_LIMIT_C else 0.0
+def heating_degree_days(mean_c: float, indoor_c: float = DEFAULT_INDOOR_C) -> float:
+    """Stopniodni doby: poniżej granicy ogrzewania jak Eurostat (próg − średnia), a między granicą a progiem
+    maleją płynnie do zera (parabola), żeby średnia 15,1 °C nie dawała nagle zera zamiast 3 stopniodni."""
+    shift = indoor_c - DEFAULT_INDOOR_C
+    base, limit = HDD_BASE_C + shift, HEATING_LIMIT_C + shift
+    if mean_c <= limit:
+        return base - mean_c
+    if mean_c >= base:
+        return 0.0
+    return (base - limit) * ((base - mean_c) / (base - limit)) ** 2
 
 
 def supply_temperature(outdoor_c: float, floor_heating: bool) -> float:
@@ -74,9 +89,11 @@ def heat_demand_per_m2(year_built: int | None) -> float:
     return NEWEST_HEAT_DEMAND
 
 
-def building_heat_per_hdd(year_built: int | None, area_m2: float) -> float:
-    """Ciepło na stopniodzień (kWh) z roku budowy i powierzchni: roczne zapotrzebowanie / stopniodni typowego roku."""
-    return heat_demand_per_m2(year_built) * area_m2 / REFERENCE_HDD
+def building_heat_per_hdd(year_built: int | None, area_m2: float, property_type: str | None = None) -> float:
+    """Ciepło na stopniodzień (kWh) z roku budowy, powierzchni i typu budynku: roczne zapotrzebowanie / stopniodni
+    typowego roku."""
+    factor = PROPERTY_TYPE_DEMAND.get(property_type or "", 1.0)
+    return heat_demand_per_m2(year_built) * area_m2 * factor / REFERENCE_HDD
 
 
 def hot_water_heat(residents: int | None) -> float:
@@ -99,8 +116,8 @@ class HeatModel:
     heating_days: int = 0
     mape: float | None = None
 
-    def day(self, mean_c: float) -> "HeatingDay":
-        hdd = heating_degree_days(mean_c)
+    def day(self, mean_c: float, indoor_c: float = DEFAULT_INDOOR_C) -> "HeatingDay":
+        hdd = heating_degree_days(mean_c, indoor_c)
         space_cop = heating_cop(mean_c, self.floor_heating)
         water_cop = hot_water_cop(mean_c)
         space_heat = self.heat_per_hdd * hdd
@@ -112,10 +129,12 @@ class HeatModel:
             hot_water_heat_kwh=self.hot_water_kwh,
             cop=space_cop if hdd else water_cop,
             kwh=space_heat / space_cop + self.hot_water_kwh / water_cop,
+            water_kwh=self.hot_water_kwh / water_cop,
+            water_cop=water_cop,
         )
 
-    def kwh(self, mean_c: float) -> float:
-        return self.day(mean_c).kwh
+    def kwh(self, mean_c: float, indoor_c: float = DEFAULT_INDOOR_C) -> float:
+        return self.day(mean_c, indoor_c).kwh
 
 
 @dataclass(frozen=True)
@@ -127,14 +146,17 @@ class HeatingDay:
     hot_water_heat_kwh: float
     cop: float
     kwh: float
+    # Prąd na ciepłą wodę (część `kwh`) i sprawność pompy przy grzaniu wody.
+    water_kwh: float = 0.0
+    water_cop: float = 0.0
 
 
 def building_model(year_built: int | None, area_m2: float | None, residents: int | None,
-                   hot_water: bool = True) -> HeatModel | None:
+                   hot_water: bool = True, property_type: str | None = None) -> HeatModel | None:
     if not area_m2:
         return None
     return HeatModel(
-        heat_per_hdd=building_heat_per_hdd(year_built, area_m2),
+        heat_per_hdd=building_heat_per_hdd(year_built, area_m2, property_type),
         hot_water_kwh=hot_water_heat(residents) if hot_water else 0.0,
         floor_heating=floor_heating_for(year_built),
         source="building",
@@ -188,11 +210,14 @@ def fit(days: list[tuple[float, float]], floor_heating: bool, fallback: HeatMode
     rows = [(*_regressors(mean_c, floor_heating), kwh) for mean_c, kwh in days if kwh >= MIN_DAY_KWH]
     if len(rows) < MIN_FIT_DAYS:
         return fallback
-    heating_rows = [row for row in rows if row[0] > 0]
+    # Dzień z ogrzewaniem jak u Eurostatu: średnia do 15 °C. Dni 15–18 °C mają już tylko resztki stopniodni,
+    # więc nie mówią, ile dom potrzebuje na stopniodzień (x1 maleje z temperaturą, więc wystarczy próg x1).
+    heating_x1 = _regressors(HEATING_LIMIT_C, floor_heating)[0] - 1e-9
+    heating_rows = [row for row in rows if row[0] >= heating_x1]
     if len(heating_rows) >= MIN_HEATING_DAYS:
         a, b = _least_squares(rows)
         kept = [row for row in rows if abs(row[2] - (a * row[0] + b * row[1])) <= max(OUTLIER_SHARE * (a * row[0] + b * row[1]), OUTLIER_MIN_KWH)]
-        if len(kept) >= MIN_FIT_DAYS and sum(1 for row in kept if row[0] > 0) >= MIN_HEATING_DAYS:
+        if len(kept) >= MIN_FIT_DAYS and sum(1 for row in kept if row[0] >= heating_x1) >= MIN_HEATING_DAYS:
             rows = kept
             a, b = _least_squares(rows)
         source = "history"
@@ -208,7 +233,7 @@ def fit(days: list[tuple[float, float]], floor_heating: bool, fallback: HeatMode
         floor_heating=floor_heating,
         source=source,
         days=len(rows),
-        heating_days=sum(1 for row in rows if row[0] > 0),
+        heating_days=sum(1 for row in rows if row[0] >= heating_x1),
         mape=_leave_one_out_mape(rows) if source == "history" else None,
     )
 
