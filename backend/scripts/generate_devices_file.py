@@ -20,6 +20,10 @@ Polski z losowymi wahaniami z dnia na dzień.
 Z --from-meter urządzenia są dopasowane do pliku licznika: w każdym kwadransie suma ich energii
 równa się poborowi z licznika, a to, czego nie da się przypisać, bierze urządzenie „Inne”.
 
+Dom do demo, w którym produkcja odbiega od pogody jak w prawdziwej instalacji, z autem ładowanym 2 razy w tygodniu:
+    python backend/scripts/generate_devices_file.py --start 2026-06-01 --days 178 --seed 7 --with-pv \
+        --weather pogoda.json --weather-error --ev-charges-per-week 2 --out dom.json --meter-out licznik.csv
+
 Ten sam seed i te same parametry dają identyczny plik.
 """
 
@@ -221,6 +225,7 @@ class PvSetup:
     arrays: list[Array]
     inverter_kw: float
     rng: random.Random
+    weather_error: bool = False
 
 
 @dataclass
@@ -239,8 +244,10 @@ def heat_pump_power_kw(model: HeatModel) -> float:
 
 class Generator:
     def __init__(self, house: House, start: date, days: int, rng: random.Random, pv: PvSetup | None = None,
-                 heating: HeatingSetup | None = None):
+                 heating: HeatingSetup | None = None, ev_per_week: int | None = None):
         self.house, self.rng, self.pv, self.heating = house, rng, pv, heating
+        # Ile razy w tygodniu ładujemy auto; bez opcji 3–4 razy (jak dotąd, ten sam plik dla tego samego seeda).
+        self.ev_per_week = ev_per_week
         self.dates = [start + timedelta(days=offset) for offset in range(days)]
         self.weeks = [self._plan_week() for _ in range(math.ceil(days / 7))]
         self.anomalies = self._anomalies() if heating and heating.weather is None else {}
@@ -258,7 +265,7 @@ class Generator:
         return {
             "home_office": set(rng.sample(range(7), 3)),
             "wash": set(rng.sample(range(7), rng.randint(2, 4))),
-            "ev": set(rng.sample(range(7), rng.randint(3, 4))),
+            "ev": set(rng.sample(range(7), self.ev_per_week or rng.randint(3, 4))),
             "oven": set(rng.sample(range(7), rng.randint(2, 3))),
             "vacuum": set(rng.sample(range(7), rng.randint(1, 2))),
         }
@@ -476,7 +483,7 @@ class Generator:
             return
         day_start, day_end = at(day, 0), at(day + timedelta(days=1), 0)
         production = day_production(self.pv.weather, self.pv.arrays, self.pv.inverter_kw, day_start, day_end,
-                                     self.pv.rng)
+                                     self.pv.rng, self.pv.weather_error)
         # + 0.0 zamienia -0.0 na 0.0
         profile = [-round(value, 2) + 0.0 for value in production]
         first = 0
@@ -794,7 +801,7 @@ def pv_device(arrays: list[Array], inverter_kw: float) -> dict:
 def build_house(start: date, days: int, seed: int, device_set: str, max_grid_kw: float,
                 with_water_heater: bool = False, pv: PvSetup | None = None, weather: Weather | None = None,
                 area_m2: float = DEFAULT_AREA_M2, year_built: int = DEFAULT_YEAR_BUILT,
-                residents: int = DEFAULT_RESIDENTS) -> House:
+                residents: int = DEFAULT_RESIDENTS, ev_per_week: int | None = None) -> House:
     devices = {
         d["device_id"]: d for d in DEVICES
         if (d["device_id"] != PV_DEVICE or pv) and (device_set == "full" or d["device_id"] not in FULL_ONLY)
@@ -810,7 +817,7 @@ def build_house(start: date, days: int, seed: int, device_set: str, max_grid_kw:
     period_start = datetime.combine(start, time(), TZ).astimezone(timezone.utc)
     period_end = datetime.combine(start + timedelta(days=days), time(), TZ).astimezone(timezone.utc)
     house = House(period_start, period_end, max_grid_kw, devices)
-    Generator(house, start, days, random.Random(seed), pv, heating).run()
+    Generator(house, start, days, random.Random(seed), pv, heating=heating, ev_per_week=ev_per_week).run()
     return house
 
 
@@ -871,7 +878,7 @@ def load_weather(args, parser, arrays: list[Array]) -> Weather:
 def load_pv(args, weather: Weather) -> PvSetup:
     arrays = pv_arrays(args)
     inverter_kw = args.inverter_kw or round(sum(array.kwp for array in arrays), 3)
-    return PvSetup(weather, arrays, inverter_kw, random.Random(f"pv-{args.seed}"))
+    return PvSetup(weather, arrays, inverter_kw, random.Random(f"pv-{args.seed}"), args.weather_error)
 
 
 def pv_arrays(args) -> list[Array]:
@@ -893,6 +900,11 @@ def main() -> int:
     parser.add_argument("--pv-array", action="append", metavar="KWP/NACHYLENIE/AZYMUT",
                         help="grupa paneli, np. 4/35/0 (można podać kilka; domyślnie 6/35/0)")
     parser.add_argument("--inverter-kw", type=float, help="moc falownika (domyślnie suma kWp)")
+    parser.add_argument("--weather-error", action="store_true",
+                        help="produkcja odbiega od pogody z archiwum jak w prawdziwej instalacji: dzienny błąd "
+                             "zależny od zachmurzenia (ok. 5–30%%) i rzadkie kilkugodzinne przerwy falownika")
+    parser.add_argument("--ev-charges-per-week", type=int, choices=range(1, 8), metavar="1-7",
+                        help="ile razy w tygodniu ładujemy auto (domyślnie losowo 3–4)")
     parser.add_argument("--with-water-heater", action="store_true", help="dodaje bojler elektryczny (water_heater)")
     parser.add_argument("--area-m2", type=float, default=DEFAULT_AREA_M2,
                         help=f"ogrzewana powierzchnia domu (domyślnie {DEFAULT_AREA_M2:g} m²)")
@@ -916,8 +928,10 @@ def main() -> int:
         parser.error("--from-meter już ma plik licznika; --meter-out jest dla domu generowanego od zera")
     if args.with_pv and not args.weather:
         parser.error("--with-pv wymaga --weather PLIK (pogoda z Open-Meteo, pobierana, gdy pliku nie ma)")
-    if (args.pv_array or args.inverter_kw) and not args.with_pv:
-        parser.error("--pv-array i --inverter-kw wymagają --with-pv")
+    if (args.pv_array or args.inverter_kw or args.weather_error) and not args.with_pv:
+        parser.error("--pv-array, --inverter-kw i --weather-error wymagają --with-pv")
+    if args.ev_charges_per_week and (args.from_meter or args.devices != "full"):
+        parser.error("--ev-charges-per-week działa dla domu generowanego od zera z --devices full (z autem)")
     if args.area_m2 <= 0 or args.residents < 0 or not 1800 < args.year_built <= 2027:
         parser.error("--area-m2 musi być dodatnie, --residents nieujemne, a --year-built od 1801 do 2027")
 
@@ -930,7 +944,8 @@ def main() -> int:
             parser.error(str(error))
         pv = load_pv(args, weather) if args.with_pv else None
         house = build_house(args.start, args.days, args.seed, args.devices, args.max_grid_kw,
-                            args.with_water_heater, pv, weather, args.area_m2, args.year_built, args.residents)
+                            args.with_water_heater, pv, weather, args.area_m2, args.year_built, args.residents,
+                            ev_per_week=args.ev_charges_per_week)
         content = dump(build_document(house)) + "\n"
         if args.meter_out:
             with open(args.meter_out, "w", encoding="utf-8", newline="\n") as handle:

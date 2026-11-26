@@ -255,6 +255,52 @@ def test_net_metering_values_export_as_discount_on_grid_price(db, house):
     assert day.balance.value.export_price == pytest.approx(0.8)
 
 
+def test_rcem_contract_without_published_rcem_says_export_is_valued_by_rce(db, house):
+    from app.models.RcEmPriceObservation import RcEmPriceObservation
+
+    db.query(RcEmPriceObservation).filter(RcEmPriceObservation.price_month == DEMO_DAY.replace(day=1)).delete()
+    db.commit()
+    add_rce(db, DEMO_DAY)
+    rcem = {**PV, "type_of_price": "RCEm"}
+
+    rcem_day = detail(db, house, DEMO_DAY, _profile(rcem))
+    rce_day = detail(db, house, DEMO_DAY)
+
+    assert rcem_day.balance.value.export_price == pytest.approx(0.5 * 1.23)
+    assert any("RCEm za ten miesiąc nie jest jeszcze opublikowana" in note for note in rcem_day.notes)
+    assert not any("RCEm" in note for note in rce_day.notes)
+
+
+def test_rcem_contract_without_any_price_for_the_day_explains_both(db, house):
+    tomorrow = dt.date(2026, 11, 24)
+    add_weather(db, tomorrow)
+    for back in range(1, 4):
+        add_rce(db, tomorrow - dt.timedelta(days=back))
+
+    day = detail(db, house, tomorrow, _profile({**PV, "type_of_price": "RCEm"}))
+
+    assert day.balance.value.export_price_estimated
+    assert any(note.startswith("RCEm za ten miesiąc") and "14 poprzednich dni" in note for note in day.notes)
+
+
+def test_data_periods_merge_touching_files_and_keep_gaps(db, house):
+    files = EnergyDataFileRepository(db)
+    for name, start, end in [("czerwiec.json", dt.date(2026, 6, 1), dt.date(2026, 6, 30)),
+                             ("lipiec.csv", dt.date(2026, 7, 1), dt.date(2026, 7, 10)),
+                             ("pazdziernik.json", dt.date(2026, 10, 20), dt.date(2026, 11, 5))]:
+        energy_file = files.create(user_id=house.id, file_name=name)
+        energy_file.status = EnergyDataFile.STATUS_COMPLETED
+        energy_file.source_type = EnergyDataFile.SOURCE_METER
+        energy_file.data_start, energy_file.data_end = start, end
+        files.save(energy_file)
+    db.commit()
+
+    assert service(db).data_periods(house.id) == [
+        (dt.date(2026, 6, 1), dt.date(2026, 7, 10)),
+        (dt.date(2026, 10, 1), dt.date(2026, 11, 5)),
+    ]
+
+
 def test_without_tariff_rates_balance_has_no_value(db, house):
     from app.services.schedule_prices import NoTariffRatesError
 
@@ -378,6 +424,8 @@ def test_pv_screen_endpoints(db, house, client_a, pv_api):
     assert body["installation"]["total_kwp"] == 6.0 and body["installation"]["settlement"] == "net_billing"
     assert [d["date"] for d in body["days"]] == ["2026-11-23", "2026-11-24", "2026-11-25"]
     assert (body["first_data_day"], body["last_data_day"]) == ("2026-10-01", "2026-10-30")
+    assert body["data_periods"] == [{"first_day": "2026-10-01", "last_day": "2026-10-30"}]
+    assert body["calibration"]["candidate_days"] >= body["calibration"]["days"] > 0
     assert body["calibration"]["source"] == "history" and "peak" not in body["days"][0]
     assert day.status_code == 200 and len(day.json()["intervals"]) == 96 and day.json()["kind"] == "past"
     assert accuracy.status_code == 200 and len(accuracy.json()["days"]) == 30

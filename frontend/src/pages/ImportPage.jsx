@@ -181,25 +181,30 @@ function ImportPage() {
               </div>
 
               {/* Przykładowe dane: ten sam dom i te same 30 dni w obu plikach, więc działa też „Reszta domu”. */}
-              <p className="text-sm text-gray-500 text-center">
-                Nie masz swojego pliku? Pobierz przykładowe dane z 30 dni:{" "}
-                <a href="/samples/przyklad-licznik-30-dni.csv" download className="text-emerald-700 font-medium hover:underline">
-                  plik z licznika (CSV)
-                </a>{" "}
-                i{" "}
-                <a href="/samples/przyklad-urzadzenia-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
-                  plik urządzeń (JSON)
-                </a>
-                . Dom z fotowoltaiką 6 kWp (produkcja z prawdziwej pogody we Wrocławiu, październik 2026):{" "}
-                <a href="/samples/przyklad-licznik-pv-30-dni.csv" download className="text-emerald-700 font-medium hover:underline">
-                  licznik (CSV)
-                </a>{" "}
-                i{" "}
-                <a href="/samples/przyklad-urzadzenia-pv-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
-                  urządzenia (JSON)
-                </a>
-                .
-              </p>
+              {/* Dom z PV: produkcja z prawdziwej pogody we Wrocławiu (październik 2026). */}
+              <div className="text-sm text-gray-500 text-center space-y-1">
+                <p>Nie masz swojego pliku? Pobierz przykładowe dane z 30 dni:</p>
+                <p>
+                  Dom bez paneli:{" "}
+                  <a href="/samples/przyklad-licznik-30-dni.csv" download className="text-emerald-700 font-medium hover:underline">
+                    licznik (CSV)
+                  </a>{" "}
+                  ·{" "}
+                  <a href="/samples/przyklad-urzadzenia-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
+                    urządzenia (JSON)
+                  </a>
+                </p>
+                <p>
+                  Dom z fotowoltaiką 6 kWp:{" "}
+                  <a href="/samples/przyklad-licznik-pv-30-dni.csv" download className="text-emerald-700 font-medium hover:underline">
+                    licznik (CSV)
+                  </a>{" "}
+                  ·{" "}
+                  <a href="/samples/przyklad-urzadzenia-pv-30-dni.json" download className="text-emerald-700 font-medium hover:underline">
+                    urządzenia (JSON)
+                  </a>
+                </p>
+              </div>
 
               {error && (
                 <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center text-sm md:text-base font-medium">

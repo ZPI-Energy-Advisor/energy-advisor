@@ -59,6 +59,47 @@ def test_water_heater_is_optional_and_passes_validation(tmp_path):
     assert len(heater_actions) >= 14  # rano i wieczorem, część może nie zmieścić się pod limitem
 
 
+def _daily_pv_spread(document) -> float:
+    """Średnie odchylenie dziennej produkcji od pogody: |(produkcja / nasłonecznienie) / mediana − 1|."""
+    start, weather = _weather_hours()
+    gti = weather["tilted_w_m2"]["35/0"]
+    produced, sunlight = {}, {}
+    for moment, kwh in _pv_by_quarter(document).items():
+        produced[moment.date()] = produced.get(moment.date(), 0.0) + kwh
+    for hour, value in enumerate(gti):
+        day = (start + timedelta(hours=hour)).date()
+        sunlight[day] = sunlight.get(day, 0.0) + (value or 0.0) * 6 / 1000
+    ratios = sorted(produced[day] / sunlight[day] for day in produced if sunlight.get(day, 0) > 1)
+    median = ratios[len(ratios) // 2]
+    return sum(abs(ratio / median - 1) for ratio in ratios) / len(ratios)
+
+
+def test_weather_error_spreads_daily_production_like_a_real_installation(tmp_path):
+    plain = json.loads(generate(tmp_path / "plain.json", *DEMO_ARGS))
+    realistic = json.loads(generate(tmp_path / "real.json", *DEMO_ARGS, "--weather-error"))
+
+    assert _daily_pv_spread(plain) < 0.06
+    assert 0.07 < _daily_pv_spread(realistic) < 0.35
+    assert run_script(VALIDATOR, tmp_path / "real.json").returncode == 0
+
+
+def test_ev_charges_per_week_limits_charging(tmp_path):
+    def ev_charges(path, *options):
+        document = json.loads(generate(path, "--days", 28, "--devices", "full", *options))
+        return sum(action["device_id"] == "dev_ev_01" for action in document["energy_usage"])
+
+    assert ev_charges(tmp_path / "rzadko.json", "--ev-charges-per-week", 2) <= 8
+    assert ev_charges(tmp_path / "domyslnie.json") >= 12
+
+
+def test_new_options_need_pv_and_an_ev(tmp_path):
+    no_pv = run_script(GENERATOR, "--weather-error", "--out", tmp_path / "a.json")
+    no_ev = run_script(GENERATOR, "--devices", "standard", "--ev-charges-per-week", 2, "--out", tmp_path / "b.json")
+
+    assert no_pv.returncode != 0 and "--weather-error" in no_pv.stderr
+    assert no_ev.returncode != 0 and "--ev-charges-per-week" in no_ev.stderr
+
+
 def test_generator_respects_grid_limit(tmp_path):
     path = tmp_path / "devices.json"
     generate(path, "--devices", "full", *PV, "--max-grid-kw", 6)

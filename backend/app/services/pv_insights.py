@@ -27,7 +27,7 @@ from app.services.pv_forecast import (
     PvForecastUnavailableError,
     PvSetup,
 )
-from app.services.pv_service import PVBalancingEngine
+from app.services.pv_service import NET_BILLING_REFORM_FROM, PVBalancingEngine
 from app.services.weather_service import DayWeather
 
 logger = logging.getLogger(__name__)
@@ -232,11 +232,17 @@ class PvInsightsService:
     def setup(self, user_id, profile: UserProfile) -> PvSetup:
         return self.forecasts.setup(user_id, profile)
 
-    def data_range(self, user_id) -> tuple[date | None, date | None]:
-        files = self._files(user_id)
-        starts = [f.data_start for f in files if f.data_start]
-        ends = [f.data_end for f in files if f.data_end]
-        return (min(starts) if starts else None, max(ends) if ends else None)
+    def data_periods(self, user_id) -> list[tuple[date, date]]:
+        """Okresy, które obejmują pliki użytkownika: zakresy plików połączone, gdy nachodzą na siebie albo się stykają.
+        Między okresami plików nie ma (np. pliki z czerwca i z października to dwa okresy)."""
+        spans = sorted((f.data_start, f.data_end) for f in self._files(user_id) if f.data_start and f.data_end)
+        periods: list[tuple[date, date]] = []
+        for start, end in spans:
+            if periods and start <= periods[-1][1] + timedelta(days=1):
+                periods[-1] = (periods[-1][0], max(periods[-1][1], end))
+            else:
+                periods.append((start, end))
+        return periods
 
     def days(self, user_id, profile: UserProfile) -> list[DaySummary]:
         today = self.weather.today()
@@ -464,8 +470,14 @@ class PvInsightsService:
         if missing:
             notes.append("Brak cen RCE z tego okresu, więc energii oddanej do sieci nie wyceniamy.")
         elif estimated:
-            notes.append(f"Brak cen RCE z tego dnia: wartość oddania to średnia z tych samych godzin z {PRICE_LOOKBACK_DAYS} "
+            reason = ("RCEm za ten miesiąc nie jest jeszcze opublikowana, a cen RCE z tego dnia też nie ma"
+                      if self._rcem_replaced(profile, day) else "Brak cen RCE z tego dnia")
+            notes.append(f"{reason}: wartość oddania to średnia RCE z tych samych godzin z {PRICE_LOOKBACK_DAYS} "
                          "poprzednich dni.")
+        elif exported_total > 0 and self._rcem_replaced(profile, day):
+            # PSE publikuje RCEm ok. 10. dnia następnego miesiąca; do tego czasu resolver wycenia oddanie po RCE.
+            notes.append("RCEm za ten miesiąc nie jest jeszcze opublikowana, więc oddanie wyceniamy cenami RCE "
+                         "z poszczególnych godzin. Po publikacji wartość może się zmienić.")
         purchase = self_value / own_total if own_total else None
         export = export_value / exported_total if exported_total else None
         balance.value = Value(
@@ -476,6 +488,15 @@ class PvInsightsService:
             export_price_estimated=estimated and not missing,
         )
         return balance
+
+    def _rcem_replaced(self, profile: UserProfile, day: date) -> bool:
+        """Umowa z RCEm, a RCEm miesiąca tego dnia jeszcze nie ma: oddanie wyceniamy cenami RCE."""
+        return (
+            profile.pv_config.mode != "net_metering"
+            and profile.pv_config.type_of_price == TypeOfMarketEnergyEnum.RCEm
+            and day >= NET_BILLING_REFORM_FROM
+            and not self.market.rcem_published(day)
+        )
 
     def _export_price(self, profile: UserProfile, hour: datetime, purchase_price: float) -> tuple[float | None, bool]:
         """Wartość kWh oddanej w godzinie: net-metering opust × cena z sieci; net-billing RCE/RCEm × 1,23
