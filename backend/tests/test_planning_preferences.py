@@ -311,7 +311,7 @@ def test_run_after_needs_enabled_predecessor_time_and_no_loop(home):
     assert ev == {(0, "after_device_id"): "Tylko urządzenie z programem może czekać na inne."}
 
 
-def test_heat_pump_and_water_heater_need_only_shift_or_ready_times(home):
+def test_heat_pump_needs_no_settings_and_water_heater_needs_ready_times(home):
     owner = _owner_with_devices(home)
 
     saved = _put(owner, {"devices": [
@@ -329,10 +329,7 @@ def test_heat_pump_and_water_heater_need_only_shift_or_ready_times(home):
     assert devices["dev_hp_01"]["preference"]["shift_hours"] == 3
     assert devices["dev_wh_01"]["preference"]["ready_times"] == ["07:00", "19:30"]
     assert devices["dev_wh_01"]["preference"]["tank_liters"] == 150
-    assert errors == {
-        (0, "shift_hours"): "Wybierz, o ile można przesunąć grzanie.",
-        (1, "ready_times"): "Godziny się powtarzają.",
-    }
+    assert errors == {(1, "ready_times"): "Godziny się powtarzają."}
     assert off_quarter.status_code == 422
 
 

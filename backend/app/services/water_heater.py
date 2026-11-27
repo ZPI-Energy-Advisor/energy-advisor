@@ -50,6 +50,21 @@ OVER_LIMIT_PENALTY = 10.0
 MIN_DAILY_DRAW_KWH = 0.5
 
 
+@dataclass(frozen=True)
+class TankLimits:
+    """Temperatury zbiornika: nigdy poniżej `min_temp`, na godziny gotowości `ready_temp`, nigdy powyżej
+    `max_temp`, a plan zaczyna dobę od `plan_start_temp`. Bojler z grzałką ma domyślne; zasobnik pompy ciepła
+    niższe, bo pompa grzeje wodę zwykle najwyżej do ok. 55 °C."""
+
+    min_temp: float = MIN_TEMP
+    ready_temp: float = READY_TEMP
+    max_temp: float = MAX_TEMP
+    plan_start_temp: float = PLAN_START_TEMP
+
+
+BOILER = TankLimits()
+
+
 def default_tank_liters(residents: int) -> int:
     """Typowy zbiornik dla liczby osób: 80 l dla 1–2, 120 l dla 3–4, 150 l od 5."""
     if residents <= 2:
@@ -119,12 +134,12 @@ def draws(slots: int, ready_indices: list[int], daily_kwh: float) -> list[float]
     return result
 
 
-def minimums(slots: int, ready_indices: list[int], end_temp: float) -> list[float]:
+def minimums(slots: int, ready_indices: list[int], end_temp: float, limits: TankLimits = BOILER) -> list[float]:
     """Wymagana temperatura na końcu kwadransu: gotowość tuż przed godziną, na koniec doby `end_temp`."""
-    result = [MIN_TEMP] * slots
+    result = [limits.min_temp] * slots
     for index in ready_indices:
         if 0 < index <= slots:
-            result[index - 1] = max(result[index - 1], READY_TEMP)
+            result[index - 1] = max(result[index - 1], limits.ready_temp)
     result[-1] = max(result[-1], end_temp)
     return result
 
@@ -147,18 +162,21 @@ def simulate(tank: Tank, start_temp: float, on: list[bool], draw: list[float], p
     return Heating(on=on, temps=temps, cost=cost, shortfall=round(max(shortfall, 0.0), 1), start_temp=start_temp)
 
 
-def thermostat(tank: Tank, draw: list[float], prices: list[float], ready_indices: list[int]) -> Heating:
-    """Bez planu: od `THERMOSTAT_START_TEMP` grzeje cały kwadrans, gdy woda ma mniej niż `READY_TEMP`."""
-    on, temp = [], THERMOSTAT_START_TEMP
+def thermostat(tank: Tank, draw: list[float], prices: list[float], ready_indices: list[int],
+               limits: TankLimits = BOILER) -> Heating:
+    """Bez planu: od temperatury gotowości grzeje cały kwadrans, gdy woda ma mniej niż `ready_temp`."""
+    start = limits.ready_temp
+    on, temp = [], start
     for slot in range(len(draw)):
-        active = temp < READY_TEMP and step(tank, temp, True, draw[slot]) <= MAX_TEMP
+        active = temp < limits.ready_temp and step(tank, temp, True, draw[slot]) <= limits.max_temp
         on.append(active)
         temp = step(tank, temp, active, draw[slot])
-    return simulate(tank, THERMOSTAT_START_TEMP, on, draw, prices, minimums(len(draw), ready_indices, THERMOSTAT_START_TEMP))
+    return simulate(tank, start, on, draw, prices, minimums(len(draw), ready_indices, start, limits))
 
 
 def optimize(tank: Tank, draw: list[float], prices: list[float], ready_indices: list[int],
-             start_temp: float = PLAN_START_TEMP, allowed: list[bool] | None = None) -> Heating:
+             start_temp: float | None = None, allowed: list[bool] | None = None,
+             limits: TankLimits = BOILER) -> Heating:
     """Najtańsze kwadranse grzania spełniające wymagania temperatury (programowanie dynamiczne).
 
     `allowed`: kwadranse, w których grzałka mieści się w limicie przyłącza obok reszty domu; None to wszystkie.
@@ -167,7 +185,8 @@ def optimize(tank: Tank, draw: list[float], prices: list[float], ready_indices: 
     za zimna, i tylko w tylu kwadransach, ile trzeba. `shortfall` zostaje więc tylko wtedy, gdy grzałka
     fizycznie nie nadąża (za mała moc albo zbiornik)."""
     slots = len(draw)
-    required = minimums(slots, ready_indices, start_temp)
+    start_temp = limits.plan_start_temp if start_temp is None else start_temp
+    required = minimums(slots, ready_indices, start_temp, limits)
     # states: temperatura co 0,1°C -> (koszt z karą, dokładna temperatura) po bieżącym kwadransie.
     states: dict[float, tuple[float, float]] = {round(start_temp, 1): (0.0, start_temp)}
     choices: list[dict[float, tuple[float, bool]]] = []
@@ -177,7 +196,7 @@ def optimize(tank: Tank, draw: list[float], prices: list[float], ready_indices: 
         for key, (base, temp) in states.items():
             for active in (False, True):
                 after = step(tank, temp, active, draw[slot])
-                if active and after > MAX_TEMP:
+                if active and after > limits.max_temp:
                     continue
                 total = base + (prices[slot] * tank.slot_kwh if active else 0.0)
                 if active and allowed is not None and not allowed[slot]:

@@ -496,8 +496,7 @@ function ProfilePage() {
                   </label>
                   {tariff.dynamic_price && dynamicAllowed && (
                     <p className="mt-2 text-xs text-gray-500">
-                      Energia po cenie z każdego kwadransa (cena rynkowa + marża sprzedawcy), dystrybucja według grupy {currentTariff}.
-                      {dynamicOffer.billing_cycle_months && ` Oferta rozlicza się co ${dynamicOffer.billing_cycle_months} mies.`}
+                      Cena energii zmienia się co kwadrans (cena rynkowa + marża sprzedawcy).
                     </p>
                   )}
                   {!dynamicAllowed && (

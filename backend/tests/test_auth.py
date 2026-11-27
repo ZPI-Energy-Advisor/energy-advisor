@@ -56,6 +56,11 @@ def test_register_rejects_weak_password(anonymous_client, new_email, password):
     assert _register(anonymous_client, new_email, password).status_code == 422
 
 
+@pytest.mark.parametrize("password", ["Bezpieczne-haslo1", "Zażółć_gęślą9", "Łódź 2026 ok"])
+def test_register_accepts_any_non_alphanumeric_as_special_and_polish_letters(anonymous_client, new_email, password):
+    assert _register(anonymous_client, new_email, password).status_code == 200
+
+
 def test_login_with_valid_credentials(anonymous_client, new_email):
     _register(anonymous_client, new_email)
 

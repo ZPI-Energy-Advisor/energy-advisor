@@ -156,8 +156,9 @@ i `history_kwh` (średnie zużycie bojlera na dobę z 7 ostatnich dni w plikach)
 | `finish_by` | Tylko z `after_device_id`, opcjonalne: program kończy się najpóźniej o tej godzinie (`HH:MM` co kwadrans). Godzina nie późniejsza niż początek najwcześniejszego przedziału pierwszego urządzenia w łańcuchu oznacza rano następnego dnia |
 | `energy_input`, `energy_kwh` | Ładowarka EV: energia wprost w kWh |
 | `battery_kwh`, `current_percent`, `target_percent` | Ładowarka EV: energia z poziomu baterii; z sieci `(docelowy − obecny) × pojemność / 0,9` (straty ładowania). Pojemność zostaje w ustawieniach |
-| `shift_hours` | Pompa ciepła: o ile godzin (1–3) w obie strony można przesunąć każdy blok grzania; domyślnie `max_shift_min` z pliku albo 1 h |
-| `ready_times` | Bojler: 1–4 godziny „woda gotowa na” co kwadrans, bez powtórzeń; domyślnie `06:00` i `18:00`. `00:00` to północ na końcu doby |
+| `shift_hours` | Pompa ciepła: o ile godzin (1–3) w obie strony planer może przesunąć każdy blok grzania. Ekran o to nie pyta: wartość to `max_shift_min` z pliku albo 1 h |
+| `indoor_temp_c` | Pompa ciepła: temperatura w domu 16–25 °C; bez wartości 21 °C ([heat-pump.md](heat-pump.md)) |
+| `ready_times` | Bojler: 1–4 godziny „woda gotowa na” co kwadrans, bez powtórzeń; domyślnie `06:00` i `18:00`. `00:00` to północ na końcu doby. Pompa ciepła w domu bez bojlera: 0–4 godziny „ciepła woda z pompy gotowa na” (bez godzin woda grzeje się jak w dniu referencyjnym) |
 | `tank_liters` | Bojler: pojemność zbiornika 30–500 l. Gdy plik urządzeń ma `tank_liters`, wygrywa wartość z pliku (`tank_liters_from_file`, ekran tylko ją pokazuje); bez niej domyślna z liczby osób: 80 l dla 1–2, 120 l dla 3–4, 150 l od 5 |
 
 Błędy (`422`, lista z `loc: ["body", "devices", indeks, pole]`): przedziały nachodzące na siebie,
@@ -165,8 +166,8 @@ najdłuższy przedział krótszy niż program, brak programu, brak energii auta,
 nie wyższy niż obecny i energia auta większa niż moc ładowarki × długość przedziałów. Dla „Wykonaj po”:
 poprzednik nie pracuje jutro, pętla (urządzenia czekają na siebie nawzajem), urządzenie bez programu
 oraz program, który nie zdąży przed `finish_by` nawet przy najwcześniejszym końcu poprzednika
-(sprawdzane po całym łańcuchu, np. pralka → suszarka → trzecie urządzenie). Pompa ciepła: brak
-`shift_hours`; bojler: brak godzin albo powtórzona godzina.
+(sprawdzane po całym łańcuchu, np. pralka → suszarka → trzecie urządzenie). Pompa ciepła: powtórzona
+godzina ciepłej wody; bojler: brak godzin albo powtórzona godzina.
 
 ## Plan pracy urządzeń na jutro (ZP-112)
 

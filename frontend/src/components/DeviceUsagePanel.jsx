@@ -22,14 +22,9 @@ import { axisUnitLabel, formatAxis } from "../utils/format";
 import { ChartSkeleton } from "./Skeleton";
 
 const RESOLUTION_PREFIX = { "15m": "Średnio o", "1h": "Średnio o", "1d": "Dzień" };
-// Wykres jest skumulowany, więc Recharts animuje osobno każdy kawałek słupka (okres × grupa). Przy małej liczbie
-// kawałków (np. doba godzinowo: 24 × 7) słupki płynnie zmieniają wysokość jak na „Łącznie”; przy dużej (15 min,
-// dni długiego okresu: setki i tysiące kawałków) animacja w JS klatkowała, więc zamiast niej jest krótkie przejście
-// przezroczystości (CSS, chart-fade-in).
-const MAX_ANIMATED_PIECES = 2500;
-const BAR_ANIMATION_MS = 1000;
-// Systemowe „ogranicz ruch” wyłącza też animację słupków (przejście CSS wyłącza index.css).
-const REDUCED_MOTION = typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+// Wykres jest skumulowany, więc Recharts animowałby osobno każdy kawałek słupka (okres × grupa), a to klatkowało.
+// Zamiast animacji słupków jest krótkie przejście przezroczystości całego wykresu (CSS, chart-fade-in), które
+// systemowe „ogranicz ruch” wyłącza w index.css.
 const LEVEL_NAMES = ["kategorii", "typów", "urządzeń", "urządzenia"];
 const FLEXIBLE_HINT = "Można przenieść na inne godziny";
 const DEVICE_FILTER_OPTIONS = [
@@ -142,8 +137,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
     : "";
   const [fade, setFade] = useState({ key: viewKey, odd: false });
   if (fade.key !== viewKey) setFade({ key: viewKey, odd: !fade.odd });
-  const animateBars = !REDUCED_MOTION && rows.length * (series.length + (production ? 1 : 0)) <= MAX_ANIMATED_PIECES;
-  const fadeClass = animateBars ? "" : fade.odd ? "chart-fade-in" : "chart-fade-in-alt";
+  const fadeClass = fade.odd ? "chart-fade-in" : "chart-fade-in-alt";
 
   const select = (item) => {
     if (item.clickable) setPath([...path, { key: item.key, label: item.label }]);
@@ -298,12 +292,11 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
                       fill={item.color}
                       cursor={item.clickable ? "pointer" : undefined}
                       onClick={() => select(item)}
-                      isAnimationActive={animateBars}
-                      animationDuration={BAR_ANIMATION_MS}
+                      isAnimationActive={false}
                     />
                   ))}
                   {production && metric === "kwh" && (
-                    <Bar dataKey={`${PRODUCTION_KEY}__kwh`} name="Produkcja fotowoltaiki" stackId="usage" fill={PRODUCTION_COLOR} isAnimationActive={animateBars} animationDuration={BAR_ANIMATION_MS} />
+                    <Bar dataKey={`${PRODUCTION_KEY}__kwh`} name="Produkcja fotowoltaiki" stackId="usage" fill={PRODUCTION_COLOR} isAnimationActive={false} />
                   )}
                 </BarChart>
               </ResponsiveContainer>

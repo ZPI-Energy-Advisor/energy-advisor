@@ -12,7 +12,7 @@ import IncompleteDaysNotice from "../components/IncompleteDaysNotice";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import ProfileTariffNotice from "../components/ProfileTariffNotice";
 import { useCurrentUser } from "../hooks/useCurrentUser";
-import { fillMissingDays, hasDataInRange } from "../utils/energyFiles";
+import { fillMissingDays, formatDate, hasDataInRange } from "../utils/energyFiles";
 import { describeBreakdown, formatPln } from "../utils/tariffs";
 import { axisUnitLabel, formatAxis, formatNumber } from "../utils/format";
 import { UNAVAILABLE_NO_COMMON_DAYS, UNAVAILABLE_NO_DEVICE_FILES, deviceUsageSource } from "../utils/deviceUsage";
@@ -194,7 +194,10 @@ function Dashboard() {
             />
             {showDevices && devicesSource.meter && (
               <p className="text-xs md:text-sm text-gray-500">
-                Urządzenia z plików urządzeń i reszta domu z licznika, w dniach wspólnych obu źródeł.
+                {devicesSource.deviceFiles?.length
+                  ? `Urządzenia z ${devicesSource.deviceFiles.length === 1 ? "pliku" : "plików"} ${devicesSource.deviceFiles.join(", ")}`
+                  : "Urządzenia z plików urządzeń"}
+                , reszta domu z licznika, w dniach wspólnych ({formatDate(devicesSource.range.from)} – {formatDate(devicesSource.range.to)}).
               </p>
             )}
           </div>

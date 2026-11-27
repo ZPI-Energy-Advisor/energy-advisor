@@ -5,6 +5,7 @@ import apiClient from "../api/client";
 import { ChartSkeleton, PageSkeleton } from "../components/Skeleton";
 import PvAccuracyChart from "../components/pv/PvAccuracyChart";
 import PvDayChart from "../components/pv/PvDayChart";
+import MoreInfo from "../components/MoreInfo";
 import { formatDate, getApiErrorMessage } from "../utils/energyFiles";
 import { formatNumber } from "../utils/format";
 import {
@@ -115,8 +116,7 @@ function Balance({ detail, overview }) {
     <>
       {estimated && (
         <p className="mt-4 text-sm text-gray-600">
-          Nie znamy jeszcze zużycia domu w tym dniu, więc bilans liczymy ze średniego zużycia z Twoich plików
-          (linia przerywana na wykresie).
+          Zużycie domu to szacunek ze średniej z Twoich plików (linia przerywana).
         </p>
       )}
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -136,7 +136,8 @@ function Balance({ detail, overview }) {
             : `${formatPln(value.self_pln)} mniej za prąd + ${formatPln(value.export_pln)} ${settlement}`}
         />
       </div>
-      <p className="mt-3 text-sm text-gray-600">
+      <MoreInfo className="mt-3">
+      <p>
         Liczymy w godzinach, jak operator: w każdej godzinie prąd z paneli najpierw pokrywa zużycie domu w tej godzinie,
         a nadwyżka idzie do sieci. Każdą godzinę wyceniamy jej własną ceną, a poniżej są średnie z tego dnia.{" "}
         {value?.purchase_price != null && (
@@ -155,6 +156,7 @@ function Balance({ detail, overview }) {
         {value && installation.settlement === "net_billing" &&
           "Depozyt pokrywa tylko część rachunku za energię, bez opłat dystrybucyjnych."}
       </p>
+      </MoreInfo>
     </>
   );
 }
@@ -313,7 +315,10 @@ function PvPage() {
         <p className="mt-1 text-sm text-gray-500">{describeAccuracy(calibration)}</p>
         {installation.estimated && (
           <p className="mt-2 text-sm text-amber-700">
-            Panele są szacunkowe, więc prognoza jest orientacyjna. <Link to="/profile" className="underline">Uzupełnij panele w profilu</Link>.
+            {calibration.effective_kwp
+              ? `Panele są szacunkowe: moc (ok. ${formatNumber(calibration.effective_kwp, 1)} kWp) dopasowaliśmy do produkcji z Twoich plików, więc prognoza jest orientacyjna. `
+              : "Panele są szacunkowe, więc prognoza jest orientacyjna. "}
+            <Link to="/profile" className="underline">Uzupełnij panele w profilu</Link>.
           </p>
         )}
         {overview.approximate_location && (
@@ -363,12 +368,11 @@ function PvPage() {
           </div>
         </div>
 
-        <p className="-mt-2 mb-3 text-xs text-gray-500">
-          Możesz cofnąć się do dowolnego dnia: pogoda jest wtedy z archiwum
-          {overview.data_periods.length
-            ? `, a produkcja i zużycie z Twoich plików są w dniach: ${describePeriods(overview.data_periods)}`
-            : ""}.
-        </p>
+        {overview.data_periods.length > 0 && (
+          <p className="-mt-2 mb-3 text-xs text-gray-500">
+            Dane z Twoich plików: {describePeriods(overview.data_periods)}.
+          </p>
+        )}
 
         {detailError ? (
           <p role="alert" className="rounded-md bg-amber-50 p-4 text-sm text-amber-800">{detailError}</p>

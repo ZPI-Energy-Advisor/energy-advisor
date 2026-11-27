@@ -16,6 +16,8 @@ class PvCalibrationOut(BaseModel):
     days: int
     mape: float | None
     candidate_days: int = 0
+    # Panele szacunkowe dopasowane do produkcji z plików: moc, która by ją dała przy typowej sprawności.
+    effective_kwp: float | None = None
 
 
 class PvDataPeriodOut(BaseModel):

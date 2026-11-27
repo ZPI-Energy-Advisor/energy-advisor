@@ -1,4 +1,5 @@
 import { formatKwh, formatNumber, formatPln, formatSimTime, periodLabel } from "../../utils/home";
+import MoreInfo from "../MoreInfo";
 
 const DEVIATION_LABELS = {
   rejected: "Odrzucona komenda",
@@ -87,10 +88,12 @@ function PlanRunCost({ cost, horizonStart = null }) {
         )}
       </div>
 
-      <p className="mt-1 text-xs text-gray-600">
-        Liczymy tylko te urządzenia: pracę o zwykłych godzinach z historii i o godzinach z harmonogramu, zmierzoną
-        w symulacji. Te same ceny kwadransów taryfy, bez opłat stałych i bez odliczenia energii z PV.
-      </p>
+      <MoreInfo className="mt-1">
+        <p>
+          Liczymy tylko te urządzenia: pracę o zwykłych godzinach z historii i o godzinach z harmonogramu, zmierzoną
+          w symulacji. Te same ceny kwadransów taryfy, bez opłat stałych i bez odliczenia energii z PV.
+        </p>
+      </MoreInfo>
 
       <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Amount label="Bez planu" value={formatPln(cost.cost_before)} />

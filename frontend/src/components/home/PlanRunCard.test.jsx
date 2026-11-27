@@ -100,7 +100,7 @@ describe("PlanRunCard (raport przebiegu)", () => {
     expect(rest.textContent).toContain("Włączone ręcznie0,12 zł");
     expect(rest.textContent).toContain("PV6,40 kWh, z tego plan 0,90 kWh");
     expect(facts.textContent).not.toContain("Włączone ręcznie");
-    const more = cost.querySelector("details");
+    const more = [...cost.querySelectorAll("details")].find((item) => item.querySelector("summary").textContent === "Więcej");
     expect(more.textContent).toContain("Włączone ręcznie: Lampa salon 0,20 kWh (0,12 zł).");
     expect(more.textContent).toContain(
       "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64% ich zużycia).",

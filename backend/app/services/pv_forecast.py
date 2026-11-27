@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 QUARTER_HOURS = 0.25
 DEFAULT_COEFFICIENT = 0.8
 COEFFICIENT_RANGE = (0.4, 1.1)
+# Panele szacunkowe (profil bez danych paneli, typowe 6 kWp): kalibracja dopasowuje do produkcji z plików także
+# moc instalacji, więc współczynnik może być dużo większy albo mniejszy (np. 10 kWp to ok. 1,4).
+ESTIMATED_COEFFICIENT_RANGE = (0.05, 8.0)
 TEMPERATURE_COEFFICIENT = -0.004
 CELL_HEATING_PER_W_M2 = 0.03
 MIN_CALIBRATION_DAYS = 3
@@ -43,6 +46,8 @@ class Calibration:
     note: str | None = None
     # Dni z produkcją i pełną pogodą przed odrzuceniem odstających (days to te, które zostały w dopasowaniu).
     candidate_days: int = 0
+    # Panele szacunkowe dopasowane do produkcji z plików: moc instalacji, która by ją dała przy typowej sprawności.
+    effective_kwp: float | None = None
 
 
 @dataclass
@@ -125,6 +130,7 @@ def calibrate(
     production: dict[datetime, float],
     weather: dict[date, DayWeather],
     inverter_kw: float | None,
+    estimated: bool = False,
 ) -> Calibration:
     """Współczynnik sprawności z produkcji falownika: suma produkcji / suma modelu bez współczynnika, z dni
     z pełną pogodą. Dni z produkcją odstającą od mediany (śnieg, awaria) i kwadranse na limicie falownika
@@ -165,13 +171,14 @@ def calibrate(
     ]
     coefficient = total_actual / total_model
     note = None
-    low, high = COEFFICIENT_RANGE
-    if not low <= coefficient <= high:
+    low, high = ESTIMATED_COEFFICIENT_RANGE if estimated else COEFFICIENT_RANGE
+    if not low <= coefficient <= high and not estimated:
         note = (f"Produkcja z pliku nie pasuje do paneli z profilu (współczynnik {coefficient:.2f}). "
                 "Sprawdź moc, kierunek i nachylenie paneli.")
-        coefficient = min(max(coefficient, low), high)
+    coefficient = min(max(coefficient, low), high)
+    effective_kwp = round(sum(array.kwp for array in arrays) * coefficient / DEFAULT_COEFFICIENT, 1) if estimated else None
     return Calibration(round(coefficient, 3), "history", days=len(kept), mape=round(sum(errors) / len(errors), 3), note=note,
-                       candidate_days=len(days))
+                       candidate_days=len(days), effective_kwp=effective_kwp)
 
 
 def _wall_clock(moment: datetime) -> tuple[int, int]:
@@ -231,7 +238,7 @@ class PvForecastService:
                 if fallback else "Brak części pogody na ten dzień: brakujących kwadransów nie liczymy."
             )
 
-        calibration = self._calibration(user_id, cell, arrays, planes, inverter_kw)
+        calibration = self._calibration(user_id, cell, arrays, planes, inverter_kw, installation.estimated)
         quarters = []
         start, end = local_day_bounds_utc(day)
         weather_quarters = {q.start: q for q in day_weather.quarters} if day_weather else {}
@@ -247,7 +254,11 @@ class PvForecastService:
             quarters.append(PvQuarter(moment, round(kwh, 4), basis))
             moment += timedelta(minutes=15)
 
-        if installation.estimated:
+        if installation.estimated and calibration.effective_kwp:
+            kwp = f"{calibration.effective_kwp:.1f}".replace(".", ",")
+            notes.append(f"Parametry paneli są szacunkowe: moc (ok. {kwp} kWp) dopasowaliśmy do produkcji z Twoich "
+                         "plików, więc prognoza jest orientacyjna.")
+        elif installation.estimated:
             notes.append("Parametry paneli są szacunkowe, więc prognoza jest orientacyjna.")
         if location.approximate:
             notes.append("Lokalizacja domu jest przybliżona do regionu pocztowego; pogoda może się różnić.")
@@ -266,14 +277,14 @@ class PvForecastService:
         )
 
     def _calibration(self, user_id, cell: Cell, arrays: list[PvArray], planes: list[Plane],
-                     inverter_kw: float | None) -> Calibration:
+                     inverter_kw: float | None, estimated: bool = False) -> Calibration:
         hour = self.weather.now().replace(minute=0, second=0, microsecond=0)
-        key = (user_id, cell, tuple(arrays), inverter_kw, self.devices.completed_file_ids(user_id), hour)
+        key = (user_id, cell, tuple(arrays), inverter_kw, estimated, self.devices.completed_file_ids(user_id), hour)
         with _calibrations_lock:
             if key in _calibrations:
                 _calibrations.move_to_end(key)
                 return _calibrations[key]
-        calibration = self._calibrate(user_id, cell, arrays, planes, inverter_kw)
+        calibration = self._calibrate(user_id, cell, arrays, planes, inverter_kw, estimated)
         if calibration.source != "history":
             return calibration
         with _calibrations_lock:
@@ -283,12 +294,12 @@ class PvForecastService:
         return calibration
 
     def _calibrate(self, user_id, cell: Cell, arrays: list[PvArray], planes: list[Plane],
-                   inverter_kw: float | None) -> Calibration:
+                   inverter_kw: float | None, estimated: bool = False) -> Calibration:
         production = self.devices.pv_production(user_id)
         days = {moment.astimezone(MARKET_TIMEZONE).date() for moment in production}
         days = {day for day in days if day < self.weather.today()}
         weather = self.weather.stored_days(cell, days, planes) if days else {}
-        return calibrate(arrays, planes, production, weather, inverter_kw)
+        return calibrate(arrays, planes, production, weather, inverter_kw, estimated)
 
     def setup(self, user_id, profile: UserProfile) -> "PvSetup":
         installation = pv_installation(profile.pv_config)
@@ -301,7 +312,7 @@ class PvForecastService:
         planes = planes_of_arrays(arrays)
         cell = Cell.of(location)
         inverter_kw = installation.inverter_power_kw or self.devices.pv_inverter_kw(user_id)
-        calibration = self._calibration(user_id, cell, arrays, planes, inverter_kw)
+        calibration = self._calibration(user_id, cell, arrays, planes, inverter_kw, installation.estimated)
         return PvSetup(installation, cell, arrays, planes, inverter_kw, calibration)
 
     def modeled(self, setup: "PvSetup", days) -> dict[date, dict[datetime, float]]:

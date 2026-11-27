@@ -132,8 +132,7 @@ function DynamicPricesPage() {
         <div className="bg-white p-8 md:p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
           <h3 className="text-xl font-bold text-gray-800 mb-2">Brak zapisanych cen dynamicznych</h3>
           <p className="text-gray-500 text-sm md:text-base">
-            Ceny RCE pobiera automatycznie worker synchronizacji (codziennie o 15:00). Historię można uzupełnić
-            komendą <code className="text-xs bg-gray-100 px-1 rounded">backfill</code>.
+            Ceny pobieramy codziennie po 15:00. Zajrzyj tu później.
           </p>
         </div>
       ) : (
