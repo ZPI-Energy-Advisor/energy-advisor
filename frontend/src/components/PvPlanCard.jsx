@@ -1,6 +1,7 @@
 import { FiSun } from "react-icons/fi";
 import { formatNumber } from "../utils/format";
 import { formatPln } from "../utils/schedule";
+import MoreInfo from "./MoreInfo";
 
 const kwh = (value) => `${formatNumber(value, 1)} kWh`;
 
@@ -44,12 +45,21 @@ function PvPlanCard({ pv }) {
           </tbody>
         </table>
       )}
-      <p className="mt-3 text-xs text-gray-500">
-        Operator rozlicza pobór i oddanie w każdej godzinie, więc urządzenie w godzinie z nadwyżką kosztuje tyle, ile dom
-        traci na oddaniu prądu do sieci, a nie pełną cenę z sieci. Koszty planu powyżej już to uwzględniają.
-        {pv.export_estimated && " Cen RCE na ten dzień jeszcze nie ma, więc wartość oddania to średnia z ostatnich dni."}
-        {pv.export_unpriced && " Nie ma cen RCE, więc oddania nie wyceniamy."}
-      </p>
+      <MoreInfo className="mt-3">
+        <p>
+          Operator rozlicza pobór i oddanie w każdej godzinie, więc urządzenie w godzinie z nadwyżką kosztuje tyle, ile
+          dom traci na oddaniu prądu do sieci, a nie pełną cenę z sieci. Koszty planu powyżej już to uwzględniają.
+        </p>
+        <p>
+          Panele najpierw pokrywają zwykłe zużycie reszty domu
+          {pv.rest_source === "meter" ? " (z licznika, bez urządzeń z planu)" : " (urządzenia stałe z plików)"}, a plan
+          liczy na prognozę pomniejszoną o jej średni błąd. Oddanie wyceniamy {pv.settlement === "net_billing"
+            ? "po RCE × 1,23 do depozytu, który pokrywa tylko część rachunku za energię"
+            : "opustem od ceny z sieci"}.
+        </p>
+        {pv.export_estimated && <p>Cen RCE na ten dzień jeszcze nie ma, więc wartość oddania to średnia z ostatnich dni.</p>}
+        {pv.export_unpriced && <p>Nie ma cen RCE, więc oddania nie wyceniamy.</p>}
+      </MoreInfo>
     </section>
   );
 }

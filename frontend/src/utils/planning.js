@@ -84,7 +84,9 @@ export const validateDevice = (device, preference, efficiency) => {
   if (!preference.enabled) return errors;
   const levels = preference.energy_input === "percent";
   if (device.kind === "heat_pump") {
-    if (!preference.shift_hours) errors.shift_hours = "Wybierz, o ile można przesunąć grzanie.";
+    const times = preference.ready_times ?? [];
+    if (times.some((time) => !isQuarter(time))) errors.ready_times = "Godziny ustaw co kwadrans, np. 06:00 albo 17:45.";
+    else if (new Set(times).size !== times.length) errors.ready_times = "Godziny się powtarzają.";
     return errors;
   }
   if (device.kind === "water_heater") {
@@ -236,6 +238,7 @@ export const toPayload = (devices) => ({
       current_percent: energy("current_percent"),
       target_percent: energy("target_percent"),
       shift_hours: number(preference.shift_hours),
+      indoor_temp_c: number(preference.indoor_temp_c),
       tank_liters: number(preference.tank_liters),
       ready_times: preference.ready_times ?? [],
     };

@@ -95,8 +95,8 @@ describe("TomorrowPriceCards", () => {
     renderCards({ ...AVAILABLE, profile_dynamic: false }, { tariffType: "G12" });
 
     await screen.findByTestId("price-card-cheapest");
-    const note = screen.getByText(/To ceny taryfy dynamicznej, a Ty masz taryfę G12/);
-    expect(within(note).getByRole("link", { name: "Sprawdź w analizie taryf" }).getAttribute("href")).toBe("/tariffs");
+    const note = screen.getByText(/To ceny taryfy dynamicznej\./);
+    expect(within(note).getByRole("link", { name: "Czy by Ci się opłacała?" }).getAttribute("href")).toBe("/tariffs");
   });
 
   it("dopisek o taryfie dynamicznej jest też przy braku cen", async () => {

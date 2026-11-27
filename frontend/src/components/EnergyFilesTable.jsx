@@ -275,7 +275,7 @@ function EnergyFilesTable() {
         <div>
           <h3 className="font-bold text-gray-900">Twoje pliki</h3>
           <p className="text-xs md:text-sm text-gray-500">
-            Wybierz pojedynczy plik albo dane zbiorcze, aby zobaczyć je na Dashboardzie i w analizie taryf. Dane zbiorcze łączą osobno pliki z licznika i pliki urządzeń (JSON). Przy nakładających się okresach liczy się nowszy import.
+            Wybierz plik albo dane zbiorcze. Gdy okresy plików się nakładają, liczy się nowszy plik.
           </p>
         </div>
       </div>

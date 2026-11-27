@@ -367,3 +367,129 @@ def test_day_without_surplus_says_plan_follows_grid_prices_only():
     assert notes[0].startswith("Prąd z paneli w piątek 27 listopada: prognoza 1,3 kWh. Plan liczy na 1,0 kWh")
     assert "o 4% mniej (tyle średnio myli się prognoza dla Twoich paneli)" in notes[0]
     assert notes[1].startswith("Nadwyżki z paneli nie będzie")
+
+
+# Reszta domu z licznika
+
+
+def _local_quarters(day: date):
+    from app.providers.prices.base import MARKET_TIMEZONE, local_day_bounds_utc
+
+    start, end = local_day_bounds_utc(day)
+    moment = start
+    while moment < end:
+        yield moment, moment.astimezone(MARKET_TIMEZONE).replace(tzinfo=None)
+        moment += Q
+
+
+def test_rest_of_home_comes_from_meter_when_device_file_has_only_flexible_devices():
+    from app.services.house_load import rest_of_home
+
+    day = date(2026, 10, 5)
+    readings = {local: (0.5, 0.0, "licznik") for _, local in _local_quarters(day)}
+    washer = [(utc, 0.2) for utc, local in _local_quarters(day) if local.hour == 10]
+
+    rest, source = rest_of_home([], washer, readings, set(), {}, 7)
+
+    assert source == "meter"
+    assert rest[10 * 60] == pytest.approx(0.3) and rest[3 * 60] == pytest.approx(0.5)
+
+
+def test_complete_device_file_gives_the_same_as_before():
+    from app.services.house_load import rest_of_home
+
+    day = date(2026, 10, 5)
+    fixed = [(utc, 0.1) for utc, _ in _local_quarters(day)]
+
+    rest, source = rest_of_home(fixed, [], {}, set(), {}, 7)
+
+    assert source == "devices" and rest[12 * 60] == pytest.approx(0.1)
+
+
+def test_meter_adds_back_panel_production_used_at_home():
+    from app.services.house_load import rest_of_home
+
+    day = date(2026, 10, 5)
+    readings = {local: (0.1, 0.0, "licznik") for _, local in _local_quarters(day)}
+    production = {day: {utc: 0.4 for utc, local in _local_quarters(day) if 10 <= local.hour < 14}}
+
+    rest, _ = rest_of_home([], [], readings, {"licznik"}, production, 7)
+
+    # Licznik widzi 0,1 kWh poboru, ale dom zużył też 0,4 kWh z paneli.
+    assert rest[11 * 60] == pytest.approx(0.5) and rest[20 * 60] == pytest.approx(0.1)
+
+
+def _meter_file(db, owner, day: date, used_kwh: float, hours: range):
+    from app.models.EnergyDataFile import EnergyDataFile
+    from app.repositories.energy_data_file_repository import EnergyDataFileRepository
+    from app.repositories.energy_reading_repository import EnergyReadingRepository
+
+    files = EnergyDataFileRepository(db)
+    meter = files.create(user_id=owner.id, file_name="licznik.csv")
+    meter.status, meter.source_type = EnergyDataFile.STATUS_COMPLETED, EnergyDataFile.SOURCE_METER
+    meter.data_start = meter.data_end = day
+    files.save(meter)
+    readings = [(local, used_kwh if local.hour in hours else 0.05, 0.0) for _, local in _local_quarters(day)]
+    EnergyReadingRepository(db).replace_for_file(meter.id, readings)
+    db.commit()
+
+
+def test_house_that_uses_its_own_sun_does_not_move_washer_into_it(db, home, weather_cell):
+    owner = _house(db, home, [_pv_action("2026-10-05", -6.4)])
+    _weather_day(db, date(2026, 10, 5), "archive", 14.0, 300.0, NOW)
+    _sunny_afternoon(db, PLAN_DATE)
+    # Licznik: w godzinach słońca (12:00–16:00 w Polsce) dom pobiera z sieci 1 kWh na kwadrans, więc panele
+    # zjada reszta domu (np. kuchnia, praca z domu), a pralka nie ma z czego brać.
+    _meter_file(db, owner, date(2026, 10, 5), 1.0, range(12, 16))
+
+    plan = _plan(owner, _Market(rce=0.3))
+
+    washer, = plan["items"]
+    assert plan["pv"]["rest_source"] == "meter"
+    assert washer["status"] == "unchanged"
+    assert any(note.startswith("Zwykłe zużycie reszty domu liczymy z licznika") for note in plan["notes"])
+
+
+def _cold_sunny_day(db, day: date):
+    from app.providers.prices.base import local_day_bounds_utc
+    from app.providers.weather import WeatherPoint
+    from test_day_background import CELL
+
+    start, end = local_day_bounds_utc(day)
+    points, moment = [], start
+    while moment < end:
+        sun = 800.0 if 10 <= moment.hour < 14 else 0.0
+        points.append(WeatherPoint(moment, 15, 2.0, 10, sun, {"35/0": sun}))
+        moment += Q
+    WeatherRepository(db).upsert(CELL.latitude, CELL.longitude, "forecast", points, NOW)
+
+
+def _sun_share(plan) -> float:
+    total = sunny = 0.0
+    for item in plan["items"]:
+        if item["kind"] != "heat_pump":
+            continue
+        start = datetime.fromisoformat(item["start"]).astimezone(UTC)
+        for index, kwh in enumerate(item["profile_kwh"]):
+            total += kwh
+            if 10 <= (start + index * Q).hour < 14:
+                sunny += kwh
+    return sunny / total
+
+
+def test_heat_pump_heats_more_under_the_sun_with_panels(db, home, weather_cell):
+    from app.models.UserProfile import UserProfile as UserProfileRow
+    from test_home import HEAT_PUMP
+
+    owner = _house(db, home, [_pv_action("2026-10-05", -6.4)], extra=[HEAT_PUMP])
+    _weather_day(db, date(2026, 10, 5), "archive", 8.0, 300.0, NOW)
+    _cold_sunny_day(db, PLAN_DATE)
+    pump = [{"device_id": "dev_hp_01", "enabled": True, "shift_hours": 1}]
+
+    with_panels = _plan(owner, _Market(rce=0.2), devices=pump)
+    db.get(UserProfileRow, owner.id).pv_config = {"mode": "none"}
+    db.commit()
+    without_panels = _plan(owner, _Market(rce=0.2), devices=pump)
+
+    assert with_panels["pv"] is not None and without_panels["pv"] is None
+    assert _sun_share(with_panels) > _sun_share(without_panels)

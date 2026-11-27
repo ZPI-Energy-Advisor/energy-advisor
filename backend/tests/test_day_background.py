@@ -90,6 +90,7 @@ def _house(db, home, pv_actions, extra=(), pv_config=PANELS, period_start="2026-
     home.hub.use_clock_state()
     payload = profile_payload("G11")
     payload["base_info"].update({
+        "type_of_property": "single_family_house",
         "heating_area_m2": 120, "year_of_construction": 2010, "number_of_residents": 3,
         "location": {"latitude": 50.06, "longitude": 19.94, "source": "postal_code"},
     })
@@ -160,6 +161,20 @@ def test_pv_in_plan_and_simulation_comes_from_the_weather_forecast(db, home, wea
         "forecast", pytest.approx(-expected, abs=0.01), -6.4,
     )
     assert any(note.startswith("Instalacja PV w symulacji: produkcja z prognozy pogody") for note in plan["notes"])
+
+
+def test_estimated_panels_are_named_in_plan_notes(db, home, weather_cell):
+    owner = _house(db, home, [_pv_action("2026-10-05", -6.4)], pv_config={"mode": "net_billing", "type_of_price": "RCE"})
+    _weather_day(db, REFERENCE_DAY, "archive", 14.0, 300.0)
+    _weather_day(db, PLAN_DAY, "forecast", 10.0, 600.0)
+
+    plan = _plan(owner)
+
+    pv_device, = _background(db, owner, plan).devices
+    assert pv_device.source == "forecast" and pv_device.estimated_panels
+    # Jeden dzień produkcji to za mało do dopasowania mocy, więc zostają typowe 6 kWp.
+    assert pv_device.effective_kwp is None
+    assert any("Panele w profilu są szacunkowe: liczymy dla typowych 6 kWp" in note for note in plan["notes"])
 
 
 def test_simulation_uses_plan_snapshot_even_when_forecast_changes_later(db, home, weather_cell):

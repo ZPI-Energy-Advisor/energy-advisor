@@ -41,10 +41,15 @@ export const deviceUsageSource = ({ selectedFile, dateRange, devicesAggregate })
   const from = dateRange.from > devicesAggregate.data_start ? dateRange.from : devicesAggregate.data_start;
   const to = dateRange.to < devicesAggregate.data_end ? dateRange.to : devicesAggregate.data_end;
   if (from > to) return { unavailable: UNAVAILABLE_NO_COMMON_DAYS };
+  // Pliki urządzeń, z których jest widok: te z dniami w zakresie (plik mógł być w całości przykryty nowszym).
+  const deviceFiles = (devicesAggregate.files ?? [])
+    .filter((file) => file.days_used > 0 && file.data_start && file.data_end && file.data_start <= to && file.data_end >= from)
+    .map((file) => file.file_name);
   return {
     sourceId: ALL_DEVICE_FILES_ID,
     meter: selectedFile.id === ALL_FILES_ID ? ALL_FILES_ID : selectedFile.id,
     range: { from, to },
+    deviceFiles,
   };
 };
 

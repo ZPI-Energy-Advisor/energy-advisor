@@ -10,6 +10,7 @@ import { randomDay, rangeText, weekdayName } from "../utils/dateRange";
 import { SOURCE_TYPE_DEVICES, getApiErrorMessage, isAggregateSource } from "../utils/energyFiles";
 import { daySummaries, fixedDevices, flexibleActions } from "../utils/historicalSchedule";
 import { describeBreakdown } from "../utils/tariffs";
+import MoreInfo from "../components/MoreInfo";
 import {
   choiceLabel,
   dynamicAllowed,
@@ -515,7 +516,7 @@ function SchedulePage() {
                 </div>
               )}
 
-              <div className="text-xs text-gray-500 space-y-1">
+              <MoreInfo className="text-xs">
                 <p>
                   {hasBills
                     ? `Rachunek do zapłaty za ${rangeText(shown.date_from, shown.date_to)}${shown.bill_until ? ` z dokończeniem akcji do ${formatMoment(shown.bill_until)}` : ""}`
@@ -535,9 +536,7 @@ function SchedulePage() {
                     {describeBreakdown(shown.price_breakdown, (value) => `${value.toFixed(3).replace(".", ",")} zł`)}.
                   </p>
                 )}
-                <details>
-                  <summary className="cursor-pointer text-gray-600 hover:text-gray-900">Jak liczymy?</summary>
-                  <ul className="mt-2 list-disc pl-5 space-y-1">
+                <ul className="list-disc pl-5 space-y-1">
                     <li>
                       {hasBills
                         ? "Rachunek liczymy jak w Analizie taryf: z opłatami stałymi, fotowoltaiką i depozytem."
@@ -560,9 +559,8 @@ function SchedulePage() {
                       i po północy, jeśli auto stoi do rana.
                     </li>
                     <li>Wynik zakłada, że rano wiadomo, jakie urządzenia będą pracować danego dnia, więc pokazuje potencjał oszczędności.</li>
-                  </ul>
-                </details>
-              </div>
+                </ul>
+              </MoreInfo>
 
               {missingPrices && <p className={NOTE}>{missingPrices}</p>}
               {shown.grid_limit_note && (

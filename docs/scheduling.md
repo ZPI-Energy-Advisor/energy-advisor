@@ -156,8 +156,9 @@ i `history_kwh` (średnie zużycie bojlera na dobę z 7 ostatnich dni w plikach)
 | `finish_by` | Tylko z `after_device_id`, opcjonalne: program kończy się najpóźniej o tej godzinie (`HH:MM` co kwadrans). Godzina nie późniejsza niż początek najwcześniejszego przedziału pierwszego urządzenia w łańcuchu oznacza rano następnego dnia |
 | `energy_input`, `energy_kwh` | Ładowarka EV: energia wprost w kWh |
 | `battery_kwh`, `current_percent`, `target_percent` | Ładowarka EV: energia z poziomu baterii; z sieci `(docelowy − obecny) × pojemność / 0,9` (straty ładowania). Pojemność zostaje w ustawieniach |
-| `shift_hours` | Pompa ciepła: o ile godzin (1–3) w obie strony można przesunąć każdy blok grzania; domyślnie `max_shift_min` z pliku albo 1 h |
-| `ready_times` | Bojler: 1–4 godziny „woda gotowa na” co kwadrans, bez powtórzeń; domyślnie `06:00` i `18:00`. `00:00` to północ na końcu doby |
+| `shift_hours` | Pompa ciepła: o ile godzin (1–3) w obie strony planer może przesunąć każdy blok grzania. Ekran o to nie pyta: wartość to `max_shift_min` z pliku albo 1 h |
+| `indoor_temp_c` | Pompa ciepła: temperatura w domu 16–25 °C; bez wartości 21 °C ([heat-pump.md](heat-pump.md)) |
+| `ready_times` | Bojler: 1–4 godziny „woda gotowa na” co kwadrans, bez powtórzeń; domyślnie `06:00` i `18:00`. `00:00` to północ na końcu doby. Pompa ciepła w domu bez bojlera: 0–4 godziny „ciepła woda z pompy gotowa na” (bez godzin woda grzeje się jak w dniu referencyjnym) |
 | `tank_liters` | Bojler: pojemność zbiornika 30–500 l. Gdy plik urządzeń ma `tank_liters`, wygrywa wartość z pliku (`tank_liters_from_file`, ekran tylko ją pokazuje); bez niej domyślna z liczby osób: 80 l dla 1–2, 120 l dla 3–4, 150 l od 5 |
 
 Błędy (`422`, lista z `loc: ["body", "devices", indeks, pole]`): przedziały nachodzące na siebie,
@@ -165,8 +166,8 @@ najdłuższy przedział krótszy niż program, brak programu, brak energii auta,
 nie wyższy niż obecny i energia auta większa niż moc ładowarki × długość przedziałów. Dla „Wykonaj po”:
 poprzednik nie pracuje jutro, pętla (urządzenia czekają na siebie nawzajem), urządzenie bez programu
 oraz program, który nie zdąży przed `finish_by` nawet przy najwcześniejszym końcu poprzednika
-(sprawdzane po całym łańcuchu, np. pralka → suszarka → trzecie urządzenie). Pompa ciepła: brak
-`shift_hours`; bojler: brak godzin albo powtórzona godzina.
+(sprawdzane po całym łańcuchu, np. pralka → suszarka → trzecie urządzenie). Pompa ciepła: powtórzona
+godzina ciepłej wody; bojler: brak godzin albo powtórzona godzina.
 
 ## Plan pracy urządzeń na jutro (ZP-112)
 
@@ -252,14 +253,16 @@ warte więcej niż prąd z sieci (wysoka RCE), plan unika nadwyżki.
 
 | Składnik | Skąd |
 |---|---|
-| Reszta domu | Średnie zużycie urządzeń stałych o każdej porze z 7 ostatnich dni w plikach (`average_by_clock`; zapas w limicie przyłącza bierze maksimum), pompa i bojler spoza planu z `background` i bojler z planu |
+| Reszta domu | `house_load.rest_of_home`: o każdej porze większa z dwóch średnich z 7 ostatnich dni. Pierwsza to urządzenia stałe z plików urządzeń, a druga to zużycie domu z licznika (pobór − oddanie + produkcja PV z modelu, jak na ekranie „Fotowoltaika”) minus urządzenia elastyczne z plików urządzeń. Plik urządzeń z kompletem urządzeń daje to samo co licznik, a plik z samą pralką i autem uzupełnia licznik (`pv.rest_source = meter` i uwaga w planie). Do tego pompa i bojler spoza planu z `background` oraz bojler i pompa z planu. Zapas w limicie przyłącza dalej bierze maksimum urządzeń stałych |
 | Produkcja | Migawka prognozy z `background.pv_forecast` (także bez falownika w pliku, gdy profil ma panele) pomniejszona o średni błąd prognozy: MAPE z kalibracji, a bez niej 20% (najwyżej 50%) |
 | Cena zakupu | Ceny kwadransów taryfy, jak dotąd |
 | Wartość oddania | `ExportValuation`, wspólne z ekranem „Fotowoltaika”: net-billing RCE (albo RCEm) × 1,23 ze średniej 4 kwadransów godziny, ujemna cena = 0, bez cen na ten dzień średnia RCE z tych samych godzin z 14 dni (szacunek), RCEm przed publikacją wyceniana po RCE; net-metering opust × cena zakupu. Bez żadnych cen oddanie nic nie jest warte (z uwagą) |
 
 Harmonogram (`schedule(..., balance)`) wybiera miejsce grupy po zmianie rachunku przy już ułożonych akcjach,
-a ładowanie auta wypełnia kwadranse, w których kWh najmniej podnosi rachunek. Bojler plan układa przed resztą,
-z ceną kwadransów obniżoną do wartości oddania w godzinach, w których nadwyżka reszty domu pokryje grzałkę.
+a ładowanie auta wypełnia kwadranse, w których kWh najmniej podnosi rachunek. Bojler i pompę ciepła (planer
+temperatury w domu i ciepła woda z pompy) plan układa przed resztą, z ceną kwadransów obniżoną do wartości oddania
+w godzinach, w których nadwyżka reszty domu pokryje grzałkę albo pompę na najniższym poziomie mocy
+(`effective_prices`).
 Na koniec koszt każdej pozycji to zmiana rachunku godzin bez planu i według planu (`allocate`): zmiana w godzinie
 dzieli się między urządzenia według zużycia × ceny kwadransu, więc pozycje sumują się do kosztu planu.
 
@@ -269,6 +272,23 @@ bez planu i według planu (`before`, `after`: `self_kwh`, `export_kwh`, `import_
 W planie jest też `balance` (reszta domu, produkcja i wartość oddania). Raport z symulacji (ZP-114) bierze koszty
 pozycji z planu, a zmierzone zużycie urządzeń z planu wycenia tym samym rachunkiem. Bez prognozy PV (brak pogody)
 plan liczy się bez paneli i mówi o tym w uwagach.
+
+Przy taryfie ze stałą ceną i nadwyżce z paneli ekran planu nie mówi już, że przesuwanie nic nie da: plan przesuwa
+urządzenia pod słońce.
+
+Uproszczenia, o których trzeba pamiętać:
+
+- **Depozyt jak gotówka.** Oddanie wyceniamy tak samo jak Analiza taryf i ekran „Fotowoltaika” (te same ceny RCE/RCEm
+  × 1,23 i opust, `ExportValuation`), ale w planie doby liczymy je od razu w złotówkach. Analiza taryf rozlicza depozyt
+  w okresach: pokrywa on tylko część rachunku za energię (bez dystrybucji), wygasa po 12 miesiącach, a nadwyżki
+  wraca 20–30%. To zależy od całego okresu rozliczeniowego, a nie od tego, o której godzinie jutro pracuje pralka,
+  więc w planie wartość oddania jest górną granicą. Różnica nie zmienia kierunku decyzji, gdy prąd z sieci jest dużo
+  droższy od RCE (typowo w słoneczne południe), ale przy wysokiej RCE plan może za bardzo unikać nadwyżki.
+- **Plan i symulacja mają inną produkcję.** Plan liczy na prognozę pomniejszoną o jej średni błąd, a do huba idzie
+  pełna prognoza (ZP-120). Raport z symulacji pokaże więc w części PV większą produkcję niż karta planu. Koszty
+  urządzeń z planu raport liczy na migawce z planu, więc oszczędność zostaje porównywalna.
+- **Panele szacunkowe.** Bez parametrów paneli w profilu („Nie znam parametrów”) prognoza liczy typową instalację,
+  więc nadwyżka w planie jest orientacyjna; plan o tym pisze w uwagach.
 
 **Historia pompy ciepła** (`plan_history.py`): ostatni dzień w plikach przed dniem planu, bo ogrzewanie
 zależy od pogody, a wczoraj jest bliżej jutra niż ten sam dzień tygodnia sprzed tygodnia. Z tego dnia

@@ -246,10 +246,14 @@ describe("PlanningPage", () => {
     expect(await within(washer).findByText("Przedziały godzin nachodzą na siebie.")).toBeTruthy();
   });
 
-  it("plan z pompą ciepła pokazuje temperaturę, ciepło dla domu i prąd pompy", async () => {
+  it("plan z pompą ciepła zaczyna od wniosku, a szczegóły chowa pod „Jak to liczymy”", async () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [HEAT_PUMP_PLAN] });
 
     const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
+    expect(within(heating).getByText(
+      "W piątek 13 listopada zimniej (-2°C zamiast 9°C w piątek 6 listopada), więc pompa zużyje ok. 21,4 kWh prądu, o 10,2 kWh więcej.",
+    )).toBeTruthy();
+    expect(within(heating).getByText("Jak to liczymy")).toBeTruthy();
     expect(within(heating).getByText(/Prognoza na ten dzień: średnio -2°C \(od -6 do 1°C\)/)).toBeTruthy();
     expect(within(heating).getByText(/W piątek 6 listopada, z którego bierzemy godziny grzania, było średnio 9°C/)).toBeTruthy();
     expect(within(heating).getByText("62 kWh")).toBeTruthy();
@@ -261,6 +265,52 @@ describe("PlanningPage", () => {
     expect(within(heating).getByText(/Dopasowane do zużycia pompy z Twoich plików \(120 dni, w tym 90 z ogrzewaniem\)/)).toBeTruthy();
     expect(within(heating).getByText(/myli średnio o 7%/)).toBeTruthy();
     expect(within(heating).queryByText(/zmieści się/)).toBeNull();
+    expect(within(heating).queryByText(/słabo zależy od temperatury/)).toBeNull();
+  });
+
+  it("plan pilnujący temperatury w domu: zakres, prąd, stygnięcie i wykres temperatury", async () => {
+    const temperatures = Array.from({ length: 96 }, (_, index) => ({
+      start: new Date(Date.UTC(2026, 10, 12, 23) + index * 900000).toISOString(),
+      before: 21, after: 20.5 + (index % 8) / 8, outdoor: -2,
+    }));
+    const pump = {
+      ...HEAT_PUMP_PLAN, mode: "indoor", reference_temperature: null, reference_kwh: null, kwh: 18.3,
+      band: [20, 22], shortfall: 0, thermostat_kwh: 17.1, cooling_per_hour: 0.45, time_constant_h: 43, temperatures,
+      cost_pln: 9.85, thermostat_cost_pln: 12.4, hot_water_heat_kwh: 0,
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [pump] });
+
+    const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
+    expect(within(heating).getByText(
+      "W piątek 13 listopada średnio -2°C. Plan trzyma w domu 20–22°C i zużyje ok. 18,3 kWh prądu, grzejąc głównie w tańszych godzinach.",
+    )).toBeTruthy();
+    expect(within(heating).getByText(/dom stygnie przy tej pogodzie o ok. 0,5°C na godzinę/)).toBeTruthy();
+    expect(within(heating).getByText("Koszt ogrzewania")).toBeTruthy();
+    expect(within(heating).getByText(/ze stałą temperaturą 12,40 zł/)).toBeTruthy();
+    // Bez bojlera w planie i z pompą, która nie grzeje wody: bez kafelka z zerem.
+    expect(within(heating).queryByText("Z tego ciepła woda")).toBeNull();
+    // Wykres temperatury w domu jest w okienku, jak temperatura wody.
+    fireEvent.click(screen.getByRole("button", { name: "Temperatura w domu" }));
+    const dialog = await screen.findByRole("dialog", { name: "Temperatura w domu: Pompa ciepła" });
+    expect(within(dialog).getByText("w domu według planu")).toBeTruthy();
+  });
+
+  it("karta pompy: temperatura w domu, ciepła woda osobno, archiwum i słabe dopasowanie", async () => {
+    const pump = {
+      ...HEAT_PUMP_PLAN,
+      plan_temperature: { mean_c: 3, min_c: 3.2, max_c: 2.8, source: "archive" },
+      indoor_c: 23,
+      water: { ready_times: ["06:30", "19:00"], tank_liters: 200, kwh: 2.25, cop: 2.4, shortfall: 0 },
+      model: { ...HEAT_PUMP_PLAN.model, mape: 0.26 },
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [pump] });
+
+    const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
+    expect(within(heating).getByText(/zużyje ok. 21,4 kWh prądu przy 23°C w domu/)).toBeTruthy();
+    expect(within(heating).getByText(/Ciepła woda w zasobniku 200 l będzie gotowa na 06:30 i 19:00/)).toBeTruthy();
+    // Plan na dzień z przeszłości: pogoda z archiwum, a zakres bez powtórzenia, gdy min i max są równe.
+    expect(within(heating).getByText(/^Pogoda z archiwum: średnio 3°C\. /)).toBeTruthy();
+    expect(within(heating).getByText(/słabo zależy od temperatury \(dobowe zużycie myli średnio o 26%\)/)).toBeTruthy();
   });
 
   it("plan z PV pokazuje prognozę, na ile liczy i bilans paneli bez planu i według planu", async () => {
@@ -398,9 +448,13 @@ describe("PlanningPage", () => {
     const pump = await card("Pompa ciepła");
     const boiler = await card("Bojler");
     expect(screen.getByRole("heading", { name: "Ogrzewanie i ciepła woda" })).toBeTruthy();
-    expect(within(pump).getByText(/godziny grzania jak w piątek 6 listopada, ilość według prognozy temperatury/)).toBeTruthy();
+    expect(within(pump).getByText(/plan trzyma temperaturę w domu według prognozy pogody/)).toBeTruthy();
     expect(within(pump).queryByText("Kiedy może pracować")).toBeNull();
-    fireEvent.change(within(pump).getByRole("combobox"), { target: { value: "2" } });
+    expect(within(pump).queryByText(/Można przesunąć grzanie/)).toBeNull();
+    expect(within(pump).getByLabelText(/Temperatura w domu/).value).toBe("21");
+    fireEvent.change(within(pump).getByLabelText(/Temperatura w domu/), { target: { value: "22" } });
+    // Dom ma bojler, więc pompa nie grzeje wody i nie pytamy o jej godziny.
+    expect(within(pump).queryByText(/Ciepła woda z pompy/)).toBeNull();
     expect(within(boiler).getByText(/ciepłą wodę liczymy dla 3 osób z profilu/)).toBeTruthy();
     fireEvent.change(within(boiler).getByLabelText("Pojemność zbiornika"), { target: { value: "150" } });
     fireEvent.click(within(boiler).getByRole("button", { name: /Dodaj godzinę/ }));
@@ -410,9 +464,29 @@ describe("PlanningPage", () => {
 
     await screen.findByText("Plan na piątek 13.11");
     const [, pumpPayload, heaterPayload] = put.mock.calls[0][1].devices;
-    expect(pumpPayload).toMatchObject({ device_id: "dev_hp_01", enabled: true, shift_hours: 2 });
+    expect(pumpPayload).toMatchObject({ device_id: "dev_hp_01", enabled: true, shift_hours: 1, indoor_temp_c: 22 });
     expect(heaterPayload.ready_times).toEqual(["06:00", "18:00", "12:00"]);
     expect(heaterPayload.tank_liters).toBe(150);
+  });
+
+  it("w domu bez bojlera przy pompie można ustawić godziny ciepłej wody", async () => {
+    const heatPump = {
+      ...WASHER, device_id: "dev_hp_01", device_name: "Pompa ciepła", device_type: "heat_pump", programs: [],
+      kind: "heat_pump", history_kwh: 12.4, history_day: "2026-11-06",
+      preference: { ...WASHER.preference, device_id: "dev_hp_01", enabled: true, shift_hours: 1, windows: [] },
+    };
+    renderPage({ ...BODY, devices: [WASHER, heatPump] });
+    const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: BODY });
+    vi.spyOn(apiClient, "post").mockResolvedValue({ data: PLAN });
+
+    const pump = await card("Pompa ciepła");
+    expect(within(pump).getByText(/Bez godzin woda będzie gotowa na 6:00 i 18:00/)).toBeTruthy();
+    fireEvent.click(within(pump).getByRole("button", { name: /Dodaj godzinę/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
+
+    await screen.findByText("Plan na piątek 13.11");
+    const [, pumpPayload] = put.mock.calls[0][1].devices;
+    expect(pumpPayload.ready_times).toHaveLength(1);
   });
 
   it("pojemność bojlera z pliku urządzeń jest tylko do odczytu", async () => {
@@ -464,6 +538,21 @@ describe("PlanningPage", () => {
     expect(within(warnings).getByText(/zabraknie ok\. 0,6 kWh/)).toBeTruthy();
     expect(screen.getByText(/taryfę ze stałą ceną/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Sprawdź w Analizie taryf" }).getAttribute("href")).toBe("/tariffs");
+  });
+
+  it("przy stałej cenie i nadwyżce z paneli plan mówi, że przesuwa pod słońce", async () => {
+    const summary = { self_kwh: 4, export_kwh: 3.2, import_kwh: 10, plan_from_pv_kwh: 0.2, export_pln: 1.2 };
+    const pv = {
+      forecast_kwh: 9, planned_kwh: 7.2, uncertainty: 0.2, uncertainty_source: "default", settlement: "net_billing",
+      rest_source: "meter", before: summary, after: { ...summary, export_kwh: 1.8, plan_from_pv_kwh: 1.6 },
+    };
+    renderPage({ ...BODY, flat_tariff: true, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
+
+    expect(await screen.findByText(/plan przesuwa urządzenia tylko pod słońce/)).toBeTruthy();
+    expect(screen.queryByText(/przesuwanie urządzeń prawie nie obniży rachunku/)).toBeNull();
+    const card = screen.getByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText("Jak to liczymy")).toBeTruthy();
+    expect(within(card).getByText(/z licznika, bez urządzeń z planu/)).toBeTruthy();
   });
 
   it("bez profilu podpowiada przejście do profilu", async () => {

@@ -174,7 +174,7 @@ describe("PvPage", () => {
 
     // Pliki mają przerwę (sierpień 2025 – wrzesień 2026): pokazujemy okresy, a nie jeden zakres od–do.
     expect(await screen.findByText(/nie ma odczytów z tego dnia.*Pliki obejmują: 13\.06\.2025–08\.08\.2025, 01\.10\.2026–22\.11\.2026\./)).toBeTruthy();
-    expect(screen.getByText(/produkcja i zużycie z Twoich plików są w dniach: 13\.06\.2025–08\.08\.2025, 01\.10\.2026–22\.11\.2026/)).toBeTruthy();
+    expect(screen.getByText(/Dane z Twoich plików: 13\.06\.2025–08\.08\.2025, 01\.10\.2026–22\.11\.2026/)).toBeTruthy();
     expect(screen.getByText("Produkcja z modelu")).toBeTruthy();
     expect(screen.queryByText("Zużyte od razu")).toBeNull();
   });
@@ -234,9 +234,22 @@ describe("PvPage", () => {
     });
     renderPage();
 
-    expect(await screen.findByText(/Panele są szacunkowe/)).toBeTruthy();
+    expect(await screen.findByText(/Panele są szacunkowe, więc prognoza jest orientacyjna/)).toBeTruthy();
     expect(screen.getByText(/pogoda dotyczy regionu/)).toBeTruthy();
     expect(screen.getByText(/nie jest jeszcze dopasowana/)).toBeTruthy();
+  });
+
+  it("szacunkowe panele z produkcją w plikach mówią, jaką moc dopasowaliśmy", async () => {
+    mockApi({
+      overview: {
+        ...OVERVIEW,
+        installation: { ...OVERVIEW.installation, estimated: true },
+        calibration: { ...OVERVIEW.calibration, coefficient: 1.43, effective_kwp: 10.7 },
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/Panele są szacunkowe: moc \(ok\. 10,7 kWp\) dopasowaliśmy do produkcji z Twoich plików/)).toBeTruthy();
   });
 
   it("jedna grupa paneli bez powtórzonej mocy", async () => {

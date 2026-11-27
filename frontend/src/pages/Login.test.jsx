@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Login from "./Login";
 import apiClient from "../api/client";
 import { fakeJwt, loginAs } from "../test/auth";
@@ -41,6 +41,8 @@ const mockSuccessfulLogin = () =>
   });
 
 describe("Login", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("pokazuje komunikat po wygaśnięciu sesji", () => {
     renderLogin({ sessionExpired: true });
 
@@ -58,7 +60,42 @@ describe("Login", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
 
-    expect(screen.getByRole("alert").textContent).toBe("Wypełnij wszystkie pola!");
+    expect(screen.getByRole("alert").textContent).toBe("Wpisz adres e-mail i hasło.");
+  });
+
+  it("zły format maila pokazuje w tym samym polu co błąd hasła, bez dymka przeglądarki", () => {
+    const post = vi.spyOn(apiClient, "post");
+    renderLogin();
+
+    fireEvent.change(screen.getByPlaceholderText("imienazwisko@student.pwr.edu.pl"), { target: { value: "jan.example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("••••••••"), { target: { value: "Haslo123!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
+
+    expect(screen.getByRole("alert").textContent).toBe("Podaj poprawny adres e-mail, np. jan.kowalski@example.com.");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("odpowiedź serwera bez dopisku „Błąd:”", async () => {
+    vi.spyOn(apiClient, "post").mockRejectedValue({
+      response: { data: { detail: "Nieprawidłowy adres e-mail, hasło lub sposób logowania." } },
+    });
+    renderLogin();
+
+    submitLoginForm();
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Nieprawidłowy adres e-mail, hasło lub sposób logowania."));
+  });
+
+  it("przy rejestracji pokazuje zasady hasła i zaznacza spełnione", () => {
+    renderLogin();
+    fireEvent.click(screen.getByRole("button", { name: "Nie masz konta? Zarejestruj się" }));
+
+    fireEvent.change(screen.getByPlaceholderText("••••••••"), { target: { value: "abcdefgh-" } });
+
+    const rules = within(screen.getByRole("list", { name: "Zasady hasła" }));
+    expect(rules.getByText("co najmniej 8 znaków").parentElement.textContent).toMatch(/\(spełnione\)/);
+    expect(rules.getByText("wielka litera").parentElement.textContent).toMatch(/\(niespełnione\)/);
+    expect(rules.getByText("znak specjalny, np. ! ? # -").parentElement.textContent).toMatch(/\(spełnione\)/);
   });
 
   it("bez wygaśnięcia sesji nie pokazuje komunikatu", () => {
@@ -96,7 +133,7 @@ describe("Login", () => {
     const submit = () => fireEvent.click(screen.getByRole("button", { name: "Zarejestruj się" }));
     const policyCheckbox = () => screen.getByRole("checkbox", { name: /Polityką prywatności/ });
 
-    it("pokazuje zgodę z linkiem do polityki i informację o usuwaniu nieaktywnych kont", () => {
+    it("pokazuje zgodę z linkiem do polityki", () => {
       renderLogin();
       openRegistration();
 
@@ -104,7 +141,7 @@ describe("Login", () => {
       const link = screen.getByRole("link", { name: "Polityką prywatności" });
       expect(link.getAttribute("href")).toBe("/privacy");
       expect(link.getAttribute("target")).toBe("_blank");
-      expect(screen.getByText(/przez 12 miesięcy, usuwamy razem ze wszystkimi danymi/)).toBeTruthy();
+      expect(screen.queryByText(/12 miesięcy/)).toBeNull();
     });
 
     it("bez akceptacji polityki nie wysyła formularza", () => {

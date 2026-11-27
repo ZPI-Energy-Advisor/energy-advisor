@@ -78,19 +78,56 @@ class HeatPumpModelOut(BaseModel):
     mape: float | None = None
 
 
+class HeatPumpWaterOut(BaseModel):
+    """Ciepła woda z pompy planowana osobno (godziny „ciepła woda gotowa na” w ustawieniach)."""
+
+    ready_times: list[str]
+    tank_liters: int
+    kwh: float
+    cop: float
+    shortfall: float
+
+
+class HeatPumpIndoorPointOut(BaseModel):
+    """Kwadrans doby planu: temperatura w domu na końcu kwadransu według planu i bez planu (termostat)."""
+
+    start: datetime
+    before: float
+    after: float
+    outdoor: float
+
+
 class HeatPumpPlanOut(BaseModel):
     device_id: str
     device_name: str
+    # "indoor": plan pilnuje temperatury w domu (model domu i pogoda co kwadrans); "history": bez pogody albo modelu
+    # domu, bloki grzania dnia referencyjnego przeskalowane do temperatury doby (jak przed modelem domu).
+    mode: Literal["indoor", "history"] = "history"
     plan_temperature: HeatPumpTemperatureOut
-    reference_day: date
-    reference_temperature: HeatPumpTemperatureOut
-    reference_kwh: float
+    reference_day: date | None = None
+    reference_temperature: HeatPumpTemperatureOut | None = None
+    reference_kwh: float | None = None
     target_kwh: float
     kwh: float
     heat_kwh: float
     hot_water_heat_kwh: float
     hdd: float
     cop: float
+    # Temperatura w domu z ustawień pompy (domyślnie 21 °C).
+    indoor_c: float = 21
+    # Tylko "indoor": zakres temperatury w domu, niedogrzanie poniżej zakresu, prąd na ogrzewanie bez planu
+    # (termostat na ustawionej temperaturze), o ile °C na godzinę dom stygnie bez grzania przy średniej doby,
+    # stała czasowa domu i temperatura kwadrans po kwadransie.
+    band: list[float] | None = None
+    shortfall: float = 0.0
+    thermostat_kwh: float | None = None
+    # Koszt ogrzewania domu (bez wody) według planu i bez planu, w cenach taryfy z planu.
+    cost_pln: float | None = None
+    thermostat_cost_pln: float | None = None
+    cooling_per_hour: float | None = None
+    time_constant_h: float | None = None
+    temperatures: list[HeatPumpIndoorPointOut] = []
+    water: HeatPumpWaterOut | None = None
     model: HeatPumpModelOut
 
 
@@ -116,6 +153,8 @@ class PlanPvOut(BaseModel):
     weather_fetched_at: datetime | None = None
     coefficient: float | None = None
     settlement: str
+    # Zwykłe zużycie reszty domu: urządzenia stałe z plików albo licznik minus urządzenia.
+    rest_source: Literal["devices", "meter"] = "devices"
     export_estimated: bool = False
     export_unpriced: bool = False
     before: PlanPvSummaryOut | None = None

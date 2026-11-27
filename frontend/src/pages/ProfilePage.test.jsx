@@ -195,7 +195,7 @@ describe("ProfilePage", () => {
     fireEvent.click(checkbox);
 
     expect(checkbox.checked).toBe(true);
-    expect(screen.getByText(/dystrybucja według grupy G13/)).toBeTruthy();
+    expect(screen.getByText(/Cena energii zmienia się co kwadrans/)).toBeTruthy();
     // Okres rozliczeniowy narzuca oferta: 1 miesiąc, bez możliwości zmiany.
     const cycle = screen.getByRole("group", { name: "Cykl rozliczeniowy" });
     expect(within(cycle).getByRole("button", { name: "1 mies.", pressed: true })).toBeTruthy();

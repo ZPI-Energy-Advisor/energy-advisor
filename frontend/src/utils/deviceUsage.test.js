@@ -38,11 +38,22 @@ describe("deviceUsageSource", () => {
   });
 
   it("plik licznika bierze wszystkie pliki urządzeń z dni wspólnych", () => {
-    const devicesAggregate = { data_start: "2026-10-10", data_end: "2026-11-15" };
+    const devicesAggregate = {
+      data_start: "2026-10-10",
+      data_end: "2026-11-15",
+      files: [
+        { file_name: "pazdziernik.json", data_start: "2026-10-10", data_end: "2026-10-31", days_used: 22 },
+        { file_name: "listopad.json", data_start: "2026-11-01", data_end: "2026-11-15", days_used: 15 },
+        { file_name: "przykryty.json", data_start: "2026-10-10", data_end: "2026-10-20", days_used: 0 },
+      ],
+    };
 
+    // W widoku są tylko pliki urządzeń z dniami w zakresie (bez pliku w całości przykrytego nowszym).
     expect(
       deviceUsageSource({ selectedFile: { id: "m1", source_type: "meter" }, dateRange: range, devicesAggregate }),
-    ).toEqual({ sourceId: "all-devices", meter: "m1", range: { from: "2026-10-10", to: "2026-10-31" } });
+    ).toEqual({
+      sourceId: "all-devices", meter: "m1", range: { from: "2026-10-10", to: "2026-10-31" }, deviceFiles: ["pazdziernik.json"],
+    });
     expect(
       deviceUsageSource({ selectedFile: { id: "all", source_type: "meter" }, dateRange: range, devicesAggregate }).meter,
     ).toBe("all");

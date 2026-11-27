@@ -235,8 +235,9 @@ class PlanningService:
             return errors
         kind = device_kind(device)
         if kind == HEAT_PUMP_TYPE:
-            if preference.shift_hours is None:
-                errors.append(_error(index, "shift_hours", "Wybierz, o ile można przesunąć grzanie."))
+            # O ile przesunąć grzanie, planer wie sam (z pliku urządzeń albo domyślnie), więc nie pytamy.
+            if len(set(preference.ready_times)) != len(preference.ready_times):
+                errors.append(_error(index, "ready_times", "Godziny się powtarzają."))
             return errors
         if kind == WATER_HEATER_TYPE:
             if not preference.ready_times:

@@ -439,9 +439,18 @@ class DeviceRepository:
         ).all()
         return {datetime.strptime(text_day, "%Y-%m-%d").date(): float(kwh) for text_day, kwh in rows}
 
-    def has_device_type(self, user_id: UUID, device_type: str) -> bool:
+    def has_current_device_type(self, user_id: UUID, device_type: str) -> bool:
+        """Czy urządzenie tego typu pracuje w obecnych plikach (ma zużycie, którego nie przykrył nowszy plik)."""
         return self.db.execute(
-            select(DeviceInstance.id).where(DeviceInstance.user_id == user_id, DeviceInstance.device_type == device_type).limit(1)
+            select(DeviceSlotUsage.kwh)
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceInstance.device_type == device_type,
+                DeviceSlotUsage.superseded.is_(False),
+            )
+            .limit(1)
         ).first() is not None
 
     def completed_file_ids(self, user_id: UUID) -> tuple[UUID, ...]:

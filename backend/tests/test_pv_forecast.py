@@ -84,6 +84,24 @@ def test_calibration_on_demo_house_meets_acceptance_criteria():
     assert max(errors.values()) < 0.25
 
 
+def test_estimated_panels_take_their_size_from_the_file_production():
+    days = demo_days(CELL)
+    production = demo_production()
+    typical = [PvArray(3.0, SOUTH)]
+
+    entered = calibrate(typical, [SOUTH], production, days, 6.0)
+    estimated = calibrate(typical, [SOUTH], production, days, 6.0, estimated=True)
+    real = calibrate(ARRAYS, [SOUTH], production, days, 6.0)
+
+    # Panele z profilu: współczynnik najwyżej 1,1 i uwaga, że plik do nich nie pasuje.
+    assert entered.coefficient == 1.1 and "nie pasuje" in entered.note
+    # Panele szacunkowe: moc dopasowana do pliku, bez uwagi, a prognoza jak dla prawdziwych 6 kWp.
+    assert estimated.note is None
+    assert estimated.coefficient == pytest.approx(2 * real.coefficient, rel=0.01)
+    assert estimated.effective_kwp == pytest.approx(6.0 * real.coefficient / 0.8, abs=0.1)
+    assert real.effective_kwp is None
+
+
 def test_calibration_ignores_snow_day_and_clipped_quarters():
     days = demo_days(CELL)
     production = demo_production()

@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
 import Dialog from "./Dialog";
 import HeatPumpPlanCard from "./HeatPumpPlanCard";
+import IndoorTemperatureChart from "./IndoorTemperatureChart";
+import MoreInfo from "./MoreInfo";
 import PvPlanCard from "./PvPlanCard";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
@@ -36,7 +38,16 @@ function Amount({ label, value, hint = null, accent = false }) {
 const savingPercent = (plan) =>
   plan.cost_before > 0 ? `${((plan.saving / plan.cost_before) * 100).toFixed(1).replace(".", ",")}%` : null;
 
-export function FlatTariffNote() {
+// `surplus`: plan ma nadwyżkę z paneli (ZP-121), więc przesuwanie pod słońce obniża rachunek także przy stałej cenie.
+export function FlatTariffNote({ surplus = false }) {
+  if (surplus) {
+    return (
+      <p className="p-3 text-sm text-gray-700 bg-gray-50 rounded-lg">
+        Masz taryfę ze stałą ceną przez całą dobę, więc plan przesuwa urządzenia tylko pod słońce: w godzinach
+        nadwyżki z paneli prąd jest tańszy niż z sieci.
+      </p>
+    );
+  }
   return (
     <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">
       Masz taryfę ze stałą ceną przez całą dobę, więc przesuwanie urządzeń prawie nie obniży rachunku.{" "}
@@ -45,6 +56,10 @@ export function FlatTariffNote() {
     </p>
   );
 }
+
+const SURPLUS_KWH = 0.05;
+const hasSurplus = (pv) =>
+  Boolean(pv) && Math.max(pv.before?.export_kwh ?? 0, pv.after?.export_kwh ?? 0) > SURPLUS_KWH;
 
 // Plan pracy urządzeń na dzień (ZP-112): koszt i ostrzeżenia, oś doby na tle cen, tabela przydziałów,
 // przyciski, a na końcu uwagi; temperatura wody w okienku.
@@ -55,6 +70,10 @@ function DayPlanView({
 }) {
   const [waterHeater, setWaterHeater] = useState(null);
   const closeWaterHeater = useCallback(() => setWaterHeater(null), []);
+  // Pompa ciepła, której temperaturę w domu pokazuje okienko (jak temperatura wody bojlera).
+  const [indoorPump, setIndoorPump] = useState(null);
+  const closeIndoorPump = useCallback(() => setIndoorPump(null), []);
+  const indoorPumps = (plan.heat_pumps ?? []).filter((pump) => pump.mode === "indoor" && pump.temperatures?.length);
   const approved = plan.status === "approved";
   const outdated = plan.plan_date < localTomorrow();
   const rows = planRows(plan.items);
@@ -93,7 +112,7 @@ function DayPlanView({
         <Amount label="Oszczędność" value={plan.saving} hint={savingPercent(plan)} accent />
       </div>
 
-      {flatTariff && <FlatTariffNote />}
+      {flatTariff && <FlatTariffNote surplus={hasSurplus(plan.pv)} />}
 
       {warnings.length > 0 && (
         <ul className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-1" role="alert">
@@ -106,7 +125,7 @@ function DayPlanView({
       )}
 
       {plan.pv && <PvPlanCard pv={plan.pv} />}
-      {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} />)}
+      {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} planDate={plan.plan_date} />)}
 
       <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-300" /> bez planu</span>
@@ -212,23 +231,32 @@ function DayPlanView({
             <FiDroplet aria-hidden="true" /> Temperatura wody
           </button>
         ))}
+        {indoorPumps.map((pump) => (
+          <button key={pump.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setIndoorPump(pump)}>
+            <FiHome aria-hidden="true" /> Temperatura w domu
+          </button>
+        ))}
         {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
         {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
       </div>
 
 
       {plan.notes.length > 0 && (
-        <section>
-          <h4 className="text-sm font-medium text-gray-700">Jak ułożyliśmy plan</h4>
-          <ul className="mt-2 p-3 text-sm text-gray-700 bg-gray-50 rounded-lg space-y-1 list-disc pl-6">
+        <MoreInfo summary="Jak ułożyliśmy plan">
+          <ul className="p-3 text-sm text-gray-700 bg-gray-50 rounded-lg space-y-1 list-disc pl-6">
             {plan.notes.map((note) => <li key={note}>{note}</li>)}
           </ul>
-        </section>
+        </MoreInfo>
       )}
 
       {waterHeater && (
         <Dialog title={`Temperatura wody: ${waterHeater.device_name}`} onClose={closeWaterHeater}>
           <WaterTemperatureChart heater={waterHeater} />
+        </Dialog>
+      )}
+      {indoorPump && (
+        <Dialog title={`Temperatura w domu: ${indoorPump.device_name}`} onClose={closeIndoorPump}>
+          <IndoorTemperatureChart pump={indoorPump} />
         </Dialog>
       )}
     </div>

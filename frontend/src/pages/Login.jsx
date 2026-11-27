@@ -3,7 +3,7 @@ import apiClient, { isAuthenticated, saveAuthResponse } from "../api/client";
 import { GoogleLogin } from "@react-oauth/google";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-import { FiCalendar, FiPieChart, FiTrendingDown } from "react-icons/fi";
+import { FiCalendar, FiCheck, FiCircle, FiPieChart, FiTrendingDown } from "react-icons/fi";
 import PrivacyPolicyAcceptance from "../components/PrivacyPolicyAcceptance";
 import { PRIVACY_POLICY_PATH, fetchPrivacyPolicy, isPolicyRequiredError } from "../api/privacyPolicy";
 
@@ -20,6 +20,24 @@ const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const SESSION_EXPIRED_MESSAGE = "Sesja wygasła, zaloguj się ponownie.";
 const ACCOUNT_DELETED_MESSAGE = "Konto i wszystkie dane zostały usunięte.";
 const POLICY_NOT_ACCEPTED_MESSAGE = "Bez akceptacji polityki prywatności nie można założyć konta.";
+const INVALID_EMAIL_MESSAGE = "Podaj poprawny adres e-mail, np. jan.kowalski@example.com.";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Te same zasady co na serwerze (AuthService.validate_password).
+const PASSWORD_RULES = [
+  { label: "co najmniej 8 znaków", test: (value) => value.length >= 8 },
+  { label: "wielka litera", test: (value) => /\p{Lu}/u.test(value) },
+  { label: "mała litera", test: (value) => /\p{Ll}/u.test(value) },
+  { label: "cyfra", test: (value) => /\p{N}/u.test(value) },
+  { label: "znak specjalny, np. ! ? # -", test: (value) => /[^\p{L}\p{N}]/u.test(value) },
+];
+
+// Błąd z serwera jednym zdaniem, bez technicznych dopisków (np. angielskiego komunikatu walidacji maila).
+function errorMessage(detail) {
+  if (!Array.isArray(detail)) return detail;
+  const first = detail[0] ?? {};
+  if ((first.loc ?? []).includes("email")) return INVALID_EMAIL_MESSAGE;
+  return String(first.msg ?? "").replace("Value error, ", "");
+}
 
 function initialMessage(state) {
   if (state?.accountDeleted) return ACCOUNT_DELETED_MESSAGE;
@@ -83,7 +101,17 @@ function Login() {
     setMessage("");
 
     if (!email || !password) {
-      setMessage("Wypełnij wszystkie pola!");
+      setMessage("Wpisz adres e-mail i hasło.");
+      return;
+    }
+
+    if (!EMAIL_PATTERN.test(email.trim())) {
+      setMessage(INVALID_EMAIL_MESSAGE);
+      return;
+    }
+
+    if (isRegister && !PASSWORD_RULES.every((rule) => rule.test(password))) {
+      setMessage("Hasło nie spełnia zasad podanych pod polem hasła.");
       return;
     }
 
@@ -98,7 +126,7 @@ function Login() {
         const response = await apiClient.post(
           "/auth/register",
           {
-            email: email,
+            email: email.trim(),
             password: password,
             accepted_policy_version: version,
           },
@@ -107,7 +135,7 @@ function Login() {
         navigate(redirectTo, { replace: true });
       } else {
         const response = await apiClient.post("/auth/login", {
-          email: email,
+          email: email.trim(),
           password: password,
         });
 
@@ -116,14 +144,7 @@ function Login() {
       }
     } catch (error) {
       if (error.response && error.response.data.detail) {
-        const detail = error.response.data.detail;
-
-        if (Array.isArray(detail)) {
-          const cleanMessage = detail[0].msg.replace("Value error, ", "");
-          setMessage(`Błąd: ${cleanMessage}`);
-        } else {
-          setMessage(`Błąd: ${detail}`);
-        }
+        setMessage(errorMessage(error.response.data.detail));
       } else {
         setMessage("Błąd połączenia z serwerem.");
       }
@@ -180,7 +201,8 @@ function Login() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+          {/* noValidate: format maila sprawdzamy sami, żeby każdy błąd był w tym samym polu pod formularzem. */}
+          <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-6">
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -203,8 +225,23 @@ function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
+                  aria-describedby={isRegister ? "password-rules" : undefined}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm"
                 />
+                {isRegister && (
+                  <ul id="password-rules" aria-label="Zasady hasła" className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
+                    {PASSWORD_RULES.map((rule) => {
+                      const met = rule.test(password);
+                      return (
+                        <li key={rule.label} className={`flex items-center gap-1.5 ${met ? "text-emerald-700" : "text-gray-500"}`}>
+                          {met ? <FiCheck aria-hidden="true" /> : <FiCircle aria-hidden="true" className="text-[0.6rem]" />}
+                          <span>{rule.label}</span>
+                          <span className="sr-only">{met ? "(spełnione)" : "(niespełnione)"}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             </div>
 
@@ -230,9 +267,6 @@ function Login() {
                     i ją akceptuję.
                   </span>
                 </label>
-                <p className="text-xs text-gray-500">
-                  Konto, na które nikt nie zaloguje się przez 12 miesięcy, usuwamy razem ze wszystkimi danymi.
-                </p>
               </div>
             )}
 
