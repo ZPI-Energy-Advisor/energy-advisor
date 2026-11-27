@@ -1,8 +1,8 @@
 # Jak przechowujemy dane
 
 Inwentaryzacja danych Energy Advisora (ZP-130): co zbieramy, po co, gdzie, jak długo i kto ma do tego dostęp.
-Na nim opierają się eksport danych (ZP-128), usunięcie konta (ZP-53), polityka prywatności (ZP-129)
-i szyfrowanie (ZP-131).
+Na nim opierają się usunięcie konta (ZP-53) i polityka prywatności (ZP-129). Eksportu danych (ZP-128)
+i szyfrowania wolumenu (ZP-131) w PoC nie ma.
 
 Podstawy prawne i okresy przechowywania ustalił zespół; nie są opinią prawną.
 
@@ -12,7 +12,7 @@ Podstawy prawne i okresy przechowywania ustalił zespół; nie są opinią prawn
 |---|---|---|
 | PostgreSQL (`postgres_data`) | Konta, profile, pliki z odczytami, urządzenia, plany, przebiegi symulacji, cenniki | tak |
 | Hub Smart Home (`hub_data`) | Rejestr urządzeń domu (`state.json`, `devices/*.json`): nazwy, typy, pomieszczenia, programy | pośrednio (nazwy urządzeń nadane przez użytkownika) |
-| Przeglądarka (`localStorage`) | Tokeny sesji | tak |
+| Przeglądarka (`localStorage`) | Tokeny sesji, `user` (id i e-mail konta), ostatnio wybrany plik (klucz z id konta) | tak |
 | Logi kontenerów | Zapytania HTTP (adres, ścieżka, kod odpowiedzi), ostrzeżenia z `user_id` | tak (IP, id konta) |
 | Zmienne środowiskowe | `HUB_HOME_USER_EMAIL`: e-mail właściciela domu Smart Home | tak |
 
@@ -29,7 +29,7 @@ Podstawy prawne (art. 6 ust. 1 RODO): **b** – niezbędne do świadczenia usłu
 
 | Tabela | Najważniejsze kolumny | Osobowe | Cel | Podstawa | Przechowywanie |
 |---|---|---|---|---|---|
-| `users` | `email`, `password_hash` (bcrypt), `provider`, `provider_id` (Google), `created_at`, `last_login_at` | tak | Logowanie i identyfikacja konta | b | Do usunięcia konta |
+| `users` | `email`, `password_hash` (bcrypt), `provider`, `provider_id` (Google), `created_at` | tak | Logowanie i identyfikacja konta | b | Do usunięcia konta |
 | `tokens` | `token_hash` (pbkdf2), `expires_at` | tak | Odświeżanie sesji; jeden wiersz na konto, nadpisywany | b | 7 dni od wydania, potem nieważny |
 | `privacy_consents` | `policy_version`, `accepted_at`, `source` (rejestracja, Google, ponowna akceptacja) | tak | Dowód akceptacji polityki prywatności (ZP-129) | b | Do usunięcia konta |
 | `user_profiles` | `base_info` (typ budynku, rok budowy, powierzchnia, liczba domowników, miejscowość, kod pocztowy, współrzędne domu, operator, faza, moc przyłączeniowa, cykl rozliczeń), `consumption_and_tariff`, `pv_config` (rozliczenie i panele) | tak | Rachunki taryf, plan na jutro, ceny kwadransów | b | Do usunięcia konta |
@@ -72,7 +72,7 @@ wspólnej dla domów w okolicy, i zostają po usunięciu konta.
 | Podmiot | Co dostaje | Kiedy |
 |---|---|---|
 | Google (OAuth) | Token logowania; od Google dostajemy e-mail i identyfikator konta | Logowanie przez Google |
-| Google (skrypt logowania) | Adres IP przeglądarki: `@react-oauth/google` pobiera skrypt z `accounts.google.com` | Tylko na ekranie logowania i rejestracji |
+| Google (skrypt logowania) | Adres IP przeglądarki: `@react-oauth/google` pobiera skrypt z `accounts.google.com` | Na każdej stronie aplikacji, gdy logowanie Google jest włączone (`GoogleOAuthProvider` obejmuje całą aplikację w `App.jsx`) |
 | PSE (`api.raporty.pse.pl`, `pse.pl`) | Nic o użytkownikach: pobieramy publiczne ceny RCE i RCEm | Worker cen, codziennie |
 | OpenStreetMap Nominatim (`nominatim.openstreetmap.org`) | Kod pocztowy, a gdy go nie zna, nazwa miejscowości (wyznaczenie współrzędnych); bez danych konta | Zapis profilu po zmianie adresu i pierwszy odczyt profilu bez współrzędnych |
 | Open-Meteo (`api.open-meteo.com`, `archive-api.open-meteo.com`) | Współrzędne domu zaokrąglone do 0,1° oraz kierunek i nachylenie paneli; bez danych konta | Worker pogody co 3 h, po imporcie pliku, po zapisie profilu i przy odczycie pogody, której nie ma w bazie |
@@ -86,7 +86,7 @@ Każde pole profilu ma cel:
 | Pole | Cel |
 |---|---|
 | `town`, `postal_code` | Lokalizacja domu do prognozy pogody i produkcji PV. Kod pocztowy rozróżnia miejscowości o tej samej nazwie. Do Nominatim idą tylko przy wyznaczaniu współrzędnych |
-| `location` | Współrzędne domu (dokładność obszaru kodu pocztowego albo położenie z przeglądarki, gdy użytkownik je wskaże); tylko one idą do Open-Meteo |
+| `location` | Współrzędne domu (dokładność obszaru kodu pocztowego albo położenie z przeglądarki z dokładnością ok. 10 m, gdy użytkownik je wskaże); do Open-Meteo idą zaokrąglone do 0,1° |
 | `pv_config.installation` | Moc, kierunek i nachylenie grup paneli oraz moc falownika: prognoza produkcji PV i opust net-meteringu |
 | `year_of_construction`, `heating_area_m2`, `type_of_property` | Straty ciepła budynku: zużycie pompy ciepła zależne od temperatury |
 | `number_of_residents` | Domyślna pojemność bojlera i zużycie ciepłej wody |
@@ -96,10 +96,9 @@ Poza profilem:
 
 - `simulations.results` trzyma statystyki i wykresy pliku, bez cen. Ceny kwadransów liczymy przy odczycie
   z cennika, a seria zużycia jest tylko w `energy_readings`.
-- Przeglądarka trzyma w `localStorage` tylko tokeny sesji. Dane zalogowanego użytkownika frontend pobiera
-  z `/users/me`.
-- Skrypt logowania Google ładuje się tylko na ekranach logowania i rejestracji, więc Google nie widzi wizyt
-  zalogowanych użytkowników.
+- Przeglądarka trzyma w `localStorage` tokeny sesji, id i e-mail konta (`user`) oraz ostatnio wybrany plik.
+  Pozostałe dane zalogowanego użytkownika frontend pobiera z `/users/me`. Wylogowanie (`clearAuth`) usuwa tokeny
+  i `user`, a usunięcie konta (`clearAccountData`) także zapamiętany wybór pliku.
 - Logi zawierają `user_id`, ale nie e-maile ani treść plików.
 
 ## Retencja
@@ -112,7 +111,7 @@ do jego usunięcia (kaskada w bazie), a odczyty pliku do usunięcia pliku lub ko
 | Konto i dane w tabelach z `user_id` | Do usunięcia konta przez użytkownika |
 | Pliki z odczytami (`energy_data_files` i zależne) | Do usunięcia pliku lub konta |
 | `tokens` | Jeden wiersz na konto, nadpisywany przy logowaniu, nieważny po 7 dniach |
-| Logi kontenerów | Domyślne ustawienia Dockera, bez skonfigurowanej rotacji |
+| Logi kontenerów | Domyślne ustawienia Dockera, bez skonfigurowanej rotacji: znikają dopiero z usunięciem albo ponownym utworzeniem kontenera; usunięcie konta ich nie usuwa |
 
 ## Prawa użytkownika
 

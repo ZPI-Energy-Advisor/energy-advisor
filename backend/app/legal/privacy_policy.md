@@ -6,24 +6,27 @@ masz prawa (art. 13 RODO).
 ## Administrator danych
 
 Administratorem danych jest Zespół projektu Energy Advisor (ZPI, Politechnika Wrocławska).
-W sprawach danych osobowych napisz na adres **energy-advisor@gmail.com**.
+W sprawach danych osobowych napisz na adres **280574@student.pwr.edu.pl**.
 Nie powołaliśmy inspektora ochrony danych.
 
 ## Jakie dane zbieramy i po co
 
-- **Dane konta:** adres e-mail, skrót hasła (bcrypt) albo identyfikator konta Google, data założenia konta
-  i ostatniego logowania. Służą do logowania i identyfikacji konta.
+- **Dane konta:** adres e-mail, skrót hasła (bcrypt) albo identyfikator konta Google i data założenia konta.
+  Służą do logowania i identyfikacji konta.
 - **Profil domu:** typ i rok budowy budynku, powierzchnia ogrzewana, liczba domowników, miejscowość, kod
-  pocztowy, przybliżone współrzędne domu, operator sieci, faza, moc przyłączeniowa, cykl rozliczeń, taryfa
-  i instalacja fotowoltaiczna. Służą do wyliczania rachunków, porównania taryf i planu zużycia na następny dzień.
+  pocztowy, współrzędne domu, operator sieci, faza, moc przyłączeniowa, cykl rozliczeń, taryfa i instalacja
+  fotowoltaiczna. Współrzędne wyznaczamy z kodu pocztowego (przybliżone, dla obszaru kodu), a gdy wskażesz
+  położenie w przeglądarce, zapisujemy je z dokładnością ok. 10 m. Służą do wyliczania rachunków, porównania
+  taryf, prognozy pogody i planu zużycia na następny dzień.
 - **Odczyty zużycia energii** z wgranych plików (co 15 minut) oraz statystyki i wykresy pliku. Sam plik nie
   jest przechowywany: zostaje jego nazwa i odczyty.
 - **Urządzenia i plany:** nazwy, typy, pomieszczenia i programy urządzeń, ustawienia planu dnia, plany
   i przebiegi symulacji. Służą do optymalizacji zużycia i raportów.
-- **Dane techniczne:** adres IP, adres zapytania i kod odpowiedzi w logach serwera. Służą do zapewnienia
-  bezpieczeństwa i diagnozowania błędów.
-- **Dane sesji w przeglądarce:** tokeny logowania, niezbędne do utrzymania zalogowania. Nie używamy cookies
-  ani narzędzi analitycznych i reklamowych.
+- **Dane techniczne:** adres IP, adres zapytania i kod odpowiedzi w logach serwera, a w ostrzeżeniach także
+  identyfikator konta (bez adresu e-mail). Służą do zapewnienia bezpieczeństwa i diagnozowania błędów.
+- **Dane w przeglądarce (`localStorage`):** tokeny logowania, identyfikator i adres e-mail konta oraz ostatnio
+  wybrany plik. Służą do utrzymania zalogowania i zapamiętania wyboru pliku. Wylogowanie usuwa tokeny, identyfikator
+  i e-mail, a usunięcie konta także zapamiętany wybór pliku. Nie używamy cookies ani narzędzi analitycznych i reklamowych.
 
 Odczyty zużycia co 15 minut pokazują rytm dnia domowników, dlatego traktujemy je jako dane osobowe i chronimy
 tak jak pozostałe dane konta.
@@ -40,22 +43,26 @@ aplikacja nie wyliczy rachunków ani planu.
 
 ## Jak długo przechowujemy dane
 
-- **Konto i wszystkie jego dane:** do usunięcia konta. Usunięcie konta w profilu usuwa od razu wszystkie
-  powiązane z nim dane.
+- **Konto i wszystkie jego dane:** do usunięcia konta. Usunięcie konta w profilu usuwa od razu wszystkie dane
+  konta w aplikacji, a u właściciela domu Smart Home także rejestr jego urządzeń w symulatorze domu. Nie usuwa
+  wpisów w logach serwera (adres IP, identyfikator konta).
 - **Pliki z odczytami:** do usunięcia pliku lub konta.
 - **Sesja logowania:** token odświeżania jest ważny 7 dni; przy kolejnym logowaniu zastępuje go nowy.
+- **Logi serwera:** nie mają ustalonego okresu przechowywania ani automatycznego usuwania. Znikają, gdy kontener
+  serwera zostanie usunięty albo utworzony od nowa.
 
 ## Komu przekazujemy dane
 
 Nie sprzedajemy danych i nie przekazujemy nikomu odczytów zużycia, profilu domu ani adresu e-mail.
 Korzystamy z następujących usług zewnętrznych:
 
-- **Google** – przy logowaniu przez Google otrzymujemy od Google adres e-mail i identyfikator konta. Skrypt
-  logowania Google ładuje się tylko na ekranie logowania i rejestracji, więc Google widzi wtedy adres IP
-  przeglądarki.
+- **Google** – przy logowaniu przez Google otrzymujemy od Google adres e-mail i identyfikator konta. Gdy
+  logowanie przez Google jest włączone, skrypt logowania Google ładuje się na każdej stronie aplikacji, więc
+  Google widzi adres IP przeglądarki przy każdym otwarciu aplikacji.
 - **OpenStreetMap Nominatim** – kod pocztowy lub nazwa miejscowości (bez danych konta) do wyznaczenia
   współrzędnych domu.
-- **Open-Meteo** – same współrzędne domu (bez danych konta) do prognozy pogody i produkcji fotowoltaiki.
+- **Open-Meteo** – współrzędne domu zaokrąglone do ok. 0,1° (kilka kilometrów) oraz kierunek i nachylenie
+  paneli, bez danych konta, do prognozy pogody i produkcji fotowoltaiki.
 
 Dostęp do serwera, bazy i logów ma wyłącznie zespół projektu.
 Dane nie są przekazywane poza Europejski Obszar Gospodarczy, z wyjątkiem logowania przez Google, które
@@ -72,7 +79,7 @@ Masz prawo do:
 - **przenoszenia danych**,
 - **sprzeciwu** wobec przetwarzania opartego na prawnie uzasadnionym interesie.
 
-Aby skorzystać z praw, których nie obsłużysz sam w aplikacji, napisz na **energy-advisor@gmail.com**.
+Aby skorzystać z praw, których nie obsłużysz sam w aplikacji, napisz na **280574@student.pwr.edu.pl**.
 Masz też prawo wnieść skargę do **Prezesa Urzędu Ochrony Danych Osobowych** (ul. Stawki 2, 00-193 Warszawa).
 
 ## Zautomatyzowane decyzje

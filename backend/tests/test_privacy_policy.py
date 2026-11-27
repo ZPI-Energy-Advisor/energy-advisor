@@ -59,7 +59,7 @@ def test_policy_is_public(anonymous_client):
     assert response.status_code == 200
     body = response.json()
     assert body["version"] == PRIVACY_POLICY_VERSION
-    assert "energy-advisor@gmail.com" in body["content"]
+    assert "280574@student.pwr.edu.pl" in body["content"]
     assert "Prezesa Urzędu Ochrony Danych Osobowych" in body["content"]
     assert "12 miesięcy" not in body["content"]
 
