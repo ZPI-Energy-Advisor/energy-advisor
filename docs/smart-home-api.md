@@ -846,11 +846,14 @@ Ekran odświeża przebieg razem ze stanem domu, więc wartości idą z zegarem, 
 "live": {
   "until": "2026-10-12T14:10:00+02:00",
   "indoor": [{ "device_id": "dev_hp_01", "device_name": "Pompa ciepła", "at": "2026-10-12T14:00:00+02:00",
-               "temp_c": 21.3, "plan_c": 21.3, "set_c": 21, "band": [20, 22] }],
+               "temp_c": 21.3, "plan_c": 21.3, "set_c": 21, "band": [20, 22],
+               "points": [{ "start": "2026-10-12T00:00:00+02:00", "plan_c": 20.9, "temp_c": 20.9 }] }],
   "weather": { "start": "2026-10-12T14:00:00+02:00", "temperature_c": 6.4, "cloud_cover_pct": 80, "past": false },
-  "pv": { "production_kwh": 4.2, "self_kwh": 3.1, "export_kwh": 1.1, "export_pln": 0.55 },
+  "pv": { "production_kwh": 4.2, "self_kwh": 3.1, "export_kwh": 1.1, "export_pln": 0.55, "planned_kwh": 6.5,
+          "hours": [{ "start": "2026-10-12T13:00:00+02:00", "planned_kwh": 1.2, "actual_kwh": 1.1 }] },
   "price_now": 0.88, "export_price_now": 0.45,
-  "saving": { "cost_before": 5.2, "cost_after": 3.9, "saving": 1.3, "saving_percent": 25.0, "excluded": [] }
+  "saving": { "cost_before": 5.2, "cost_after": 3.9, "saving": 1.3, "saving_percent": 25.0, "excluded": [],
+              "planned_saving": 2.1 }
 }
 ```
 
@@ -858,12 +861,15 @@ Ekran odświeża przebieg razem ze stanem domu, więc wartości idą z zegarem, 
   (straty, pojemność, ogrzewanie podłogowe, ustawiona temperatura) i temperaturę na dworze co kwadrans.
   Temperaturę liczymy `House.step` na energii pompy zmierzonej w symulacji, bez grzania wody z planu
   (`#woda`), do końca ostatniego pełnego kwadransu (`at`). Przy pracy według planu zgadza się z wykresem
-  planu (`plan_c`), a po ręcznym wyłączeniu pompy spada.
+  planu (`plan_c`), a po ręcznym wyłączeniu pompy spada. `points`: cała doba według planu i z symulacji do
+  teraz (`temp_c = null` po `until`), do wykresu w kafelku.
 - `weather`: kwadrans zegara z pogody zapisanej w planie (prognoza, a w planie idealnym archiwum).
 - `pv`: produkcja od początku planu w bilansie godzinowym jak `pv_balance.summary`: w każdej godzinie dom
   zużywa min(produkcja, zużycie wszystkich urządzeń, także ręcznych), a reszta idzie do sieci, więc
   `self_kwh + export_kwh = production_kwh`; produkcja to ta sama co w bilansie `home/state`. Wartość
-  oddania z cen oddania w migawce planu. Bez PV w domu `null`.
+  oddania z cen oddania w migawce planu. Bez PV w domu `null`. `planned_kwh` i `hours`: produkcja, na którą
+  liczy plan, obok zmierzonej godzina po godzinie (bieżąca godzina: tyle, ile już zmierzono). W symulacji
+  urządzenia stałe są wyłączone, dopóki ich nie włączysz, więc dom zużywa mniej niż w planie i oddaje więcej.
 - `price_now`: cena z sieci w kwadransie zegara; `export_price_now`: wartość kWh oddanej w tej godzinie
   (tylko plan z PV).
 - `saving`: urządzenia z planu od początku planu do `until`. Bez planu to profil bazowy z migawki
@@ -872,6 +878,14 @@ Ekran odświeża przebieg razem ze stanem domu, więc wartości idą z zegarem, 
   (`HouseBalance.allocate`). Urządzenia w trakcie pracy też się liczą (w raporcie są w `pending`), a urządzenia
   z odchyleniem wykluczającym (`excluded`) wypadają tak jak w raporcie. Po końcu planu bez planu to cały
   profil, więc wynik to raport. Przebiegi sprzed ZP-153 nie mają profili: `saving = null`.
+  `planned_saving` to oszczędność planu w całej dobie (bez urządzeń z odchyleniem): plan przesuwa pracę w czasie,
+  więc „do teraz” bywa w trakcie doby większe albo mniejsze (np. o 02:00 pompa bez planu już grzała, a plan
+  zaczyna później).
+
+**Pompa ciepła w hubie.** Plan ma osobno grzanie domu (`#dom`, cała doba) i ciepłą wodę (`#woda`), a urządzenie
+wykonuje naraz jeden profil: hub odrzuciłby wodę („Trwa przebieg urządzenia”). Pozycje jednego urządzenia, których
+profile nachodzą na siebie, idą więc jako jedna komenda `run_profile` z sumą profili (`_plan_commands`); w kwadransach
+wody plan nie grzeje domu, więc suma jest dokładna, a obie pozycje mają ten sam wynik komendy.
 
 Panel „Na żywo” jest nad przekrojem domu w zakładce „Symulacja” (na telefonie zwinięty). Bez trwającego
 przebiegu pokazuje pogodę doby symulacji i produkcję PV z bilansu doby z podpowiedzią, żeby uruchomić plan.

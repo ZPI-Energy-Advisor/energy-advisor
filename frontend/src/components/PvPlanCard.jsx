@@ -38,12 +38,24 @@ function PvPlanCard({ pv, weather = null }) {
         <FiSun aria-hidden="true" className="text-amber-500" /> Prąd z paneli
       </h4>
       <p className="mt-1 text-sm text-gray-600">
-        Prognoza {kwh(pv.forecast_kwh)}, plan liczy na {kwh(pv.planned_kwh)} (o {formatNumber(pv.uncertainty * 100, 0)}% mniej,{" "}
-        {pv.uncertainty_source === "history" ? "tyle średnio myli się prognoza dla Twoich paneli" : "prognoza nie jest jeszcze dopasowana do Twoich paneli"}).
+        {pv.uncertainty_source === "archive" ? (
+          <>Z pogody z archiwum {kwh(pv.forecast_kwh)}. To pogoda, która naprawdę była, więc plan liczy na całą produkcję.</>
+        ) : (
+          <>
+            Prognoza {kwh(pv.forecast_kwh)}, plan liczy na {kwh(pv.planned_kwh)} (o {formatNumber(pv.uncertainty * 100, 0)}% mniej,{" "}
+            {pv.uncertainty_source === "history" ? "tyle średnio myli się prognoza dla Twoich paneli" : "prognoza nie jest jeszcze dopasowana do Twoich paneli"}).
+          </>
+        )}
       </p>
       {fetched && (
         <p className="mt-1 text-xs text-gray-500">
           {weather?.past ? "Pogoda z archiwum" : "Prognoza pogody"} pobrana {fetchedText(fetched)}.
+        </p>
+      )}
+      {pv.export_beats_grid && (
+        <p className="mt-2 rounded-md bg-sky-50 p-2 text-sm text-sky-900">
+          W godzinach ze słońcem prąd oddany do sieci jest wart więcej niż prąd z sieci, więc plan nie przesuwa urządzeń
+          pod słońce: nadwyżkę lepiej oddać do depozytu, a urządzenia włączyć, gdy prąd z sieci jest tani.
         </p>
       )}
       {pv.estimated_installation && (

@@ -8,7 +8,7 @@ import MoreInfo from "./MoreInfo";
 import PvPlanCard from "./PvPlanCard";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
-import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
+import { beforeRanges, forWeekdayDate, localTomorrow, momentRange, nextDay, planRows } from "../utils/dayPlan";
 import { formatNumber } from "../utils/format";
 import { afterRanges, clockOf, conflictText, formatPln, isConflict } from "../utils/schedule";
 
@@ -105,7 +105,7 @@ function DayPlanView({
     <div className="space-y-4">
       {outdated && (
         <div className="flex flex-col gap-3 p-3 text-sm text-amber-900 bg-amber-50 rounded-lg sm:flex-row sm:items-center sm:justify-between" role="status">
-          <p>To plan na {weekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
+          <p>To plan na {forWeekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
           <button type="button" className={SECONDARY_BUTTON} onClick={onReplan} disabled={isReplanning}>
             <FiRefreshCw aria-hidden="true" /> {isReplanning ? "Układanie planu..." : "Ułóż plan na jutro"}
           </button>
@@ -115,7 +115,7 @@ function DayPlanView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">
-            {ideal ? "Plan idealny na" : "Plan na"} {weekdayDate(plan.plan_date)}
+            {ideal ? "Plan idealny na" : "Plan na"} {forWeekdayDate(plan.plan_date)}
           </h3>
           <p className="text-xs text-gray-500">Ceny: {plan.pricing}</p>
           {ideal && (

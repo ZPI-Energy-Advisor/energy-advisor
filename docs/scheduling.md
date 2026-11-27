@@ -317,6 +317,9 @@ Plan pokazuje, skąd wie o słońcu, z tego, co zapisał w chwili układania, a 
   się po równo na każdą kWh zużycia, jak `plan_from_pv_kwh`, więc pozycje sumują się do niego).
 - `pv_reason`: dlaczego plan liczy się bez paneli (`no_installation`, `no_weather`, `no_profile`, `no_forecast`).
 - `pv.estimated_installation`: panele w profilu są szacunkowe.
+- `pv.export_beats_grid`: w godzinach ze słońcem oddanie jest warte więcej niż prąd z sieci (np. RCE ok.
+  1000 zł/MWh × 1,23 przy taryfie 0,63 zł/kWh w weekend). Plan wtedy nie przesuwa urządzeń pod słońce, a karta
+  i uwaga planu to tłumaczą, bo inaczej wygląda to na błąd.
 
 Na osi doby planu, pod cenami: pas zachmurzenia co godzinę (od błękitu do szarości, opis w dymku) z temperaturą
 co 3 godziny (na telefonie co 6), a pod nim słupki prądu z paneli, na który plan liczy. Godziny z nadwyżką nad resztą

@@ -208,6 +208,13 @@ class PlanRunSummaryOut(BaseModel):
     deviations: int | None = None
 
 
+class PlanRunIndoorPointOut(BaseModel):
+    # Temperatura w domu na końcu kwadransu zaczętego o `start`: według planu i z symulacji (None po `until`).
+    start: datetime
+    plan_c: float
+    temp_c: float | None = None
+
+
 class PlanRunIndoorOut(BaseModel):
     """Temperatura w domu z pompą ciepła na końcu ostatniego pełnego kwadransa (`at`): z modelu domu z planu
     na energii pompy zmierzonej w symulacji, obok temperatury według planu i zakresu komfortu."""
@@ -219,6 +226,7 @@ class PlanRunIndoorOut(BaseModel):
     plan_c: float | None = None
     set_c: float
     band: list[float]
+    points: list[PlanRunIndoorPointOut] = []
 
 
 class PlanRunWeatherNowOut(BaseModel):
@@ -229,6 +237,13 @@ class PlanRunWeatherNowOut(BaseModel):
     past: bool = False
 
 
+class PlanRunPvHourOut(BaseModel):
+    # Godzina doby: produkcja, na którą liczy plan, i produkcja zmierzona w symulacji (None po `until`).
+    start: datetime
+    planned_kwh: float | None = None
+    actual_kwh: float | None = None
+
+
 class PlanRunPvLiveOut(BaseModel):
     """Panele od początku planu w bilansie godzinowym: zużyte w domu i oddane do sieci sumują się do produkcji."""
 
@@ -237,6 +252,9 @@ class PlanRunPvLiveOut(BaseModel):
     export_kwh: float
     # Wartość oddania (z migawki planu); None, gdy plan nie ma wyceny oddania.
     export_pln: float | None = None
+    # Produkcja, na którą plan liczy w całej dobie (None w planie bez PV), i godziny doby.
+    planned_kwh: float | None = None
+    hours: list[PlanRunPvHourOut] = []
 
 
 class PlanRunSavingLiveOut(BaseModel):
@@ -248,6 +266,9 @@ class PlanRunSavingLiveOut(BaseModel):
     saving: float
     saving_percent: float | None = None
     excluded: list[PlanRunDeviceRefOut] = []
+    # Oszczędność, którą plan daje w całej dobie: w trakcie doby „do teraz” może być większa albo mniejsza,
+    # bo plan przesuwa pracę w czasie.
+    planned_saving: float | None = None
 
 
 class PlanRunLiveOut(BaseModel):

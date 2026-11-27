@@ -19,7 +19,9 @@ from app.parsers.devices import LOCAL_TIMEZONE
 from app.schemas.plan_run import (
     PlanRunDeviceRefOut,
     PlanRunIndoorOut,
+    PlanRunIndoorPointOut,
     PlanRunLiveOut,
+    PlanRunPvHourOut,
     PlanRunPvLiveOut,
     PlanRunSavingLiveOut,
     PlanRunWeatherNowOut,
@@ -76,18 +78,22 @@ def _indoor(run: RunEnergy, pumps: list[dict]) -> list[PlanRunIndoorOut]:
         )
         measured = run.energy.by_device_slot.get(pump["device_id"], {})
         temp, at, plan_c = house.indoor_c, None, None
+        points = []
         for quarter in pump["quarters"]:
             slot = _utc(quarter["start"])
-            if slot + SLOT > run.until:
-                break
-            electricity = max(measured.get(slot, 0.0) - water[pump["device_id"]].get(slot, 0.0), 0.0)
-            temp = house.step(temp, quarter["outdoor"], electricity * heating_cop(quarter["outdoor"], house.floor_heating))
-            at, plan_c = slot + SLOT, quarter["after"]
+            simulated = None
+            if slot + SLOT <= run.until:
+                electricity = max(measured.get(slot, 0.0) - water[pump["device_id"]].get(slot, 0.0), 0.0)
+                temp = house.step(temp, quarter["outdoor"], electricity * heating_cop(quarter["outdoor"], house.floor_heating))
+                at, plan_c, simulated = slot + SLOT, quarter["after"], round(temp, 2)
+            points.append(PlanRunIndoorPointOut(
+                start=slot.astimezone(LOCAL_TIMEZONE), plan_c=quarter["after"], temp_c=simulated,
+            ))
         if at is None:
             continue
         result.append(PlanRunIndoorOut(
             device_id=pump["device_id"], device_name=pump["device_name"], at=at.astimezone(LOCAL_TIMEZONE),
-            temp_c=round(temp, 1), plan_c=plan_c, set_c=house.indoor_c, band=pump["band"],
+            temp_c=round(temp, 1), plan_c=plan_c, set_c=house.indoor_c, band=pump["band"], points=points,
         ))
     return result
 
@@ -122,6 +128,10 @@ def _pv(run: RunEnergy) -> PlanRunPvLiveOut | None:
                 consumption[hour_of(slot)] += kwh
     if not run.pv_devices:
         return None
+    planned: dict[datetime, float] = defaultdict(float)
+    if run.balance is not None:
+        for slot, kwh in run.balance.production.items():
+            planned[hour_of(slot)] += kwh
     produced_total = self_total = export_total = value = 0.0
     for hour, produced in production.items():
         produced = max(produced, 0.0)
@@ -131,9 +141,19 @@ def _pv(run: RunEnergy) -> PlanRunPvLiveOut | None:
         export_total += produced - own
         if run.balance is not None:
             value += (produced - own) * run.balance.sell.get(hour, 0.0)
+    hours = [
+        PlanRunPvHourOut(
+            start=hour.astimezone(LOCAL_TIMEZONE),
+            planned_kwh=_kwh(planned[hour]) if run.balance is not None else None,
+            actual_kwh=_kwh(max(production.get(hour, 0.0), 0.0)) if hour < run.until else None,
+        )
+        for hour in sorted(set(planned) | {hour for hour, kwh in production.items() if kwh > 0})
+    ]
     return PlanRunPvLiveOut(
         production_kwh=_kwh(produced_total), self_kwh=_kwh(self_total), export_kwh=_kwh(export_total),
         export_pln=_money(value) if run.balance is not None else None,
+        planned_kwh=_kwh(sum(planned.values())) if run.balance is not None else None,
+        hours=hours,
     )
 
 
@@ -178,6 +198,8 @@ def _saving(run: RunEnergy) -> PlanRunSavingLiveOut | None:
         saving_percent=round((cost_before - cost_after) / cost_before * 100, 1) if cost_before > 0 else None,
         excluded=[PlanRunDeviceRefOut(device_id=device_id, device_name=names[device_id])
                   for device_id in by_device if device_id in excluded],
+        planned_saving=_money(sum((action.cost_before or 0.0) - (action.planned_cost or 0.0)
+                                  for action in run.actions if action.device_id not in excluded)),
     )
 
 

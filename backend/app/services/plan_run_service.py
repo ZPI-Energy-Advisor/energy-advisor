@@ -84,6 +84,7 @@ MAX_REPORTED_ERRORS = 50
 # gdy backend nie odpowiada, więc ostatnie kwadranse mogą dojść po końcu planu.
 REPORT_SETTLE = timedelta(minutes=5)
 HISTORY_LIMIT = 30
+SLOT = timedelta(minutes=15)
 
 
 def _kwh(value: float) -> float:
@@ -163,8 +164,11 @@ class PlanRunService:
         if not clock.simulation_id:
             # Bez simulation_id nie odróżnimy zdarzeń tego przebiegu od innych (hub sprzed ZP-95).
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=INVALID_RESPONSE_MESSAGE)
-        results = send_batch(hub_client, [command for _, command in planned] + replay_commands(runs), PLAN_FAILED_MESSAGE)
-        plan_results, replay_results = results[:len(planned)], results[len(planned):]
+        # Pozycje jednego urządzenia złączone w jedną komendę (pompa: dom i woda) idą do huba raz.
+        commands = list({id(command): command for _, command in planned}.values())
+        results = send_batch(hub_client, commands + replay_commands(runs), PLAN_FAILED_MESSAGE)
+        by_command = {id(command): result for command, result in zip(commands, results)}
+        plan_results, replay_results = [by_command[id(command)] for _, command in planned], results[len(commands):]
 
         now = datetime.now(timezone.utc)
         for previous in self.run_repository.running(owner.id):
@@ -209,25 +213,49 @@ class PlanRunService:
 
     @staticmethod
     def _plan_commands(items: list[PlanItemOut]) -> list[tuple[PlanItemOut, HubCommand]]:
-        """Pozycje planu jako komendy huba ze startem z planu; pozycje bez energii (np. bojler bez grzania) pomijamy."""
+        """Pozycje planu jako komendy huba ze startem z planu; pozycje bez energii (np. bojler bez grzania) pomijamy.
+
+        Urządzenie wykonuje naraz jeden profil, a hub odrzuca drugi, który zaczyna się w trakcie pierwszego. Pompa
+        ciepła ma w planie osobno grzanie domu (cała doba) i ciepłą wodę (w kwadransach, w których nie grzeje
+        domu), więc nachodzące na siebie profile jednego urządzenia łączymy w jeden: suma kwadrans po kwadransie.
+        Te pozycje dzielą jedną komendę."""
         planned = []
+        profiles: dict[str, list[PlanItemOut]] = defaultdict(list)
         for item in items:
             if item.profile_kwh is None or (item.kind == "program" and not item.program_id):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PLAN_OUTDATED_MESSAGE)
             if not any(item.profile_kwh):
                 continue
             if item.kind == "program":
-                command = HubCommand(
+                planned.append((item, HubCommand(
                     device_id=item.device_id, command=CommandType.START_PROGRAM, program_id=item.program_id,
                     start_at=item.start,
-                )
+                )))
             else:
+                profiles[item.device_id].append(item)
+        for device_items in profiles.values():
+            device_items.sort(key=lambda item: item.start)
+            groups: list[list[PlanItemOut]] = []
+            for item in device_items:
+                if groups and item.start < max(_profile_end(other) for other in groups[-1]):
+                    groups[-1].append(item)
+                else:
+                    groups.append([item])
+            for group in groups:
+                start = group[0].start
+                length = max(int((_profile_end(item) - start) / SLOT) for item in group)
+                profile = [0.0] * length
+                for item in group:
+                    offset = int((item.start - start) / SLOT)
+                    for index, kwh in enumerate(item.profile_kwh):
+                        profile[offset + index] += kwh
                 command = HubCommand(
-                    device_id=item.device_id, command=CommandType.RUN_PROFILE, profile_kwh=item.profile_kwh,
-                    start_at=item.start,
+                    device_id=group[0].device_id, command=CommandType.RUN_PROFILE,
+                    profile_kwh=[round(kwh, 6) for kwh in profile], start_at=start,
                 )
-            planned.append((item, command))
-        return planned
+                planned.extend((item, command) for item in group)
+        order = {id(item): position for position, item in enumerate(items)}
+        return sorted(planned, key=lambda pair: order[id(pair[0])])
 
     def _background(self, owner: User, plan: DayPlan, planned_devices: set[str]) -> DayBackground:
         """Urządzenia, które pracują same: z migawki planu (ZP-120), a w planie sprzed niej z dnia referencyjnego
@@ -550,6 +578,10 @@ class PlanRunService:
             until=until,
             complete=run.status == PlanRun.COMPLETED,
         )
+
+
+def _profile_end(item: PlanItemOut) -> datetime:
+    return item.start + len(item.profile_kwh) * SLOT
 
 
 def _plan_kind(plan: DayPlan) -> str:

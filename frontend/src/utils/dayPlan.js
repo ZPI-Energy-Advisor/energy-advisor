@@ -20,6 +20,12 @@ export const onDay = (isoDate) => {
   return `${ON_WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
 };
 
+const WEEKDAYS_ACCUSATIVE = ["niedzielę", "poniedziałek", "wtorek", "środę", "czwartek", "piątek", "sobotę"];
+
+// Po „na”: „Plan na sobotę 28.11”.
+export const forWeekdayDate = (isoDate) =>
+  `${WEEKDAYS_ACCUSATIVE[new Date(`${isoDate}T12:00:00Z`).getUTCDay()]} ${formatDayMonth(isoDate)}`;
+
 export const weekdayDate = (isoDate) =>
   `${WEEKDAYS[new Date(`${isoDate}T12:00:00Z`).getUTCDay()]} ${formatDayMonth(isoDate)}`;
 

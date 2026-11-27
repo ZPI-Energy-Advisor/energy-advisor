@@ -382,6 +382,21 @@ describe("PlanningPage", () => {
     expect(within(value).getByText("2,52 zł")).toBeTruthy();
     expect(within(value).getByText("1,95 zł")).toBeTruthy();
     expect(within(card).getByText(/wartość oddania to średnia z ostatnich dni/)).toBeTruthy();
+    expect(within(card).queryByText(/prąd oddany do sieci jest wart więcej/)).toBeNull();
+  });
+
+  it("plan idealny: karta paneli mówi o pogodzie z archiwum, a przy drogim oddaniu wyjaśnia, czemu nie przesuwa", async () => {
+    const pv = {
+      forecast_kwh: 3.2, planned_kwh: 3.2, uncertainty: 0, uncertainty_source: "archive", basis: "weather",
+      weather_fetched_at: null, coefficient: 0.83, settlement: "net_billing", export_estimated: false,
+      export_unpriced: false, export_beats_grid: true, hours: [],
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
+
+    const card = await screen.findByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText(/Z pogody z archiwum 3,2 kWh. To pogoda, która naprawdę była/)).toBeTruthy();
+    expect(within(card).queryByText(/o 0% mniej/)).toBeNull();
+    expect(within(card).getByText(/prąd oddany do sieci jest wart więcej niż prąd z sieci/)).toBeTruthy();
   });
 
   it("oś doby ma pogodę i prąd z paneli z migawki planu, nadwyżkę i pralkę z paneli", async () => {

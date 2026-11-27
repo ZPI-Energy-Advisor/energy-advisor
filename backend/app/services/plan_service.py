@@ -158,6 +158,10 @@ def _weather_out(background: DayBackground) -> dict | None:
     }
 
 
+def _price(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
 def _date_text(day: date) -> str:
     return f"{day.day} {MONTHS[day.month - 1]}"
 
@@ -374,6 +378,29 @@ class _PlanPv:
     def planned_kwh(self) -> float:
         return sum(self.balance.production.values())
 
+    def export_vs_grid(self) -> tuple[float, float] | None:
+        """Średnia wartość oddania i średnia cena z sieci w godzinach z produkcją (ważone produkcją)."""
+        by_hour: dict[datetime, float] = defaultdict(float)
+        for slot, kwh in self.balance.production.items():
+            if kwh > 0:
+                by_hour[hour_of(slot)] += kwh
+        total = sum(by_hour.values())
+        if not total:
+            return None
+        sell = buy = 0.0
+        for hour, kwh in by_hour.items():
+            prices = [self.balance.buy[hour + index * SLOT] for index in range(4) if hour + index * SLOT in self.balance.buy]
+            if not prices:
+                return None
+            sell += kwh * self.balance.sell.get(hour, 0.0)
+            buy += kwh * sum(prices) / len(prices)
+        return sell / total, buy / total
+
+    @property
+    def export_beats_grid(self) -> bool:
+        prices = self.export_vs_grid()
+        return prices is not None and prices[0] > prices[1]
+
     def notes(self) -> list[str]:
         forecast = self.forecast["total_kwh"]
         if self.uncertainty_source == ARCHIVE:
@@ -403,6 +430,14 @@ class _PlanPv:
                     "W godzinach z nadwyżką urządzenie kosztuje tyle, ile dom traci na oddaniu prądu do sieci, "
                     "a nie pełną cenę z sieci."
                 )
+        prices = self.export_vs_grid()
+        if prices is not None and prices[0] > prices[1]:
+            sell, buy = prices
+            notes.append(
+                f"W godzinach ze słońcem prąd oddany do sieci jest wart więcej niż prąd z sieci (średnio "
+                f"{_price(sell)} wobec {_price(buy)} zł/kWh), więc plan nie przesuwa urządzeń pod słońce: nadwyżkę "
+                "lepiej oddać do depozytu, a urządzenia włączyć wtedy, gdy prąd z sieci jest tani."
+            )
         if self.rest_source == METER:
             notes.append(
                 "Zwykłe zużycie reszty domu liczymy z licznika (pobór minus urządzenia z plików urządzeń), bo plik "
@@ -452,6 +487,7 @@ class _PlanPv:
             "before": summary(self.before),
             "after": summary(self.after),
             "estimated_installation": bool(self.forecast.get("estimated_installation")),
+            "export_beats_grid": self.export_beats_grid,
             "hours": [
                 {"start": _local(hour.hour).isoformat(), "forecast_kwh": round(forecast_by_hour.get(hour.hour, 0.0), 3),
                  "planned_kwh": round(hour.production_kwh, 3), "rest_kwh": round(hour.rest_kwh, 3),

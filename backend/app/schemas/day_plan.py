@@ -209,6 +209,8 @@ class PlanPvOut(BaseModel):
     before: PlanPvSummaryOut | None = None
     after: PlanPvSummaryOut | None = None
     estimated_installation: bool = False
+    # W godzinach ze słońcem oddanie do sieci jest warte więcej niż prąd z sieci: plan nie przesuwa pod słońce.
+    export_beats_grid: bool = False
     hours: list[PlanPvHourOut] = []
 
 

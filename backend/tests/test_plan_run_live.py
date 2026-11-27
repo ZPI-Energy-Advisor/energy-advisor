@@ -68,6 +68,7 @@ def test_saving_so_far_counts_devices_still_working_and_matches_report_at_the_en
     done = _finish(home, plan)
 
     final = done["live"]["saving"]
+    assert saving["planned_saving"] == final["planned_saving"] == pytest.approx(plan["saving"], abs=0.01)
     assert final["cost_before"] == pytest.approx(done["cost"]["cost_before"], rel=0.01, abs=0.01)
     assert final["cost_after"] == pytest.approx(done["cost"]["cost_after"], rel=0.01, abs=0.01)
     assert final["saving"] == pytest.approx(done["cost"]["saving"], rel=0.01, abs=0.01)
@@ -170,6 +171,11 @@ def test_indoor_temperature_follows_plan_and_drops_when_pump_is_off():
     assert following.plan_c == plan.temps[39]
     assert (following.set_c, following.band) == (21, [20.0, 22.0])
     assert stopped.temp_c < following.temp_c - 0.3
+    # Wykres: cała doba według planu, a z symulacji tylko pełne kwadranse do teraz.
+    assert len(following.points) == 96
+    assert following.points[39].temp_c == pytest.approx(plan.temps[39], abs=0.2)
+    assert following.points[39].plan_c == plan.temps[39]
+    assert following.points[40].temp_c is None and following.points[95].plan_c == plan.temps[95]
 
 
 def test_water_heating_of_the_pump_does_not_warm_the_house():
@@ -198,6 +204,21 @@ def test_panels_split_into_used_at_home_and_exported_by_hour():
     assert (pv.production_kwh, pv.self_kwh, pv.export_kwh) == (2.0, 0.8, 1.2)
     assert pv.self_kwh + pv.export_kwh == pv.production_kwh
     assert pv.export_pln == pytest.approx(1.2 * 0.4)
+
+
+def test_panel_hours_compare_plan_with_measured_production_so_far():
+    noon = DAY + 12 * 4 * SLOT
+    planned = {noon + index * SLOT: 0.5 for index in range(8)}
+    energy = _energy({"dev_pv_01": {noon + index * SLOT: -0.4 for index in range(5)}})
+    balance = HouseBalance({}, planned, {}, {})
+
+    pv = live(_run([], energy, noon + 5 * SLOT, pv_devices=["dev_pv_01"], balance=balance), {}).pv
+
+    assert pv.planned_kwh == 4.0
+    first, second = pv.hours
+    assert (first.planned_kwh, first.actual_kwh) == (2.0, 1.6)
+    # Bieżąca godzina: tyle, ile już zmierzono.
+    assert (second.planned_kwh, second.actual_kwh) == (2.0, pytest.approx(0.4))
 
 
 def test_without_pump_panels_or_weather_those_tiles_are_missing():
@@ -241,4 +262,42 @@ def test_run_snapshot_keeps_house_model_only_of_pumps_that_hold_indoor_temperatu
         "loss_kw_per_k": 0.21, "capacity_kwh_per_k": 9.1, "floor_heating": True,
         "quarters": [{"start": "2026-10-12T00:00:00+02:00", "outdoor": 2.0, "after": 20.9}],
     }
+
+
+def _item(action_id: str, device_id: str, start: datetime, profile: list[float], kind: str = "heat_pump"):
+    from app.schemas.day_plan import PlanItemOut
+
+    return PlanItemOut(
+        action_id=action_id, device_id=device_id, device_name=device_id, kind=kind, original_start=start,
+        original_end=start, start=start, end=start + len(profile) * SLOT, energy_kwh=sum(profile), status="moved",
+        profile_kwh=profile, original_profile_kwh=profile, program_id="cotton" if kind == "program" else None,
+    )
+
+
+def test_heat_pump_house_and_water_go_to_the_hub_as_one_profile():
+    from app.services.plan_run_service import PlanRunService
+
+    house = _item("dev_hp_01#dom", "dev_hp_01", DAY, [0.5, 0.0, 0.0, 0.5, 0.5])
+    water = _item("dev_hp_01#woda", "dev_hp_01", DAY + SLOT, [1.0, 1.0])
+    washer = _item("dev_wm_01", "dev_wm_01", DAY, [0.3], kind="program")
+    later = _item("dev_ev_01", "dev_ev_01", DAY + 20 * SLOT, [1.0], kind="ev")
+
+    planned = PlanRunService._plan_commands([house, water, washer, later])
+
+    assert [item.action_id for item, _ in planned] == ["dev_hp_01#dom", "dev_hp_01#woda", "dev_wm_01", "dev_ev_01"]
+    (_, house_command), (_, water_command) = planned[:2]
+    assert house_command is water_command
+    assert (house_command.start_at, house_command.profile_kwh) == (DAY, [0.5, 1.0, 1.0, 0.5, 0.5])
+    assert planned[2][1] is not house_command and planned[3][1].profile_kwh == [1.0]
+
+
+def test_profiles_of_one_device_that_do_not_overlap_stay_separate():
+    from app.services.plan_run_service import PlanRunService
+
+    morning = _item("dev_wh_01#1", "dev_wh_01", DAY, [1.0])
+    evening = _item("dev_wh_01#2", "dev_wh_01", DAY + 40 * SLOT, [1.0])
+
+    planned = PlanRunService._plan_commands([morning, evening])
+
+    assert planned[0][1] is not planned[1][1]
 

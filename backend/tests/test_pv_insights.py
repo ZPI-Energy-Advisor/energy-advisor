@@ -447,6 +447,25 @@ def test_period_shows_weather_estimate_next_to_file_production(db, house, client
     assert body["estimated_installation"] is False and body["approximate_location"] is False
 
 
+def test_period_day_without_inverter_production_still_counts_as_file_production(db, house, client_a, pv_api):
+    from app.models.DeviceAction import DeviceAction
+    from app.models.DeviceInstance import DeviceInstance
+    from app.models.DeviceSlotUsage import DeviceSlotUsage
+
+    # Panele pod śniegiem 05.10: w pliku falownik nie ma tego dnia żadnej produkcji.
+    start, end = local_day_bounds_utc(dt.date(2026, 10, 5))
+    pv_actions = db.query(DeviceAction.id).join(DeviceInstance).filter(
+        DeviceInstance.user_id == house.id, DeviceInstance.device_type == "pv_inverter")
+    db.query(DeviceSlotUsage).filter(
+        DeviceSlotUsage.device_action_id.in_(pv_actions), DeviceSlotUsage.slot_start >= start, DeviceSlotUsage.slot_start < end,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    body = client_a.get("/api/v1/pv/period", params={"from": "2026-10-01", "to": "2026-10-10"}).json()
+
+    assert body["actual_kwh"] is not None and body["export_kwh"] is None
+
+
 def test_period_without_file_days_and_with_bad_range(db, house, client_a, pv_api):
     empty = client_a.get("/api/v1/pv/period", params={"from": "2026-11-01", "to": "2026-11-30"}).json()
 

@@ -158,6 +158,14 @@ describe("periodLabel", () => {
     );
   });
 
+  it("dni tygodnia po „na” są w bierniku", async () => {
+    const { forWeekdayDate } = await import("./dayPlan");
+    expect(forWeekdayDate("2026-11-28")).toBe("sobotę 28.11");
+    expect(forWeekdayDate("2026-11-25")).toBe("środę 25.11");
+    expect(forWeekdayDate("2026-11-22")).toBe("niedzielę 22.11");
+    expect(forWeekdayDate("2026-11-27")).toBe("piątek 27.11");
+  });
+
   it("przebieg planu idealnego ma swoją nazwę", () => {
     expect(planName({ plan_date: "2026-05-14", plan_kind: "past_day" })).toBe("Plan idealny, 14 maja");
     expect(planName({ plan_date: "2026-11-13", plan_kind: "tomorrow" })).toBe("Plan na 13 listopada");
