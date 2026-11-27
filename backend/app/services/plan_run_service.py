@@ -65,6 +65,7 @@ from app.services.home_control_service import (
 from app.services.day_background import HISTORY, PV_TYPE, THERMOSTAT_TYPES, BackgroundDevice, DayBackground, history_runs
 from app.services.home_replay import ReplayRun, replay_commands, replay_summary
 from app.services.home_state_service import DayEnergy, day_energy
+from app.services.plan_run_live import live
 from app.services.plan_run_report import RunEnergy, cost_report, profile_cost
 from app.services.pv_balance import HouseBalance
 
@@ -142,6 +143,11 @@ class PlanRunService:
                 }
                 for heater in plan.result.get("water_heaters", [])
             ],
+            # Plan idealny dnia z przeszłości (ZP-152) albo plan na jutro: oznaczenie w historii przebiegów.
+            "plan_kind": _plan_kind(plan),
+            # Statystyki na żywo (ZP-153): pogoda doby z planu i model domu z pompą ciepła.
+            "weather": _weather_snapshot(plan.result.get("weather")),
+            "heat_pumps": _heat_pump_snapshot(plan.result.get("heat_pumps", [])),
         }
         prices = _prices(tariff)
         horizon_start = datetime.fromisoformat(plan.result["horizon_start"])
@@ -300,6 +306,9 @@ class PlanRunService:
             energy_before_kwh=sum(original),
             cost_before=item.cost_before if cost_before is None else cost_before,
             planned_cost=item.cost_after if planned_cost is None else planned_cost,
+            original_start=item.original_start,
+            original_profile_kwh=item.original_profile_kwh,
+            profile_kwh=item.profile_kwh,
         )
 
     # --- odczyt i zakończenie ---
@@ -325,6 +334,7 @@ class PlanRunService:
             summaries.append(PlanRunSummaryOut(
                 id=run.id,
                 plan_date=run.plan_date,
+                plan_kind=(run.tariff or {}).get("plan_kind") or "tomorrow",
                 status=run.status,
                 started_at=run.started_at,
                 ended_at=run.ended_at,
@@ -430,11 +440,14 @@ class PlanRunService:
         history = {entry["device_id"]: entry for entry in run.replayed_devices}
         actual = defaultdict(float)
         cost = None
+        live_out = None
         if sim_time is not None:
             until = min(sim_time, run.horizon_end)
             energy = self._energy(owner, run, until)
             actual = energy.by_device
             cost = self._report(owner, run, until, energy)
+            if run.tariff is not None and until > run.horizon_start:
+                live_out = live(self._run_energy(owner, run, until, energy), run.tariff)
         devices = [
             PlanRunDeviceOut(
                 device_id=device_id,
@@ -473,6 +486,7 @@ class PlanRunService:
             id=run.id,
             plan_id=run.day_plan_id,
             plan_date=run.plan_date,
+            plan_kind=(run.tariff or {}).get("plan_kind") or "tomorrow",
             status=run.status,
             simulation_id=run.simulation_id,
             started_at=run.started_at,
@@ -493,6 +507,7 @@ class PlanRunService:
             water_heaters=[
                 PlanRunWaterHeaterOut.model_validate(heater) for heater in (run.tariff or {}).get("water_heaters", [])
             ],
+            live=live_out,
         )
 
     def _energy(self, owner: User, run: PlanRun, until: datetime) -> DayEnergy:
@@ -512,11 +527,14 @@ class PlanRunService:
         return report
 
     def _cost(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> PlanRunCostOut:
+        return cost_report(self._run_energy(owner, run, until, energy))
+
+    def _run_energy(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> RunEnergy:
         actions = [PlanRunActionOut.model_validate(item) for item in run.items]
         pv_devices = set(self.home_repository.device_ids_of_types(owner.id, (PV_TYPE,)))
         prices = _prices(run.tariff)
         balance = run.tariff.get("balance")
-        return cost_report(RunEnergy(
+        return RunEnergy(
             actions=actions,
             prices=prices,
             max_grid_kw=run.tariff.get("max_grid_kw"),
@@ -531,7 +549,47 @@ class PlanRunService:
             pv_devices=pv_devices,
             until=until,
             complete=run.status == PlanRun.COMPLETED,
-        ))
+        )
+
+
+def _plan_kind(plan: DayPlan) -> str:
+    kind = plan.result.get("kind")
+    if kind:
+        return kind
+    return "past_day" if plan.plan_date < plan.created_at.astimezone(LOCAL_TIMEZONE).date() else "tomorrow"
+
+
+def _weather_snapshot(weather: dict | None) -> dict | None:
+    if not weather:
+        return None
+    return {
+        "past": weather.get("past", False),
+        "quarters": [
+            {"start": quarter["start"], "temperature_c": quarter["temperature_c"], "cloud_cover_pct": quarter["cloud_cover_pct"]}
+            for quarter in weather.get("quarters", [])
+        ],
+    }
+
+
+def _heat_pump_snapshot(pumps: list[dict]) -> list[dict]:
+    """Dom z pompą w planie trzymającym temperaturę (ZP-119): model domu i temperatura na dworze co kwadrans."""
+    return [
+        {
+            "device_id": pump["device_id"],
+            "device_name": pump["device_name"],
+            "indoor_c": pump["indoor_c"],
+            "band": pump["band"],
+            "loss_kw_per_k": pump["loss_kw_per_k"],
+            "capacity_kwh_per_k": pump["capacity_kwh_per_k"],
+            "floor_heating": pump["floor_heating"],
+            "quarters": [
+                {"start": point["start"], "outdoor": point["outdoor"], "after": point["after"]}
+                for point in pump.get("temperatures", [])
+            ],
+        }
+        for pump in pumps
+        if pump.get("mode") == "indoor" and pump.get("loss_kw_per_k") and pump.get("capacity_kwh_per_k")
+    ]
 
 
 def _prices(tariff: dict) -> dict[datetime, float]:

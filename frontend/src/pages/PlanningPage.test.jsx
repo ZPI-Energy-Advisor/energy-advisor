@@ -79,6 +79,9 @@ const HEAT_PUMP_PLAN = {
 
 const INDOOR_POINTS = [{ start: "2026-11-13T00:00:00+01:00", before: 21, after: 20.8, outdoor: -2 }];
 
+// Odpowiedź GET po adresie; adres spoza listy to ustawienia.
+const routed = (url, config, responses, fallback) => (url in responses ? responses[url] : fallback);
+
 // GET ustawień i ostatniego planu (domyślnie bez planu).
 const mockGet = (body = BODY, plan = null) =>
   vi.spyOn(apiClient, "get").mockImplementation((url) =>
@@ -638,6 +641,48 @@ describe("PlanningPage", () => {
     expect(await screen.findByText("Plan na piątek 13.11")).toBeTruthy();
     expect(post).toHaveBeenCalledWith("/planning/plans", {});
     expect(screen.queryByText(/czyli nie na jutro/)).toBeNull();
+  });
+
+  it("przełącznik „Wybrany dzień” pokazuje plan idealny, a „Jutro” dalej plan na jutro", async () => {
+    const tomorrow = { ...PLAN, status: "approved", approved_at: "2026-11-12T16:05:00+01:00" };
+    const past = { ...PLAN, id: "plan-past", plan_date: "2026-10-30", kind: "past_day", day_source: "files" };
+    vi.spyOn(apiClient, "get").mockImplementation((url, config) => Promise.resolve({ data: routed(url, config, {
+      "/planning/plans/current": tomorrow,
+      "/planning/past-days": { first_day: "2024-08-24", last_day: "2026-11-11", file_periods: [{ first_day: "2026-10-01", last_day: "2026-10-30" }] },
+      "/planning/plans": config?.params?.date === "2026-10-30" ? past : null,
+    }, { ...BODY, saved_at: "2026-11-12T14:00:00Z" }) }));
+    render(page());
+
+    expect(await screen.findByRole("heading", { name: "Plan na piątek 13.11" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Wybrany dzień" }));
+    expect(await screen.findByRole("heading", { name: "Plan idealny na piątek 30.10" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Plan na piątek 13.11" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Jutro" }));
+    expect(await screen.findByRole("heading", { name: "Plan na piątek 13.11" })).toBeTruthy();
+    expect(screen.getByText("Zatwierdzony")).toBeTruthy();
+  });
+
+  it("plan demo na dzień z przeszłości otwiera się jako plan idealny tego dnia", async () => {
+    const past = { ...PLAN, id: "plan-demo", plan_date: "2026-11-10", kind: "past_day", day_source: "settings" };
+    vi.spyOn(apiClient, "get").mockImplementation((url, config) => Promise.resolve({ data: routed(url, config, {
+      "/planning/plans/current": null,
+      "/planning/past-days": { first_day: "2024-08-24", last_day: "2026-11-11", file_periods: [] },
+      "/planning/plans": config?.params?.date === "2026-11-10" ? past : null,
+    }, BODY) }));
+    vi.spyOn(apiClient, "put").mockResolvedValue({ data: BODY });
+    vi.spyOn(apiClient, "post")
+      .mockRejectedValueOnce({ response: { status: 409, data: { detail: {
+        code: "no_prices", message: "Nie ma jeszcze cen dynamicznych na 13.11.2026.", latest_price_date: "2026-11-10",
+      } } } })
+      .mockResolvedValueOnce({ data: past });
+    render(page());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Zapisz i ułóż plan" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Ułóż plan demo na 10\.11/ }));
+
+    expect(await screen.findByRole("heading", { name: "Plan idealny na wtorek 10.11" })).toBeTruthy();
+    expect(screen.getByLabelText("Dzień").value).toBe("2026-11-10");
   });
 
   it("ostrzeżenia planu są osobno, a przy taryfie ze stałą ceną jest podpowiedź", async () => {

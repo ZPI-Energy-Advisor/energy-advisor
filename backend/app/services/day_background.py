@@ -116,9 +116,11 @@ class DayBackground:
         )
 
 
-def history_runs(home: HomeRepository, user_id, plan_date: date, device_ids: list[str]) -> tuple[dict[str, date], dict[str, list[ReplayRun]]]:
-    """Doba dnia referencyjnego każdego urządzenia przeniesiona na dobę planu: dni i przebiegi po urządzeniu."""
-    plan_start = day_midnight(plan_date).astimezone(timezone.utc)
+def history_runs(home: HomeRepository, user_id, plan_date: date, device_ids: list[str],
+                 same_day: bool = False) -> tuple[dict[str, date], dict[str, list[ReplayRun]]]:
+    """Doba dnia referencyjnego każdego urządzenia przeniesiona na dobę planu: dni i przebiegi po urządzeniu.
+    `same_day`: plan idealny dnia z plików (ZP-152), w którym dniem referencyjnym jest sama doba planu."""
+    plan_start = day_midnight(plan_date + timedelta(days=1) if same_day else plan_date).astimezone(timezone.utc)
     starts = home.last_action_starts(user_id, device_ids, plan_start)
     starts |= home.last_action_starts(user_id, [d for d in device_ids if d not in starts])
     days = {device_id: local_day(start) for device_id, start in starts.items()}
@@ -234,7 +236,8 @@ class DayBackgroundService:
         self.pv_forecasts = pv_forecasts
         self.heat_pumps = heat_pumps
 
-    def build(self, user_id, plan_date: date, planned_devices: set[str], base_info: dict | None = None) -> DayBackground:
+    def build(self, user_id, plan_date: date, planned_devices: set[str], base_info: dict | None = None,
+              file_day: bool = False) -> DayBackground:
         background = DayBackground(past=self.pv_forecasts is not None and plan_date < self.pv_forecasts.weather.today())
         forecast, background.pv_reason = self._forecast(user_id, plan_date)
         if forecast is not None:
@@ -248,7 +251,7 @@ class DayBackgroundService:
             return background
         info = self.home.device_info(user_id, devices)
         types = {device_id: device_type for device_id, (device_type, _) in info.items()}
-        days, history = history_runs(self.home, user_id, plan_date, devices)
+        days, history = history_runs(self.home, user_id, plan_date, devices, same_day=file_day)
         day_end = day_midnight(plan_date + timedelta(days=1)).astimezone(timezone.utc)
 
         pv = [device_id for device_id in devices if types.get(device_id) == PV_TYPE]

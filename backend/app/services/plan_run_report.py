@@ -125,17 +125,27 @@ def _pv_costs(run: RunEnergy, devices: list[str]) -> dict[str, float]:
     return {device_id: cost or 0.0 for device_id, cost in costs.items()}
 
 
+def _deviations(run: RunEnergy) -> list[PlanRunDeviationOut]:
+    names = {**run.names, **{action.device_id: action.device_name for action in run.actions}}
+    return [
+        *_command_deviations(run.actions),
+        *_error_deviations(run.errors, {action.device_id for action in run.actions}, names, run.until),
+        *_event_deviations(run.events, run.actions, names),
+    ]
+
+
+def excluded_devices(run: RunEnergy) -> set[str]:
+    """Urządzenia z planu, które nie pracowały według planu (odrzucona komenda, awaria, ręczne przełączenie)."""
+    return {deviation.device_id for deviation in _deviations(run) if deviation.excluded}
+
+
 def cost_report(run: RunEnergy) -> PlanRunCostOut:
     by_device: dict[str, list[PlanRunActionOut]] = defaultdict(list)
     for action in run.actions:
         by_device[action.device_id].append(action)
     pv_costs = _pv_costs(run, list(by_device)) if run.balance is not None else None
     names = {**run.names, **{action.device_id: action.device_name for action in run.actions}}
-    deviations = [
-        *_command_deviations(run.actions),
-        *_error_deviations(run.errors, set(by_device), names, run.until),
-        *_event_deviations(run.events, run.actions, names),
-    ]
+    deviations = _deviations(run)
     excluded = {deviation.device_id for deviation in deviations if deviation.excluded}
 
     devices: list[PlanRunCostDeviceOut] = []

@@ -284,6 +284,9 @@ def test_plan_keeps_the_home_warm_in_cheap_hours_and_heats_more_when_colder(db, 
     body = response.json()
     pump = body["heat_pumps"][0]
     assert pump["mode"] == "indoor" and pump["band"] == [20.0, 22.0] and pump["shortfall"] == 0
+    # Model domu do temperatury na żywo w symulacji (ZP-153).
+    assert pump["capacity_kwh_per_k"] / pump["loss_kw_per_k"] == pytest.approx(pump["time_constant_h"], abs=0.6)
+    assert pump["floor_heating"] in (True, False)
     assert pump["thermostat_kwh"] == pytest.approx(_house_thermostat_kwh(0.0), rel=0.01)
     assert all(20.0 - 0.01 <= point["after"] <= 22.0 + 0.01 for point in pump["temperatures"])
     house = _items(response)["dev_hp_01#dom"]

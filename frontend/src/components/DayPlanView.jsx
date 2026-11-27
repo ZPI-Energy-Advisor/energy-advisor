@@ -94,7 +94,8 @@ function DayPlanView({
   const closeIndoorPump = useCallback(() => setIndoorPump(null), []);
   const indoorPumps = (plan.heat_pumps ?? []).filter((pump) => pump.mode === "indoor" && pump.temperatures?.length);
   const approved = plan.status === "approved";
-  const outdated = plan.plan_date < localTomorrow();
+  const ideal = plan.kind === "past_day";
+  const outdated = !ideal && plan.plan_date < localTomorrow();
   const rows = planRows(plan.items);
   const conflicts = plan.items.filter(isConflict);
   const heaters = plan.water_heaters ?? [];
@@ -113,8 +114,16 @@ function DayPlanView({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Plan na {weekdayDate(plan.plan_date)}</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            {ideal ? "Plan idealny na" : "Plan na"} {weekdayDate(plan.plan_date)}
+          </h3>
           <p className="text-xs text-gray-500">Ceny: {plan.pricing}</p>
+          {ideal && (
+            <p className="text-xs text-gray-500">
+              Pogoda z archiwum · bez planu:{" "}
+              {plan.day_source === "files" ? "tak, jak tego dnia w plikach urządzeń" : "z ustawień i historii"}
+            </p>
+          )}
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-semibold ${

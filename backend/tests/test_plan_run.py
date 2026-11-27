@@ -264,8 +264,11 @@ def test_unticked_heat_pump_replays_only_day_without_following_night(home):
     period = {"start": "2026-10-05T00:00:00+02:00", "end": "2026-10-07T00:00:00+02:00"}
     night = {**HEAT_PUMP["actions"][0], "action_id": "act_hp_night",
              "action_start": "2026-10-06T02:00:00+02:00", "action_end": "2026-10-06T03:00:00+02:00"}
+    # Plan na 06.10 jest planem idealnym dnia z pliku (ZP-152): pralka musi tego dnia prać, żeby była w planie.
+    washing = {**WASHER["actions"][0], "action_id": "act_wm_06",
+               "action_start": "2026-10-06T10:00:00+02:00", "action_end": "2026-10-06T10:30:00+02:00"}
     entries = {"devices": [WASHER["device"], HEAT_PUMP["device"]],
-               "actions": [*WASHER["actions"], *HEAT_PUMP["actions"], night]}
+               "actions": [*WASHER["actions"], washing, *HEAT_PUMP["actions"], night]}
     assert _upload(home.owner, _file(period, entries["devices"], entries["actions"])).status_code == 200
     home.hub.use_clock_state()
     # Dzień referencyjny dla doby 06.10 to 05.10; blok z 02:00 06.10 jest już w nocy po nim.

@@ -176,8 +176,10 @@ jeden na użytkownika i dzień) ze statusem `draft` albo `approved`:
 
 | Metoda i ścieżka | Opis |
 |---|---|
-| `POST /api/v1/planning/plans` | Układa plan na jutro (body `{}`) albo na `plan_date` (demo). Nadpisuje plan tego dnia i wraca do `draft`; `201` z planem |
-| `GET /api/v1/planning/plans/current` | Ostatnio ułożony plan albo `null` |
+| `POST /api/v1/planning/plans` | Układa plan na jutro (body `{}`) albo na `plan_date` (plan idealny dnia z przeszłości, plan demo). Nadpisuje plan tego dnia i wraca do `draft`; `201` z planem |
+| `GET /api/v1/planning/plans/current` | Ostatni plan na jutro (`kind = tomorrow`, także plan demo) albo `null`; plan idealny go nie zasłania |
+| `GET /api/v1/planning/plans?date=RRRR-MM-DD` | Plan na ten dzień albo `null` (widok „Wybrany dzień”) |
+| `GET /api/v1/planning/past-days` | Zakres dni do planu idealnego: `first_day` (pierwszy dzień ze stawkami operatora, przy cenie dynamicznej też z RCE), `last_day` (wczoraj) i `file_periods` (okresy plików urządzeń) |
 | `POST /api/v1/planning/plans/{id}/approve` | Zatwierdza plan (`approved`, `approved_at`); cudzy albo nieistniejący plan: `404` |
 
 Ścieżka jest pod `/planning`, a nie `/home` jak w tickecie, bo plan (tak jak ustawienia) jest dla każdego
@@ -275,6 +277,29 @@ plan liczy się bez paneli i mówi o tym w uwagach.
 
 Przy taryfie ze stałą ceną i nadwyżce z paneli ekran planu nie mówi już, że przesuwanie nic nie da: plan przesuwa
 urządzenia pod słońce.
+
+### Plan idealny dnia z przeszłości (ZP-152)
+
+Na ekranie „Plan na jutro” przełącznik „Jutro / Wybrany dzień” otwiera plan dnia z przeszłości, np. 14 maja,
+do prezentacji i sprawdzania planera. Plan idealny układamy z pełną wiedzą o dobie, z tych samych ustawień
+urządzeń co plan na jutro. Różnice:
+
+| | Plan na jutro | Plan idealny (`kind = past_day`) |
+|---|---|---|
+| Pogoda | Prognoza | Archiwum (`weather.past`), czyli to, co naprawdę było |
+| Produkcja PV | Prognoza pomniejszona o jej średni błąd (MAPE, bez kalibracji 20%) | Cała produkcja z archiwum (`uncertainty = 0`, `uncertainty_source = archive`). Do huba idzie ta sama energia |
+| Bez planu (dzień z plików, `day_source = files`) | Zwykła godzina z historii | Pralka, zmywarka i auto o godzinie z pliku z tego dnia (auto z energią z pliku); urządzenia, które tego dnia nie pracowały, wypadają z planu z uwagą. Pompa ciepła i bojler jak zwykle (model i termostat) |
+| Bez planu (dzień spoza plików, `day_source = settings`) | — | Jak plan na jutro: urządzenia i godziny z ustawień i historii, z uwagą |
+| Reszta domu i rezerwa przyłącza | 7 ostatnich dni w plikach | Dzień z plików: zużycie z tej doby (`until` = koniec doby, 1 dzień); spoza plików jak plan na jutro |
+
+Plan zapisuje się dla pary użytkownik + data, więc nie nadpisuje planu na jutro. Plan, który ułożono, zanim
+plany miały `kind`, jest planem idealnym, gdy jego dzień jest wcześniejszy niż dzień ułożenia. Dzień bez cen
+dla taryfy użytkownika daje `422` z komunikatem (także przy cenie dynamicznej, bo publikacja PSE nic tu nie
+zmieni), a kalendarz zaczyna się od pierwszego dnia z cenami. Plan demo (brak cen na jutro), który wypada na
+dzień z przeszłości, jest planem idealnym i ekran otwiera go w widoku „Wybrany dzień”.
+
+Uruchomiony plan idealny ustawia zegar huba na północ swojej doby, jak każdy plan (ZP-113). Przebieg zapisuje
+`plan_kind` w migawce, więc historia przebiegów i pasek przebiegu mówią „Plan idealny, 14 maja”.
 
 ### Pogoda i panele na ekranie planu (ZP-122)
 
