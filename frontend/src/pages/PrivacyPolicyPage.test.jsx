@@ -8,7 +8,7 @@ vi.mock("@react-oauth/google", () => ({ GoogleLogin: () => null }));
 
 const POLICY = {
   version: "2026-11-23",
-  content: "# Polityka prywatności\n\n## Administrator\n\nNapisz na **energy-advisor@gmail.com**.\n\n- dostęp\n- usunięcie",
+  content: "# Polityka prywatności\n\n## Administrator\n\nNapisz na **280574@student.pwr.edu.pl**.\n\n- dostęp\n- usunięcie",
 };
 
 const renderPage = () =>
@@ -29,7 +29,7 @@ describe("PrivacyPolicyPage", () => {
     expect(await screen.findByRole("heading", { name: "Polityka prywatności" })).toBeTruthy();
     expect(get).toHaveBeenCalledWith("/legal/privacy-policy");
     expect(screen.getByRole("heading", { name: "Administrator" })).toBeTruthy();
-    expect(screen.getByText("energy-advisor@gmail.com").tagName).toBe("STRONG");
+    expect(screen.getByText("280574@student.pwr.edu.pl").tagName).toBe("STRONG");
     expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["dostęp", "usunięcie"]);
     expect(screen.getByText("Wersja z dnia 23.11.2026")).toBeTruthy();
   });

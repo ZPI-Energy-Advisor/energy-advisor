@@ -31,8 +31,8 @@ function DeleteAccount({ email }) {
     <section className="mt-10 rounded-lg border border-red-200 p-4 sm:p-5" aria-label="Usuń konto">
       <h3 className="font-semibold text-red-700">Usuń konto</h3>
       <p className="mt-1 text-sm text-gray-700">
-        Usuniemy konto i wszystkie dane: profil, wgrane pliki, urządzenia, plany i wyniki symulacji. Tego nie da się
-        cofnąć.
+        Usuniemy konto i wszystkie jego dane w aplikacji: profil, wgrane pliki, urządzenia, plany i wyniki symulacji.
+        Tego nie da się cofnąć.
       </p>
       <label className="mt-3 block text-sm text-gray-700" htmlFor="delete-account-email">
         Wpisz <span className="font-semibold">{email}</span>, żeby potwierdzić

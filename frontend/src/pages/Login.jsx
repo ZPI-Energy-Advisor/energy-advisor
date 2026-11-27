@@ -267,9 +267,6 @@ function Login() {
                     i ją akceptuję.
                   </span>
                 </label>
-                <p className="text-xs text-gray-500">
-                  Konto, na które nikt nie zaloguje się przez 12 miesięcy, usuwamy razem ze wszystkimi danymi.
-                </p>
               </div>
             )}
 
