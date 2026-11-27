@@ -38,6 +38,20 @@ class Summary:
     export_pln: float = 0.0
 
 
+@dataclass(frozen=True)
+class HourBalance:
+    hour: datetime
+    production_kwh: float
+    rest_kwh: float
+    plan_kwh: float
+    export_kwh: float
+
+    @property
+    def surplus_kwh(self) -> float:
+        """Nadwyżka paneli nad resztą domu, zanim dojdą urządzenia z planu."""
+        return max(self.production_kwh - self.rest_kwh, 0.0)
+
+
 @dataclass
 class HouseBalance:
     """`base`: zużycie reszty domu, `production`: produkcja PV (kWh na kwadrans), `buy`: cena zakupu kwadransu,
@@ -163,6 +177,31 @@ class HouseBalance:
             if consumed > 0:
                 result.plan_from_pv_kwh += own * plan_kwh / consumed
         return result
+
+    def hours(self, planned: Mapping[datetime, float]) -> list["HourBalance"]:
+        """Godziny z produkcją: produkcja, zużycie reszty domu i urządzeń z planu oraz oddanie do sieci."""
+        result = []
+        for hour in sorted(self._hour_production):
+            produced = self._hour_production[hour]
+            rest = sum(kwh for _, kwh in self._consumption(hour))
+            plan = sum(planned.get(hour + index * SLOT, 0.0) for index in range(4))
+            result.append(HourBalance(hour, produced, rest, plan, max(produced - rest - plan, 0.0)))
+        return result
+
+    def from_pv(self, items: Iterable[tuple[str, datetime, list[float]]]) -> dict[str, float]:
+        """Ile prądu z paneli bierze każda pozycja planu: w godzinie panele dzielą się po równo na każdą kWh zużycia
+        (jak `plan_from_pv_kwh` w `summary`)."""
+        items = list(items)
+        planned = by_slot((start, profile) for _, start, profile in items)
+        share: dict[datetime, float] = {}
+        for hour in {hour_of(slot) for slot in planned}:
+            consumed = sum(kwh for _, kwh in self._consumption(hour, planned))
+            produced = self._hour_production.get(hour, 0.0)
+            share[hour] = min(consumed, produced) / consumed if consumed > 0 else 0.0
+        return {
+            item_id: sum(kwh * share[hour_of(start + index * SLOT)] for index, kwh in enumerate(profile) if kwh)
+            for item_id, start, profile in items
+        }
 
     def to_json(self) -> dict:
         def pairs(values: Mapping[datetime, float]) -> list:

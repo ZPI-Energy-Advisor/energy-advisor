@@ -8,6 +8,8 @@ from app.services.heat_pump_model import building_heat_per_hdd, building_model
 from app.services.house_heating import (
     CAPACITY_KWH_PER_M2_K,
     DEFAULT_TIME_CONSTANT_H,
+    LEVELS,
+    MIN_TIME_CONSTANT_H,
     House,
     house_capacity,
     optimize,
@@ -48,6 +50,40 @@ def test_apartment_loses_less_heat_and_cools_slower_than_detached_house():
 def test_capacity_without_area_comes_from_a_typical_time_constant():
     assert house_capacity("single_family_house", None, 0.2) == pytest.approx(DEFAULT_TIME_CONSTANT_H * 0.2)
     assert house_capacity("apartment", 50, 0.1) == pytest.approx(CAPACITY_KWH_PER_M2_K["apartment"] * 50)
+
+
+def test_small_area_in_profile_cannot_make_a_house_that_cools_in_a_few_hours():
+    model = building_model(2010, 120, 3)
+    small = House.of(model, "single_family_house", 13.0, 21)
+    big = House.of(model, "single_family_house", 120.0, 21)
+
+    assert small.time_constant_h == pytest.approx(MIN_TIME_CONSTANT_H)
+    assert big.time_constant_h == pytest.approx(43, abs=1)
+    assert house_capacity("single_family_house", 13, 0.3) == pytest.approx(MIN_TIME_CONSTANT_H * 0.3)
+
+
+def test_small_area_heats_cheaper_than_thermostat_without_false_shortfall():
+    model = building_model(2010, 120, 3)
+    house = House.of(model, "single_family_house", 13.0, 21)
+    outdoor, prices = _outdoor(2.0), _night_cheap()
+
+    before = thermostat(house, outdoor, prices, POWER_KW)
+    after = optimize(house, outdoor, prices, POWER_KW)
+
+    assert before.shortfall == 0 and after.shortfall == 0
+    assert after.cost < before.cost
+    assert min(after.temps) >= house.low - 0.01
+
+
+def test_pump_modulates_in_quarter_steps():
+    house = _house()
+    cap = POWER_KW / 4
+
+    heating = optimize(house, _outdoor(), _night_cheap(), POWER_KW)
+
+    assert LEVELS == (0.0, 0.25, 0.5, 0.75, 1.0)
+    assert all(any(kwh == pytest.approx(level * cap) for level in LEVELS) for kwh in heating.kwh)
+    assert any(kwh == pytest.approx(0.25 * cap) or kwh == pytest.approx(0.75 * cap) for kwh in heating.kwh)
 
 
 def test_thermostat_keeps_the_set_temperature_and_uses_about_the_daily_model_energy():

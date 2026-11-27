@@ -433,6 +433,28 @@ def test_pv_screen_endpoints(db, house, client_a, pv_api):
     assert "peak" not in day.json()
 
 
+def test_period_shows_weather_estimate_next_to_file_production(db, house, client_a, pv_api):
+    response = client_a.get("/api/v1/pv/period", params={"from": "2026-09-25", "to": "2026-10-10"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["days"], body["model_days"]) == (10, 10)
+    accuracy = client_a.get("/api/v1/pv/accuracy").json()["days"]
+    in_range = [day for day in accuracy if day["date"] <= "2026-10-10"]
+    assert body["actual_kwh"] == pytest.approx(sum(day["actual_kwh"] for day in in_range), abs=0.1)
+    assert body["model_kwh"] == pytest.approx(sum(day["model_kwh"] for day in in_range), abs=0.1)
+    assert body["export_kwh"] is None
+    assert body["estimated_installation"] is False and body["approximate_location"] is False
+
+
+def test_period_without_file_days_and_with_bad_range(db, house, client_a, pv_api):
+    empty = client_a.get("/api/v1/pv/period", params={"from": "2026-11-01", "to": "2026-11-30"}).json()
+
+    assert (empty["days"], empty["model_kwh"], empty["actual_kwh"]) == (0, None, None)
+    assert client_a.get("/api/v1/pv/period", params={"from": "2026-10-10", "to": "2026-10-01"}).status_code == 422
+    assert client_a.get("/api/v1/pv/period", params={"from": "2024-01-01", "to": "2026-10-01"}).status_code == 422
+
+
 def test_pv_screen_endpoint_errors(db, house, client_a, client_b, anonymous_client, pv_api):
     assert client_a.get("/api/v1/pv/day", params={"date": "2026-11-26"}).status_code == 422
     assert client_a.get("/api/v1/pv/day", params={"date": "2026-06-01"}).status_code == 503

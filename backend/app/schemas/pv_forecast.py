@@ -130,6 +130,20 @@ class PvDayResponse(BaseModel):
     intervals: list[PvIntervalOut]
 
 
+class PvPeriodResponse(BaseModel):
+    """Dni z plików w okresie: produkcja szacowana z pogody obok produkcji z pliku urządzeń albo oddania z licznika."""
+
+    date_from: date
+    date_to: date
+    days: int
+    model_days: int
+    model_kwh: float | None
+    actual_kwh: float | None
+    export_kwh: float | None
+    estimated_installation: bool
+    approximate_location: bool
+
+
 class PvAccuracyDayOut(BaseModel):
     date: date
     actual_kwh: float

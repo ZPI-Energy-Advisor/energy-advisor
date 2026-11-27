@@ -1,9 +1,17 @@
+import { Link } from "react-router-dom";
 import { FiSun } from "react-icons/fi";
 import { formatNumber } from "../utils/format";
 import { formatPln } from "../utils/schedule";
 import MoreInfo from "./MoreInfo";
 
 const kwh = (value) => `${formatNumber(value, 1)} kWh`;
+const momentFormat = new Intl.DateTimeFormat("pl-PL", {
+  timeZone: "Europe/Warsaw", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+});
+const fetchedText = (iso) => {
+  const parts = Object.fromEntries(momentFormat.formatToParts(new Date(iso)).map((part) => [part.type, part.value]));
+  return `${parts.day}.${parts.month} ${parts.hour}:${parts.minute}`;
+};
 
 function Row({ label, before, after }) {
   return (
@@ -16,7 +24,12 @@ function Row({ label, before, after }) {
 }
 
 // Prąd z paneli w planie (ZP-121): prognoza, na ile plan liczy, i bilans paneli bez planu i według planu.
-function PvPlanCard({ pv }) {
+function ProfileLink({ children }) {
+  return <Link to="/profile" className="font-medium text-emerald-700 underline hover:text-emerald-800">{children}</Link>;
+}
+
+function PvPlanCard({ pv, weather = null }) {
+  const fetched = pv.weather_fetched_at ?? weather?.fetched_at;
   const { before, after } = pv;
   const settlement = pv.settlement === "net_billing" ? "do depozytu" : "w opuście";
   return (
@@ -28,6 +41,21 @@ function PvPlanCard({ pv }) {
         Prognoza {kwh(pv.forecast_kwh)}, plan liczy na {kwh(pv.planned_kwh)} (o {formatNumber(pv.uncertainty * 100, 0)}% mniej,{" "}
         {pv.uncertainty_source === "history" ? "tyle średnio myli się prognoza dla Twoich paneli" : "prognoza nie jest jeszcze dopasowana do Twoich paneli"}).
       </p>
+      {fetched && (
+        <p className="mt-1 text-xs text-gray-500">
+          {weather?.past ? "Pogoda z archiwum" : "Prognoza pogody"} pobrana {fetchedText(fetched)}.
+        </p>
+      )}
+      {pv.estimated_installation && (
+        <p className="mt-1 text-xs text-amber-800">
+          Prognoza orientacyjna: panele w profilu są szacunkowe. <ProfileLink>Uzupełnij panele w profilu</ProfileLink>
+        </p>
+      )}
+      {weather?.approximate_location && (
+        <p className="mt-1 text-xs text-amber-800">
+          Pogoda dla regionu: lokalizacja domu jest przybliżona. <ProfileLink>Podaj adres w profilu</ProfileLink>
+        </p>
+      )}
       {before && after && (
         <table className="mt-3 w-full text-sm">
           <thead className="text-xs text-gray-500">

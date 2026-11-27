@@ -16,7 +16,7 @@ from app.repositories.planning_repository import PlanningRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.weather_repository import WeatherRepository
 from app.schemas.other import TypeOfMarketEnergyEnum
-from app.services.day_background import DayBackgroundService
+from app.services.day_background import DayBackground, DayBackgroundService
 from app.services.heat_pump import HeatPumpService
 from app.services.plan_service import PlanService
 from app.services.prosumer import ExportValuation
@@ -100,6 +100,20 @@ def test_summary_counts_self_consumption_export_and_plan_share():
     assert summary.export_kwh == pytest.approx(0.6)
     assert summary.plan_from_pv_kwh == pytest.approx(1.4 * 1.0 / 1.4)
     assert summary.export_pln == pytest.approx(0.6 * 0.3)
+
+
+def test_hours_and_item_shares_follow_the_hourly_bill():
+    balance = _balance(production_kwh=2.0, base=0.1)
+    items = [("pralka", HOUR, [0.5, 0.5]), ("auto", HOUR + 2 * Q, [0.4])]
+
+    hour, = balance.hours(by_slot((start, profile) for _, start, profile in items))
+    shares = balance.from_pv(items)
+
+    assert (hour.production_kwh, hour.rest_kwh, hour.plan_kwh) == (pytest.approx(2.0), pytest.approx(0.4), pytest.approx(1.4))
+    assert hour.surplus_kwh == pytest.approx(1.6) and hour.export_kwh == pytest.approx(0.2)
+    assert shares == {"pralka": pytest.approx(1.0), "auto": pytest.approx(0.4)}
+    summary = balance.summary(by_slot((start, profile) for _, start, profile in items))
+    assert sum(shares.values()) == pytest.approx(summary.plan_from_pv_kwh)
 
 
 def test_effective_prices_make_surplus_quarters_cheap_for_boiler():
@@ -300,6 +314,22 @@ def test_sunny_day_moves_washer_into_panel_hours_even_on_g11(db, home, weather_c
     assert pv["after"]["plan_from_pv_kwh"] > pv["before"]["plan_from_pv_kwh"]
     assert pv["after"]["export_kwh"] < pv["before"]["export_kwh"]
     assert any(note.startswith("Prąd z paneli w poniedziałek 12 października: prognoza") for note in plan["notes"])
+    hours = pv["hours"]
+    assert [hour["start"][11:16] for hour in hours] == ["12:00", "13:00", "14:00", "15:00"]
+    assert sum(hour["planned_kwh"] for hour in hours) == pytest.approx(pv["planned_kwh"], abs=0.02)
+    assert sum(hour["forecast_kwh"] for hour in hours) == pytest.approx(pv["forecast_kwh"], abs=0.02)
+    assert sum(hour["export_kwh"] for hour in hours) == pytest.approx(pv["after"]["export_kwh"], abs=0.02)
+    assert sum(hour["plan_kwh"] for hour in hours) == pytest.approx(washer["energy_kwh"], abs=0.01)
+    assert all(hour["surplus_kwh"] >= hour["export_kwh"] for hour in hours)
+    assert washer["pv_kwh"] == pytest.approx(pv["after"]["plan_from_pv_kwh"], abs=0.01) and washer["pv_kwh"] > 0
+    weather = plan["weather"]
+    assert weather["past"] is False and weather["approximate_location"] is False
+    assert len(weather["quarters"]) == 96
+    noon = next(q for q in weather["quarters"] if q["start"][11:16] == "12:00")
+    assert (noon["temperature_c"], noon["cloud_cover_pct"]) == (10.0, 20)
+    assert weather["fetched_at"] == pv["weather_fetched_at"] == "2026-10-11T12:00:00+02:00"
+    stored = DayBackground.from_json({"weather": {"fetched_at": None, "approximate_location": True, "quarters": []}})
+    assert DayBackground.from_json(stored.to_json()).weather["approximate_location"] is True
 
 
 def test_export_worth_more_than_grid_keeps_washer_out_of_surplus(db, home, weather_cell):
@@ -319,8 +349,8 @@ def test_no_weather_plans_without_panels_and_says_so(db, home, weather_cell):
 
     plan = _plan(owner, _Market(rce=0.3))
 
-    assert plan["pv"] is None
-    assert plan["items"][0]["status"] == "unchanged"
+    assert plan["pv"] is None and plan["weather"] is None and plan["pv_reason"] == "no_weather"
+    assert plan["items"][0]["status"] == "unchanged" and plan["items"][0]["pv_kwh"] is None
     assert any("nie liczy na prąd z paneli" in note for note in plan["notes"])
 
 
@@ -333,6 +363,8 @@ def test_profile_without_panels_plans_like_before(db, home, weather_cell):
     washer, = plan["items"]
     assert plan["pv"] is None
     assert (washer["status"], washer["cost_before"]) == ("unchanged", pytest.approx(1.4))
+    assert len(plan["weather"]["quarters"]) == 96 and plan["weather"]["quarters"][0]["temperature_c"] == 10.0
+    assert plan["pv_reason"] == "no_installation"
 
 
 def test_simulation_report_uses_plan_pv_costs(db, home, weather_cell):

@@ -265,7 +265,7 @@ export const planBadges = (run) => {
 
 // Doba chwili symulacji jako RRRR-MM-DD w strefie domu.
 const isoDayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: HOME_TIMEZONE });
-const simDay = (iso) => isoDayFormat.format(new Date(iso));
+export const simDay = (iso) => isoDayFormat.format(new Date(iso));
 
 /**
  * Okres bilansu z `today` (GET /home/state): w zwykłej dobie od północy, w przebiegu planu od jego początku.
