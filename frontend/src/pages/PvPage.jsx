@@ -7,7 +7,7 @@ import PvAccuracyChart from "../components/pv/PvAccuracyChart";
 import PvDayChart from "../components/pv/PvDayChart";
 import MoreInfo from "../components/MoreInfo";
 import { formatDate, getApiErrorMessage } from "../utils/energyFiles";
-import { formatNumber } from "../utils/format";
+import { formatKw, formatKwp, formatNumber } from "../utils/format";
 import {
   addDays,
   dayName,
@@ -24,6 +24,7 @@ import {
   formatTemperatureRange,
   selfShare,
 } from "../utils/pv";
+import { CARD, ICON_BUTTON, alertClass, buttonClass } from "../components/uiStyles";
 
 const EARLIEST_DAY = "2000-01-01";
 const DAY_LOAD_DELAY_MS = 250;
@@ -278,14 +279,14 @@ function PvPage() {
     return (
       <div className="mx-auto max-w-3xl pb-12">
         <h2 className="mb-4 text-xl font-bold text-gray-900">Fotowoltaika</h2>
-        <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
+        <div className={CARD}>
           <FiSun aria-hidden="true" className="mb-3 text-3xl text-amber-500" />
           <p className="font-medium text-gray-900">{title}</p>
           <p className="mt-2 text-sm text-gray-600">{text}</p>
           {profileProblem ? (
             <Link to="/profile" className="mt-4 inline-block font-medium text-emerald-700 hover:underline">Przejdź do profilu</Link>
           ) : (
-            <button type="button" onClick={retry} className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+            <button type="button" onClick={retry} className={`${buttonClass("primary")} mt-4`}>
               Spróbuj ponownie
             </button>
           )}
@@ -309,14 +310,14 @@ function PvPage() {
         <h2 className="text-xl font-bold text-gray-900">Fotowoltaika</h2>
         <p className="mt-1 text-sm text-gray-600">
           {describePanels(installation)}
-          {installation.inverter_kw ? `, falownik ${formatNumber(installation.inverter_kw, 1)} kW` : ""} · {describeSettlement(installation)}
+          {installation.inverter_kw ? `, falownik ${formatKw(installation.inverter_kw)}` : ""} · {describeSettlement(installation)}
           {overview.location_label ? ` · ${overview.location_label}` : ""}
         </p>
         <p className="mt-1 text-sm text-gray-500">{describeAccuracy(calibration)}</p>
         {installation.estimated && (
           <p className="mt-2 text-sm text-amber-700">
             {calibration.effective_kwp
-              ? `Panele są szacunkowe: moc (ok. ${formatNumber(calibration.effective_kwp, 1)} kWp) dopasowaliśmy do produkcji z Twoich plików, więc prognoza jest orientacyjna. `
+              ? `Panele są szacunkowe: moc (ok. ${formatKwp(calibration.effective_kwp)}) dopasowaliśmy do produkcji z Twoich plików, więc prognoza jest orientacyjna. `
               : "Panele są szacunkowe, więc prognoza jest orientacyjna. "}
             <Link to="/profile" className="underline">Uzupełnij panele w profilu</Link>.
           </p>
@@ -337,7 +338,7 @@ function PvPage() {
         </div>
       </section>
 
-      <section ref={daySection} aria-labelledby="pv-day" className="mb-8 rounded-lg border border-gray-100 bg-white p-4 shadow-sm md:p-6">
+      <section ref={daySection} aria-labelledby="pv-day" className={`${CARD} mb-8`}>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 id="pv-day" className="font-bold text-gray-900">
             {selected && (dayName(selected, today) ? `${dayName(selected, today)}, ` : "")}
@@ -347,7 +348,7 @@ function PvPage() {
             )}
           </h3>
           <div className="flex items-center gap-2">
-            <button type="button" aria-label="Poprzedni dzień" disabled={!selected || selected <= minDay} onClick={() => selectDay(addDays(selected, -1))} className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+            <button type="button" aria-label="Poprzedni dzień" disabled={!selected || selected <= minDay} onClick={() => selectDay(addDays(selected, -1))} className={ICON_BUTTON}>
               <FiChevronLeft aria-hidden="true" />
             </button>
             <input
@@ -359,7 +360,7 @@ function PvPage() {
               onChange={(event) => event.target.value && selectDay(event.target.value)}
               className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
             />
-            <button type="button" aria-label="Następny dzień" disabled={!selected || selected >= overview.latest_day} onClick={() => selectDay(addDays(selected, 1))} className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+            <button type="button" aria-label="Następny dzień" disabled={!selected || selected >= overview.latest_day} onClick={() => selectDay(addDays(selected, 1))} className={ICON_BUTTON}>
               <FiChevronRight aria-hidden="true" />
             </button>
             {selected !== today && (
@@ -375,7 +376,7 @@ function PvPage() {
         )}
 
         {detailError ? (
-          <p role="alert" className="rounded-md bg-amber-50 p-4 text-sm text-amber-800">{detailError}</p>
+          <p role="alert" className={alertClass("warning")}>{detailError}</p>
         ) : !detail ? (
           <ChartSkeleton label="Ładowanie dnia..." className="h-[300px]" />
         ) : (
@@ -396,7 +397,7 @@ function PvPage() {
         )}
       </section>
 
-      <section aria-labelledby="pv-accuracy" className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm md:p-6">
+      <section aria-labelledby="pv-accuracy" className={CARD}>
         <h3 id="pv-accuracy" className="mb-1 font-bold text-gray-900">Trafność prognozy</h3>
         <p className="mb-4 text-sm text-gray-600">
           Produkcja z Twoich plików urządzeń obok tego, co model policzył z pogody z tych dni.

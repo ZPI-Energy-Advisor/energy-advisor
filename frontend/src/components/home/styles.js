@@ -1,7 +1,17 @@
-// Klasy Tailwind wspólne dla komponentów ekranu „Mój dom”.
-const BUTTON =
-  "inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+// Ekran „Mój dom” korzysta ze wspólnych przycisków i kart aplikacji (components/ui.jsx).
+export { CARD, PRIMARY_BUTTON, SECONDARY_BUTTON } from "../uiStyles";
 
-export const PRIMARY_BUTTON = `${BUTTON} bg-emerald-600 text-white hover:bg-emerald-700`;
-export const SECONDARY_BUTTON = `${BUTTON} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`;
-export const CARD = "bg-white border border-gray-200 rounded-lg p-4 md:p-6 shadow-sm";
+// Plakietka planu (ZP-114): obrys zamiast wypełnienia, żeby nie mylić jej ze stanem urządzenia.
+export const PLAN_BADGE = {
+  active: "border-emerald-300 text-emerald-800",
+  ready: "border-sky-300 text-sky-800",
+  error: "border-red-300 text-red-700",
+  neutral: "border-gray-300 text-gray-600",
+};
+
+export const STATE_BADGE = {
+  active: "bg-emerald-100 text-emerald-800",
+  ready: "bg-sky-100 text-sky-800",
+  error: "bg-red-100 text-red-700",
+  neutral: "bg-gray-100 text-gray-600",
+};

@@ -1,4 +1,5 @@
 // Plan na jutro (ZP-111, ZP-112): przedziały godzin, walidacja wymagań urządzeń, energia auta, pompa ciepła i bojler.
+import { formatNumber } from "./format";
 
 export const MAX_WINDOWS = 4;
 const DAY_MINUTES = 24 * 60;
@@ -29,7 +30,7 @@ export const durationText = (minutes) => {
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
 };
 
-const kwhText = (value) => value.toFixed(1).replace(".", ",");
+const kwhText = (value) => formatNumber(value, 2);
 
 export const windowsText = (windows) => windows.map((window) => `${window.start}–${window.end}`).join(", ");
 

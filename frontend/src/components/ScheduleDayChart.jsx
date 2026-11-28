@@ -1,7 +1,9 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatNumber } from "../utils/format";
-import { actionSummary, dayOf, dayPrices, dayRows, formatDayMonth, formatPln } from "../utils/schedule";
+import { formatDegrees, formatKwh, formatNumber, formatPrice } from "../utils/format";
+import { actionSummary, dayOf, dayPrices, dayRows, formatDayMonth } from "../utils/schedule";
 import { cloudLabel, hourlyWeather } from "../utils/weather";
+import MoreInfo from "./MoreInfo";
+import { CARD } from "./uiStyles";
 
 const PRICE_COLOR = "#10b981";
 const HOURS = [0, 6, 12, 18, 24];
@@ -32,7 +34,7 @@ function WeatherRow({ hours }) {
               key={entry.hour}
               style={{ ...hourCell(entry.hour), backgroundColor: skyColor(entry.cloud) }}
               title={`${hourText(entry.hour)}: ${cloudLabel(entry.cloud) ?? "brak danych"}${
-                entry.temperature != null ? `, ${formatNumber(entry.temperature, 0)}°C` : ""}`}
+                entry.temperature != null ? `, ${formatDegrees(entry.temperature)}` : ""}`}
             />
           ))}
         </div>
@@ -66,8 +68,8 @@ function PvRow({ hours, note }) {
               key={entry.hour}
               className={`flex items-end ${entry.surplus ? "bg-amber-100" : ""}`}
               style={hourCell(entry.hour)}
-              title={`${hourText(entry.hour)}: plan liczy na ${formatNumber(entry.planned, 1)} kWh z paneli${
-                entry.surplus ? `, nadwyżka nad resztą domu ${formatNumber(entry.surplusKwh, 1)} kWh` : ""}`}
+              title={`${hourText(entry.hour)}: plan liczy na ${formatKwh(entry.planned)} z paneli${
+                entry.surplus ? `, nadwyżka nad resztą domu ${formatKwh(entry.surplusKwh)}` : ""}`}
               data-surplus={entry.surplus || undefined}
             >
               <div
@@ -79,6 +81,30 @@ function PvRow({ hours, note }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Szczegóły godzin z pasów pogody i paneli jako lista do rozwinięcia: podpowiedzi przy najechaniu nie działają
+// na telefonie, a tu ta sama treść jest po stuknięciu.
+function HourDetails({ weatherHours, sun }) {
+  const byHour = new Map();
+  for (const entry of weatherHours) byHour.set(entry.hour, { hour: entry.hour, weather: entry });
+  for (const entry of sun) byHour.set(entry.hour, { ...(byHour.get(entry.hour) ?? { hour: entry.hour }), sun: entry });
+  const hours = [...byHour.values()].sort((first, second) => first.hour - second.hour);
+  if (!hours.length) return null;
+  return (
+    <MoreInfo summary="Godziny: pogoda i prąd z paneli" className="mt-3">
+      <ul className="space-y-0.5 text-xs tabular-nums">
+        {hours.map(({ hour, weather, sun: panels }) => (
+          <li key={hour}>
+            <span className="font-medium text-gray-700">{hourText(hour)}</span>
+            {weather && ` · ${[weather.temperature != null ? formatDegrees(weather.temperature) : null, cloudLabel(weather.cloud)].filter(Boolean).join(", ")}`}
+            {panels && ` · z paneli ${formatKwh(panels.planned)}`}
+            {panels?.surplus && `, nadwyżka ${formatKwh(panels.surplusKwh)}`}
+          </li>
+        ))}
+      </ul>
+    </MoreInfo>
   );
 }
 
@@ -98,7 +124,7 @@ function PriceTooltip({ active, payload }) {
   const label = `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
   return (
     <div className="bg-white border border-gray-200 rounded shadow-sm px-2 py-1 text-xs">
-      {label}: <span className="font-medium">{formatPln(price)}/kWh</span>
+      {label}: <span className="font-medium">{formatPrice(price)}</span>
     </div>
   );
 }
@@ -141,7 +167,7 @@ function ScheduleDayChart({ day, actions, prices, isTail = false, subtitle = nul
   const sun = pvHours(pv, day);
 
   return (
-    <section className="bg-white p-4 md:p-5 rounded-lg shadow-sm border border-gray-100">
+    <section className={CARD}>
       <h3 className="font-bold text-gray-900 mb-3">
         {formatDayMonth(day)}
         {(subtitle || isTail) && (
@@ -195,6 +221,7 @@ function ScheduleDayChart({ day, actions, prices, isTail = false, subtitle = nul
           </div>
         ))}
       </div>
+      <HourDetails weatherHours={weatherHours} sun={sun} />
     </section>
   );
 }

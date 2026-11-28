@@ -225,6 +225,9 @@ def test_pv_is_outside_comparison_and_shows_what_plan_took_from_panels(home, db)
         "self_consumption_kwh": pytest.approx(first_slot, abs=0.001),
         "plan_from_pv_kwh": pytest.approx(first_slot, abs=0.001),
         "plan_kwh": pytest.approx(sum(washer["profile_kwh"]), abs=0.001),
+        # Reszta produkcji poszła do sieci; plan bez prognozy PV nie wycenia oddania.
+        "export_kwh": pytest.approx(1.0 - first_slot, abs=0.001),
+        "export_pln": None,
     }
     assert cost["manual"] == []
     # Koszt pralki to jej energia razy ceny, bez odejmowania PV: tak samo liczy plan.

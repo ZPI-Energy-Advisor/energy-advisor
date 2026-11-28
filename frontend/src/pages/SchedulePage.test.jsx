@@ -84,7 +84,7 @@ describe("SchedulePage", () => {
   it("ma tytuł optymalizacji historycznej i opis ekranu", () => {
     renderPage();
 
-    expect(screen.getByRole("heading", { name: "Optymalizacja historyczna" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Optymalizacja" })).toBeTruthy();
     expect(screen.getByText(/ile zaoszczędziłbyś w wybranym okresie z przeszłości/)).toBeTruthy();
   });
 

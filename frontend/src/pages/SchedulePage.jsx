@@ -31,15 +31,17 @@ import {
   missingPricesNote,
   visibleDays,
 } from "../utils/schedule";
+import { formatKwh, formatPercent, formatRate } from "../utils/format";
+import { CARD, ICON_BUTTON, TABLE, TABLE_BODY, TABLE_HEAD, TD, TD_NUMBER, TH, TH_NUMBER, WIDE_TABLE, alertClass, buttonClass } from "../components/uiStyles";
+import ActionCards from "../components/ActionCards";
+import { useIsPhone } from "../hooks/useMediaQuery";
 
-const CARD = "bg-white p-4 md:p-5 rounded-lg shadow-sm border border-gray-100";
-const PRESET_BUTTON =
-  "inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50";
-const NOTE = "p-3 text-sm text-amber-900 bg-amber-50 rounded-lg";
+const PRESET_BUTTON = buttonClass("secondary", "sm");
+const NOTE = alertClass("warning");
 
 const dayOfAction = (isoTime) => formatDayMonth(isoTime.slice(0, 10));
-const percent = (saved, before) => (before > 0 ? `${((saved / before) * 100).toFixed(1).replace(".", ",")}%` : undefined);
-const kwhText = (value) => `${value.toFixed(1).replace(".", ",")} kWh`;
+const percent = (saved, before) => (before > 0 ? formatPercent(saved / before) : undefined);
+const kwhText = formatKwh;
 
 function StatTile({ label, value, hint, accent = false }) {
   return (
@@ -105,6 +107,7 @@ function TariffPicker({ options, choice, fromProfile, netMetering, onChange }) {
           </button>
         </div>
       </div>
+      {!canBeDynamic && dynamicBlocked && <p className="text-xs text-gray-500">{dynamicBlocked}</p>}
       {sameChoice(choice, fromProfile) ? (
         <p className="text-xs text-gray-500">Taryfa z Twojego profilu. Wybierz inną, żeby sprawdzić, ile dałaby optymalizacja.</p>
       ) : (
@@ -120,33 +123,51 @@ function TariffPicker({ options, choice, fromProfile, netMetering, onChange }) {
 }
 
 function MovedTable({ actions }) {
+  const isPhone = useIsPhone();
   if (!actions.length) {
     return <p className="text-sm text-gray-500">Tego dnia żadne urządzenie nie zmieniło godzin: nie było taniej.</p>;
   }
+  if (isPhone) {
+    return (
+      <ActionCards
+        ariaLabel="Przesunięte urządzenia"
+        labels={{ before: "Przed", after: "Po" }}
+        items={actions.map((action) => ({
+          key: action.action_id,
+          name: action.device_name,
+          program: action.program_name,
+          before: clockRange(action.original_start, action.original_end),
+          after: afterRanges(action, { withDay: dayOf(action.start) !== dayOf(action.original_start) }),
+          costBefore: action.cost_before,
+          costAfter: action.cost_after,
+        }))}
+      />
+    );
+  }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-left text-gray-500 border-b border-gray-100">
+      <table className={WIDE_TABLE}>
+        <thead className={TABLE_HEAD}>
           <tr>
-            <th className="p-3 font-medium">Urządzenie</th>
-            <th className="p-3 font-medium">Przed</th>
-            <th className="p-3 font-medium">Po</th>
-            <th className="p-3 font-medium text-right">Koszt przed</th>
-            <th className="p-3 font-medium text-right">Koszt po</th>
+            <th scope="col" className={TH}>Urządzenie</th>
+            <th scope="col" className={TH}>Przed</th>
+            <th scope="col" className={TH}>Po</th>
+            <th scope="col" className={TH_NUMBER}>Koszt przed</th>
+            <th scope="col" className={TH_NUMBER}>Koszt po</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className={TABLE_BODY}>
           {actions.map((action) => (
-            <tr key={action.action_id} className="border-b border-gray-50 last:border-0">
-              <td className="p-3">
+            <tr key={action.action_id}>
+              <td className={TD}>
                 {action.device_name}
                 {action.program_name && <span className="text-gray-500"> · {action.program_name}</span>}
               </td>
-              <td className="p-3 whitespace-nowrap">{clockRange(action.original_start, action.original_end)}</td>
+              <td className={`${TD} whitespace-nowrap`}>{clockRange(action.original_start, action.original_end)}</td>
               {/* Data, gdy akcja po optymalizacji zaczyna się innej doby niż w pliku (np. auto po północy). */}
-              <td className="p-3">{afterRanges(action, { withDay: dayOf(action.start) !== dayOf(action.original_start) })}</td>
-              <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_before)}</td>
-              <td className="p-3 text-right whitespace-nowrap">{formatPln(action.cost_after)}</td>
+              <td className={TD}>{afterRanges(action, { withDay: dayOf(action.start) !== dayOf(action.original_start) })}</td>
+              <td className={TD_NUMBER}>{formatPln(action.cost_before)}</td>
+              <td className={TD_NUMBER}>{formatPln(action.cost_after)}</td>
             </tr>
           ))}
         </tbody>
@@ -168,7 +189,7 @@ function DayBrowser({ days, index, onSelect, summaries, actions, prices, dateTo,
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
-              className="p-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+              className={ICON_BUTTON}
               aria-label="Poprzedni dzień"
               disabled={index === 0}
               onClick={() => onSelect(index - 1)}
@@ -183,7 +204,7 @@ function DayBrowser({ days, index, onSelect, summaries, actions, prices, dateTo,
             </div>
             <button
               type="button"
-              className="p-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+              className={ICON_BUTTON}
               aria-label="Następny dzień"
               disabled={index === days.length - 1}
               onClick={() => onSelect(index + 1)}
@@ -239,41 +260,41 @@ function DaySummaryTable({ summaries, onSelect }) {
         Koszt urządzeń, które można przesuwać (bez urządzeń stałych i opłat stałych). Kliknij dzień, żeby zobaczyć wykres.
       </p>
       <div className="max-h-96 overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white text-left text-gray-500 border-b border-gray-100">
+        <table className={TABLE}>
+          <thead className={`${TABLE_HEAD} sticky top-0`}>
             <tr>
-              <th className="p-2 font-medium">Dzień</th>
-              <th className="p-2 font-medium text-right">Przesunięte</th>
-              <th className="p-2 font-medium text-right">Koszt przed</th>
-              <th className="p-2 font-medium text-right">Koszt po</th>
-              <th className="p-2 font-medium text-right">Oszczędność</th>
+              <th scope="col" className={TH}>Dzień</th>
+              <th scope="col" className={TH_NUMBER}>Przesunięte</th>
+              <th scope="col" className={TH_NUMBER}>Koszt przed</th>
+              <th scope="col" className={TH_NUMBER}>Koszt po</th>
+              <th scope="col" className={TH_NUMBER}>Oszczędność</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className={TABLE_BODY}>
             {summaries.map((item, position) => (
               <tr
                 key={item.day}
-                className="border-b border-gray-50 cursor-pointer hover:bg-emerald-50"
+                className="cursor-pointer hover:bg-emerald-50"
                 onClick={() => onSelect(position)}
               >
-                <td className="p-2 whitespace-nowrap">
+                <td className={`${TD} whitespace-nowrap`}>
                   <button type="button" className="text-left hover:underline">
                     {formatDayMonth(item.day)}, {weekdayName(item.day)}
                   </button>
                 </td>
-                <td className="p-2 text-right">{item.moved}</td>
-                <td className="p-2 text-right whitespace-nowrap">{formatPln(item.before)}</td>
-                <td className="p-2 text-right whitespace-nowrap">{formatPln(item.after)}</td>
-                <td className="p-2 text-right whitespace-nowrap font-medium text-emerald-700">{formatPln(item.saving)}</td>
+                <td className={TD_NUMBER}>{item.moved}</td>
+                <td className={TD_NUMBER}>{formatPln(item.before)}</td>
+                <td className={TD_NUMBER}>{formatPln(item.after)}</td>
+                <td className={`${TD_NUMBER} font-medium text-emerald-700`}>{formatPln(item.saving)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot className="sticky bottom-0 bg-white border-t border-gray-200 font-semibold text-gray-900">
             <tr>
-              <td className="p-2">Razem</td>
-              <td className="p-2 text-right">{total.moved}</td>
-              <td className="p-2 text-right whitespace-nowrap">{formatPln(total.before)}</td>
-              <td className="p-2 text-right whitespace-nowrap">{formatPln(total.after)}</td>
+              <td className={TD}>Razem</td>
+              <td className={TD_NUMBER}>{total.moved}</td>
+              <td className={TD_NUMBER}>{formatPln(total.before)}</td>
+              <td className={TD_NUMBER}>{formatPln(total.after)}</td>
               <td className="p-2 text-right whitespace-nowrap text-emerald-700">{formatPln(total.before - total.after)}</td>
             </tr>
           </tfoot>
@@ -346,7 +367,7 @@ function SchedulePage() {
   const dateFrom = fileRange?.from ?? selectedFile?.data_start ?? "";
   const dateTo = fileRange?.to ?? selectedFile?.data_start ?? "";
   const shown = schedule?.fileId === selectedFile?.id ? schedule : null;
-  const shownError = error?.fileId === selectedFile?.id ? error.message : null;
+  const shownError = error && error.fileId === selectedFile?.id ? error.message : null;
   // Optymalizacja przesuwa akcje urządzeń, więc ma sens tylko dla pojedynczego pliku urządzeń.
   const isDevicesFile =
     selectedFile && !isAggregateSource(selectedFile.id) && selectedFile.source_type === SOURCE_TYPE_DEVICES;
@@ -407,7 +428,7 @@ function SchedulePage() {
   return (
     <div className="max-w-5xl mx-auto">
       <DataContextBar
-        title="Optymalizacja historyczna"
+        title="Optymalizacja"
         showRange={false}
         subtitle="Sprawdź, ile zaoszczędziłbyś w wybranym okresie z przeszłości, gdyby pralka, zmywarka czy ładowanie auta
           pracowały w najtańszych godzinach. Bierzemy prawdziwe zużycie z pliku urządzeń i przesuwamy tylko to, co
@@ -474,7 +495,7 @@ function SchedulePage() {
                   type="button"
                   onClick={() => loadSchedule()}
                   disabled={isLoading || !dateFrom || !dateTo}
-                  className="w-full sm:w-auto bg-emerald-600 text-white px-5 py-2.5 rounded-md font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
                 >
                   {isLoading ? "Liczę..." : "Pokaż wynik"}
                 </button>
@@ -483,7 +504,7 @@ function SchedulePage() {
           </section>
 
           {shownError && (
-            <p className="p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-200">{shownError}</p>
+            <p className={alertClass("error")} role="alert">{shownError}</p>
           )}
 
           {shown && (
@@ -533,7 +554,7 @@ function SchedulePage() {
                 {shown.price_breakdown && (
                   <p>
                     Średnia pełna cena kWh z sieci w okresie:{" "}
-                    {describeBreakdown(shown.price_breakdown, (value) => `${value.toFixed(3).replace(".", ",")} zł`)}.
+                    {describeBreakdown(shown.price_breakdown, formatRate)}.
                   </p>
                 )}
                 <ul className="list-disc pl-5 space-y-1">

@@ -72,7 +72,7 @@ describe("ImportPage po udanym imporcie", () => {
   it("prowadzi do Dashboardu i porównania taryf", async () => {
     await uploadFile();
 
-    fireEvent.click(screen.getByText("Przejdź do Dashboardu"));
+    fireEvent.click(screen.getByText("Przejdź do pulpitu"));
     expect(navigate).toHaveBeenLastCalledWith("/dashboard");
 
     fireEvent.click(screen.getByText("Porównaj taryfy"));

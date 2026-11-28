@@ -3,6 +3,7 @@ import { FiTrash2 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import apiClient, { clearAccountData } from "../../api/client";
 import { getApiErrorMessage } from "../../utils/energyFiles";
+import { buttonClass } from "../uiStyles";
 
 const sameEmail = (typed, email) => typed.trim().toLowerCase() === (email ?? "").trim().toLowerCase();
 
@@ -48,7 +49,7 @@ function DeleteAccount({ email }) {
         />
         <button
           type="button"
-          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          className={buttonClass("danger")}
           disabled={!confirmed || isDeleting}
           onClick={remove}
         >

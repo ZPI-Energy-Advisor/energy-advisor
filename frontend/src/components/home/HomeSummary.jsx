@@ -1,9 +1,10 @@
 import { formatKw, formatKwh, formatPln, periodLabel, shortDay } from "../../utils/home";
+import { CARD } from "../uiStyles";
 
 function Stat({ label, value, hint, tone = "default" }) {
   const color = { default: "text-gray-900", production: "text-emerald-700", export: "text-sky-700" }[tone];
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm min-w-0">
+    <div className={`${CARD} min-w-0`}>
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className={`mt-1 text-xl md:text-2xl font-bold tabular-nums truncate ${color}`}>{value}</p>
       {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
@@ -49,7 +50,7 @@ function HomeSummary({ power, today }) {
         <Stat
           label="Koszt"
           value={formatPln(today?.cost_pln)}
-          hint={today?.cost_error ?? "Cały dom: energia pobrana z sieci (po PV), w cenach taryfy, bez opłat stałych"}
+          hint={today?.cost_error ?? "Cały dom: energia pobrana z sieci (po PV), w cenach taryfy, bez opłat stałych i bez wartości prądu oddanego do sieci"}
         />
       </div>
     </section>

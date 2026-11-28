@@ -1,6 +1,8 @@
 import { FiAlertTriangle, FiCheckCircle } from "react-icons/fi";
 import { formatCount, formatDateRange } from "../utils/energyFiles";
 import IncompleteDaysNotice from "./IncompleteDaysNotice";
+import { formatKwh } from "../utils/format";
+import { alertClass } from "./uiStyles";
 
 const RESOLUTION_LABELS = {
   15: "odczyty co 15 min",
@@ -29,8 +31,6 @@ const UNITS = {
 
 const DEVICES = ["urządzenie", "urządzenia", "urządzeń"];
 const DAYS = ["dzień", "dni", "dni"];
-
-const formatKwh = (value) => `${value.toLocaleString("pl-PL", { maximumFractionDigits: 2 })} kWh`;
 
 function ImportReportSummary({ report, fileName, statistics }) {
   if (!report) return null;
@@ -101,7 +101,7 @@ function ImportReportSummary({ report, fileName, statistics }) {
       <IncompleteDaysNotice statistics={statistics} className="mt-4" />
 
       {skipped.count > 0 ? (
-        <div className="mt-4 p-3 rounded-lg bg-amber-50 text-amber-900">
+        <div className={`${alertClass("warning")} mt-4`}>
           <p className="flex items-center gap-2 font-medium">
             <FiAlertTriangle className="shrink-0" />
             Odrzucono {formatCount(skipped.count, unit.rejected)}

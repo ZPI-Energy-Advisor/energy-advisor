@@ -27,16 +27,15 @@ import {
   validateDevice,
   windowsText,
 } from "../utils/planning";
+import { formatDateTime, formatKwh } from "../utils/format";
+import { CARD, LINK_BUTTON, alertClass, buttonClass } from "../components/uiStyles";
 
-const savedAtText = (iso) =>
-  new Intl.DateTimeFormat("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const savedAtText = formatDateTime;
 
 // Plan układa pracę w kwadransach, więc mówimy o tym przed wpisaniem godziny, a nie dopiero w błędzie.
 const QUARTER_HINT = "Godziny co 15 minut, np. 08:00, 08:15, 08:30.";
 
-const CARD ="bg-white border border-gray-200 rounded-lg p-4 md:p-5 shadow-sm";
 const INPUT = "border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500";
-const LINK_BUTTON = "inline-flex items-center gap-1 text-sm font-medium text-emerald-700 hover:text-emerald-800 disabled:opacity-40";
 
 function FieldError({ message }) {
   return message ? <p className="mt-1 text-xs text-red-600">{message}</p> : null;
@@ -164,7 +163,7 @@ function EvEnergy({ device, preference, errors, efficiency, onChange }) {
       </div>
       {levels && energy != null && (
         <p className="text-xs text-gray-600">
-          Z sieci auto pobierze ok. {energy.toFixed(1).replace(".", ",")} kWh (z uwzględnieniem ok.{" "}
+          Z sieci auto pobierze ok. {formatKwh(energy)} (z uwzględnieniem ok.{" "}
           {Math.round((1 - efficiency) * 100)}% strat ładowania).
         </p>
       )}
@@ -459,6 +458,9 @@ function PlanningPage() {
   const [needsProfile, setNeedsProfile] = useState(false);
   const [isReplanning, setIsReplanning] = useState(false);
   const [noPrices, setNoPrices] = useState(null);
+  // Brak cen na jutro przy „Ułóż plan na jutro” z widoku planu demo: komunikat w planie zamiast powrotu do
+  // formularza, który znów proponowałby plan demo (pętla).
+  const [replanNote, setReplanNote] = useState(null);
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
@@ -515,8 +517,9 @@ function PlanningPage() {
     setSaveError(null);
   };
 
-  const createPlan = async (planDate = null) => {
+  const createPlan = async (planDate = null, { keepPlan = false } = {}) => {
     setNeedsProfile(false);
+    setReplanNote(null);
     try {
       const { data: body } = await apiClient.post("/planning/plans", planDate ? { plan_date: planDate } : {});
       if (body.kind === "past_day") {
@@ -528,9 +531,13 @@ function PlanningPage() {
       }
       showPlan(body);
     } catch (err) {
+      const missing = noPricesFrom(err);
+      if (missing && keepPlan) {
+        setReplanNote(missing.message);
+        return;
+      }
       // Błąd pokazujemy przy przycisku zapisu, także gdy plan układaliśmy z widoku planu.
       setView("form");
-      const missing = noPricesFrom(err);
       if (missing) {
         setNoPrices(missing);
         return;
@@ -546,7 +553,7 @@ function PlanningPage() {
     setIsReplanning(true);
     setSaveError(null);
     try {
-      await createPlan();
+      await createPlan(null, { keepPlan: true });
     } finally {
       setIsReplanning(false);
     }
@@ -668,7 +675,7 @@ function PlanningPage() {
         />
       </div>
 
-      {loadError && <p className="p-3 rounded bg-red-50 text-sm text-red-700" role="alert">{loadError}</p>}
+      {loadError && <p className={alertClass("error")} role="alert">{loadError}</p>}
       {!data && !loadError && <p className="text-sm text-gray-500" role="status">Ładowanie ustawień…</p>}
 
       {data && mode === "past" && (
@@ -690,6 +697,7 @@ function PlanningPage() {
           onApprove={approve}
           onEdit={() => setView("form")}
           onReplan={replan}
+          replanNote={replanNote}
           isApproving={isApproving}
           isReplanning={isReplanning}
           approveError={approveError}
@@ -723,7 +731,7 @@ function PlanningPage() {
           {data.flat_tariff && <FlatTariffNote />}
 
           {noPrices && (
-            <div className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-2" role="alert">
+            <div className={`${alertClass("warning")} space-y-2`} role="alert">
               <p>{noPrices.message}</p>
               {noPrices.latest_price_date && (
                 <button
@@ -740,7 +748,7 @@ function PlanningPage() {
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
-              className="w-full sm:w-auto rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
               disabled={isSaving || !devices.length}
             >
               {isSaving ? "Układanie planu..." : "Zapisz i ułóż plan"}

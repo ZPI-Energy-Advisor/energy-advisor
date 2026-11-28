@@ -1,5 +1,6 @@
-import { formatKwh, formatNumber, formatPln, formatSimTime, periodLabel } from "../../utils/home";
+import { formatKwh, formatPln, formatSimTime, periodLabel } from "../../utils/home";
 import MoreInfo from "../MoreInfo";
+import { formatPercent } from "../../utils/format";
 
 const DEVIATION_LABELS = {
   rejected: "Odrzucona komenda",
@@ -38,12 +39,23 @@ export function DeviationList({ deviations }) {
 
 // „(12% ich zużycia)”: jaka część energii urządzeń z planu poszła prosto z paneli.
 const pvShare = (pv) =>
-  pv.plan_kwh > 0 ? ` (${formatNumber((pv.plan_from_pv_kwh / pv.plan_kwh) * 100, 0)}% ich zużycia)` : "";
+  pv.plan_kwh > 0 ? ` (${formatPercent(pv.plan_from_pv_kwh / pv.plan_kwh)} ich zużycia)` : "";
 
 // Koszt według planu tylko wtedy, gdy różni się od zmierzonego (o co najmniej grosz): przy planie wykonanym
 // co do kWh to ta sama kwota drugi raz.
+// Przy planie z PV koszt urządzeń liczy prąd z paneli po wartości oddania do sieci (co dom stracił, nie oddając go),
+// więc bywa wyższy niż sam prąd kupiony z sieci w bilansie doby: piszemy to wprost.
 const plannedHint = (cost) =>
-  Math.abs(cost.cost_after - cost.planned_cost) >= 0.01 ? `według planu ${formatPln(cost.planned_cost)}` : null;
+  [
+    Math.abs(cost.cost_after - cost.planned_cost) >= 0.01 ? `według planu ${formatPln(cost.planned_cost)}` : null,
+    cost.pv?.export_pln != null ? "prąd z paneli liczony po wartości oddania do sieci" : null,
+  ].filter(Boolean).join(" · ") || null;
+
+// Oddanie do sieci: ilość i, przy planie z PV, wartość do depozytu (net-billing) albo w opuście (net-metering).
+const exportText = (pv) =>
+  pv.export_kwh > 0
+    ? ` Do sieci oddano ${formatKwh(pv.export_kwh)}${pv.export_pln != null ? `, warte ${formatPln(pv.export_pln)}` : ""}.`
+    : "";
 
 function Amount({ label, value, hint, accent = false }) {
   return (
@@ -68,7 +80,7 @@ function Fact({ label, children }) {
 // z planu) i z planem (zmierzone w symulacji), tymi samymi cenami. Urządzenia stałe i PV są poza oszczędnością:
 // na wierzchu tylko ich sumy, a szczegóły i odchylenia pod „Więcej”.
 function PlanRunCost({ cost, horizonStart = null }) {
-  const percent = cost.saving_percent == null ? null : `${formatNumber(cost.saving_percent, 1)}% kosztu bez planu`;
+  const percent = cost.saving_percent == null ? null : `${formatPercent(cost.saving_percent / 100)} kosztu bez planu`;
   const hasDetails = cost.manual.length > 0 || cost.pv || cost.deviations.length > 0;
   const outsideHouse = cost.manual.length > 0 || cost.pv;
   return (
@@ -162,7 +174,7 @@ function PlanRunCost({ cost, horizonStart = null }) {
               <p>
                 PV wyprodukowało {formatKwh(cost.pv.production_kwh)}. Od razu w domu zużyto{" "}
                 {formatKwh(cost.pv.self_consumption_kwh)}, z czego {formatKwh(cost.pv.plan_from_pv_kwh)} wzięły
-                urządzenia z planu{pvShare(cost.pv)}.
+                urządzenia z planu{pvShare(cost.pv)}.{exportText(cost.pv)}
               </p>
             )}
             {cost.deviations.length > 0 && <DeviationList deviations={cost.deviations} />}

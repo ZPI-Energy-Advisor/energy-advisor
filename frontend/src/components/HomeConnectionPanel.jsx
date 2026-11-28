@@ -3,10 +3,10 @@ import apiClient from "../api/client";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { getApiErrorMessage } from "../utils/energyFiles";
+import { CARD, PRIMARY_BUTTON, SECONDARY_BUTTON, alertClass } from "./uiStyles";
 
-const BUTTON = "px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-const PRIMARY = `${BUTTON} bg-emerald-600 text-white hover:bg-emerald-700`;
-const SECONDARY = `${BUTTON} border border-gray-300 text-gray-700 hover:bg-gray-50`;
+const PRIMARY = PRIMARY_BUTTON;
+const SECONDARY = SECONDARY_BUTTON;
 
 const devicesLabel = (count) => {
   if (count === 1) return "1 urządzenie";
@@ -89,7 +89,7 @@ function HomeConnectionPanel({ onStatusChange }) {
   const pending = home?.sync.status === "pending";
 
   return (
-    <section className="mb-6 md:mb-8 bg-white border border-gray-200 rounded-lg p-4 md:p-6 shadow-sm" aria-label="Dom Smart Home">
+    <section className={`${CARD} mb-6 md:mb-8`} aria-label="Dom Smart Home">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h3 className="font-bold text-gray-900">Dom Smart Home</h3>
@@ -124,12 +124,12 @@ function HomeConnectionPanel({ onStatusChange }) {
       </div>
 
       {pending && home.sync.error && (
-        <p className="mt-4 p-3 rounded border border-amber-200 bg-amber-50 text-sm text-amber-800" role="status">
+        <p className={`${alertClass("warning")} mt-4`} role="status">
           {home.sync.error}
         </p>
       )}
       {error && (
-        <p className="mt-4 p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700" role="alert">
+        <p className={`${alertClass("error")} mt-4`} role="alert">
           {error}{" "}
           {!home && (
             <button type="button" onClick={reload} className="font-semibold underline">

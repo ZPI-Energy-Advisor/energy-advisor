@@ -8,6 +8,8 @@ import ImportErrorDetails from "../components/ImportErrorDetails";
 import ImportReportSummary from "../components/ImportReportSummary";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { dropRejectionMessage } from "../utils/energyFiles";
+import { formatMegabytes } from "../utils/format";
+import { CARD, alertClass, buttonClass } from "../components/uiStyles";
 
 const MAX_FILE_SIZE_MB = 10;
 
@@ -107,7 +109,7 @@ function ImportPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
-        Prześlij plik
+        Import danych
       </h2>
 
       {/* Stan wysyłki do huba pokazuje tylko panel: pobiera go na żywo, także po imporcie. */}
@@ -136,9 +138,9 @@ function ImportPage() {
           <div className="flex flex-col sm:flex-row sm:justify-center gap-3">
             <button
               onClick={() => navigate("/dashboard")}
-              className="w-full sm:w-auto bg-emerald-600 text-white px-8 py-3 rounded font-medium hover:bg-emerald-700 transition-colors"
+              className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
             >
-              Przejdź do Dashboardu
+              Przejdź do pulpitu
             </button>
             <button
               onClick={() => navigate("/tariffs")}
@@ -167,14 +169,20 @@ function ImportPage() {
               >
                 <input {...getInputProps()} />
                 <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2">
-                  {isDragActive
-                    ? "Upuść plik tutaj..."
-                    : "Przeciągnij i upuść plik tutaj"}
+                  {/* Na telefonie nie ma przeciągania plików, więc tylko zachęta do wyboru pliku. */}
+                  {isDragActive ? (
+                    "Upuść plik tutaj..."
+                  ) : (
+                    <>
+                      <span className="hidden md:inline">Przeciągnij i upuść plik tutaj</span>
+                      <span className="md:hidden">Wgraj plik z licznika lub urządzeń</span>
+                    </>
+                  )}
                 </h3>
                 <p className="text-sm text-gray-500 mb-6">Format: CSV lub JSON · maks. {MAX_FILE_SIZE_MB} MB</p>
                 <button
                   type="button"
-                  className="w-full sm:w-auto bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 transition-colors"
+                  className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
                 >
                   Wybierz plik
                 </button>
@@ -207,18 +215,18 @@ function ImportPage() {
               </div>
 
               {error && (
-                <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center text-sm md:text-base font-medium">
+                <div className={`${alertClass("error")} text-center`} role="alert">
                   <ImportErrorDetails error={error} />
                 </div>
               )}
             </div>
           ) : (
-            <div className="p-4 md:p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className={CARD}>
               <div className="flex justify-between items-start mb-6">
                 <div className="overflow-hidden pr-4">
                   <p className="font-medium text-gray-900 truncate">{file.name}</p>
                   <p className="text-sm text-gray-500">
-                    Rozmiar: {(file.size / 1024 / 1024).toFixed(2)} MB
+                    Rozmiar: {formatMegabytes(file.size)}
                   </p>
                 </div>
                 {!isUploading && (
@@ -265,7 +273,7 @@ function ImportPage() {
               )}
 
               {error && (
-                <div className="mb-6 p-4 bg-red-50 text-red-600 rounded border border-red-200 text-sm font-medium">
+                <div className={`${alertClass("error")} mb-6`} role="alert">
                   <ImportErrorDetails error={error} />
                 </div>
               )}
@@ -274,11 +282,7 @@ function ImportPage() {
                 <button
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className={`w-full sm:w-auto px-6 py-2 rounded font-medium text-white transition-colors flex justify-center items-center ${
-                    isUploading
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-emerald-600 hover:bg-emerald-700"
-                  }`}
+                  className={`${buttonClass("primary", "lg")} w-full sm:w-auto disabled:cursor-wait`}
                 >
                   {isUploading ? (
                     <>
@@ -312,7 +316,7 @@ function ImportPage() {
             </div>
           )}
 
-          <div className="mt-8 bg-white border border-gray-200 p-4 md:p-6 rounded-lg shadow-sm">
+          <div className={`${CARD} mt-8`}>
             <h3 className="font-bold text-gray-900 mb-4">Instrukcja</h3>
             <ol className="list-decimal list-inside text-gray-600 space-y-2 text-sm">
               <li>Zaloguj się do portalu operatora (np. Tauron eLicznik).</li>

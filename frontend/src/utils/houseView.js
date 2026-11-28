@@ -238,9 +238,17 @@ export const priceNow = (run, simTime) => {
  * Temperatura wody bojlerów według planu w chwili `simTime`: wartość z końca bieżącego kwadransu planu.
  * To przebieg zaplanowany, a nie zmierzony (hub nie liczy temperatury), więc ekran podpisuje go „wg planu”.
  */
+// Temperatura wody poza kwadransami z planu (np. w nocy po dobie planu albo po jego końcu) zostaje taka jak ostatnio,
+// a przed pierwszym kwadransem taka jak na starcie: wskaźnik nie znika w trakcie symulacji.
+const lastEntryAt = (entries, simTime) => {
+  const now = Date.parse(simTime);
+  if (!Number.isFinite(now) || !entries?.length) return null;
+  return entryAt(entries, simTime) ?? [...entries].reverse().find((entry) => Date.parse(entry.start) <= now) ?? entries[0];
+};
+
 export const waterTemperaturesNow = (run, simTime) =>
   (run?.water_heaters ?? [])
-    .map((heater) => ({ deviceId: heater.device_id, name: heater.device_name, entry: entryAt(heater.temperatures, simTime) }))
+    .map((heater) => ({ deviceId: heater.device_id, name: heater.device_name, entry: lastEntryAt(heater.temperatures, simTime) }))
     .filter((heater) => heater.entry)
     .map(({ deviceId, name, entry }) => ({ deviceId, name, tempC: entry.temp_c }));
 

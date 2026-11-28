@@ -23,6 +23,8 @@ import {
   validateProfile,
   withAddressLookup,
 } from "../utils/profileForm";
+import { alertClass, buttonClass } from "../components/uiStyles";
+import UnsupportedTariffs from "../components/tariffs/UnsupportedTariffs";
 
 // Grupy taryfowe, gdy operator nie ma stawek w cenniku.
 const FALLBACK_TARIFFS = ["G11", "G12", "G12w", "G12n", "G12r", "G13"];
@@ -286,7 +288,7 @@ function ProfilePage() {
   };
 
   if (isLoading) return <div className="mx-auto max-w-4xl text-gray-500">Ładowanie profilu...</div>;
-  if (loadError) return <div className="mx-auto max-w-4xl"><p className="rounded bg-red-50 p-3 text-red-700">{loadError}</p></div>;
+  if (loadError) return <div className="mx-auto max-w-4xl"><p className={alertClass("error")} role="alert">{loadError}</p></div>;
 
   const { base_info: base, consumption_and_tariff: tariff, pv_config: pv } = profile;
   const currentTariff = tariff.tariff_type;
@@ -325,20 +327,20 @@ function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-4xl pb-12">
-      <h2 className="text-xl font-bold text-gray-900">Profil użytkownika</h2>
+      <h2 className="text-xl font-bold text-gray-900">Profil</h2>
       <p className="mb-6 mt-1 border-b border-gray-200 pb-4 text-sm text-gray-500">
         Dane do wyliczenia kosztów i porównania taryf.
       </p>
 
       {missingFields.length > 0 && (
-        <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className={`${alertClass("warning")} mb-4`}>
           Profil wymaga uzupełnienia: {missingFields.map(fieldLabel).join(", ")}.
         </div>
       )}
       <div ref={errorSummaryRef} className="scroll-mt-4" />
-      {saveError && <p role="alert" className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
+      {saveError && <p role="alert" className={`${alertClass("error")} mb-4`}>{saveError}</p>}
       {errorList.length > 0 && (
-        <div role="alert" className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">
+        <div role="alert" className={`${alertClass("error")} mb-4`}>
           <p className="font-medium">Popraw pola:</p>
           <ul className="mt-1 list-disc pl-5">
             {errorList.map(([key, message]) => (
@@ -478,10 +480,8 @@ function ProfilePage() {
                 />
               )}
           </Field>
-          {optionsLoaded && options?.unsupported?.length > 0 && (
-            <p className="text-xs text-gray-500 sm:col-span-2">
-              U tego operatora są też: {options.unsupported.map((item, index) => <span key={item.code}>{index > 0 && ", "}<span title={item.reason} className="cursor-help underline decoration-dotted">{item.code}</span></span>)}. Jeszcze ich nie liczymy.
-            </p>
+          {optionsLoaded && (
+            <UnsupportedTariffs intro="U tego operatora są też:" items={options?.unsupported} className="sm:col-span-2" />
           )}
           {optionsLoaded && !options && (
             <p className="text-xs text-gray-500 sm:col-span-2">Brak cennika tego operatora w kalkulatorze.</p>
@@ -545,11 +545,11 @@ function ProfilePage() {
           </p>
           <div className="flex gap-2">
             {dirty && (
-              <button type="button" onClick={discardChanges} disabled={isSaving} className="flex-1 rounded-md border border-gray-300 px-4 py-2.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:flex-none">
+              <button type="button" onClick={discardChanges} disabled={isSaving} className={`${buttonClass("secondary", "lg")} flex-1 sm:flex-none`}>
                 Cofnij zmiany
               </button>
             )}
-            <button className="flex-1 rounded-md bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:flex-none" disabled={isSaving}>
+            <button className={`${buttonClass("primary", "lg")} flex-1 sm:flex-none`} disabled={isSaving}>
               {isSaving ? "Zapisywanie..." : "Zapisz profil"}
             </button>
           </div>

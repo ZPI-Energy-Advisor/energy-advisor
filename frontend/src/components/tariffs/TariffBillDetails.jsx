@@ -9,12 +9,13 @@ import {
   cycleGroupValue,
   isPriced,
 } from "../../utils/tariffComparison";
+import { formatKwh } from "../../utils/format";
+import { CARD, TABLE, TABLE_HEAD, TD_NUMBER, TH } from "../uiStyles";
+import MoreInfo from "../MoreInfo";
+import { useIsPhone } from "../../hooks/useMediaQuery";
 
-const formatKwh = (value, digits = 0) =>
-  `${Number(value).toLocaleString("pl-PL", { maximumFractionDigits: digits })} kWh`;
-
-const CELL = "whitespace-nowrap px-3 md:px-4 py-3 text-right text-sm";
-const HEAD = "whitespace-nowrap px-3 md:px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500";
+const CELL = TD_NUMBER;
+const HEAD = TH;
 
 function Metric({ label, value, accent = false }) {
   return (
@@ -36,6 +37,7 @@ function Fact({ label, children }) {
 
 function CyclesTable({ cycles }) {
   const [expanded, setExpanded] = useState(false);
+  const isPhone = useIsPhone();
   const withTradeFee = cycles.some((cycle) => Number(cycle.trade_fee_net) > 0);
   const columns = expanded
     ? CYCLE_COMPONENTS.filter(([key]) => key !== "trade_fee_net" || withTradeFee).map(([key, label]) => ({
@@ -63,9 +65,43 @@ function CyclesTable({ cycles }) {
           {expanded ? "Pokaż mniej składników" : "Pokaż wszystkie składniki"}
         </button>
       </div>
+      {isPhone ? (
+        // Na telefonie okres i kwota brutto w wierszu, składniki po rozwinięciu: tabela z wieloma kolumnami
+        // wymagałaby przesuwania w bok.
+        <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200" aria-label="Okresy rozliczeniowe">
+          {cycles.map((cycle) => (
+            <li key={cycle.cycle_start}>
+              <details className="group px-3 py-2.5">
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3 text-sm">
+                  <span className="font-medium text-gray-900">
+                    {formatDate(cycle.cycle_start)} – {formatDate(cycle.cycle_end)}
+                    {cycle.days_billed < cycle.days_in_cycle && (
+                      <span className="block text-xs font-normal text-gray-500">
+                        opłaty miesięczne za {cycle.days_billed} z {cycle.days_in_cycle} dni
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-right font-semibold tabular-nums text-gray-900">
+                    {formatPln(cycle.gross_total)}
+                    <span className="block text-xs font-normal text-emerald-700 group-open:hidden">składniki</span>
+                  </span>
+                </summary>
+                <dl className="mt-2 space-y-1 text-sm">
+                  {columns.map((column) => (
+                    <div key={column.key} className="flex justify-between gap-3">
+                      <dt className="text-gray-500">{column.label}</dt>
+                      <dd className="tabular-nums text-gray-800">{formatPln(column.value(cycle))}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            </li>
+          ))}
+        </ul>
+      ) : (
       <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className={TABLE}>
+          <thead className={TABLE_HEAD}>
             <tr>
               <th scope="col" className={`${HEAD} text-left`}>Okres</th>
               {columns.map((column) => (
@@ -98,6 +134,18 @@ function CyclesTable({ cycles }) {
           </tbody>
         </table>
       </div>
+      )}
+      {columns.some((column) => column.title) && (
+        <MoreInfo summary="Co zawierają kolumny" className="mt-2 [&_summary]:text-xs">
+          <ul className="space-y-1 text-xs">
+            {columns.filter((column) => column.title).map((column) => (
+              <li key={column.key}>
+                <span className="font-medium text-gray-700">{column.label}</span>: {column.title}
+              </li>
+            ))}
+          </ul>
+        </MoreInfo>
+      )}
       <p className="mt-2 text-xs text-gray-500">Składniki netto, VAT i kwota brutto okresu przed potrąceniem depozytu.</p>
     </div>
   );
@@ -109,7 +157,7 @@ function TariffBillDetails({ entry, comparison }) {
   const title = [entry.label, entry.name].filter(Boolean).join(" · ");
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-6 shadow-sm" aria-labelledby="tariff-details-title">
+    <section className={CARD} aria-labelledby="tariff-details-title">
       <h3 id="tariff-details-title" className="font-semibold text-gray-900">
         Szczegóły rachunku: {title}
       </h3>
@@ -130,7 +178,7 @@ function TariffBillDetails({ entry, comparison }) {
             )}
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {annual && <Fact label="Zużycie w okresie">{formatKwh(annual.consumption_kwh, 1)}</Fact>}
+            {annual && <Fact label="Zużycie w okresie">{formatKwh(annual.consumption_kwh)}</Fact>}
             <Fact label="Tryb PV">{comparison.pv_mode ? PV_MODE_LABELS[comparison.pv_mode] ?? comparison.pv_mode : "Brak instalacji PV"}</Fact>
             {annual && (
               <Fact label="Roczne zużycie (próg opłaty mocowej)">

@@ -1,15 +1,8 @@
-import { formatNumber } from "./format";
+import { formatDate, formatDayMonth, formatKwp, formatNumber, formatPercent, formatTime, formatWeekdayDay } from "./format";
 
-const TIME_ZONE = "Europe/Warsaw";
-const timeFormatter = new Intl.DateTimeFormat("pl-PL", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit" });
-const weekdayFormatter = new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", weekday: "long" });
-const dayMonthFormatter = new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", day: "numeric", month: "long" });
-
-export const formatKwh = (value, digits = 1) => (value == null ? "—" : `${formatNumber(value, digits)} kWh`);
-export const formatPln = (value) => (value == null ? "—" : `${formatNumber(value, 2)} zł`);
-export const formatPercent = (share) => (share == null ? "—" : `${formatNumber(share * 100, 0)}%`);
-export const formatClock = (iso) => timeFormatter.format(new Date(iso));
-const roundDegrees = (value) => formatNumber(Math.round(value) + 0, 0);
+export { formatKwh, formatPercent, formatPln } from "./format";
+export const formatClock = formatTime;
+const roundDegrees = (value) => formatNumber(Math.round(value), 0);
 
 export const formatTemperatureRange = (low, high) => {
   if (low == null || high == null) return null;
@@ -25,7 +18,7 @@ export const addDays = (isoDate, days) => {
   return moment.toISOString().slice(0, 10);
 };
 
-export const formatDayLong = (isoDate) => `${weekdayFormatter.format(atNoon(isoDate))}, ${dayMonthFormatter.format(atNoon(isoDate))}`;
+export const formatDayLong = formatWeekdayDay;
 
 export const dayName = (isoDate, today) => {
   if (isoDate === today) return "Dziś";
@@ -42,15 +35,15 @@ export const describeSettlement = (installation) => {
 
 const DIRECTIONS = { 0: "południe", "-90": "wschód", 90: "zachód", 180: "północ", "-45": "południowy wschód", 45: "południowy zachód" };
 export const describeArray = (array) =>
-  `${formatNumber(array.kwp, 2)} kWp, ${DIRECTIONS[array.azimuth] ?? `azymut ${array.azimuth}°`}, ${array.tilt}°`;
+  `${formatKwp(array.kwp)}, ${DIRECTIONS[array.azimuth] ?? `azymut ${array.azimuth}°`}, ${array.tilt}°`;
 
 // Jedna grupa paneli: „6,00 kWp, południe, 35°”; kilka: suma i grupy w nawiasie.
 export const describePanels = (installation) =>
   installation.arrays.length === 1
     ? describeArray(installation.arrays[0])
-    : `${formatNumber(installation.total_kwp, 2)} kWp (${installation.arrays.map(describeArray).join("; ")})`;
+    : `${formatKwp(installation.total_kwp)} (${installation.arrays.map(describeArray).join("; ")})`;
 
-const formatShortDate = (isoDate) => `${isoDate.slice(8, 10)}.${isoDate.slice(5, 7)}.${isoDate.slice(0, 4)}`;
+const formatShortDate = formatDate;
 const MAX_LISTED_PERIODS = 4;
 
 // Okresy z plików: „13.06.2025–08.08.2025, 01.10.2026–12.11.2026”; przy wielu tylko najnowsze.
@@ -81,8 +74,6 @@ export const describeAccuracy = (calibration) => {
   return `Prognoza dopasowana do produkcji z ${calibration.days} ${daysWord(calibration.days)} z Twoich plików; ${error}.`;
 };
 
-const dayMonthNumeric = new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
-const formatDayMonth = (isoDate) => dayMonthNumeric.format(atNoon(isoDate));
 
 const TYPICAL_KINDS = {
   workday: ["dnia roboczego", "dni roboczych"],

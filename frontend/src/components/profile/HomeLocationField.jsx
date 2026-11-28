@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { FiMapPin } from "react-icons/fi";
 import { POLAND_BOUNDS, addressKey } from "../../utils/profileForm";
+import { formatNumber } from "../../utils/format";
 
 const formatCoordinate = (value, positive, negative) =>
-  `${Math.abs(value).toLocaleString("pl-PL", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}° ${value >= 0 ? positive : negative}`;
+  `${formatNumber(Math.abs(value), 4)}° ${value >= 0 ? positive : negative}`;
 
 const insidePoland = (latitude, longitude) =>
   latitude >= POLAND_BOUNDS.minLatitude &&

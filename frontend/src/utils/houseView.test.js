@@ -265,7 +265,7 @@ describe("pasek czasu, cena i temperatura wody", () => {
     expect(line.markers).toEqual([]);
   });
 
-  it("cena i temperatura wody z bieżącego kwadransu planu, a poza planem ich nie ma", () => {
+  it("cena i temperatura wody z bieżącego kwadransu planu; poza planem nie ma ceny, a woda trzyma ostatnią wartość", () => {
     expect(priceNow(RUN, "2026-10-19T12:20:00+02:00")).toEqual({ price: 0.6, level: "mid", approximate: false });
     // Noc po dniu planu bez znanych cen: plan przyjął ceny z tych samych godzin, więc cena jest przybliżona.
     const approximate = { ...RUN, prices_approximate_from: "2026-10-19T12:30:00+02:00" };
@@ -276,7 +276,14 @@ describe("pasek czasu, cena i temperatura wody", () => {
       { deviceId: "dev_wh_01", name: "Bojler", tempC: 51.7 },
     ]);
     expect(priceNow(RUN, "2026-10-19T18:00:00+02:00")).toBeNull();
-    expect(waterTemperaturesNow(RUN, "2026-10-19T18:00:00+02:00")).toEqual([]);
+    // Woda poza kwadransami planu nie znika: po nich zostaje ostatnia temperatura, przed nimi pierwsza.
+    expect(waterTemperaturesNow(RUN, "2026-10-19T18:00:00+02:00")).toEqual([
+      { deviceId: "dev_wh_01", name: "Bojler", tempC: 51.7 },
+    ]);
+    expect(waterTemperaturesNow(RUN, "2026-10-19T08:00:00+02:00")).toEqual([
+      { deviceId: "dev_wh_01", name: "Bojler", tempC: 48.2 },
+    ]);
+    expect(waterTemperaturesNow(null, "2026-10-19T12:20:00+02:00")).toEqual([]);
     expect(priceNow(null, "2026-10-19T12:20:00+02:00")).toBeNull();
   });
 });

@@ -1,10 +1,10 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { axisUnitLabel, formatAxis, formatNumber } from "../../utils/format";
+import { axisUnitLabel, formatAxis, formatDayMonth, formatKwh, formatPercent } from "../../utils/format";
 
 const MAX_DAYS = 60;
 const COLORS = { actual: "#059669", model: "#f59e0b" };
 
-const dayMonth = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+const dayMonth = formatDayMonth;
 const fullDate = (iso) => `${dayMonth(iso)}.${iso.slice(0, 4)}`;
 
 function AccuracyTooltip({ active, payload }) {
@@ -14,9 +14,9 @@ function AccuracyTooltip({ active, payload }) {
   return (
     <div className="rounded-lg border border-gray-100 bg-white p-3 text-xs shadow-xl">
       <p className="mb-1 font-medium text-gray-500">{fullDate(day.date)}</p>
-      <p>Z pliku: <span className="font-medium">{formatNumber(day.actual_kwh, 1)} kWh</span></p>
-      <p>Z modelu: <span className="font-medium">{formatNumber(day.model_kwh, 1)} kWh</span></p>
-      {error != null && <p className="mt-1 text-gray-500">Różnica {formatNumber(error * 100, 0)}%</p>}
+      <p>Z pliku: <span className="font-medium">{formatKwh(day.actual_kwh)}</span></p>
+      <p>Z modelu: <span className="font-medium">{formatKwh(day.model_kwh)}</span></p>
+      {error != null && <p className="mt-1 text-gray-500">Różnica {formatPercent(error)}</p>}
       <p className="mt-1 text-gray-400">Kliknij, żeby zobaczyć dzień</p>
     </div>
   );

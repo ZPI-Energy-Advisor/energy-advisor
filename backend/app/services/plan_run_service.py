@@ -474,7 +474,8 @@ class PlanRunService:
             energy = self._energy(owner, run, until)
             actual = energy.by_device
             cost = self._report(owner, run, until, energy)
-            if run.tariff is not None and until > run.horizon_start:
+            # Od pierwszej chwili planu (także 00:00 tuż po starcie) i po jego końcu, z wartościami końcowymi.
+            if run.tariff is not None and until >= run.horizon_start:
                 live_out = live(self._run_energy(owner, run, until, energy), run.tariff)
         devices = [
             PlanRunDeviceOut(

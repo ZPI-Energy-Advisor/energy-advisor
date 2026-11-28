@@ -11,6 +11,8 @@ import {
   formatRecordsCount,
   pluralizeFiles,
 } from "../utils/energyFiles";
+import { formatDateTime } from "../utils/format";
+import { CARD_FLUSH, TABLE_HEAD, TD, TH, alertClass, buttonClass } from "./uiStyles";
 
 function Spinner({ className = "" }) {
   return (
@@ -25,18 +27,10 @@ function Spinner({ className = "" }) {
   );
 }
 
-const formatUploadDate = (isoDateTime) =>
-  // Backend zwraca czas UTC bez strefy - dopisujemy "Z", żeby pokazać czas lokalny.
-  new Date(isoDateTime.endsWith("Z") ? isoDateTime : `${isoDateTime}Z`).toLocaleString("pl-PL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+// Backend zwraca czas wgrania w UTC bez strefy; formatDateTime pokazuje go w czasie polskim.
+const formatUploadDate = formatDateTime;
 
-const headerClass =
-  "px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap";
+const headerClass = TH;
 
 function EnergyFilesTable() {
   const {
@@ -108,7 +102,7 @@ function EnergyFilesTable() {
         aria-selected={isSelected}
         className={`text-sm ${isLast ? "border-b-2 border-gray-200" : ""} ${isSelected ? "bg-emerald-50" : "bg-gray-50/60 hover:bg-gray-50 cursor-pointer transition-colors"}`}
       >
-        <td className="px-4 md:px-6 py-3 md:py-4">
+        <td className={TD}>
           <span className={`flex items-center gap-2 font-bold ${isSelected ? "text-emerald-800" : "text-gray-900"}`}>
             <FiLayers className="text-emerald-600 shrink-0" /> {source.file_name}
             <SourceTypeBadge sourceType={source.source_type} />
@@ -118,10 +112,10 @@ function EnergyFilesTable() {
             {filesLabel}
           </span>
         </td>
-        <td className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap">{dateRange}</td>
-        <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-right text-gray-400">–</td>
-        <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">automatycznie</td>
-        <td className="px-4 md:px-6 py-3 md:py-4 text-right">{renderSelectAction(source.id, isSelected)}</td>
+        <td className={`${TD} hidden lg:table-cell whitespace-nowrap`}>{dateRange}</td>
+        <td className={`${TD} hidden sm:table-cell whitespace-nowrap text-right text-gray-400`}>–</td>
+        <td className={`${TD} hidden xl:table-cell whitespace-nowrap text-gray-500`}>automatycznie</td>
+        <td className={`${TD} text-right`}>{renderSelectAction(source.id, isSelected)}</td>
       </tr>
     );
   };
@@ -166,7 +160,7 @@ function EnergyFilesTable() {
         {/* table-fixed + stałe szerokości kolumn: tabela zawsze mieści się w karcie,
             a mniej ważne kolumny na węższych ekranach przechodzą pod nazwę pliku. */}
         <table className="w-full table-fixed divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th scope="col" className={headerClass}>Plik</th>
               <th scope="col" className={`${headerClass} hidden lg:table-cell w-52`}>Zakres danych</th>
@@ -196,10 +190,11 @@ function EnergyFilesTable() {
                         : "text-gray-400"
                   }`}
                 >
-                  <td className="px-4 md:px-6 py-3 md:py-4">
-                    <span className="flex items-center gap-2 min-w-0">
+                  <td className={TD}>
+                    {/* Na telefonie pełna nazwa w kilku liniach zamiast ucinania; od `sm` w jednej linii. */}
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 sm:flex-nowrap">
                       <span
-                        className={`truncate font-medium ${isSelected ? "text-emerald-800" : isAvailable ? "text-gray-900" : ""}`}
+                        className={`break-all font-medium sm:truncate ${isSelected ? "text-emerald-800" : isAvailable ? "text-gray-900" : ""}`}
                         title={file.file_name}
                       >
                         {file.file_name}
@@ -213,19 +208,23 @@ function EnergyFilesTable() {
                       )}
                       import {formatUploadDate(file.uploaded_at)}
                     </span>
+                    {/* Powód błędu wprost pod nazwą: podpowiedź po najechaniu nie działa na telefonie. */}
+                    {!isAvailable && file.error_message && (
+                      <span className="mt-1 block text-xs text-red-700 md:hidden">{file.error_message}</span>
+                    )}
                   </td>
-                  <td className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap">
+                  <td className={`${TD} hidden lg:table-cell whitespace-nowrap`}>
                     {dateRange}
                   </td>
-                  <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-right">
+                  <td className={`${TD} hidden sm:table-cell whitespace-nowrap text-right`}>
                     {file.records_count != null && file.source_type === SOURCE_TYPE_DEVICES
                       ? formatRecordsCount(file.records_count, file.source_type)
                       : file.records_count ?? "–"}
                   </td>
-                  <td className="hidden xl:table-cell px-4 md:px-6 py-3 md:py-4 whitespace-nowrap text-gray-500">
+                  <td className={`${TD} hidden xl:table-cell whitespace-nowrap text-gray-500`}>
                     {formatUploadDate(file.uploaded_at)}
                   </td>
-                  <td className="px-4 md:px-6 py-3 md:py-4">
+                  <td className={TD}>
                     <div className="flex items-center justify-end gap-1.5 md:gap-2">
                       {isAvailable ? (
                         renderSelectAction(file.id, isSelected)
@@ -247,7 +246,7 @@ function EnergyFilesTable() {
                             handleDelete(file);
                           }}
                           disabled={deletingFileId !== null}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 shrink-0"
+                          className="p-2.5 sm:p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 shrink-0"
                           title="Usuń plik"
                           aria-label={`Usuń plik ${file.file_name}`}
                         >
@@ -269,7 +268,7 @@ function EnergyFilesTable() {
     <section
       ref={sectionRef}
       id={FILES_TABLE_ANCHOR}
-      className="mt-8 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden scroll-mt-4"
+      className={`${CARD_FLUSH} mt-8 overflow-hidden scroll-mt-4`}
     >
       <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
@@ -281,7 +280,7 @@ function EnergyFilesTable() {
       </div>
 
       {dataError && (
-        <div className="mx-4 md:mx-6 mt-4 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
+        <div className={`${alertClass("error")} mx-4 md:mx-6 mt-4 flex items-start justify-between gap-3`} role="alert">
           <span>
             {dataError}
             {selectedFileId && " Wyświetlane są nadal dane poprzednio wybranego pliku."}
@@ -293,7 +292,7 @@ function EnergyFilesTable() {
       )}
 
       {deleteError && (
-        <div className="mx-4 md:mx-6 mt-4 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
+        <div className={`${alertClass("error")} mx-4 md:mx-6 mt-4 flex items-start justify-between gap-3`} role="alert">
           <span>{deleteError}</span>
           <button type="button" onClick={clearDeleteError} className="font-medium hover:underline shrink-0" aria-label="Zamknij komunikat">
             ✕
@@ -302,7 +301,7 @@ function EnergyFilesTable() {
       )}
 
       {filesError && files.length > 0 && (
-        <div className="mx-4 md:mx-6 mt-4 p-3 text-sm text-red-600 bg-red-50 rounded-lg">
+        <div className={`${alertClass("error")} mx-4 md:mx-6 mt-4`} role="alert">
           {filesError}
         </div>
       )}
@@ -319,7 +318,7 @@ function EnergyFilesTable() {
               type="button"
               onClick={() => goToPage(page - 1)}
               disabled={page <= 1 || isLoadingFiles}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={buttonClass("secondary", "sm")}
             >
               <FiChevronLeft /> Poprzednia
             </button>
@@ -327,7 +326,7 @@ function EnergyFilesTable() {
               type="button"
               onClick={() => goToPage(page + 1)}
               disabled={page >= totalPages || isLoadingFiles}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={buttonClass("secondary", "sm")}
             >
               Następna <FiChevronRight />
             </button>

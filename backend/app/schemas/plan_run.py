@@ -147,6 +147,9 @@ class PlanRunPvOut(BaseModel):
     # Część autokonsumpcji przypadająca na urządzenia z planu (w proporcji do ich zużycia w kwadransie).
     plan_from_pv_kwh: float
     plan_kwh: float
+    # Reszta produkcji poszła do sieci; wartość oddania jak w planie (RCE/RCEm × 1,23 albo opust), None w planie bez PV.
+    export_kwh: float = 0.0
+    export_pln: float | None = None
 
 
 DeviationKind = Literal["rejected", "device_error", "interrupted", "manual_start", "energy_mismatch", "grid_limit"]
@@ -269,6 +272,10 @@ class PlanRunSavingLiveOut(BaseModel):
     # Oszczędność, którą plan daje w całej dobie: w trakcie doby „do teraz” może być większa albo mniejsza,
     # bo plan przesuwa pracę w czasie.
     planned_saving: float | None = None
+    # Oszczędność w miarę pracy: każde urządzenie dokłada swoją oszczędność z planu w proporcji do energii, którą
+    # już zużyło z zaplanowanej. Rośnie równo w ciągu doby i nie spada poniżej zera od samego przesunięcia pracy
+    # w czasie (np. bojler grzeje w nocy, a bez planu grzałby rano); na końcu planu to oszczędność z raportu.
+    progress_saving: float = 0.0
 
 
 class PlanRunLiveOut(BaseModel):

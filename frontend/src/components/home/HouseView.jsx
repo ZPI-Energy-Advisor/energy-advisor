@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
-import { LuArrowLeft, LuArrowRight, LuCalendarCheck, LuDroplet, LuZap } from "react-icons/lu";
-import { formatNumber } from "../../utils/home";
+import { createPortal } from "react-dom";
+import { LuArrowLeft, LuArrowRight, LuCalendarCheck, LuZap } from "react-icons/lu";
 import {
   GROUND_Y,
   HOUSE_HEIGHT,
@@ -15,15 +15,16 @@ import {
   layoutRoom,
   placeDevicesInRooms,
   planBadgeColor,
-  PRICE_LEVEL_LABELS,
-  priceNow,
   roomLabel,
-  waterTemperaturesNow,
 } from "../../utils/houseView";
 import HouseDevicePopover from "./HouseDevicePopover";
+import HouseRooms from "./HouseRooms";
+import LiveIndicators from "./LiveIndicators";
 import HouseTimeline from "./HouseTimeline";
 import { DEVICE_ICONS, STATE_GLYPHS } from "./houseIcons";
 import { CARD } from "./styles";
+import { formatKw } from "../../utils/format";
+import { useIsPhone } from "../../hooks/useMediaQuery";
 
 // Paleta przekroju: chłodne szarości jak w reszcie aplikacji, kolor tylko tam, gdzie coś się dzieje.
 const WALL = "#e2e8f0";
@@ -60,7 +61,7 @@ const DOOR = { x: 132, y: 388, w: 8, h: 70 };
 
 const FLOW_COLORS = { import: "#d97706", export: "#10b981", none: "#cbd5e1" };
 
-const shortPower = (kw) => `${formatNumber(Math.abs(kw))} kW`;
+const shortPower = (kw) => `${formatKw(Math.abs(kw))}`;
 
 function Roof({ producing }) {
   return (
@@ -115,7 +116,7 @@ function GridMeter({ power, shadow }) {
   const wire = direction === "export" ? `M${to},${y} L${from},${y}` : `M${from},${y} L${to},${y}`;
   const Arrow = direction === "export" ? LuArrowLeft : LuArrowRight;
   const short = { import: "Z sieci", export: "Do sieci", none: "Bilans" }[direction];
-  const label = flow ? `Licznik: ${flow.label} ${formatNumber(flow.kw)} kW` : "Licznik: brak danych o mocy";
+  const label = flow ? `Licznik: ${flow.label} ${formatKw(flow.kw)}` : "Licznik: brak danych o mocy";
   const cx = METER.x + METER.w / 2;
 
   return (
@@ -131,7 +132,7 @@ function GridMeter({ power, shadow }) {
           {short}
         </text>
         <text x={cx} y={METER.y + 78} textAnchor="middle" fontSize="16" fontWeight="700" fill="#0f172a">
-          {flow ? `${formatNumber(flow.kw)} kW` : "—"}
+          {flow ? `${formatKw(flow.kw)}` : "—"}
         </text>
       </g>
     </g>
@@ -361,50 +362,15 @@ const popoverStyle = (cell) => {
  * Stan przychodzi z GET /home/state co 1–2 s, więc dymek czyta urządzenie po `device_id` przy każdym renderze.
  */
 // `planBadges` (device_id -> { text, tone }): pozycje trwającego przebiegu planu, te same co w widoku listy.
-const PRICE_LEVEL_CLASSES = { cheap: "text-emerald-700", mid: "text-amber-700", expensive: "text-rose-700" };
-
-// Wskaźniki w lewym górnym rogu przekroju, zmieniające się z zegarem symulacji: temperatura wody bojlera
-// według planu i cena prądu w bieżącym kwadransie. Temperatury na zewnątrz i w domu dojdą z pogodą
-// i modelem strat ciepła budynku.
-function HouseIndicators({ run, simTime }) {
-  const water = waterTemperaturesNow(run, simTime);
-  const price = priceNow(run, simTime);
-  if (!water.length && !price) return null;
-  return (
-    <ul
-      className="absolute left-3 top-3 z-[1] space-y-1.5 rounded-xl bg-white/90 px-3 py-2 text-sm shadow-sm ring-1 ring-slate-900/5"
-      aria-label="Wskaźniki domu"
-    >
-      {water.map((heater) => (
-        <li
-          key={heater.deviceId}
-          className="flex items-center gap-1.5"
-          title={`${heater.name}: temperatura wody według planu`}
-          aria-label={`Temperatura wody (${heater.name}, według planu): ${formatNumber(heater.tempC, 0)}°C`}
-        >
-          <LuDroplet className="text-sky-600" aria-hidden="true" />
-          <span className="font-semibold tabular-nums text-slate-900">{formatNumber(heater.tempC, 0)}°C</span>
-          {water.length > 1 && <span className="text-xs text-slate-500">{heater.name}</span>}
-        </li>
-      ))}
-      {price && (
-        <li className="flex items-center gap-1.5" title="Cena prądu z sieci w bieżącym kwadransie, z planu">
-          <LuZap className="text-amber-500" aria-hidden="true" />
-          <span className="font-semibold tabular-nums text-slate-900">{formatNumber(price.price, 2)} zł/kWh</span>
-          <span className={`text-xs font-medium ${PRICE_LEVEL_CLASSES[price.level] ?? "text-slate-500"}`}>
-            {PRICE_LEVEL_LABELS[price.level]}
-            {price.approximate && " · przybliżona"}
-          </span>
-        </li>
-      )}
-    </ul>
-  );
-}
 
 // `planRun`: przebieg planu tej symulacji (GET /home/plan-runs/latest) do paska czasu i wskaźników; null bez niego.
-function HouseView({ devices, power, simTime, disabled = false, onCommand, planBadges = {}, planRun = null }) {
+// `live`: statystyki na żywo przebiegu (ZP-153), `weather`: pogoda doby symulacji; obie do wskaźników w rogu.
+function HouseView({
+  devices, power, simTime, disabled = false, onCommand, planBadges = {}, planRun = null, live = null, weather = null,
+}) {
   const [selectedId, setSelectedId] = useState(null);
   const [pending, setPending] = useState(() => new Set());
+  const isPhone = useIsPhone();
   const shadowId = `house-shadow-${useId().replace(/:/g, "")}`;
   const shadow = `url(#${shadowId})`;
 
@@ -448,16 +414,55 @@ function HouseView({ devices, power, simTime, disabled = false, onCommand, planB
     );
   }
 
+  // Na telefonie pokoje jako kafelki jeden pod drugim, ze sterowaniem urządzeniami; przekrój tylko od `md`.
+  if (isPhone) {
+    return (
+      <section className={`${CARD} space-y-3`} aria-label="Dom">
+        <HouseTimeline run={planRun} simTime={simTime} />
+        <LiveIndicators run={planRun} live={live} weather={weather} simTime={simTime} />
+        <HouseRooms
+          devices={devices}
+          power={power}
+          planBadges={planBadges}
+          selectedId={selectedId}
+          onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
+        />
+        {selected &&
+          // Panel urządzenia od dołu ekranu, w <body> (portal), żeby odstępy kart nie przesuwały tła;
+          // stuknięcie w tło albo Escape zamyka.
+          createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-end bg-black/40"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setSelectedId(null);
+            }}
+          >
+            <HouseDevicePopover
+              sheet
+              device={selected}
+              plan={planBadges[selected.device_id]}
+              planRun={planRun}
+              disabled={disabled || pending.has(selected.device_id)}
+              onCommand={(command) => send(selected, command)}
+              onClose={() => setSelectedId(null)}
+            />
+          </div>,
+          document.body,
+          )}
+      </section>
+    );
+  }
+
   return (
     <section className={`${CARD} space-y-4`} aria-label="Dom">
       <HouseTimeline run={planRun} simTime={simTime} />
-      <p className="text-xs text-slate-500 sm:hidden">Przesuń przekrój w bok, żeby zobaczyć cały dom.</p>
       {/* Przewijanie w bok tylko na wąskim ekranie. `overflow-x: auto` przewija też w pionie, więc dymek
           wystający poniżej przekroju dodawał pasek przewijania i przesuwał widok; od `md` dymek może wystawać. */}
       <div className="overflow-x-auto -mx-4 px-4 md:overflow-visible md:mx-0 md:px-0">
         <div className="relative min-w-[720px] rounded-xl bg-slate-50 p-3 md:p-4">
           <div className="relative">
-            <HouseIndicators run={planRun} simTime={simTime} />
+            <LiveIndicators run={planRun} live={live} weather={weather} simTime={simTime} side="home" />
+            <LiveIndicators run={planRun} live={live} weather={weather} simTime={simTime} side="outside" />
             <svg
               viewBox={`0 ${HOUSE_TOP} ${HOUSE_WIDTH} ${HOUSE_HEIGHT - HOUSE_TOP}`}
               className="block w-full h-auto select-none"

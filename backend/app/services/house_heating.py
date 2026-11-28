@@ -145,23 +145,29 @@ def optimize(house: House, outdoor: list[float], prices: list[float], power_kw: 
     start = house.indoor_c
     states: dict[int, tuple[float, float]] = {round(start / TEMP_STEP_C): (0.0, start)}
     choices: list[dict[int, tuple[int, float]]] = []
+    low, high = house.low, house.high
     for slot, value in enumerate(outdoor):
         cop = heating_cop(value, house.floor_heating)
+        price = prices[slot]
+        over_limit = OVER_LIMIT_PENALTY if allowed is not None and not allowed[slot] else 0.0
+        # Poziomy mocy w tym kwadransie: (prąd, o ile ogrzeje dom, koszt). `step` jest liniowy w cieple, więc
+        # stygnięcie liczymy raz na stan, a ciepło z poziomu dodajemy (5 poziomów zamiast 3 bez 5 wywołań modelu).
+        options = [(0.0, 0.0, 0.0)] + [
+            (level * cap, level * cap * cop / house.capacity_kwh_per_k, price * level * cap + over_limit)
+            for level in LEVELS if level and slot not in blocked
+        ]
         new_states: dict[int, tuple[float, float]] = {}
         choice: dict[int, tuple[int, float]] = {}
         for key, (base, temp) in states.items():
-            for level in LEVELS:
-                if level and slot in blocked:
+            cooled = house.step(temp, value, 0.0)
+            for electricity, warming, cost in options:
+                after = cooled + warming
+                if electricity and after > high:
                     continue
-                electricity = level * cap
-                after = house.step(temp, value, electricity * cop)
-                if level and after > house.high:
-                    continue
-                total = base + prices[slot] * electricity + SHORTFALL_PENALTY * max(house.low - after, 0.0)
-                if level and allowed is not None and not allowed[slot]:
-                    total += OVER_LIMIT_PENALTY
+                total = base + cost + SHORTFALL_PENALTY * max(low - after, 0.0)
                 bucket = round(after / TEMP_STEP_C)
-                if total < new_states.get(bucket, (float("inf"), 0.0))[0] - 1e-9:
+                previous = new_states.get(bucket)
+                if previous is None or total < previous[0] - 1e-9:
                     new_states[bucket], choice[bucket] = (total, after), (key, electricity)
         choices.append(choice)
         states = new_states

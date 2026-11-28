@@ -8,14 +8,12 @@ import {
   createArray,
   totalKwp,
 } from "../../utils/profileForm";
+import { formatKwp } from "../../utils/format";
 
 const INPUT_OPTIONS = [
   { value: "panels", label: "Liczba paneli" },
   { value: "power", label: "Moc w kWp" },
 ];
-
-const formatKwp = (value) =>
-  Number.isFinite(value) ? `${value.toLocaleString("pl-PL", { maximumFractionDigits: 2 })} kWp` : "– kWp";
 
 function PvInstallationFields({ installation, netMetering, field, onChange }) {
   const arrayKey = (index, name) => `pv_config.arrays.${index}.${name}`;

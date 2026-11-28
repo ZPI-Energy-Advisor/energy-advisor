@@ -64,7 +64,7 @@ def test_me_without_profile_has_no_tariff(client_a, user_a, rates):
         "email": user_a.email,
         "provider": "local",
         "current_tariff": None,
-        "profile": {"exists": False, "needs_update": False, "tariff_type": None},
+        "profile": {"exists": False, "needs_update": False, "tariff_type": None, "has_pv": False},
         "home_owner": False,
         "privacy_policy": {
             "current_version": PRIVACY_POLICY_VERSION,
@@ -80,7 +80,7 @@ def test_current_tariff_is_definition_of_profile_tariff_valid_today(client_a, ra
 
     me = client_a.get("/api/v1/users/me").json()
 
-    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G12"}
+    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G12", "has_pv": False}
     assert me["current_tariff"] == {
         "code": "G12",
         "label": "G12",
@@ -102,6 +102,17 @@ def test_current_tariff_depends_on_date(user_a, rates, db):
 
     assert service.get_current_user(user_a, today=date(2025, 6, 1)).current_tariff.name == "G12 do 2025"
     assert service.get_current_user(user_a, today=date(2026, 6, 1)).current_tariff.valid_from == date(2026, 1, 1)
+
+
+def test_me_says_whether_profile_has_pv(client_a, rates):
+    payload = profile_payload("G12")
+    payload["pv_config"] = {"mode": "net_billing", "type_of_price": "RCE"}
+    assert client_a.put("/api/v1/users/me/profile", json=payload).status_code == 200
+
+    assert client_a.get("/api/v1/users/me").json()["profile"]["has_pv"] is True
+
+    assert client_a.put("/api/v1/users/me/profile", json=profile_payload("G12")).status_code == 200
+    assert client_a.get("/api/v1/users/me").json()["profile"]["has_pv"] is False
 
 
 def test_changing_profile_tariff_changes_current_tariff(client_a, rates):
@@ -126,7 +137,7 @@ def test_profile_tariff_without_rates_has_no_current_tariff(client_a, user_a, db
 
     me = client_a.get("/api/v1/users/me").json()
 
-    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G13"}
+    assert me["profile"] == {"exists": True, "needs_update": False, "tariff_type": "G13", "has_pv": False}
     assert me["current_tariff"] is None
 
 
@@ -138,7 +149,7 @@ def test_outdated_profile_needs_update(client_a, user_a, db, rates):
 
     me = client_a.get("/api/v1/users/me").json()
 
-    assert me["profile"] == {"exists": True, "needs_update": True, "tariff_type": "G12"}
+    assert me["profile"] == {"exists": True, "needs_update": True, "tariff_type": "G12", "has_pv": False}
     assert me["current_tariff"] is None
     response = client_a.get("/api/v1/users/me/profile")
     assert response.status_code == 409

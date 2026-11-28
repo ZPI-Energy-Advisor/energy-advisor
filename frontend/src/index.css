@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tło całej strony, także pod paskiem przeglądarki i przy przewinięciu poza krawędź. */
+html,
+body {
+  background-color: #ffffff;
+}
+
 /* Widok domu na ekranie „Mój dom” (ZP-110): poświata pracujących urządzeń, przepływ w przyłączu, ładowanie EV. */
 @keyframes house-halo {
   0%, 100% { opacity: 0.12; }
@@ -43,4 +49,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chart-fade-in, .chart-fade-in-alt { animation: none; }
+}
+
+/* Telefon (ZP-125): pola formularzy z czcionką 16 px, bo iPhone przy mniejszej powiększa ekran po stuknięciu
+   w pole. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }

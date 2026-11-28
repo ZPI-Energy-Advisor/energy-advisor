@@ -1,5 +1,15 @@
 // Ekran „Mój dom”: etykiety i formatowanie stanu domu z GET /home/state (kontrakt: docs/smart-home-api.md).
 
+import {
+  formatDayWords,
+  formatDayWordsYear,
+  formatNumber,
+  formatPercent,
+  formatPln,
+  formatTime,
+  formatWeekdayDayYear,
+} from "./format";
+
 export const HOME_TIMEZONE = "Europe/Warsaw";
 
 // Kolejność i nazwy kategorii jak w docs/devices-file-format.md.
@@ -151,21 +161,8 @@ export const groupDevicesByCategory = (devices) => {
     }));
 };
 
-const numberFormats = new Map();
+export { formatKw, formatKwh, formatNumber, formatPln } from "./format";
 
-export const formatNumber = (value, digits = 2) => {
-  if (!numberFormats.has(digits)) {
-    numberFormats.set(digits, new Intl.NumberFormat("pl-PL", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
-  }
-  // + 0 zamienia -0 na 0, żeby nie pokazywać „-0,00”.
-  return numberFormats.get(digits).format(value + 0);
-};
-
-export const formatKw = (value) => (value == null ? "—" : `${formatNumber(value)} kW`);
-export const formatKwh = (value) => (value == null ? "—" : `${formatNumber(value)} kWh`);
-export const formatPln = (value) => (value == null ? "—" : `${formatNumber(value)} zł`);
-
-const timeFormat = new Intl.DateTimeFormat("pl-PL", { timeZone: HOME_TIMEZONE, hour: "2-digit", minute: "2-digit" });
 const dateFormat = new Intl.DateTimeFormat("pl-PL", {
   timeZone: HOME_TIMEZONE,
   weekday: "long",
@@ -174,7 +171,8 @@ const dateFormat = new Intl.DateTimeFormat("pl-PL", {
   year: "numeric",
 });
 
-export const formatSimTime = (iso) => timeFormat.format(new Date(iso));
+export const formatSimTime = formatTime;
+// Moment symulacji (z godziną) słowami: „piątek, 27 listopada 2026”.
 export const formatSimDate = (iso) => dateFormat.format(new Date(iso));
 
 export const durationLabel = (minutes) => {
@@ -186,28 +184,23 @@ export const durationLabel = (minutes) => {
 
 // Doba RRRR-MM-DD (doba planu, dzień referencyjny) słowami; południe UTC to ten sam dzień w strefie domu.
 // Bez dnia tygodnia tam, gdzie po „na” / „jak” wymagałby odmiany („w niedzielę”), której Intl nie daje.
-const noon = (day) => new Date(`${day}T12:00:00Z`);
-const shortDayFormat = new Intl.DateTimeFormat("pl-PL", { timeZone: HOME_TIMEZONE, day: "numeric", month: "long" });
-const fullDayFormat = new Intl.DateTimeFormat("pl-PL", {
-  timeZone: HOME_TIMEZONE, day: "numeric", month: "long", year: "numeric",
-});
 /** „19 października” */
-export const shortDay = (day) => shortDayFormat.format(noon(day));
+export const shortDay = formatDayWords;
 
 // Nazwa przebiegu: plan idealny dnia z przeszłości (ZP-152) albo plan na dzień.
 export const planName = (run) =>
   run.plan_kind === "past_day" ? `Plan idealny, ${shortDay(run.plan_date)}` : `Plan na ${shortDay(run.plan_date)}`;
 /** „19 października 2026” */
-export const fullDay = (day) => fullDayFormat.format(noon(day));
+export const fullDay = formatDayWordsYear;
 /** „niedziela, 19 października 2026” */
-export const weekdayDay = (day) => dateFormat.format(noon(day));
+export const weekdayDay = formatWeekdayDayYear;
 
 /**
  * Oszczędność przebiegu planu, jednakowo w pasku zegara i na liście raportów: „oszczędność 7,22 zł (43,4%)”,
  * z dopiskiem „niepełny” dla raportu sprzed końca planu. Przyjmuje rachunek albo wiersz historii.
  */
 export const savingSummary = ({ saving, saving_percent: percent, complete }) =>
-  `oszczędność ${formatPln(saving)}${percent == null ? "" : ` (${formatNumber(percent, 1)}%)`}${complete ? "" : ", niepełny"}`;
+  `oszczędność ${formatPln(saving)}${percent == null ? "" : ` (${formatPercent(percent / 100)})`}${complete ? "" : ", niepełny"}`;
 
 const planWindow = (actions) => actions.map((action) => `${formatSimTime(action.start)}–${formatSimTime(action.end)}`).join(", ");
 

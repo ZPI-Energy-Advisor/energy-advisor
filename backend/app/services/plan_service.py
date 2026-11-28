@@ -686,7 +686,8 @@ class PlanService:
         return self._out(plan)
 
     def current(self, user: User) -> DayPlanOut | None:
-        """Ostatni plan na jutro (albo plan demo): plan idealny dnia z przeszłości go nie zasłania."""
+        """Ostatni plan na jutro (`kind = tomorrow`, także plan demo na dziś albo jutro), a nie plan idealny dnia
+        z przeszłości. Plan demo na dzień z przeszłości jest planem idealnym: ekran otwiera go jako wybrany dzień."""
         plan = self.plan_repository.latest_upcoming(user.id)
         return self._out(plan) if plan else None
 

@@ -5,7 +5,7 @@ import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import SegmentedControl from "../components/SegmentedControl";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
-import LivePanel from "../components/home/LivePanel";
+import LiveIndicators from "../components/home/LiveIndicators";
 import HouseView from "../components/home/HouseView";
 import PlanRunBar from "../components/home/PlanRunBar";
 import { DeviationList } from "../components/home/PlanRunCost";
@@ -77,6 +77,8 @@ function HomeLive({ onShowReport }) {
 
   const hubDown = state?.hub_available === false;
   const running = planRun.run?.status === "running";
+  // Statystyki na żywo (ZP-153) z przebiegu tej symulacji: w trakcie i po końcu (wartości końcowe, jak w raporcie).
+  const live = planRun.run && planRun.run.simulation_id === state?.simulation_id ? planRun.run.live : null;
   // Po końcu planu ta symulacja nie ma już nic do zrobienia: zegar szedłby dalej bez planu i bez PV.
   // Inna symulacja (np. hub po restarcie) nie jest blokowana.
   const finishedHere =
@@ -159,13 +161,6 @@ function HomeLive({ onShowReport }) {
           )}
           <HomeSummary power={state.power} today={state.today} />
           {!hubDown && (
-            <LivePanel
-              live={running && planRun.run.simulation_id === state.simulation_id ? planRun.run.live : null}
-              weather={weather}
-              today={state.today}
-            />
-          )}
-          {!hubDown && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-gray-600" role="status">
@@ -183,14 +178,25 @@ function HomeLive({ onShowReport }) {
                   planBadges={planBadges(planRun.run)}
                   // Pasek czasu i wskaźniki tylko z przebiegu tej symulacji, nie z planu sprzed restartu huba.
                   planRun={planRun.run?.simulation_id === state.simulation_id ? planRun.run : null}
+                  live={live}
+                  weather={weather}
                 />
               ) : (
-                <HomeDeviceList
+                <>
+                  {/* W widoku listy te same wskaźniki co w rogu przekroju, jako pasek nad urządzeniami. */}
+                  <LiveIndicators
+                    run={planRun.run?.simulation_id === state.simulation_id ? planRun.run : null}
+                    live={live}
+                    weather={weather}
+                    simTime={state.clock?.sim_time}
+                  />
+                  <HomeDeviceList
                   devices={state.devices}
                   onCommand={sendCommand}
                   disabled={controlsLocked}
                   planBadges={planBadges(planRun.run)}
-                />
+                  />
+                </>
               )}
             </>
           )}

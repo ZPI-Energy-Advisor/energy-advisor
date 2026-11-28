@@ -1,7 +1,9 @@
 import axios from "axios";
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1",
+  // Domyślnie API pod tym samym adresem co aplikacja (/api/v1): w kontenerze przekazuje je nginx, w `npm run dev`
+  // serwer Vite (vite.config.js). VITE_API_URL tylko, gdy backend jest pod innym adresem.
+  baseURL: import.meta.env.VITE_API_URL || "/api/v1",
 });
 
 const decodeTokenPayload = (token) => {

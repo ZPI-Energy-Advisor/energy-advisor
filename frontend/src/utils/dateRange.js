@@ -1,3 +1,4 @@
+import { formatDayMonth } from "./format";
 // Daty jako napisy RRRR-MM-DD liczone w UTC: strefa przeglądarki nie przesuwa dnia.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -44,7 +45,7 @@ export const monthWeeks = (month) => {
 export const randomDay = (min, max, random = Math.random) =>
   addDays(min, Math.floor(random() * daysBetween(min, max)));
 
-const shortDate = (isoDate) => `${isoDate.slice(8, 10)}.${isoDate.slice(5, 7)}`;
+const shortDate = formatDayMonth;
 
 export const weekdayName = (isoDate) => WEEKDAY_NAMES[toDate(isoDate).getUTCDay()];
 

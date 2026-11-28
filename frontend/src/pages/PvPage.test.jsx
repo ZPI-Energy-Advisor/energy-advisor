@@ -115,7 +115,7 @@ describe("PvPage", () => {
     mockApi();
     renderPage();
 
-    expect(await screen.findByText(/6,00 kWp \(4,00 kWp, południe, 35°; 2,00 kWp, wschód, 35°\), falownik 5,0 kW/)).toBeTruthy();
+    expect(await screen.findByText(/6,00 kWp \(4,00 kWp, południe, 35°; 2,00 kWp, wschód, 35°\), falownik 5,00 kW/)).toBeTruthy();
     expect(screen.getByText(/net-billing, oddanie po RCE · Wrocław/)).toBeTruthy();
     expect(screen.getByText(/myli średnio o 4%/)).toBeTruthy();
     const cards = within(screen.getByRole("region", { name: "Najbliższe dni" })).getAllByRole("button");
@@ -134,8 +134,8 @@ describe("PvPage", () => {
 
     const section = await screen.findByRole("region", { name: /Dziś, wtorek, 24 listopada/ });
     expect(await within(section).findByText("Zużyte od razu")).toBeTruthy();
-    expect(within(section).getByText("1,5 kWh")).toBeTruthy();
-    expect(within(section).getByText("83% produkcji")).toBeTruthy();
+    expect(within(section).getByText("1,50 kWh")).toBeTruthy();
+    expect(within(section).getByText("83,3% produkcji")).toBeTruthy();
     expect(within(section).getByText("1,58 zł")).toBeTruthy();
     expect(within(section).getByText(/1,46 zł mniej za prąd \+ 0,12 zł do depozytu/)).toBeTruthy();
     expect(within(section).getByText("Zużycie domu (szacunek)")).toBeTruthy();
@@ -156,7 +156,7 @@ describe("PvPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Poprzedni dzień" }));
     fireEvent.click(screen.getByRole("button", { name: "Poprzedni dzień" }));
     expect(await screen.findByText("pogoda z archiwum")).toBeTruthy();
-    expect(screen.getByText("model: 1,8 kWh")).toBeTruthy();
+    expect(screen.getByText("model: 1,80 kWh")).toBeTruthy();
     expect(screen.getByText("z pliku urządzeń")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Następny dzień" }).disabled).toBe(false);
     const dayCalls = get.mock.calls.filter(([url]) => url === "/pv/day").map(([, config]) => config.params.date);
@@ -249,14 +249,14 @@ describe("PvPage", () => {
     });
     renderPage();
 
-    expect(await screen.findByText(/Panele są szacunkowe: moc \(ok\. 10,7 kWp\) dopasowaliśmy do produkcji z Twoich plików/)).toBeTruthy();
+    expect(await screen.findByText(/Panele są szacunkowe: moc \(ok\. 10,70 kWp\) dopasowaliśmy do produkcji z Twoich plików/)).toBeTruthy();
   });
 
   it("jedna grupa paneli bez powtórzonej mocy", async () => {
     mockApi({ overview: { ...OVERVIEW, installation: { ...OVERVIEW.installation, arrays: [{ kwp: 6, tilt: 35, azimuth: 0 }] } } });
     renderPage();
 
-    expect(await screen.findByText(/^6,00 kWp, południe, 35°, falownik 5,0 kW/)).toBeTruthy();
+    expect(await screen.findByText(/^6,00 kWp, południe, 35°, falownik 5,00 kW/)).toBeTruthy();
   });
 
   it("trafność mówi, ile dni pominęło dopasowanie", async () => {

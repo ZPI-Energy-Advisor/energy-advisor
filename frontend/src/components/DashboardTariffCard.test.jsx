@@ -42,7 +42,7 @@ describe("DashboardTariffCard", () => {
     expect(screen.getByText("G12w · Taryfa weekendowa")).toBeTruthy();
     // Bez szacunku miesięcznego: każdy miesiąc jest inny, liczy się kwota z wybranego okresu.
     expect(screen.queryByText(/miesięcznie/)).toBeNull();
-    expect(screen.getByRole("link", { name: /Zobacz analizę taryf/ }).getAttribute("href")).toBe("/tariffs");
+    expect(screen.getByRole("link", { name: /Porównaj taryfy/ }).getAttribute("href")).toBe("/tariffs");
   });
 
   it("gdy obecna taryfa jest najkorzystniejsza, potwierdza to", () => {

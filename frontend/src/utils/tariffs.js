@@ -8,6 +8,4 @@ export const PRICE_PARTS = [
 export const describeBreakdown = (breakdown, format) =>
   breakdown ? PRICE_PARTS.map(({ key, label }) => `${label} ${format(breakdown[key])}`).join(" · ") : null;
 
-const plnFormatter = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-export const formatPln = (value) => (value == null ? "—" : `${plnFormatter.format(value)} zł`);
+export { formatPln } from "./format";

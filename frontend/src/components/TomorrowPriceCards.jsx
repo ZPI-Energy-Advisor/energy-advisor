@@ -5,8 +5,9 @@ import apiClient from "../api/client";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { getApiErrorMessage } from "../utils/energyFiles";
 import { describeFlatPrices, describeUnavailable, describeWindow, formatWindowHours } from "../utils/priceInsights";
+import { STAT_CARD } from "./uiStyles";
 
-const CARD = "bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4";
+const CARD = STAT_CARD;
 const NOTE = "rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm";
 const LINK = "font-semibold text-emerald-700 underline hover:text-emerald-800";
 // Cennik operatora nie obejmuje jutra: nie podajemy godziny, bo publikacja cen PSE tego nie zmieni.

@@ -61,7 +61,7 @@ const COST = {
   pending: [],
   manual: [{ device_id: "dev_lamp_01", device_name: "Lampa salon", energy_kwh: 0.2, cost: 0.12 }],
   manual_cost: 0.12,
-  pv: { production_kwh: 6.4, self_consumption_kwh: 3.1, plan_from_pv_kwh: 0.9, plan_kwh: 1.4 },
+  pv: { production_kwh: 6.4, self_consumption_kwh: 3.1, plan_from_pv_kwh: 0.9, plan_kwh: 1.4, export_kwh: 3.3, export_pln: 0.66 },
   deviations: [
     {
       kind: "rejected", device_id: "dev_ev_01", device_name: "Ładowarka EV", sim_time: "2026-10-19T22:00:00+02:00",
@@ -103,8 +103,11 @@ describe("PlanRunCard (raport przebiegu)", () => {
     const more = [...cost.querySelectorAll("details")].find((item) => item.querySelector("summary").textContent === "Więcej");
     expect(more.textContent).toContain("Włączone ręcznie: Lampa salon 0,20 kWh (0,12 zł).");
     expect(more.textContent).toContain(
-      "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64% ich zużycia).",
+      "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64,3% ich zużycia)."
+        + " Do sieci oddano 3,30 kWh, warte 0,66 zł.",
     );
+    // Koszt z planem przy PV liczy prąd z paneli po wartości oddania, więc mówi to wprost.
+    expect(within(cost).getByText(/prąd z paneli liczony po wartości oddania do sieci/)).toBeTruthy();
     const deviations = within(cost).getByRole("list", { name: "Odchylenia od planu", hidden: true });
     expect(deviations.textContent).toContain(
       "22:00 Odrzucona komenda – Ładowarka EV: Hub nie przyjął komendy: Nie ma urządzenia w rejestrze. (poza porównaniem)",

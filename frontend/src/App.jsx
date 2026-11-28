@@ -15,6 +15,7 @@ import "./index.css";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionExpiredListener from "./components/SessionExpiredListener";
+import AppStatusBanner from "./components/AppStatusBanner";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -45,7 +46,13 @@ export function AppRoutes() {
 function App() {
   const routes = (
     <BrowserRouter>
+      {/* Pole pod zegarem i baterią iPhone'a w trybie aplikacji (PWA). Przy status-bar-style „black-translucent”
+          strona sięga pod zegar, a jego tekst jest biały, więc pole ma kolor aplikacji i leży nad wszystkimi
+          nakładkami. Przy stylu „default” iOS sam dobierał kolor z góry strony i po otwarciu menu zostawał szary.
+          Poza trybem aplikacji wysokość 0. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-[env(safe-area-inset-top)] bg-emerald-600" />
       <SessionExpiredListener />
+      <AppStatusBanner />
       <AppRoutes />
     </BrowserRouter>
   );

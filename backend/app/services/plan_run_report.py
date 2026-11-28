@@ -36,7 +36,7 @@ from app.schemas.plan_run import (
 )
 from app.schemas.smart_home import HubCommandStatus
 from app.services.home_state_service import DayEnergy
-from app.services.pv_balance import HouseBalance
+from app.services.pv_balance import HouseBalance, hour_of
 
 
 SLOT = timedelta(minutes=15)
@@ -307,15 +307,19 @@ def _pv(run: RunEnergy, planned: set[str]) -> PlanRunPvOut | None:
     total = sum(max(kwh, 0.0) for kwh in production.values())
     if total <= 0:
         return None
-    self_consumption = plan_from_pv = 0.0
+    self_consumption = plan_from_pv = export_value = 0.0
     for slot, produced in production.items():
         used = min(max(produced, 0.0), consumption.get(slot, 0.0))
         self_consumption += used
         if used:
             plan_from_pv += used * plan_consumption.get(slot, 0.0) / consumption[slot]
+        if run.balance is not None:
+            export_value += (max(produced, 0.0) - used) * run.balance.sell.get(hour_of(slot), 0.0)
     return PlanRunPvOut(
         production_kwh=_kwh(total),
         self_consumption_kwh=_kwh(self_consumption),
         plan_from_pv_kwh=_kwh(plan_from_pv),
         plan_kwh=_kwh(sum(sum(run.energy.by_device_slot.get(device_id, {}).values()) for device_id in planned)),
+        export_kwh=_kwh(total - self_consumption),
+        export_pln=round(export_value, 2) + 0.0 if run.balance is not None else None,
     )

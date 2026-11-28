@@ -32,11 +32,12 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
   };
 
   const report = (
-    <div className="flex flex-wrap items-center gap-3">
-      <button type="button" className={LINK} onClick={() => onShowReport(run)}>
+    // Link i przycisk obok siebie, bez łamania: tekst po lewej bierze resztę miejsca i to on się zawija.
+    <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap sm:shrink-0">
+      <button type="button" className={`${LINK} whitespace-nowrap`} onClick={() => onShowReport(run)}>
         Zobacz raport <FiArrowRight aria-hidden="true" />
       </button>
-      <button type="button" className={SECONDARY_BUTTON} disabled={disabled || isRestarting} onClick={restart}>
+      <button type="button" className={`${SECONDARY_BUTTON} whitespace-nowrap`} disabled={disabled || isRestarting} onClick={restart}>
         {isRestarting ? <FiLoader aria-hidden="true" className="animate-spin" /> : <FiRotateCcw aria-hidden="true" />}
         {isRestarting ? "Uruchamianie..." : "Uruchom ponownie"}
       </button>
@@ -47,11 +48,11 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
   if (run.status === "running") {
     content = (
       <>
-        <p className="text-sm text-gray-700">
+        <p className="min-w-0 text-sm text-gray-700 sm:flex-1">
           <span className="font-semibold text-gray-900">{name}</span> · w trakcie, do{" "}
           {formatSimTime(run.horizon_end)} następnego dnia
         </p>
-        <button type="button" className={SECONDARY_BUTTON} disabled={disabled || isEnding} onClick={end}>
+        <button type="button" className={`${SECONDARY_BUTTON} whitespace-nowrap sm:shrink-0`} disabled={disabled || isEnding} onClick={end}>
           {isEnding ? <FiLoader aria-hidden="true" className="animate-spin" /> : <FiSquare aria-hidden="true" />}
           {isEnding ? "Kończenie..." : "Zakończ"}
         </button>
@@ -60,7 +61,7 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
   } else if (run.status === "superseded") {
     content = (
       <>
-        <p className="flex items-center gap-1.5 text-sm text-amber-800">
+        <p className="flex min-w-0 items-center gap-1.5 text-sm text-amber-800 sm:flex-1">
           <FiAlertTriangle aria-hidden="true" /> {name} przerwany: symulacja zaczęła inną dobę.
         </p>
         {report}
@@ -70,8 +71,8 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
     const done = run.status === "completed" ? "wykonany" : "zakończony przed czasem";
     content = (
       <>
-        <p className="flex items-center gap-1.5 text-sm text-gray-700">
-          <FiCheckCircle aria-hidden="true" className="text-emerald-600" />
+        <p className="flex min-w-0 items-center gap-1.5 text-sm text-gray-700 sm:flex-1">
+          <FiCheckCircle aria-hidden="true" className="shrink-0 text-emerald-600" />
           <span>
             <span className="font-semibold text-gray-900">{name} {done}</span>
             {run.cost && ` · ${savingSummary(run.cost)}`}
@@ -84,7 +85,7 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
 
   return (
     <section
-      className="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+      className="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6"
       aria-label="Przebieg planu"
     >
       {content}

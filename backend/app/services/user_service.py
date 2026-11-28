@@ -60,6 +60,7 @@ class UserService:
                 exists=profile is not None,
                 needs_update=profile is not None and self._validated(profile) is None,
                 tariff_type=self._tariff_type(profile),
+                has_pv=self._has_pv(profile),
             ),
             privacy_policy=self.privacy_policy_status(user),
         )
@@ -106,6 +107,10 @@ class UserService:
             valid_from=definition.valid_from,
             valid_to=definition.valid_to,
         )
+
+    @staticmethod
+    def _has_pv(profile) -> bool:
+        return bool(profile and (profile.pv_config or {}).get("mode", "none") != "none")
 
     @staticmethod
     def _tariff_type(profile) -> str | None:

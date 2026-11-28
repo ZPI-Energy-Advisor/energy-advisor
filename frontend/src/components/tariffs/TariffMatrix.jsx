@@ -1,6 +1,8 @@
 import { formatDate } from "../../utils/energyFiles";
 import { formatPln } from "../../utils/tariffs";
 import { OPERATOR_NAMES, findEntry, formatDifference, isPriced, tariffMatrix } from "../../utils/tariffComparison";
+import { CARD_FLUSH } from "../uiStyles";
+import UnsupportedTariffs from "./UnsupportedTariffs";
 
 const BADGE = "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] md:text-xs font-medium";
 
@@ -86,7 +88,7 @@ function TariffMatrix({ comparison, chosenKey, onChoose }) {
     );
 
   return (
-    <section className="mb-6 rounded-xl border border-gray-200 bg-white shadow-sm" aria-labelledby="tariff-matrix-title">
+    <section className={`${CARD_FLUSH} mb-6`} aria-labelledby="tariff-matrix-title">
       <div className="border-b border-gray-200 px-4 md:px-5 py-4">
         <h3 id="tariff-matrix-title" className="font-semibold text-gray-900">Porównanie taryf</h3>
         <p className="mt-1 text-xs md:text-sm text-gray-500">
@@ -108,20 +110,11 @@ function TariffMatrix({ comparison, chosenKey, onChoose }) {
           </div>
         ))}
       </div>
-      {unsupported.length > 0 && (
-        <p className="border-t border-gray-100 px-4 md:px-5 py-3 text-xs text-gray-500">
-          U operatora {operatorName} są też:{" "}
-          {unsupported.map((item, index) => (
-            <span key={item.code}>
-              {index > 0 && ", "}
-              <span title={item.reason} className="cursor-help underline decoration-dotted">
-                {item.code}
-              </span>
-            </span>
-          ))}
-          . Jeszcze ich nie liczymy.
-        </p>
-      )}
+      <UnsupportedTariffs
+        intro={`U operatora ${operatorName} są też:`}
+        items={unsupported}
+        className="border-t border-gray-100 px-4 md:px-5 py-3"
+      />
     </section>
   );
 }

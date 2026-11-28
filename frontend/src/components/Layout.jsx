@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import {
   FiHome,
@@ -23,7 +23,40 @@ import logo from "../assets/logo/logo.svg";
 import PrivacyPolicyAcceptance from "./PrivacyPolicyAcceptance";
 import { PRIVACY_POLICY_PATH, acceptPrivacyPolicy } from "../api/privacyPolicy";
 
-const HOME_NAV_ITEM = { path: "/home", label: "Mój dom", icon: <FiZap className="mr-3 text-lg" /> };
+const icon = (Icon) => <Icon aria-hidden="true" className="mr-3 text-lg" />;
+
+// Menu w kolejności pracy: najpierw dane, potem analiza, na końcu dom Smart Home (ZP-124).
+// `show` decyduje, czy pozycja jest w menu; tytuł karty przeglądarki bierze nazwę z pełnej listy.
+const NAV_GROUPS = [
+  {
+    label: "Dane",
+    items: [
+      { path: "/profile", label: "Profil", icon: icon(FiUser) },
+      { path: "/upload", label: "Import danych", icon: icon(FiUploadCloud) },
+    ],
+  },
+  {
+    label: "Analiza",
+    items: [
+      { path: "/dashboard", label: "Pulpit", icon: icon(FiHome) },
+      { path: "/tariffs", label: "Taryfy", icon: icon(FiPieChart) },
+      { path: "/prices", label: "Ceny dynamiczne", icon: icon(FiTrendingUp) },
+      { path: "/pv", label: "Fotowoltaika", icon: icon(FiSun), show: (me) => Boolean(me?.profile?.has_pv) },
+      { path: "/schedule", label: "Optymalizacja", icon: icon(FiClock) },
+    ],
+  },
+  {
+    label: "Dom",
+    items: [
+      // Dom Smart Home ma jednego właściciela (HUB_HOME_USER_EMAIL); pozostali nie widzą „Mój dom”.
+      { path: "/home", label: "Mój dom", icon: icon(FiZap), show: (me) => Boolean(me?.home_owner) },
+      // Plan na jutro jest dla każdego (urządzenia z pliku); symulację planu uruchamia tylko właściciel domu.
+      { path: "/plan", label: "Plan na jutro", icon: icon(FiCalendar) },
+    ],
+  },
+];
+
+const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 
 function LayoutShell() {
   const location = useLocation();
@@ -48,60 +81,30 @@ function LayoutShell() {
   };
 
   const isActive = (path) => location.pathname === path;
-  // Dom Smart Home ma jednego właściciela (HUB_HOME_USER_EMAIL); pozostali nie widzą tej pozycji.
   const { me, refresh } = useCurrentUser();
   // Konto bez akceptacji aktualnej polityki (zmiana wersji albo konto sprzed ZP-129) nie korzysta z aplikacji.
   const needsPolicyAcceptance = Boolean(me?.privacy_policy?.needs_acceptance);
 
-  const navItems = [
-    {
-      path: "/profile",
-      label: "Profil",
-      icon: <FiUser className="mr-3 text-lg" />,
-    },
-    {
-      path: "/dashboard",
-      label: "Dashboard",
-      icon: <FiHome className="mr-3 text-lg" />,
-    },
-    {
-      path: "/upload",
-      label: "Import Danych",
-      icon: <FiUploadCloud className="mr-3 text-lg" />,
-    },
-    {
-      path: "/tariffs",
-      label: "Analiza taryf",
-      icon: <FiPieChart className="mr-3 text-lg" />,
-    },
-    {
-      path: "/prices",
-      label: "Ceny dynamiczne",
-      icon: <FiTrendingUp className="mr-3 text-lg" />,
-    },
-    {
-      path: "/pv",
-      label: "Fotowoltaika",
-      icon: <FiSun className="mr-3 text-lg" />,
-    },
-    {
-      path: "/schedule",
-      label: "Optymalizacja historyczna",
-      icon: <FiClock className="mr-3 text-lg" />,
-    },
-    {
-      path: "/plan",
-      label: "Plan na jutro",
-      icon: <FiCalendar className="mr-3 text-lg" />,
-    },
-    ...(me?.home_owner ? [HOME_NAV_ITEM] : []),
-  ];
-  useDocumentTitle(navItems.find((item) => location.pathname.startsWith(item.path))?.label);
+  const navGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.show || item.show(me)),
+  })).filter((group) => group.items.length > 0);
+  useDocumentTitle(ALL_NAV_ITEMS.find((item) => location.pathname.startsWith(item.path))?.label);
 
   const closeSidebar = () => setIsSidebarOpen(false);
 
+  // Menu na telefonie zamyka się po wyborze pozycji, kliknięciu w tło i klawiszem Escape.
+  useEffect(() => {
+    if (!isSidebarOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setIsSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isSidebarOpen]);
+
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen h-dvh bg-gray-50 font-sans text-gray-900 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       
       <div className="md:hidden flex items-center justify-between bg-white border-b border-gray-200 p-4 z-20">
         <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -110,11 +113,15 @@ function LayoutShell() {
             Energy<span className="text-emerald-500">Advisor</span>
           </span>
         </h1>
-        <button 
+        <button
+          type="button"
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          aria-label={isSidebarOpen ? "Zamknij menu" : "Otwórz menu"}
+          aria-expanded={isSidebarOpen}
+          aria-controls="app-menu"
           className="p-2 text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
         >
-          {isSidebarOpen ? <FiX size={24} /> : <FiMenu size={24} />}
+          {isSidebarOpen ? <FiX size={24} aria-hidden="true" /> : <FiMenu size={24} aria-hidden="true" />}
         </button>
       </div>
 
@@ -125,7 +132,7 @@ function LayoutShell() {
         ></div>
       )}
 
-      <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 flex flex-col shadow-lg md:shadow-sm transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
+      <div id="app-menu" className={`fixed inset-y-0 left-0 z-40 w-64 pt-[env(safe-area-inset-top)] md:pt-0 bg-white border-r border-gray-200 flex flex-col shadow-lg md:shadow-sm transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       }`}>
         <div className="p-6 hidden md:block">
@@ -137,21 +144,32 @@ function LayoutShell() {
           </h1>
         </div>
 
-        <nav className="flex-1 mt-6 md:mt-2 overflow-y-auto">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={closeSidebar}
-              className={`flex items-center px-6 py-4 text-sm font-medium transition-colors ${
-                isActive(item.path)
-                  ? "bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 border-l-4 border-transparent"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </Link>
+        <nav aria-label="Menu główne" className="flex-1 mt-6 md:mt-2 overflow-y-auto pb-2">
+          {navGroups.map((group) => (
+            <div key={group.label} className="mb-3">
+              <p id={`nav-${group.label}`} className="px-6 pb-1 pt-2 text-xs font-semibold text-gray-400">
+                {group.label}
+              </p>
+              <ul aria-labelledby={`nav-${group.label}`}>
+                {group.items.map((item) => (
+                  <li key={item.path}>
+                    <Link
+                      to={item.path}
+                      onClick={closeSidebar}
+                      aria-current={isActive(item.path) ? "page" : undefined}
+                      className={`flex items-center px-6 py-3 text-sm font-medium transition-colors ${
+                        isActive(item.path)
+                          ? "bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700"
+                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 border-l-4 border-transparent"
+                      }`}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </nav>
 
@@ -199,7 +217,7 @@ function LayoutShell() {
 }
 
 // Providery w Layoucie przeżywają przejścia między stronami, więc wybrany plik, jego dane i konto
-// użytkownika zostają przy nawigacji. Obejmują też menu, które zależy od konta (pozycja „Mój dom”).
+// użytkownika zostają przy nawigacji. Obejmują też menu, które zależy od konta (Fotowoltaika, Mój dom).
 function Layout() {
   return (
     <CurrentUserProvider>

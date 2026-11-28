@@ -1,3 +1,5 @@
+import { formatDate } from "./format";
+
 export const FILES_TABLE_ANCHOR = "pliki";
 
 // Wirtualne źródło łączące dane ze wszystkich plików użytkownika (liczone przez backend).
@@ -16,11 +18,7 @@ export const SOURCE_TYPE_LABELS = {
 export const aggregateIdForSourceType = (sourceType) =>
   sourceType === SOURCE_TYPE_DEVICES ? ALL_DEVICE_FILES_ID : ALL_FILES_ID;
 
-export const formatDate = (isoDate) => {
-  if (!isoDate) return "";
-  const [year, month, day] = isoDate.slice(0, 10).split("-");
-  return `${day}.${month}.${year}`;
-};
+export { formatDate };
 
 // "1 pliku", "2 plików" - dopełniacz po "z" ma tylko dwie formy.
 export const pluralizeFiles = (count) => (count === 1 ? "pliku" : "plików");

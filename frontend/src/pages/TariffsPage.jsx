@@ -13,10 +13,11 @@ import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { useTariffComparison } from "../hooks/useTariffComparison";
 import { hasDataInRange } from "../utils/energyFiles";
 import { OPERATOR_NAMES, detailsKey, findEntry } from "../utils/tariffComparison";
+import { alertClass } from "../components/uiStyles";
 
 function Warning({ children }) {
   return (
-    <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 md:p-4 text-sm text-amber-800">
+    <div className={`${alertClass("warning")} mb-4 flex items-start gap-3`}>
       <FiAlertCircle className="mt-0.5 shrink-0" />
       <span>{children}</span>
     </div>
@@ -42,7 +43,7 @@ function TariffsPage() {
   }, [requireAllTariffs]);
 
   if (!isReady) {
-    return <PageSkeleton label="Ładowanie analizy taryf..." />;
+    return <PageSkeleton label="Ładowanie taryf..." />;
   }
 
   const operator = comparison?.operator ?? results?.pricing?.operator;
@@ -53,7 +54,7 @@ function TariffsPage() {
   return (
     <div className="mx-auto max-w-6xl pb-12">
       <DataContextBar
-        title="Analiza taryf"
+        title="Taryfy"
         subtitle={
           operator && (
             <>
@@ -82,7 +83,7 @@ function TariffsPage() {
         <div className={`transition-opacity ${busy ? "opacity-60" : ""}`} aria-busy={busy}>
           {comparison?.warnings.map((warning) => <Warning key={warning}>{warning}</Warning>)}
           {error && (
-            <div role="alert" className="mb-6 flex items-start gap-3 rounded-lg bg-red-50 p-4 text-sm text-red-700">
+            <div role="alert" className={`${alertClass("error")} mb-6 flex items-start gap-3`}>
               <FiAlertCircle className="mt-0.5 shrink-0" />
               <span className="flex-1">{error}</span>
               <button type="button" onClick={retry} className="shrink-0 font-semibold underline">

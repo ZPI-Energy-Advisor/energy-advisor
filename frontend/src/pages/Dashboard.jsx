@@ -1,7 +1,6 @@
 import { useState } from "react";
 import DataContextBar from "../components/DataContextBar";
-import DashboardPvCard from "../components/DashboardPvCard";
-import DashboardPvPeriod from "../components/DashboardPvPeriod";
+import DashboardPv from "../components/DashboardPv";
 import DashboardTariffCard from "../components/DashboardTariffCard";
 import { PageSkeleton } from "../components/Skeleton";
 import DeviceUsagePanel from "../components/DeviceUsagePanel";
@@ -27,6 +26,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { CARD, STAT_CARD } from "../components/uiStyles";
 
 const INCOMPLETE_DAY_COLOR = "#f59e0b";
 
@@ -158,14 +158,12 @@ function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
-      <DataContextBar title="Mój profil zużycia" showRange={Boolean(simulationData)} />
+      <DataContextBar title="Pulpit" showRange={Boolean(simulationData)} />
 
       <ProfileTariffNotice
         missingProfile=", żebyśmy wiedzieli, jaką masz taryfę. Do tego czasu koszty liczymy dla taryfy G11 operatora PGE."
         pricingNote={pricing?.note}
       />
-
-      <DashboardPvCard />
 
       {!simulationData ? (
         <NoFileData
@@ -177,7 +175,6 @@ function Dashboard() {
       ) : (
         <>
           <IncompleteDaysNotice statistics={results?.statistics} className="mb-6" />
-          <DashboardPvPeriod range={dateRange} />
 
           <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
             <SegmentedControl
@@ -222,7 +219,7 @@ function Dashboard() {
               aria-busy={isLoadingData}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
-                <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
+                <div className={`${STAT_CARD} border-y-emerald-500 transition-shadow hover:shadow-md`}>
                   <p className="text-sm font-medium text-gray-500 mb-2">
                     Szacowany koszt w okresie
                     {tariffName && ` (taryfa ${tariffName}${pricing?.from_profile ? "" : `, ${pricing?.operator}`})`}
@@ -236,14 +233,24 @@ function Dashboard() {
                     </span>
                   </div>
                   {hasCostTariff && (
-                    <p className="mt-2 text-xs text-gray-500" title={describeBreakdown(simulationData.cost_breakdown, formatPln) ?? undefined}>
-                      Za kWh {formatPln(simulationData.energy_cost_pln)} · opłaty miesięczne{" "}
-                      {formatPln(simulationData.monthly_fees_pln)}
-                    </p>
+                    // Składniki ceny po stuknięciu w ten sam wiersz (bez dodatkowej linii, która podnosiłaby
+                    // wszystkie karty w rzędzie); podpowiedź po najechaniu nie działa na telefonie.
+                    <details className="group mt-2 text-xs text-gray-500">
+                      <summary className="cursor-pointer list-none">
+                        Za kWh {formatPln(simulationData.energy_cost_pln)} · opłaty miesięczne{" "}
+                        {formatPln(simulationData.monthly_fees_pln)}
+                        {describeBreakdown(simulationData.cost_breakdown, formatPln) && (
+                          <span className="ml-1 text-emerald-700 group-open:hidden" aria-hidden="true">ⓘ</span>
+                        )}
+                      </summary>
+                      {describeBreakdown(simulationData.cost_breakdown, formatPln) && (
+                        <p className="mt-1">{describeBreakdown(simulationData.cost_breakdown, formatPln)}</p>
+                      )}
+                    </details>
                   )}
                 </div>
 
-                <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500 hover:shadow-md transition-shadow">
+                <div className={`${STAT_CARD} border-y-emerald-500 transition-shadow hover:shadow-md`}>
                   <p className="text-sm font-medium text-gray-500 mb-2">
                     Całkowite zużycie
                   </p>
@@ -265,7 +272,7 @@ function Dashboard() {
                 />
               </div>
 
-              <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
+              <div className={`${CARD} mb-8`}>
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
                   <h3 className="text-lg font-bold text-gray-900">
                     Profil {chartMetric === "kwh" ? "zużycia energii" : "kosztów"}
@@ -363,6 +370,9 @@ function Dashboard() {
           )}
         </>
       )}
+
+      {/* Panele pod wykresem zużycia: jutro z paneli i szacunek z pogody dla okresu pliku w jednej karcie. */}
+      <DashboardPv range={simulationData && hasDataInRange(results) ? dateRange : null} />
     </div>
   );
 }

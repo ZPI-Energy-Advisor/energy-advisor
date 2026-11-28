@@ -1,5 +1,6 @@
 import { countDays, formatDate } from "./energyFiles";
 import { describeBreakdown } from "./tariffs";
+import { formatNumber, formatRate } from "./format";
 
 // Limity zgodne z backendem (MAX_HISTORY_DAYS) 
 export const PRICE_RESOLUTIONS = [
@@ -42,17 +43,14 @@ export const buildPriceQuickRanges = (bounds) => {
   return [...ranges, { label: "Cały okres", ...bounds }];
 };
 
-const priceFormatter = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-const axisFormatter = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-export const formatPrice = (value) => (value == null ? "—" : `${priceFormatter.format(value)} zł/kWh`);
-export const formatAxisPrice = (value) => axisFormatter.format(value);
+// Oś cen z dwoma miejscami, jak ceny w podpowiedzi i kafelkach (formatPrice).
+export const formatAxisPrice = (value) => formatNumber(value, 2);
 
 export const describeTariffPrice = (history) =>
   `${history.operator}, dystrybucja ${history.distribution_group}: cena RCE z marżą sprzedawcy, dystrybucja, opłaty za kWh i VAT`;
 
 export const describeAveragePrice = (history) => {
-  const parts = describeBreakdown(history.price_breakdown, formatPrice);
+  const parts = describeBreakdown(history.price_breakdown, formatRate);
   return parts ? `Średnio w okresie: ${parts}` : null;
 };
 
@@ -127,16 +125,6 @@ export const formatPointLabel = (start, resolution) => {
   return `${date}, ${pointTime(start)} (${zone})`;
 };
 
-export const formatDateTime = (isoDateTime) =>
-  isoDateTime
-    ? new Date(isoDateTime).toLocaleString("pl-PL", {
-        timeZone: "Europe/Warsaw",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+export { formatDateTime, formatPrice } from "./format";
 
 export const formatDaysCount = (count) => `${count} ${count === 1 ? "dzień" : "dni"}`;

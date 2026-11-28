@@ -1,11 +1,11 @@
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { clockOf } from "../utils/schedule";
-import { formatNumber } from "../utils/format";
+import { formatDegrees, formatNumber } from "../utils/format";
 
 const AFTER_COLOR = "#10b981";
 const BEFORE_COLOR = "#9ca3af";
 
-const degrees = (value) => `${formatNumber(value, 1)}°C`;
+const degrees = (value) => formatDegrees(value, 1);
 
 function IndoorTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -31,9 +31,9 @@ function IndoorTemperatureChart({ pump }) {
     // Treść okienka „Temperatura w domu” w planie (tytuł daje okienko).
     <div>
       <p className="text-sm text-gray-600">
-        Bez planu pompa cały czas trzyma {formatNumber(pump.indoor_c, 0)}°C. Według planu nagrzewa dom na zapas, kiedy
+        Bez planu pompa cały czas trzyma {formatDegrees(pump.indoor_c)}. Według planu nagrzewa dom na zapas, kiedy
         prąd jest tani, i pozwala mu trochę ostygnąć, kiedy jest drogi, zawsze między {formatNumber(low, 0)} a{" "}
-        {formatNumber(high, 0)}°C.
+        {formatDegrees(high)}.
       </p>
       <div className="mt-3 h-48">
         <ResponsiveContainer width="100%" height="100%">

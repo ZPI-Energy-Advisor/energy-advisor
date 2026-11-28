@@ -6,6 +6,7 @@ import { chartKeysOf, chartTariffKeys, findEntry, keyLabel } from "../../utils/t
 import { formatDate } from "../../utils/energyFiles";
 import { axisUnitLabel, formatAxis, formatNumber } from "../../utils/format";
 import { ChartSkeleton } from "../Skeleton";
+import { CARD } from "../uiStyles";
 
 const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9", "#ec4899", "#84cc16"];
 const METRIC_OPTIONS = [
@@ -64,7 +65,7 @@ function TariffDayChart({ results, comparison, chosenKey, failed = false, onRetr
   const unit = metric === "price" ? "zł/kWh" : "zł";
 
   return (
-    <section className="mb-6 rounded-xl border border-gray-200 bg-white p-4 md:p-6 shadow-sm" aria-labelledby="tariff-chart-title">
+    <section className={`${CARD} mb-6`} aria-labelledby="tariff-chart-title">
       <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h3 id="tariff-chart-title" className="font-semibold text-gray-900">Kiedy płacisz najwięcej</h3>

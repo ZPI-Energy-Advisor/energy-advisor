@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { FILES_TABLE_ANCHOR } from "../utils/energyFiles";
+import { EMPTY_CARD, buttonClass } from "./uiStyles";
 
 function NoFileData({ emptyTitle, emptyDescription }) {
   const { files, filesError, isLoadingFiles, reload } = useEnergyFiles();
@@ -10,7 +11,7 @@ function NoFileData({ emptyTitle, emptyDescription }) {
   let action = (
     <Link
       to="/upload"
-      className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors w-full sm:w-auto"
+      className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
     >
       Przejdź do Importu Danych
     </Link>
@@ -24,7 +25,7 @@ function NoFileData({ emptyTitle, emptyDescription }) {
         type="button"
         onClick={reload}
         disabled={isLoadingFiles}
-        className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors w-full sm:w-auto disabled:opacity-60 disabled:cursor-wait"
+        className={`${buttonClass("primary", "lg")} w-full sm:w-auto disabled:cursor-wait`}
       >
         {isLoadingFiles ? "Ładowanie..." : "Spróbuj ponownie"}
       </button>
@@ -39,7 +40,7 @@ function NoFileData({ emptyTitle, emptyDescription }) {
       action = (
         <Link
           to={`/upload#${FILES_TABLE_ANCHOR}`}
-          className="inline-block bg-emerald-600 text-white font-medium px-6 py-3 rounded hover:bg-emerald-700 transition-colors w-full sm:w-auto"
+          className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
         >
           Wybierz plik
         </Link>
@@ -48,7 +49,7 @@ function NoFileData({ emptyTitle, emptyDescription }) {
   }
 
   return (
-    <div className="bg-white p-8 md:p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
+    <div className={EMPTY_CARD}>
       <h3 className="text-xl font-bold text-gray-800 mb-2">{title}</h3>
       <p className="text-gray-500 mb-6 text-sm md:text-base">{description}</p>
       {action}
