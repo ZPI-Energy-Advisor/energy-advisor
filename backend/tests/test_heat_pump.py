@@ -284,6 +284,9 @@ def test_plan_keeps_the_home_warm_in_cheap_hours_and_heats_more_when_colder(db, 
     body = response.json()
     pump = body["heat_pumps"][0]
     assert pump["mode"] == "indoor" and pump["band"] == [20.0, 22.0] and pump["shortfall"] == 0
+    # Model domu do temperatury na żywo w symulacji (ZP-153).
+    assert pump["capacity_kwh_per_k"] / pump["loss_kw_per_k"] == pytest.approx(pump["time_constant_h"], abs=0.6)
+    assert pump["floor_heating"] in (True, False)
     assert pump["thermostat_kwh"] == pytest.approx(_house_thermostat_kwh(0.0), rel=0.01)
     assert all(20.0 - 0.01 <= point["after"] <= 22.0 + 0.01 for point in pump["temperatures"])
     house = _items(response)["dev_hp_01#dom"]
@@ -308,9 +311,24 @@ def test_plan_warns_when_pump_power_cannot_keep_the_home_warm(db, home, weather_
     body = _plan(owner).json()
 
     pump = body["heat_pumps"][0]
-    assert pump["shortfall"] > 0.3
+    assert pump["shortfall"] > 0.3 and pump["shortfall_reason"] == "power"
     assert any("nie utrzyma w domu 20°C" in warning and "W domu może być chłodniej" in warning
                for warning in body["warnings"])
+
+
+def test_small_area_in_profile_gives_no_false_warning(db, home, weather_cell):
+    owner = _owner(home, HEAT_PUMP)
+    _with_profile(db, owner, area=13.0)
+    _enable_heat_pump(owner)
+    _weather_day(db, REFERENCE_DAY, "archive", 12.0)
+    _weather_day(db, PLAN_DATE, "forecast", 2.0)
+
+    body = _plan(owner).json()
+
+    pump = body["heat_pumps"][0]
+    assert pump["time_constant_h"] >= 10
+    assert pump["shortfall"] == 0 and pump["shortfall_reason"] is None
+    assert not any("nie utrzyma" in warning for warning in body["warnings"])
 
 
 def test_plan_without_weather_keeps_reference_energy_and_says_why(db, home, weather_cell):

@@ -7,9 +7,11 @@ Opis: docs/heat-pump.md, „Plan: temperatura w domu”. Moduł nie korzysta z b
   równowartość 3 °C (`GAINS_K`), więc dom traci `straty × (w domu − na dworze − 3)` kW.
 - Pojemność cieplna domu (kWh na stopień): ile ciepła trzeba, żeby ogrzać dom o 1 °C. Z plików jej nie poznamy
   (zużycie jest dobowe), więc przyjmujemy klasy z EN ISO 13790 według typu budynku: mieszkanie w bloku ciężkie
-  (beton), dom i szeregowiec średnie (mur), domek letniskowy lekki. Bez metrażu: stała czasowa 40 h.
-- Pompa grzeje w kwadransie z mocą 0, połowy albo całej (pompy inwerterowe modulują moc), a ciepła daje COP razy
-  więcej niż prądu; COP zależy od temperatury na dworze w tym kwadransie.
+  (beton), dom i szeregowiec średnie (mur), domek letniskowy lekki. Bez metrażu: stała czasowa 40 h. Straty są
+  z historii pompy, a pojemność z metrażu w profilu, więc metraż sprzeczny z zużyciem pompy (np. 13 m² przy pompie
+  domu 120 m²) dałby dom stygnący w kilka godzin: pojemność ma dolną granicę stałej czasowej 10 h.
+- Pompa grzeje w kwadransie z mocą 0, 25, 50, 75 albo 100% (pompy inwerterowe modulują moc do ok. 25–30%), a ciepła
+  daje COP razy więcej niż prądu; COP zależy od temperatury na dworze w tym kwadransie.
 
 Bez planu dom grzeje termostat: co kwadrans tyle, żeby wrócić do ustawionej temperatury (`thermostat`). Plan
 wybiera najtańsze kwadranse (`optimize`, programowanie dynamiczne jak w `water_heater`), tak żeby temperatura
@@ -24,7 +26,7 @@ from app.services.heat_pump_model import DEFAULT_INDOOR_C, HDD_BASE_C, HeatModel
 SLOT_HOURS = 0.25
 COMFORT_BAND_C = 1.0
 GAINS_K = DEFAULT_INDOOR_C - HDD_BASE_C
-LEVELS = (0.0, 0.5, 1.0)
+LEVELS = (0.0, 0.25, 0.5, 0.75, 1.0)
 TEMP_STEP_C = 0.05
 SHORTFALL_PENALTY = 100.0
 OVER_LIMIT_PENALTY = 10.0
@@ -37,12 +39,15 @@ CAPACITY_KWH_PER_M2_K = {
     "recreational_cottage": 110 / 3600,
 }
 DEFAULT_TIME_CONSTANT_H = 40.0
+MIN_TIME_CONSTANT_H = 10.0
 
 
 def house_capacity(property_type: str | None, area_m2: float | None, loss_kw_per_k: float) -> float:
-    """Pojemność cieplna domu (kWh/K) z typu budynku i metrażu; bez metrażu stała czasowa `DEFAULT_TIME_CONSTANT_H`."""
+    """Pojemność cieplna domu (kWh/K) z typu budynku i metrażu; bez metrażu stała czasowa `DEFAULT_TIME_CONSTANT_H`.
+    Najmniej `MIN_TIME_CONSTANT_H` × straty: metraż w profilu nie może dać domu, który stygnie w kilka godzin."""
     if area_m2:
-        return CAPACITY_KWH_PER_M2_K.get(property_type or "", MEDIUM_CAPACITY) * area_m2
+        capacity = CAPACITY_KWH_PER_M2_K.get(property_type or "", MEDIUM_CAPACITY) * area_m2
+        return max(capacity, MIN_TIME_CONSTANT_H * loss_kw_per_k)
     return DEFAULT_TIME_CONSTANT_H * loss_kw_per_k
 
 

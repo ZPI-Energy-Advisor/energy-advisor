@@ -1,6 +1,7 @@
 import { useState } from "react";
 import DataContextBar from "../components/DataContextBar";
 import DashboardPvCard from "../components/DashboardPvCard";
+import DashboardPvPeriod from "../components/DashboardPvPeriod";
 import DashboardTariffCard from "../components/DashboardTariffCard";
 import { PageSkeleton } from "../components/Skeleton";
 import DeviceUsagePanel from "../components/DeviceUsagePanel";
@@ -177,6 +178,7 @@ function Dashboard() {
       ) : (
         <>
           <IncompleteDaysNotice statistics={results?.statistics} className="mb-6" />
+          <DashboardPvPeriod range={dateRange} />
 
           <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
             <SegmentedControl

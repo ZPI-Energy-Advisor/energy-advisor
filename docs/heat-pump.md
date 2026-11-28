@@ -97,11 +97,17 @@ Plan pilnuje temperatury w domu, a nie godzin grzania z wczoraj (`plan_service._
   ciężkie (260 kJ/(m²·K), beton), dom wolnostojący i szeregowiec średnie (165), domek letniskowy lekki (110).
   Bez metrażu: stała czasowa 40 h. Dom 120 m² z 2010 roku ma stałą czasową ok. 43 h i przy 0 °C bez grzania
   stygnie o ok. 0,4 °C na godzinę.
+- **Dolna granica pojemności:** straty są z historii pompy, a pojemność z metrażu w profilu. Metraż, który nie pasuje
+  do zużycia pompy (np. 13 m² przy pompie, która grzeje dom 120 m²), dawał stałą czasową ok. 4,6 h: dom stygł
+  w kwadrans o ponad 0,5 °C i plan przy pompie 4,5 kW zgłaszał niedogrzanie, którego termostat nie miał. Dlatego
+  pojemność to najmniej 10 h × straty (`MIN_TIME_CONSTANT_H`); prawdziwe domy mają 20–100 h.
 - **Typ budynku a straty z profilu:** mieszkanie w bloku traci ok. 55% ciepła na m² domu wolnostojącego (sąsiedzi
   za ścianami, nad i pod), szeregowiec ok. 80% (dwie ściany wspólne). Gdy model jest z plików, straty wychodzą
   z dopasowania i typ budynku zmienia tylko pojemność.
-- **Pompa** grzeje w kwadransie z mocą 0, połowy albo całej (pompy inwerterowe modulują moc), a ciepła daje COP
-  razy więcej niż prądu; COP zależy od temperatury na dworze w tym kwadransie (pogoda co kwadrans).
+- **Pompa** grzeje w kwadransie z mocą 0, 25, 50, 75 albo 100% (`LEVELS`; pompy inwerterowe modulują moc do ok.
+  25–30%), a ciepła daje COP razy więcej niż prądu; COP zależy od temperatury na dworze w tym kwadransie (pogoda
+  co kwadrans). Przy trzech poziomach (0/50/100%) plan nie umiał trzymać małego domu w zakresie: pół mocy było za
+  mało, a cała za dużo.
 
 Bez planu dom grzeje termostat: co kwadrans tyle, żeby wrócić do ustawionej temperatury. Plan wybiera najtańsze
 kwadranse (programowanie dynamiczne jak w bojlerze), tak żeby w domu było od ustawionej − 1 °C do ustawionej
@@ -109,13 +115,25 @@ kwadranse (programowanie dynamiczne jak w bojlerze), tak żeby w domu było od u
 na zapas w tanich godzinach i lekko ostygnąć w drogich. Limit przyłącza jest miękki, jak w bojlerze. Liczymy dobę
 planu 00:00–24:00.
 
+Plan nigdy nie jest chłodniejszy od termostatu: gdy bez limitu przyłącza wychodzi mu większe niedogrzanie niż
+termostatowi (zaokrąglenie poziomów mocy), bierze grzanie termostatu. Ostrzeżenie „nie utrzyma w domu” pojawia się
+tylko przy niedogrzaniu ponad 0,3 °C (`SHORTFALL_WARNING_C`) i ma powód w `shortfall_reason`:
+- `power`: termostat też nie daje rady, czyli pompa ma za małą moc na tę pogodę (np. 1 kW przy −15 °C);
+- `grid`: termostat daje radę, ale limit przyłącza (z innymi urządzeniami w planie) nie zostawia pompie miejsca;
+- `null`: niedogrzania nie ma albo jest mniejsze niż 0,3 °C, więc karta nic nie pisze.
+
+Czas planowania doby (96 kwadransów, 5 poziomów mocy, programowanie dynamiczne co 0,05 °C), mierzony
+w kontenerze: dom 120 m² ok. 35 ms, dom z dolną granicą pojemności (stała 10 h) ok. 90 ms. Przy trzech poziomach
+było to 20–60 ms, więc plan dalej liczy się od razu.
+
 Najpierw planujemy ciepłą wodę (zasobnik, niżej), bo w jej kwadransach pompa nie grzeje domu. W domu bez bojlera
 woda jest zawsze planowana osobno: na godziny z ustawień albo, bez nich, na 6:00 i 18:00.
 
 Przy kilku pompach każda grzeje swoją część domu: udział w zużyciu pomp w dniu referencyjnym.
 
 Odpowiedź planu ma `heat_pumps` z `mode = "indoor"`:
-- temperatura doby planu, zakres w domu (`band`) i niedogrzanie poniżej zakresu (`shortfall`);
+- temperatura doby planu, zakres w domu (`band`), niedogrzanie poniżej zakresu (`shortfall`) i jego powód
+  (`shortfall_reason`);
 - prąd: według planu (`kwh`, z wodą) i ogrzewanie bez planu (`thermostat_kwh`);
 - o ile °C na godzinę dom stygnie bez grzania (`cooling_per_hour`) i stała czasowa domu;
 - temperatura w domu kwadrans po kwadransie według planu i bez planu (`temperatures`);
@@ -163,6 +181,11 @@ W planie z temperaturą w domu pompa w kwadransach grzania wody nie grzeje domu.
 ogrzewania dostają cel bez części na wodę z modelu. Pompa nie grzeje domu i wody naraz: blok, który
 nachodziłby na grzanie wody, ma w tych kwadransach przerwę i wydłuża się o tyle dalej, a bloku z przerwami plan
 nie przesuwa.
+
+Z prognozą PV (ZP-121) ogrzewanie domu i ciepła woda z pompy dostają ceny kwadransów obniżone do wartości oddania
+w godzinach, w których nadwyżka paneli ponad resztę domu pokryje pompę na najniższym poziomie mocy
+(`HouseBalance.effective_prices`), więc plan grzeje dom i wodę na zapas pod słońce. Koszt pompy w planie liczy potem
+rachunek godzinowy (docs/scheduling.md, „Nadwyżka PV”).
 
 Wykonanie planu w symulacji (ZP-113) wysyła pompie profil z planu, więc też jest dopasowane do pogody. Pompa
 odznaczona w planie (pracuje sama na termostacie) też jest dopasowana do temperatury, tą samą funkcją

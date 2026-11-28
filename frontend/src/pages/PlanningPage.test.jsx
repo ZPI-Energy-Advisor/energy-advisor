@@ -77,6 +77,11 @@ const HEAT_PUMP_PLAN = {
   model: { source: "history", heat_per_hdd: 2.77, hot_water_kwh: 5.6, floor_heating: true, days: 120, heating_days: 90, mape: 0.07 },
 };
 
+const INDOOR_POINTS = [{ start: "2026-11-13T00:00:00+01:00", before: 21, after: 20.8, outdoor: -2 }];
+
+// Odpowiedź GET po adresie; adres spoza listy to ustawienia.
+const routed = (url, config, responses, fallback) => (url in responses ? responses[url] : fallback);
+
 // GET ustawień i ostatniego planu (domyślnie bez planu).
 const mockGet = (body = BODY, plan = null) =>
   vi.spyOn(apiClient, "get").mockImplementation((url) =>
@@ -295,6 +300,51 @@ describe("PlanningPage", () => {
     expect(within(dialog).getByText("w domu według planu")).toBeTruthy();
   });
 
+  it("przyciski planu są w jednej grupie, a przy dwóch bojlerach i dwóch pompach mają nazwy urządzeń", async () => {
+    const indoor = { ...HEAT_PUMP_PLAN, mode: "indoor", band: [20, 22], shortfall: 0, temperatures: INDOOR_POINTS };
+    const heaters = [PLAN.water_heaters[0], { ...PLAN.water_heaters[0], device_id: "dev_wh_02", device_name: "Bojler łazienka" }];
+    const pumps = [indoor, { ...indoor, device_id: "dev_hp_02", device_name: "Pompa garaż" }];
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, water_heaters: heaters, heat_pumps: pumps });
+
+    const group = await screen.findByRole("group", { name: "Ustawienia planu" });
+    expect(within(group).getAllByRole("button").map((button) => button.textContent.trim())).toEqual([
+      "Edytuj ustawienia", "Temperatura wody: Bojler", "Temperatura wody: Bojler łazienka",
+      "Temperatura w domu: Pompa ciepła", "Temperatura w domu: Pompa garaż",
+    ]);
+    fireEvent.click(within(group).getByRole("button", { name: "Temperatura w domu: Pompa garaż" }));
+    expect(await screen.findByRole("dialog", { name: "Temperatura w domu: Pompa garaż" })).toBeTruthy();
+  });
+
+  it("przy jednym bojlerze i jednej pompie przyciski mają krótkie nazwy", async () => {
+    const indoor = { ...HEAT_PUMP_PLAN, mode: "indoor", band: [20, 22], shortfall: 0, temperatures: INDOOR_POINTS };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [indoor] });
+
+    const group = await screen.findByRole("group", { name: "Ustawienia planu" });
+    expect(within(group).getAllByRole("button").map((button) => button.textContent.trim())).toEqual([
+      "Edytuj ustawienia", "Temperatura wody", "Temperatura w domu",
+    ]);
+  });
+
+  it("pompa ostrzega o chłodzie tylko z powodem: za mała moc albo limit przyłącza", async () => {
+    const indoor = { ...HEAT_PUMP_PLAN, mode: "indoor", band: [20, 22], temperatures: [] };
+    const pumps = [
+      { ...indoor, shortfall: 1.2, shortfall_reason: "power" },
+      { ...indoor, device_id: "dev_hp_02", device_name: "Pompa garaż", shortfall: 0.8, shortfall_reason: "grid" },
+      { ...indoor, device_id: "dev_hp_03", device_name: "Pompa trzecia", shortfall: 0.2, shortfall_reason: null },
+      { ...indoor, device_id: "dev_hp_04", device_name: "Pompa sprzed zmiany", shortfall: 0.9 },
+    ];
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: pumps });
+
+    const first = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
+    expect(within(first).getByText(/Przy tej pogodzie pompa nie utrzyma w domu 20°C \(zabraknie ok. 1,2°C\)/)).toBeTruthy();
+    const second = screen.getByRole("region", { name: "Ogrzewanie: Pompa garaż" });
+    expect(within(second).getByText(/Limit mocy przyłącza nie zostawia pompie miejsca/)).toBeTruthy();
+    const third = screen.getByRole("region", { name: "Ogrzewanie: Pompa trzecia" });
+    expect(within(third).queryByText(/W domu może być chłodniej/)).toBeNull();
+    const older = screen.getByRole("region", { name: "Ogrzewanie: Pompa sprzed zmiany" });
+    expect(within(older).getByText(/Przy tej pogodzie pompa nie utrzyma w domu 20°C/)).toBeTruthy();
+  });
+
   it("karta pompy: temperatura w domu, ciepła woda osobno, archiwum i słabe dopasowanie", async () => {
     const pump = {
       ...HEAT_PUMP_PLAN,
@@ -311,6 +361,107 @@ describe("PlanningPage", () => {
     // Plan na dzień z przeszłości: pogoda z archiwum, a zakres bez powtórzenia, gdy min i max są równe.
     expect(within(heating).getByText(/^Pogoda z archiwum: średnio 3°C\. /)).toBeTruthy();
     expect(within(heating).getByText(/słabo zależy od temperatury \(dobowe zużycie myli średnio o 26%\)/)).toBeTruthy();
+  });
+
+  it("plan z PV pokazuje prognozę, na ile liczy i bilans paneli bez planu i według planu", async () => {
+    const pv = {
+      forecast_kwh: 14.2, planned_kwh: 12.5, uncertainty: 0.12, uncertainty_source: "history", basis: "weather",
+      weather_fetched_at: "2026-11-12T14:20:00Z", coefficient: 0.83, settlement: "net_billing",
+      export_estimated: true, export_unpriced: false,
+      before: { self_kwh: 4.1, export_kwh: 8.4, import_kwh: 20.2, plan_from_pv_kwh: 0.3, export_pln: 2.52 },
+      after: { self_kwh: 6.0, export_kwh: 6.5, import_kwh: 18.3, plan_from_pv_kwh: 2.2, export_pln: 1.95 },
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
+
+    const card = await screen.findByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText(/Prognoza 14,2 kWh, plan liczy na 12,5 kWh \(o 12% mniej/)).toBeTruthy();
+    const row = within(card).getByText("Urządzenia z planu biorą z paneli").closest("tr");
+    expect(within(row).getByText("0,3 kWh")).toBeTruthy();
+    expect(within(row).getByText("2,2 kWh")).toBeTruthy();
+    const value = within(card).getByText("Wartość oddania do depozytu").closest("tr");
+    expect(within(value).getByText("2,52 zł")).toBeTruthy();
+    expect(within(value).getByText("1,95 zł")).toBeTruthy();
+    expect(within(card).getByText(/wartość oddania to średnia z ostatnich dni/)).toBeTruthy();
+    expect(within(card).queryByText(/prąd oddany do sieci jest wart więcej/)).toBeNull();
+  });
+
+  it("plan idealny: karta paneli mówi o pogodzie z archiwum, a przy drogim oddaniu wyjaśnia, czemu nie przesuwa", async () => {
+    const pv = {
+      forecast_kwh: 3.2, planned_kwh: 3.2, uncertainty: 0, uncertainty_source: "archive", basis: "weather",
+      weather_fetched_at: null, coefficient: 0.83, settlement: "net_billing", export_estimated: false,
+      export_unpriced: false, export_beats_grid: true, hours: [],
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
+
+    const card = await screen.findByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText(/Z pogody z archiwum 3,2 kWh. To pogoda, która naprawdę była/)).toBeTruthy();
+    expect(within(card).queryByText(/o 0% mniej/)).toBeNull();
+    expect(within(card).getByText(/prąd oddany do sieci jest wart więcej niż prąd z sieci/)).toBeTruthy();
+  });
+
+  it("oś doby ma pogodę i prąd z paneli z migawki planu, nadwyżkę i pralkę z paneli", async () => {
+    const quarters = Array.from({ length: 96 }, (_, index) => {
+      const hour = Math.floor(index / 4);
+      const minute = String((index % 4) * 15).padStart(2, "0");
+      return {
+        start: `2026-11-13T${String(hour).padStart(2, "0")}:${minute}:00+01:00`,
+        temperature_c: hour < 12 ? 2 : 8, cloud_cover_pct: hour < 12 ? 90 : 10,
+      };
+    });
+    const hours = [11, 12, 13].map((hour) => ({
+      start: `2026-11-13T${hour}:00:00+01:00`, forecast_kwh: 1.5, planned_kwh: 1.2, rest_kwh: 0.3,
+      surplus_kwh: hour === 11 ? 0.02 : 0.9, plan_kwh: hour === 13 ? 0.7 : 0, export_kwh: 0.2,
+    }));
+    const pv = {
+      forecast_kwh: 4.5, planned_kwh: 3.6, uncertainty: 0.2, uncertainty_source: "default", basis: "weather",
+      weather_fetched_at: "2026-11-12T15:20:00+01:00", coefficient: 1, settlement: "net_billing",
+      export_estimated: false, export_unpriced: false, estimated_installation: true, hours,
+      before: { self_kwh: 1, export_kwh: 2, import_kwh: 5, plan_from_pv_kwh: 0, export_pln: 0.5 },
+      after: { self_kwh: 2, export_kwh: 1, import_kwh: 4, plan_from_pv_kwh: 1.2, export_pln: 0.3 },
+    };
+    const items = [{ ...PLAN.items[0], pv_kwh: 1.2 }];
+    const weather = { fetched_at: "2026-11-12T15:20:00+01:00", approximate_location: true, past: false, quarters };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, items, pv, weather });
+
+    const card = await screen.findByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText("Prognoza pogody pobrana 12.11 15:20.")).toBeTruthy();
+    expect(within(card).getByText(/Prognoza orientacyjna: panele w profilu są szacunkowe/)).toBeTruthy();
+    expect(within(card).getByText(/Pogoda dla regionu/)).toBeTruthy();
+    expect(within(card).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/profile", "/profile"]);
+
+    const clouds = screen.getAllByLabelText("Zachmurzenie co godzinę")[0];
+    expect(clouds.children).toHaveLength(24);
+    expect(clouds.children[0].getAttribute("title")).toBe("00:00: pochmurno, 2°C");
+    expect(clouds.children[12].getAttribute("title")).toBe("12:00: bezchmurnie, 8°C");
+    expect(within(screen.getByLabelText("Temperatura co godzinę")).getAllByText(/°$/)).toHaveLength(8);
+    const panels = screen.getByLabelText("Prąd z paneli co godzinę");
+    expect(panels.children).toHaveLength(3);
+    expect(panels.querySelectorAll("[data-surplus]")).toHaveLength(2);
+    expect(panels.children[1].getAttribute("title")).toBe("12:00: plan liczy na 1,2 kWh z paneli, nadwyżka nad resztą domu 0,9 kWh");
+    expect(screen.getByText("nadwyżka z paneli")).toBeTruthy();
+    expect(screen.getByText("1,2 z 1,4 kWh z paneli")).toBeTruthy();
+  });
+
+  it("plan bez prognozy PV mówi to na osi zamiast pustego pasa", async () => {
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv: null, pv_reason: "no_weather", weather: null });
+
+    expect(await screen.findByRole("note")).toHaveProperty(
+      "textContent", "Nie ma prognozy pogody na ten dzień, więc plan liczy się bez paneli.",
+    );
+    expect(screen.queryByLabelText("Prąd z paneli co godzinę")).toBeNull();
+    expect(screen.queryByLabelText("Zachmurzenie co godzinę")).toBeNull();
+  });
+
+  it("dom bez paneli nie ma pasa paneli, a pogoda zostaje", async () => {
+    const weather = {
+      fetched_at: null, approximate_location: false, past: true,
+      quarters: [{ start: "2026-11-13T10:00:00+01:00", temperature_c: 3, cloud_cover_pct: 50 }],
+    };
+    renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv: null, pv_reason: "no_installation", weather });
+
+    await screen.findByText("Szkic");
+    expect(screen.queryByText(/Z paneli/)).toBeNull();
+    expect(screen.getAllByLabelText("Zachmurzenie co godzinę")[0].children).toHaveLength(1);
   });
 
   it("pompa z modelem z profilu i za małą mocą mówi o tym wprost", async () => {
@@ -507,6 +658,48 @@ describe("PlanningPage", () => {
     expect(screen.queryByText(/czyli nie na jutro/)).toBeNull();
   });
 
+  it("przełącznik „Wybrany dzień” pokazuje plan idealny, a „Jutro” dalej plan na jutro", async () => {
+    const tomorrow = { ...PLAN, status: "approved", approved_at: "2026-11-12T16:05:00+01:00" };
+    const past = { ...PLAN, id: "plan-past", plan_date: "2026-10-30", kind: "past_day", day_source: "files" };
+    vi.spyOn(apiClient, "get").mockImplementation((url, config) => Promise.resolve({ data: routed(url, config, {
+      "/planning/plans/current": tomorrow,
+      "/planning/past-days": { first_day: "2024-08-24", last_day: "2026-11-11", file_periods: [{ first_day: "2026-10-01", last_day: "2026-10-30" }] },
+      "/planning/plans": config?.params?.date === "2026-10-30" ? past : null,
+    }, { ...BODY, saved_at: "2026-11-12T14:00:00Z" }) }));
+    render(page());
+
+    expect(await screen.findByRole("heading", { name: "Plan na piątek 13.11" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Wybrany dzień" }));
+    expect(await screen.findByRole("heading", { name: "Plan idealny na piątek 30.10" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Plan na piątek 13.11" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Jutro" }));
+    expect(await screen.findByRole("heading", { name: "Plan na piątek 13.11" })).toBeTruthy();
+    expect(screen.getByText("Zatwierdzony")).toBeTruthy();
+  });
+
+  it("plan demo na dzień z przeszłości otwiera się jako plan idealny tego dnia", async () => {
+    const past = { ...PLAN, id: "plan-demo", plan_date: "2026-11-10", kind: "past_day", day_source: "settings" };
+    vi.spyOn(apiClient, "get").mockImplementation((url, config) => Promise.resolve({ data: routed(url, config, {
+      "/planning/plans/current": null,
+      "/planning/past-days": { first_day: "2024-08-24", last_day: "2026-11-11", file_periods: [] },
+      "/planning/plans": config?.params?.date === "2026-11-10" ? past : null,
+    }, BODY) }));
+    vi.spyOn(apiClient, "put").mockResolvedValue({ data: BODY });
+    vi.spyOn(apiClient, "post")
+      .mockRejectedValueOnce({ response: { status: 409, data: { detail: {
+        code: "no_prices", message: "Nie ma jeszcze cen dynamicznych na 13.11.2026.", latest_price_date: "2026-11-10",
+      } } } })
+      .mockResolvedValueOnce({ data: past });
+    render(page());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Zapisz i ułóż plan" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Ułóż plan demo na 10\.11/ }));
+
+    expect(await screen.findByRole("heading", { name: "Plan idealny na wtorek 10.11" })).toBeTruthy();
+    expect(screen.getByLabelText("Dzień").value).toBe("2026-11-10");
+  });
+
   it("ostrzeżenia planu są osobno, a przy taryfie ze stałą ceną jest podpowiedź", async () => {
     renderPage(
       { ...BODY, flat_tariff: true, saved_at: "2026-11-12T14:00:00Z" },
@@ -517,6 +710,21 @@ describe("PlanningPage", () => {
     expect(within(warnings).getByText(/zabraknie ok\. 0,6 kWh/)).toBeTruthy();
     expect(screen.getByText(/taryfę ze stałą ceną/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Sprawdź w Analizie taryf" }).getAttribute("href")).toBe("/tariffs");
+  });
+
+  it("przy stałej cenie i nadwyżce z paneli plan mówi, że przesuwa pod słońce", async () => {
+    const summary = { self_kwh: 4, export_kwh: 3.2, import_kwh: 10, plan_from_pv_kwh: 0.2, export_pln: 1.2 };
+    const pv = {
+      forecast_kwh: 9, planned_kwh: 7.2, uncertainty: 0.2, uncertainty_source: "default", settlement: "net_billing",
+      rest_source: "meter", before: summary, after: { ...summary, export_kwh: 1.8, plan_from_pv_kwh: 1.6 },
+    };
+    renderPage({ ...BODY, flat_tariff: true, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
+
+    expect(await screen.findByText(/plan przesuwa urządzenia tylko pod słońce/)).toBeTruthy();
+    expect(screen.queryByText(/przesuwanie urządzeń prawie nie obniży rachunku/)).toBeNull();
+    const card = screen.getByRole("region", { name: "Prąd z paneli" });
+    expect(within(card).getByText("Jak to liczymy")).toBeTruthy();
+    expect(within(card).getByText(/z licznika, bez urządzeń z planu/)).toBeTruthy();
   });
 
   it("bez profilu podpowiada przejście do profilu", async () => {

@@ -5,6 +5,7 @@ import HomeConnectionPanel from "../components/HomeConnectionPanel";
 import SegmentedControl from "../components/SegmentedControl";
 import HomeDeviceList from "../components/home/HomeDeviceList";
 import HomeSummary from "../components/home/HomeSummary";
+import LivePanel from "../components/home/LivePanel";
 import HouseView from "../components/home/HouseView";
 import PlanRunBar from "../components/home/PlanRunBar";
 import { DeviationList } from "../components/home/PlanRunCost";
@@ -12,9 +13,10 @@ import PlanRunHistory from "../components/home/PlanRunHistory";
 import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
+import { useSimulationWeather } from "../hooks/useSimulationWeather";
 import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
-import { planBadges, shortDay } from "../utils/home";
+import { planBadges, planName } from "../utils/home";
 
 const NOTICE = "p-3 rounded border text-sm";
 const ERROR_NOTICE = `${NOTICE} border-red-200 bg-red-50 text-red-700`;
@@ -31,6 +33,7 @@ function HomeLive({ onShowReport }) {
   const [actionError, setActionError] = useState(null);
   const [view, setView] = useState("house");
   const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
+  const weather = useSimulationWeather(state?.clock?.sim_time);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
   const perform = async (request, describeError) => {
@@ -79,7 +82,7 @@ function HomeLive({ onShowReport }) {
   const finishedHere =
     planRun.run && !running && planRun.run.simulation_id === state?.simulation_id;
   const startBlocked = finishedHere
-    ? `Plan na ${shortDay(planRun.run.plan_date)} się skończył. Żeby go powtórzyć, kliknij „Uruchom ponownie”.`
+    ? `${planName(planRun.run)} się skończył. Żeby go powtórzyć, kliknij „Uruchom ponownie”.`
     : null;
   // Urządzenia sterujemy tylko przy chodzącym zegarze: w pauzie i po końcu planu włączenie niczego by nie
   // policzyło (zegar stoi), a po końcu planu psułoby stan, który widać w raporcie.
@@ -129,6 +132,7 @@ function HomeLive({ onShowReport }) {
             disabled={hubDown}
             onUpdate={updateClock}
             startBlocked={startBlocked}
+            weather={weather}
             plan={planRun.run && (
               <PlanRunBar
                 run={planRun.run}
@@ -154,6 +158,13 @@ function HomeLive({ onShowReport }) {
             </p>
           )}
           <HomeSummary power={state.power} today={state.today} />
+          {!hubDown && (
+            <LivePanel
+              live={running && planRun.run.simulation_id === state.simulation_id ? planRun.run.live : null}
+              weather={weather}
+              today={state.today}
+            />
+          )}
           {!hubDown && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">

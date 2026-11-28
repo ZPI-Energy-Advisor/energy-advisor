@@ -3,6 +3,8 @@ import { FiCheckCircle, FiPlus, FiRotateCcw, FiTrash2 } from "react-icons/fi";
 import { Link, useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import DayPlanView, { FlatTariffNote } from "../components/DayPlanView";
+import PastDayPlanner from "../components/PastDayPlanner";
+import SegmentedControl from "../components/SegmentedControl";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { noPricesFrom } from "../utils/dayPlan";
 import { getApiErrorMessage } from "../utils/energyFiles";
@@ -446,6 +448,9 @@ function PlanningPage() {
   const [devices, setDevices] = useState([]);
   const [plan, setPlan] = useState(null);
   const [view, setView] = useState("form");
+  // „Jutro” albo plan idealny wybranego dnia z przeszłości (ZP-152), który ma swój widok.
+  const [mode, setMode] = useState("tomorrow");
+  const [pastDay, setPastDay] = useState(null);
   const [errors, setErrors] = useState({});
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
@@ -513,6 +518,13 @@ function PlanningPage() {
     setNeedsProfile(false);
     try {
       const { data: body } = await apiClient.post("/planning/plans", planDate ? { plan_date: planDate } : {});
+      if (body.kind === "past_day") {
+        // Plan demo na dzień z przeszłości to plan idealny: pokazujemy go w widoku wybranego dnia.
+        setPastDay(body.plan_date);
+        setMode("past");
+        setNoPrices(null);
+        return;
+      }
       showPlan(body);
     } catch (err) {
       // Błąd pokazujemy przy przycisku zapisu, także gdy plan układaliśmy z widoku planu.
@@ -641,14 +653,36 @@ function PlanningPage() {
   return (
     <div className="max-w-4xl mx-auto pb-12">
       <h2 ref={topRef} className="text-xl font-bold text-gray-900">Plan na jutro</h2>
-      <p className="mt-1 mb-6 border-b border-gray-200 pb-4 text-sm text-gray-500">
-        Zaznacz, co ma jutro pracować i kiedy. Ułożymy najtańszy plan, a ustawienia zapamiętamy.
-      </p>
+      <div className="mt-1 mb-6 flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-500">
+          {mode === "tomorrow"
+            ? "Zaznacz, co ma jutro pracować i kiedy. Ułożymy najtańszy plan, a ustawienia zapamiętamy."
+            : "Wybierz dzień z przeszłości. Plan idealny użyje tych samych ustawień urządzeń co plan na jutro."}
+        </p>
+        <SegmentedControl
+          label="Dzień planu"
+          options={[{ value: "tomorrow", label: "Jutro" }, { value: "past", label: "Wybrany dzień" }]}
+          value={mode}
+          onChange={setMode}
+        />
+      </div>
 
       {loadError && <p className={alertClass("error")} role="alert">{loadError}</p>}
       {!data && !loadError && <p className="text-sm text-gray-500" role="status">Ładowanie ustawień…</p>}
 
-      {data && view === "plan" && plan && (
+      {data && mode === "past" && (
+        <PastDayPlanner
+          flatTariff={data.flat_tariff}
+          canRun={Boolean(me?.home_owner)}
+          initialDay={pastDay}
+          onEditSettings={() => {
+            setMode("tomorrow");
+            setView("form");
+          }}
+        />
+      )}
+
+      {data && mode === "tomorrow" && view === "plan" && plan && (
         <DayPlanView
           plan={plan}
           flatTariff={data.flat_tariff}
@@ -664,7 +698,7 @@ function PlanningPage() {
         />
       )}
 
-      {data && view === "form" && (
+      {data && mode === "tomorrow" && view === "form" && (
         <form ref={formRef} onSubmit={save} noValidate className="space-y-4">
           {!devices.length && (
             <p className={`${CARD} text-sm text-gray-600`}>

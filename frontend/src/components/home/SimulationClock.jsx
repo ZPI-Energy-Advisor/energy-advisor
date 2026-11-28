@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FiPause, FiPlay } from "react-icons/fi";
 import { SPEED_STEPS, formatSimDate, formatSimTime, nearestSpeedStep, realDuration, speedLabel } from "../../utils/home";
+import WeatherBadge from "../WeatherBadge";
 import { CARD, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./styles";
 
 const SEND_DELAY_MS = 400;
@@ -74,7 +75,7 @@ function SpeedSlider({ clock, disabled, onChange }) {
 // więc ręcznego wyboru doby tu nie ma: przerwałby przebieg planu. `plan`: pasek przebiegu planu (PlanRunBar),
 // który sam mówi, do której trwa plan, więc wtedy nie powtarzamy godziny zatrzymania zegara.
 // `startBlocked`: powód, dla którego „Start” nic by nie dał (plan tej symulacji już się skończył), albo null.
-function SimulationClock({ clock, disabled, onUpdate, plan = null, startBlocked = null }) {
+function SimulationClock({ clock, disabled, onUpdate, plan = null, startBlocked = null, weather = null }) {
   const [isBusy, setIsBusy] = useState(false);
   const locked = disabled || isBusy || !clock;
 
@@ -98,6 +99,11 @@ function SimulationClock({ clock, disabled, onUpdate, plan = null, startBlocked 
                 {formatSimTime(clock.sim_time)}
               </p>
               <p className="text-sm text-gray-600 first-letter:uppercase">{formatSimDate(clock.sim_time)}</p>
+              {weather && (
+                <p className="mt-1.5">
+                  <WeatherBadge quarter={weather} label="Pogoda w symulacji" />
+                </p>
+              )}
               {clock.stop_at && !plan && (
                 <p className="mt-1 text-xs text-gray-500">
                   Zegar sam stanie o {formatSimTime(clock.stop_at)}, na końcu planu dnia.

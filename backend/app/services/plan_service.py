@@ -14,11 +14,14 @@ podłączenia auta, termostat bojlera, bloki pompy z historii.
 - pompa ciepła: bloki grzania z historii dopasowane do prognozowanej temperatury (ZP-119, heat_pump.py),
   każdy przesuwany najwyżej o `shift_hours`.
 
-Urządzenia stałe i produkcja PV nie wchodzą do kosztu planu, więc oszczędność dotyczy tylko planowanych urządzeń.
+Koszt planowanych urządzeń przy prognozie PV (ZP-121) to zmiana rachunku domu w godzinach (pv_balance.py): reszta
+domu (średnie zużycie urządzeń stałych i to, co pracuje samo) i prognoza PV pomniejszona o jej średni błąd. Plan
+przesuwa urządzenia w godziny nadwyżki paneli, a oszczędność dotyczy tylko planowanych urządzeń.
 To, co w dobie planu pracuje samo (PV z prognozy pogody, pompa ciepła i bojler spoza planu), plan zapisuje
 w `background` (ZP-120, day_background.py), a symulacja wysyła do huba dokładnie to.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
@@ -34,7 +37,7 @@ from app.repositories.planning_repository import PlanningRepository
 from app.schemas.day_plan import DayPlanOut, PlanItemOut
 from app.schemas.planning import PlanningDevice
 from app.schemas.schedule import ChargingPeriodOut, SchedulePriceOut
-from app.services.day_background import FORECAST, PV_TYPE, DayBackground, DayBackgroundService
+from app.services.day_background import FORECAST, PV_TYPE, DayBackground, DayBackgroundService, forecast_production
 from app.services.heat_pump import (
     DEFAULT_HEAT_PUMP_POWER_KW,
     HEAT_PUMP_TANK,
@@ -46,10 +49,14 @@ from app.services.heat_pump import (
     scale_blocks,
 )
 from app.services.heat_pump_model import DEFAULT_INDOOR_C
-from app.services.house_heating import House
+from app.services.house_heating import LEVELS, House
 from app.services.house_heating import optimize as house_optimize
 from app.services.house_heating import thermostat as house_thermostat
 from app.services.plan_history import clock_minute, day_actions, moved_to, peak_by_clock, reference_day
+from app.services.house_load import METER, rest_of_home
+from app.services.prosumer import PRICE_LOOKBACK_DAYS, ExportValuation
+from app.services.pv_forecast import NoPvInstallationError, PvForecastUnavailableError
+from app.services.pv_balance import HourBalance, HouseBalance, Summary, by_slot, hour_of
 from app.services.planning_service import (
     DAY_MINUTES,
     DEFAULT_READY_TIMES,
@@ -87,6 +94,17 @@ from app.services.water_heater import (
     thermostat,
 )
 
+# Prognoza PV bez kalibracji na plikach myli się o tyle (ZP-121); plan bierze produkcję pomniejszoną o błąd.
+DEFAULT_PV_UNCERTAINTY = 0.2
+MAX_PV_UNCERTAINTY = 0.5
+# Mniejsza nadwyżka to zaokrąglenia: dzień bez oddania do sieci.
+SURPLUS_KWH = 0.05
+SHORTFALL_WARNING_C = 0.3
+# Plan na jutro (także plan demo na ostatni dzień z cenami) i plan idealny dnia z przeszłości (ZP-152).
+TOMORROW = "tomorrow"
+PAST_DAY = "past_day"
+# Plan idealny liczy produkcję PV z pogody z archiwum, bez pomniejszania o błąd prognozy.
+ARCHIVE = "archive"
 # Plan kończy się o 06:00 dnia po dniu planu: dalej taryfa dynamiczna nie ma nawet przybliżonych cen.
 PLAN_END_MINUTES = DAY_MINUTES + 6 * 60
 # Rezerwa w limicie przyłącza na resztę domu: największy pobór urządzeń stałych z tylu ostatnich dni.
@@ -119,6 +137,33 @@ def _local(moment: datetime) -> datetime:
 def _minutes(clock: str) -> int:
     hours, minutes = clock.split(":")
     return int(hours) * 60 + int(minutes)
+
+
+def _local_iso(value: str | None) -> str | None:
+    return _local(datetime.fromisoformat(value)).isoformat() if value else None
+
+
+def _weather_out(background: DayBackground) -> dict | None:
+    weather = background.weather
+    if not weather:
+        return None
+    return {
+        "fetched_at": _local_iso(weather["fetched_at"]),
+        "approximate_location": weather["approximate_location"],
+        "past": background.past,
+        "quarters": [
+            {"start": _local(datetime.fromisoformat(start)).isoformat(), "temperature_c": temperature, "cloud_cover_pct": cloud}
+            for start, temperature, cloud in weather["quarters"]
+        ],
+    }
+
+
+def _price(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def _date_text(day: date) -> str:
+    return f"{day.day} {MONTHS[day.month - 1]}"
 
 
 def _day_text(day: date) -> str:
@@ -158,6 +203,11 @@ def _degrees(value: float) -> str:
 
 def _hours(hours: int) -> str:
     return "godzinę" if hours == 1 else f"{hours} godziny"
+
+
+def _slot_floor(moment: datetime) -> datetime:
+    moment = moment.astimezone(timezone.utc)
+    return moment.replace(minute=moment.minute - moment.minute % 15, second=0, microsecond=0)
 
 
 def _list(items: list[str]) -> str:
@@ -272,11 +322,15 @@ def _indoor_out(device: PlanningDevice, model, plan_temperature, house: House, b
         "indoor_c": house.indoor_c,
         "band": [house.low, house.high],
         "shortfall": after.shortfall,
+        "shortfall_reason": None if after.shortfall <= SHORTFALL_WARNING_C else "power" if before.shortfall > SHORTFALL_WARNING_C else "grid",
         "thermostat_kwh": round(sum(before.kwh), 2),
         "cost_pln": round(after.cost, 2),
         "thermostat_cost_pln": round(before.cost, 2),
         "cooling_per_hour": round(house.cooling_per_hour(plan_temperature.mean_c), 2),
         "time_constant_h": round(house.time_constant_h),
+        "loss_kw_per_k": round(house.loss_kw_per_k, 5),
+        "capacity_kwh_per_k": round(house.capacity_kwh_per_k, 4),
+        "floor_heating": house.floor_heating,
         "temperatures": [
             {"start": _local(slot).isoformat(), "before": before.temps[position], "after": after.temps[position],
              "outdoor": round(outdoor_c[position], 1)}
@@ -302,6 +356,149 @@ def _indoor_out(device: PlanningDevice, model, plan_temperature, house: House, b
 
 
 @dataclass
+class _PlanPv:
+    """Prąd z paneli w planie: rachunek domu, prognoza i bilans paneli przed planem i po nim."""
+
+    balance: HouseBalance
+    forecast: dict
+    uncertainty: float
+    uncertainty_source: str
+    settlement: str
+    export_estimated: bool
+    export_unpriced: bool
+    rcem_replaced: bool
+    plan_date: date
+    # Skąd zwykłe zużycie reszty domu: urządzenia stałe z plików (`devices`) albo licznik minus urządzenia (`meter`).
+    rest_source: str = "devices"
+    before: Summary | None = None
+    after: Summary | None = None
+    hours: list[HourBalance] = field(default_factory=list)
+
+    @property
+    def planned_kwh(self) -> float:
+        return sum(self.balance.production.values())
+
+    def export_vs_grid(self) -> tuple[float, float] | None:
+        """Średnia wartość oddania i średnia cena z sieci w godzinach z produkcją (ważone produkcją)."""
+        by_hour: dict[datetime, float] = defaultdict(float)
+        for slot, kwh in self.balance.production.items():
+            if kwh > 0:
+                by_hour[hour_of(slot)] += kwh
+        total = sum(by_hour.values())
+        if not total:
+            return None
+        sell = buy = 0.0
+        for hour, kwh in by_hour.items():
+            prices = [self.balance.buy[hour + index * SLOT] for index in range(4) if hour + index * SLOT in self.balance.buy]
+            if not prices:
+                return None
+            sell += kwh * self.balance.sell.get(hour, 0.0)
+            buy += kwh * sum(prices) / len(prices)
+        return sell / total, buy / total
+
+    @property
+    def export_beats_grid(self) -> bool:
+        prices = self.export_vs_grid()
+        return prices is not None and prices[0] > prices[1]
+
+    def notes(self) -> list[str]:
+        forecast = self.forecast["total_kwh"]
+        if self.uncertainty_source == ARCHIVE:
+            notes = [
+                f"Prąd z paneli {_day_text(self.plan_date)}: {_kwh(forecast)} kWh z pogody z archiwum. To pogoda, "
+                "która naprawdę była, więc plan liczy na całą produkcję."
+            ]
+        else:
+            why = ("tyle średnio myli się prognoza dla Twoich paneli" if self.uncertainty_source == "history"
+                   else "prognoza nie jest jeszcze dopasowana do Twoich paneli")
+            notes = [
+                f"Prąd z paneli {_day_text(self.plan_date)}: prognoza {_kwh(forecast)} kWh. Plan liczy na "
+                f"{_kwh(self.planned_kwh)} kWh, czyli o {round(self.uncertainty * 100)}% mniej ({why}), żeby nie "
+                "przesuwać urządzeń w słońce, którego może nie być."
+            ]
+        if self.before is not None and self.after is not None and forecast > 0:
+            if self.before.export_kwh < SURPLUS_KWH and self.after.export_kwh < SURPLUS_KWH:
+                notes.append(
+                    "Nadwyżki z paneli nie będzie: cały ich prąd zużyje reszta domu, więc urządzenia układamy "
+                    "tylko według cen z sieci."
+                )
+            else:
+                notes.append(
+                    f"Urządzenia z planu wezmą z paneli ok. {_kwh(self.after.plan_from_pv_kwh)} kWh "
+                    f"(bez planu {_kwh(self.before.plan_from_pv_kwh)} kWh), a do sieci pójdzie "
+                    f"{_kwh(self.after.export_kwh)} kWh (bez planu {_kwh(self.before.export_kwh)} kWh). "
+                    "W godzinach z nadwyżką urządzenie kosztuje tyle, ile dom traci na oddaniu prądu do sieci, "
+                    "a nie pełną cenę z sieci."
+                )
+        prices = self.export_vs_grid()
+        if prices is not None and prices[0] > prices[1]:
+            sell, buy = prices
+            notes.append(
+                f"W godzinach ze słońcem prąd oddany do sieci jest wart więcej niż prąd z sieci (średnio "
+                f"{_price(sell)} wobec {_price(buy)} zł/kWh), więc plan nie przesuwa urządzeń pod słońce: nadwyżkę "
+                "lepiej oddać do depozytu, a urządzenia włączyć wtedy, gdy prąd z sieci jest tani."
+            )
+        if self.rest_source == METER:
+            notes.append(
+                "Zwykłe zużycie reszty domu liczymy z licznika (pobór minus urządzenia z plików urządzeń), bo plik "
+                "urządzeń nie ma wszystkich urządzeń domu: panele najpierw pokrywają to zużycie."
+            )
+        if self.forecast.get("estimated_installation"):
+            notes.append(
+                "Panele w profilu są szacunkowe, więc nadwyżka z paneli w planie jest orientacyjna. Uzupełnij panele "
+                "w profilu, żeby plan liczył z Twojej instalacji."
+            )
+        if self.export_unpriced:
+            notes.append("Nie ma cen RCE, więc prądu oddanego do sieci nie wyceniamy: nadwyżka nic w planie nie kosztuje.")
+        elif self.export_estimated:
+            reason = ("RCEm za ten miesiąc nie jest jeszcze opublikowana, a cen RCE na ten dzień też nie ma"
+                      if self.rcem_replaced else "Cen RCE na ten dzień jeszcze nie ma")
+            notes.append(f"{reason}: wartość oddania to średnia RCE z tych samych godzin z {PRICE_LOOKBACK_DAYS} "
+                         "poprzednich dni.")
+        elif self.rcem_replaced:
+            notes.append("RCEm za ten miesiąc nie jest jeszcze opublikowana, więc oddanie wyceniamy cenami RCE.")
+        return notes
+
+    def out(self) -> dict:
+        def summary(value: Summary | None) -> dict | None:
+            if value is None:
+                return None
+            return {
+                "self_kwh": round(value.self_kwh, 2), "export_kwh": round(value.export_kwh, 2),
+                "import_kwh": round(value.import_kwh, 2), "plan_from_pv_kwh": round(value.plan_from_pv_kwh, 2),
+                "export_pln": round(value.export_pln, 2),
+            }
+
+        forecast_by_hour: dict[datetime, float] = defaultdict(float)
+        for slot, kwh in forecast_production(self.forecast).items():
+            forecast_by_hour[hour_of(slot)] += kwh
+        return {
+            "forecast_kwh": round(self.forecast["total_kwh"], 2),
+            "planned_kwh": round(self.planned_kwh, 2),
+            "uncertainty": round(self.uncertainty, 3),
+            "uncertainty_source": self.uncertainty_source,
+            "basis": self.forecast["basis"],
+            "weather_fetched_at": _local_iso(self.forecast["weather_fetched_at"]),
+            "coefficient": self.forecast["coefficient"],
+            "settlement": self.settlement,
+            "rest_source": self.rest_source,
+            "export_estimated": self.export_estimated,
+            "export_unpriced": self.export_unpriced,
+            "before": summary(self.before),
+            "after": summary(self.after),
+            "estimated_installation": bool(self.forecast.get("estimated_installation")),
+            "export_beats_grid": self.export_beats_grid,
+            "hours": [
+                {"start": _local(hour.hour).isoformat(), "forecast_kwh": round(forecast_by_hour.get(hour.hour, 0.0), 3),
+                 "planned_kwh": round(hour.production_kwh, 3), "rest_kwh": round(hour.rest_kwh, 3),
+                 "surplus_kwh": round(hour.surplus_kwh, 3), "plan_kwh": round(hour.plan_kwh, 3),
+                 "export_kwh": round(hour.export_kwh, 3)}
+                for hour in self.hours
+            ],
+        }
+
+
+@dataclass
 class _Build:
     """Akcje planu z opisami do wyniku i uwagami dla użytkownika."""
 
@@ -321,11 +518,19 @@ class _Build:
     heat_pumps: list[dict] = field(default_factory=list)
     # Historia urządzeń z programem (device_id -> akcje): zwykła godzina startu bez planu.
     program_history: dict[str, list] = field(default_factory=dict)
+    pv_kwh: dict[str, float] = field(default_factory=dict)
     usual_start: list[str] = field(default_factory=list)
     window_start: list[str] = field(default_factory=list)
+    # Plan idealny dnia z plików urządzeń (ZP-152): akcje urządzeń z tego dnia; bez planu to, co dom naprawdę robił.
+    file_day: bool = False
+    actual: dict[str, list] = field(default_factory=dict)
+    repeated: list[str] = field(default_factory=list)
 
     def at(self, minutes: int) -> datetime:
         return _at(self.plan_date, minutes)
+
+    def names_of_actual(self) -> list[str]:
+        return sorted({self.names[device_id] for device_id in self.actual if device_id in self.names})
 
     def add(self, action: ScheduleAction, device: PlanningDevice, label: str | None) -> None:
         self.actions.append(action)
@@ -345,6 +550,7 @@ class PlanService:
         today=tomorrow,
         heat_pumps: HeatPumpService | None = None,
         background: DayBackgroundService | None = None,
+        market=None,
     ):
         self.planning_repository = planning_repository
         self.plan_repository = plan_repository
@@ -352,11 +558,17 @@ class PlanService:
         self.dynamic_price_repository = dynamic_price_repository
         self.heat_pumps = heat_pumps
         self.background = background
+        # Ceny RCE/RCEm do wyceny oddania przy PV (DynamicMarketPriceResolver).
+        self.market = market
         # Domyślny dzień planu: jutro (w testach stały).
         self.default_date = today
 
+    def today(self) -> date:
+        return self.default_date() - timedelta(days=1)
+
     def create(self, user: User, plan_date: date | None = None) -> DayPlanOut:
         plan_date = plan_date or self.default_date()
+        past = plan_date < self.today()
         preferences = PlanningService(self.planning_repository, lambda: plan_date).get(user)
         enabled = [device for device in preferences.devices if device.preference.enabled]
         if not enabled:
@@ -364,6 +576,9 @@ class PlanService:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Zaznacz w ustawieniach co najmniej jedno urządzenie, które ma jutro pracować.",
             )
+        file_day = past and any(
+            first <= plan_date <= last for first, last in self.planning_repository.device_file_periods(user.id)
+        )
 
         start, day_end, end = _at(plan_date, 0), _at(plan_date, DAY_MINUTES), _at(plan_date, PLAN_END_MINUTES)
         pricing = self.price_service.for_user(user.id, start, end)
@@ -371,13 +586,15 @@ class PlanService:
         self._require_day_prices(prices, plan_date, start, day_end, pricing.dynamic)
         approximate_from = self._approximate_night(prices, plan_date, day_end, end)
 
-        build = _Build(plan_date)
+        build = _Build(plan_date, file_day=file_day)
+        raw = {device.source_device_id: (device, programs) for device, programs in self.planning_repository.flexible_devices(user.id)}
+        if file_day:
+            enabled = self._devices_of_the_day(build, enabled, raw)
         base_info = self.planning_repository.base_info(user.id)
         background = (
-            self.background.build(user.id, plan_date, {device.device_id for device in enabled}, base_info)
+            self.background.build(user.id, plan_date, {device.device_id for device in enabled}, base_info, file_day)
             if self.background is not None else None
         )
-        raw = {device.source_device_id: (device, programs) for device, programs in self.planning_repository.flexible_devices(user.id)}
         history = self.planning_repository.device_actions(
             [raw[device.device_id][0].id for device in enabled if device.kind in (HEAT_PUMP_TYPE, "program")]
         )
@@ -389,6 +606,8 @@ class PlanService:
         while slot < end:
             slots.append(slot)
             slot += SLOT
+        pv = self._pv(build, user, plan_date, slots, prices, background) if background is not None else None
+        balance = pv.balance if pv else None
         by_id = {device.device_id: device for device in enabled}
         built: dict[str, ScheduleAction | None] = {}
         # Obciążenie, którego plan nie przesuwa (kWh w każdym kwadransie): rezerwa na resztę domu, a potem
@@ -412,9 +631,19 @@ class PlanService:
             elif device.kind == "ev":
                 self._ev(build, device)
             elif device.kind == WATER_HEATER_TYPE:
-                self._water_heater(build, device, slots, prices, load, pricing.max_grid_kw)
+                heater_prices = prices
+                if balance is not None:
+                    power = device.max_power_kw or DEFAULT_WATER_HEATER_POWER_KW
+                    heater_prices = balance.effective_prices(prices, power * SLOT_HOURS)
+                self._water_heater(build, device, slots, heater_prices, load, pricing.max_grid_kw)
             elif device.kind == HEAT_PUMP_TYPE:
-                self._heat_pump(build, device, history.get(instance.id, []), user.id, slots, prices, load,
+                pump_prices = prices
+                if balance is not None:
+                    # Pompa grzeje co najmniej najniższym poziomem mocy (house_heating.LEVELS), więc kwadrans jest „z paneli”,
+                    # gdy nadwyżka reszty domu pokryje tyle.
+                    power = device.max_power_kw or DEFAULT_HEAT_PUMP_POWER_KW
+                    pump_prices = balance.effective_prices(prices, power * SLOT_HOURS * min(level for level in LEVELS if level))
+                self._heat_pump(build, device, history.get(instance.id, []), user.id, slots, pump_prices, load,
                                 pricing.max_grid_kw)
 
         if build.usual_start:
@@ -425,26 +654,61 @@ class PlanService:
             build.notes.append(
                 f"Bez planu: {_list(build.window_start)} startuje na początku podanych godzin, bo nie ma w historii."
             )
+        if past:
+            build.notes.insert(0, self._past_day_note(build, pv is not None))
         if background is not None:
             build.notes.extend(self._background_notes(user, plan_date, background))
-        result = schedule(build.actions, prices, pricing.max_grid_kw)
+        core_balance = None
+        if balance is not None:
+            core_balance = balance.with_base(by_slot((item.start, item.profile_kwh) for item in build.extra))
+        result = schedule(build.actions, prices, pricing.max_grid_kw, core_balance)
         result.actions.extend(build.extra)
         result.cost_before += sum(item.cost_before for item in build.extra)
         result.cost_after += sum(item.cost_after for item in build.extra)
+        if pv is not None:
+            self._pv_costs(build, result, pv)
         if approximate_from:
             build.notes.insert(0, (
                 "Ceny na noc po tym dniu nie są jeszcze znane, więc przyjęliśmy ceny z tych samych godzin. "
                 "Koszt nocy jest przybliżony."
             ))
         body = self._result(build, result, prices, pricing, start, end, approximate_from)
+        body["kind"] = PAST_DAY if past else TOMORROW
+        body["day_source"] = ("files" if file_day else "settings") if past else None
         if background is not None:
             body["background"] = background.to_json()
+            body["weather"] = _weather_out(background)
+            body["pv_reason"] = background.pv_reason if pv is None else None
+        if pv is not None:
+            body["pv"] = pv.out()
+            body["balance"] = pv.balance.to_json()
         plan = self.plan_repository.save(user.id, plan_date, body)
         return self._out(plan)
 
     def current(self, user: User) -> DayPlanOut | None:
-        plan = self.plan_repository.latest(user.id)
+        """Ostatni plan na jutro (albo plan demo): plan idealny dnia z przeszłości go nie zasłania."""
+        plan = self.plan_repository.latest_upcoming(user.id)
         return self._out(plan) if plan else None
+
+    def for_date(self, user: User, plan_date: date) -> DayPlanOut | None:
+        plan = self.plan_repository.for_date(user.id, plan_date)
+        return self._out(plan) if plan else None
+
+    def past_days(self, user: User) -> dict:
+        """Dni, na które da się ułożyć plan idealny: od pierwszego dnia z cenami taryfy do wczoraj, i dni z plików."""
+        first, dynamic = self.price_service.first_priced_day(user.id)
+        if dynamic:
+            rce_first, _, _ = self.dynamic_price_repository.get_available_range(PseRcePriceProvider.source)
+            first = max(first, rce_first) if first and rce_first else None
+        last = self.today() - timedelta(days=1)
+        return {
+            "first_day": first if first and first <= last else None,
+            "last_day": last,
+            "file_periods": [
+                {"first_day": start, "last_day": min(end, last)}
+                for start, end in self.planning_repository.device_file_periods(user.id) if start <= last
+            ],
+        }
 
     def approve(self, user: User, plan_id: UUID) -> DayPlanOut:
         plan = self.plan_repository.get(user.id, plan_id)
@@ -463,10 +727,11 @@ class PlanService:
         `extra_load`: o ile pompa spoza planu pobierze więcej niż w dniu referencyjnym (zimniejszy dzień, ZP-120).
 
         Zwraca rezerwę w kWh na każdy kwadrans `slots` (same zera, gdy nie znamy reszty domu)."""
+        until, days = self._usage_window(build)
         usage = self.planning_repository.fixed_slot_usage(
-            user.id, RESERVE_DAYS, [raw[device.device_id][0].id for device in unplanned],
+            user.id, days, [raw[device.device_id][0].id for device in unplanned], until,
         )
-        peaks, days = peak_by_clock(usage, RESERVE_DAYS)
+        peaks, days = peak_by_clock(usage, days)
         if not peaks:
             build.notes.append(
                 "Nie znamy zużycia pozostałych urządzeń w domu, więc moc przyłącza sprawdzamy tylko dla urządzeń z planu."
@@ -503,6 +768,11 @@ class PlanService:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Brak stawek Twojej taryfy na {plan_date:%d.%m.%Y}.",
             )
+        if plan_date < self.today():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Brak cen dynamicznych na {plan_date:%d.%m.%Y}, więc planu idealnego na ten dzień nie ułożymy.",
+            )
         _, latest, _ = self.dynamic_price_repository.get_available_range(PseRcePriceProvider.source)
         if latest is not None and latest >= plan_date:
             latest = plan_date - timedelta(days=1)
@@ -538,6 +808,10 @@ class PlanService:
         built[device.device_id] = None
         programs = raw[device.device_id][1]
         program = next((p for p in programs if p.source_program_id == device.preference.program_id), None)
+        if device.device_id in build.actual:
+            # Plan idealny dnia z plików: program, który tego dnia naprawdę pracował, a nie ten z ustawień.
+            ran = build.actual[device.device_id][0].device_program_id
+            program = next((p for p in programs if p.id == ran), program)
         if program is None:
             build.warnings.append(f"{device.device_name}: wybierz program w ustawieniach.")
             return None
@@ -551,7 +825,10 @@ class PlanService:
                 for span_start, span_end in _spans(device)
                 for minute in range(span_start, span_end - duration + 1, SLOT_MINUTES)
             })
-            original = build.at(self._usual_start(build, device, starts)) if starts else None
+            if device.device_id in build.actual:
+                original = _slot_floor(build.actual[device.device_id][0].action_start)
+            else:
+                original = build.at(self._usual_start(build, device, starts)) if starts else None
             after_id = None
         else:
             predecessor_device = by_id.get(after)
@@ -566,6 +843,8 @@ class PlanService:
                 latest_end = min(latest_end, deadline if deadline > root else deadline + DAY_MINUTES)
             starts = list(range(0, latest_end - duration + 1, SLOT_MINUTES))
             original = predecessor.start + len(predecessor.profile_kwh) * SLOT
+            if device.device_id in build.actual:
+                original = _slot_floor(build.actual[device.device_id][0].action_start)
             after_id = predecessor.action_id
             label = f"{program.name}, po: {predecessor_device.device_name}"
         if not starts:
@@ -612,6 +891,62 @@ class PlanService:
         build.usual_start.append(device.device_name)
         return min(starts, key=lambda minute: (abs(minute - usual), minute))
 
+    def _devices_of_the_day(self, build: _Build, enabled: list[PlanningDevice], raw: dict) -> list[PlanningDevice]:
+        """Plan idealny dnia z plików: urządzenia z programem i auto są w planie tylko wtedy, gdy tego dnia pracowały,
+        a ich akcje z plików są podstawą „bez planu”. Pompa ciepła i bojler pracują codziennie."""
+        scheduled = [device for device in enabled if device.kind in ("program", "ev")]
+        history = self.planning_repository.device_actions([raw[device.device_id][0].id for device in scheduled])
+        kept, idle = [], []
+        for device in enabled:
+            if device.kind not in ("program", "ev"):
+                kept.append(device)
+                continue
+            actions = day_actions(history.get(raw[device.device_id][0].id, []), build.plan_date)
+            if not actions:
+                idle.append(device.device_name)
+                continue
+            build.actual[device.device_id] = actions
+            if device.kind == "program" and len(actions) > 1:
+                build.repeated.append(device.device_name)
+            kept.append(device)
+        if idle:
+            build.notes.append(
+                f"W plikach z {_date_text(build.plan_date)} nie ma pracy: {_list(idle)}, więc tych urządzeń nie ma w planie."
+            )
+        if not kept:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"Według plików {_day_text(build.plan_date)} nie pracowało żadne z zaznaczonych urządzeń. "
+                    "Wybierz inny dzień albo zaznacz w ustawieniach urządzenia, które wtedy pracowały."
+                ),
+            )
+        return kept
+
+    @staticmethod
+    def _past_day_note(build: _Build, with_pv: bool) -> str:
+        day = _date_text(build.plan_date)
+        weather = "pogoda i produkcja z paneli są z archiwum" if with_pv else "pogoda jest z archiwum"
+        if not build.file_day:
+            return (
+                f"Plan idealny na {day}: {weather}. Tego dnia nie ma w plikach urządzeń, więc urządzenia, ich godziny "
+                "i godziny pracy bez planu bierzemy z ustawień i historii, jak w planie na jutro."
+            )
+        text = f"Plan idealny na {day}: {weather}, a zużycie reszty domu z plików z tego dnia."
+        names = build.names_of_actual()
+        if names:
+            text += f" Bez planu urządzenia pracują o tych godzinach co tego dnia według plików ({_list(names)})."
+        if build.repeated:
+            text += f" Więcej niż raz tego dnia: {_list(build.repeated)}. Plan układa pierwsze uruchomienie."
+        return text
+
+    @staticmethod
+    def _usage_window(build: _Build) -> tuple[datetime | None, int]:
+        """Skąd zużycie reszty domu: w planie idealnym dnia z plików z tej doby, a inaczej z ostatnich dni."""
+        if build.file_day:
+            return build.at(DAY_MINUTES), 1
+        return None, RESERVE_DAYS
+
     @staticmethod
     def _root_start(device: PlanningDevice, by_id: dict) -> int:
         while device.preference.after_device_id in by_id:
@@ -619,7 +954,7 @@ class PlanService:
         return min(window_span(window)[0] for window in device.preference.windows)
 
     def _session(self, build: _Build, device: PlanningDevice, action_id: str, energy: float, slots: list[int],
-                 power_kw: float, min_slot_kwh: float, label: str) -> float:
+                 power_kw: float, min_slot_kwh: float, label: str, baseline: datetime | None = None) -> float:
         """Sesja rozkładana na najtańsze kwadranse: bazowo pobór pełną mocą od początku przedziałów.
         Zwraca energię, której nie da się zmieścić w kwadransach (przy mocy urządzenia)."""
         slot_kwh = power_kw * SLOT_HOURS
@@ -628,7 +963,7 @@ class PlanService:
         if fits <= 0:
             return energy
         plan, remaining = {}, fits
-        for moment in moments:
+        for moment in (moments if baseline is None else (baseline + index * SLOT for index in range(len(moments)))):
             if remaining <= 1e-9:
                 break
             plan[moment] = min(slot_kwh, remaining)
@@ -651,6 +986,12 @@ class PlanService:
 
     def _ev(self, build: _Build, device: PlanningDevice) -> None:
         energy = device.energy_needed_kwh if device.preference.energy_input == "percent" else device.preference.energy_kwh
+        baseline = None
+        actual = build.actual.get(device.device_id)
+        if actual:
+            # Plan idealny dnia z plików: auto ładowało się wtedy tyle i od tej godziny.
+            energy = sum(action.energy_kwh for action in actual)
+            baseline = _slot_floor(actual[0].action_start)
         if not energy:
             build.warnings.append(f"{device.device_name}: podaj w ustawieniach, ile energii potrzebuje auto.")
             return
@@ -658,6 +999,7 @@ class PlanService:
         slots = [minute for start, end in _spans(device) for minute in range(start, end, SLOT_MINUTES)]
         missing = self._session(
             build, device, device.device_id, energy, slots, power, ev_min_slot_kwh(power), f"{_kwh(energy)} kWh",
+            baseline,
         )
         if missing > 1e-6:
             build.warnings.append(
@@ -854,6 +1196,95 @@ class PlanService:
                 allowed_starts=frozenset(free),
             ), device, f"grzanie {_part_of_day(history_block.action_start)}")
 
+    def _pv(self, build: _Build, user: User, plan_date: date, slots: list[datetime], prices: dict,
+            background: DayBackground) -> "_PlanPv | None":
+        """Rachunek domu z PV na dobę planu: prognoza pomniejszona o błąd, reszta domu i wartość oddania.
+        None bez prognozy PV (wtedy plan liczy się jak bez paneli)."""
+        if background.pv_forecast is None:
+            if background.pv_reason == "no_weather":
+                build.notes.append(
+                    f"Nie ma prognozy pogody na {_day_text(plan_date)}, więc plan nie liczy na prąd z paneli."
+                )
+            return None
+        profile = self.background.profile_of(user.id)
+        snapshot = background.pv_forecast
+        history = snapshot["calibration_source"] == "history" and snapshot["mape"] is not None
+        uncertainty = min(max(snapshot["mape"], 0.0), MAX_PV_UNCERTAINTY) if history else DEFAULT_PV_UNCERTAINTY
+        source = "history" if history else "default"
+        if background.past:
+            # Plan idealny (ZP-152): pogoda z archiwum to ta, która naprawdę była, więc nie ma błędu prognozy.
+            uncertainty, source = 0.0, ARCHIVE
+        production = {slot: kwh * (1 - uncertainty) for slot, kwh in forecast_production(snapshot).items()}
+
+        average, rest_source = self._rest_of_home(build, user, plan_date, profile)
+        base: dict[datetime, float] = {slot: average.get(clock_minute(slot), 0.0) for slot in slots}
+        for run in background.runs:
+            for index, kwh in enumerate(run.profile_kwh):
+                moment = run.start + index * SLOT
+                if kwh > 0 and moment in base:
+                    base[moment] += kwh
+
+        valuation = ExportValuation(self.market, profile)
+        sell: dict[datetime, float] = {}
+        estimated = unpriced = False
+        for hour in sorted({hour_of(slot) for slot, kwh in production.items() if kwh > 0}):
+            quarter_prices = [prices[hour + index * SLOT] for index in range(4) if hour + index * SLOT in prices]
+            if not quarter_prices:
+                continue
+            price, guessed = valuation.hour_price(hour, sum(quarter_prices) / len(quarter_prices))
+            if price is None:
+                unpriced = True
+                continue
+            sell[hour] = price
+            estimated = estimated or guessed
+        return _PlanPv(
+            balance=HouseBalance(base, production, prices, sell),
+            forecast=snapshot,
+            uncertainty=uncertainty,
+            uncertainty_source=source,
+            settlement=profile.pv_config.mode,
+            export_estimated=estimated,
+            export_unpriced=unpriced,
+            rcem_replaced=valuation.rcem_replaced(plan_date),
+            plan_date=plan_date,
+            rest_source=rest_source,
+        )
+
+    def _rest_of_home(self, build: _Build, user: User, plan_date: date, profile) -> tuple[dict[int, float], str]:
+        """Zwykłe zużycie reszty domu o każdej porze (house_load.py): z urządzeń stałych z plików, a gdy jest licznik,
+        także z licznika minus urządzenia elastyczne. Produkcję PV w dniach licznika liczy model z pogody.
+        W planie idealnym dnia z plików to zużycie z tej doby, a nie średnia z dni przed nią."""
+        until, days = self._usage_window(build)
+        fixed = self.planning_repository.fixed_slot_usage(user.id, days, until=until)
+        flexible = self.planning_repository.flexible_slot_usage(user.id, days, until=until)
+        before = datetime.combine(plan_date + timedelta(days=1) if build.file_day else plan_date, time())
+        readings, with_export = self.planning_repository.meter_readings(user.id, before, days)
+        production = {}
+        if readings and self.background is not None and self.background.pv_forecasts is not None:
+            forecasts = self.background.pv_forecasts
+            try:
+                setup = forecasts.setup(user.id, profile)
+                production = forecasts.modeled(setup, {moment.date() for moment in readings})
+            except (NoPvInstallationError, PvForecastUnavailableError):
+                production = {}
+        return rest_of_home(fixed, flexible, readings, with_export, production, days)
+
+    def _pv_costs(self, build: _Build, result, pv: "_PlanPv") -> None:
+        """Koszty pozycji i planu z rachunku domu z PV (zamiast ceny kwadransu razy energia) i bilans paneli."""
+        before_items = [(item.action_id, item.original_start, item.original_profile_kwh) for item in result.actions]
+        after_items = [(item.action_id, item.start, item.profile_kwh) for item in result.actions]
+        before, total_before = pv.balance.allocate(before_items)
+        after, total_after = pv.balance.allocate(after_items)
+        for item in result.actions:
+            item.cost_before, item.cost_after = before[item.action_id], after[item.action_id]
+        result.cost_before, result.cost_after = total_before, total_after
+        pv.before = pv.balance.summary(by_slot((start, profile) for _, start, profile in before_items))
+        planned = by_slot((start, profile) for _, start, profile in after_items)
+        pv.after = pv.balance.summary(planned)
+        pv.hours = pv.balance.hours(planned)
+        build.pv_kwh = pv.balance.from_pv(after_items)
+        build.notes.extend(pv.notes())
+
     def _heat_pump_water(
         self, build: _Build, device: PlanningDevice, ready_times: list[str], cop: float, daily_heat_kwh: float,
         slots: list[datetime], prices: dict, busy: set[datetime], power_kw: float, load: list[float] | None,
@@ -969,6 +1400,8 @@ class PlanService:
         blocked = {index[slot] for slot in (water["slots"] if water else set()) if slot in index}
         before = house_thermostat(house, outdoor_c, slot_prices, power_kw, blocked)
         after = house_optimize(house, outdoor_c, slot_prices, power_kw, allowed, blocked)
+        if after.shortfall > before.shortfall and allowed is None:
+            after = before
         if load is not None:
             for position, kwh in enumerate(after.kwh):
                 load[position] += kwh
@@ -1015,10 +1448,15 @@ class PlanService:
             times = _list([_clock(clock) for clock in water["ready_times"]])
             text += f" Ciepłą wodę ({_kwh(water['kwh'])} kWh prądu) grzeje osobno, w tanich godzinach, gotową na {times}."
         build.notes.append(text)
-        if after.shortfall > 0.3:
+        if after.shortfall > SHORTFALL_WARNING_C and before.shortfall > SHORTFALL_WARNING_C:
             build.warnings.append(
                 f"{device.device_name}: przy tej pogodzie i mocy {_kwh(power_kw)} kW nie utrzyma w domu "
                 f"{_degrees(house.low)} (zabraknie ok. {_kwh(after.shortfall)}°C). W domu może być chłodniej."
+            )
+        elif after.shortfall > SHORTFALL_WARNING_C:
+            build.warnings.append(
+                f"{device.device_name}: limit mocy przyłącza ({_kwh(max_grid_kw)} kW) nie zostawia pompie miejsca, żeby "
+                f"utrzymać w domu {_degrees(house.low)} (zabraknie ok. {_kwh(after.shortfall)}°C). W domu może być chłodniej."
             )
         return True
 
@@ -1110,6 +1548,7 @@ class PlanService:
                 reason=item.reason,
                 charging=charging(item, item.start, item.profile_kwh),
                 original_charging=charging(item, item.original_start, item.original_profile_kwh),
+                pv_kwh=round(build.pv_kwh[item.action_id], 2) if item.action_id in build.pv_kwh else None,
             )
             for item in sorted(result.actions, key=lambda action: (action.start, action.action_id))
         ]
@@ -1136,6 +1575,9 @@ class PlanService:
 
     @staticmethod
     def _out(plan: DayPlan) -> DayPlanOut:
+        result = dict(plan.result)
+        # Plan sprzed ZP-152 nie ma rodzaju: plan idealny to plan na dzień wcześniejszy niż dzień ułożenia.
+        result.setdefault("kind", PAST_DAY if plan.plan_date < _local(plan.created_at).date() else TOMORROW)
         return DayPlanOut(
             id=plan.id,
             plan_date=plan.plan_date,
@@ -1143,5 +1585,5 @@ class PlanService:
             # Czas lokalny z przesunięciem strefy, jak godziny planu: ekran czyta godzinę wprost z tekstu.
             created_at=_local(plan.created_at),
             approved_at=_local(plan.approved_at) if plan.approved_at else None,
-            **plan.result,
+            **result,
         )

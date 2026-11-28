@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FiAlertTriangle, FiArrowRight, FiCheckCircle, FiLoader, FiRotateCcw, FiSquare } from "react-icons/fi";
-import { formatSimTime, savingSummary, shortDay } from "../../utils/home";
+import { formatSimTime, planName, savingSummary } from "../../utils/home";
 import { SECONDARY_BUTTON } from "./styles";
 
 const LINK = "inline-flex items-center gap-1 font-medium text-emerald-700 hover:text-emerald-900 hover:underline";
@@ -11,7 +11,7 @@ const LINK = "inline-flex items-center gap-1 font-medium text-emerald-700 hover:
 function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
   const [isEnding, setIsEnding] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
-  const day = shortDay(run.plan_date);
+  const name = planName(run);
 
   const end = async () => {
     setIsEnding(true);
@@ -48,7 +48,7 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
     content = (
       <>
         <p className="text-sm text-gray-700">
-          <span className="font-semibold text-gray-900">Plan na {day}</span> · w trakcie, do{" "}
+          <span className="font-semibold text-gray-900">{name}</span> · w trakcie, do{" "}
           {formatSimTime(run.horizon_end)} następnego dnia
         </p>
         <button type="button" className={SECONDARY_BUTTON} disabled={disabled || isEnding} onClick={end}>
@@ -61,7 +61,7 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
     content = (
       <>
         <p className="flex items-center gap-1.5 text-sm text-amber-800">
-          <FiAlertTriangle aria-hidden="true" /> Plan na {day} przerwany: symulacja zaczęła inną dobę.
+          <FiAlertTriangle aria-hidden="true" /> {name} przerwany: symulacja zaczęła inną dobę.
         </p>
         {report}
       </>
@@ -73,7 +73,7 @@ function PlanRunBar({ run, disabled, onEnd, onRestart, onShowReport }) {
         <p className="flex items-center gap-1.5 text-sm text-gray-700">
           <FiCheckCircle aria-hidden="true" className="text-emerald-600" />
           <span>
-            <span className="font-semibold text-gray-900">Plan na {day} {done}</span>
+            <span className="font-semibold text-gray-900">{name} {done}</span>
             {run.cost && ` · ${savingSummary(run.cost)}`}
           </span>
         </p>

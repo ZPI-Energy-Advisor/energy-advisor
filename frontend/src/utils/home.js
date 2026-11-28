@@ -186,6 +186,10 @@ export const durationLabel = (minutes) => {
 // Bez dnia tygodnia tam, gdzie po „na” / „jak” wymagałby odmiany („w niedzielę”), której Intl nie daje.
 /** „19 października” */
 export const shortDay = formatDayWords;
+
+// Nazwa przebiegu: plan idealny dnia z przeszłości (ZP-152) albo plan na dzień.
+export const planName = (run) =>
+  run.plan_kind === "past_day" ? `Plan idealny, ${shortDay(run.plan_date)}` : `Plan na ${shortDay(run.plan_date)}`;
 /** „19 października 2026” */
 export const fullDay = formatDayWordsYear;
 /** „niedziela, 19 października 2026” */
@@ -258,7 +262,7 @@ export const planBadges = (run) => {
 
 // Doba chwili symulacji jako RRRR-MM-DD w strefie domu.
 const isoDayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: HOME_TIMEZONE });
-const simDay = (iso) => isoDayFormat.format(new Date(iso));
+export const simDay = (iso) => isoDayFormat.format(new Date(iso));
 
 /**
  * Okres bilansu z `today` (GET /home/state): w zwykłej dobie od północy, w przebiegu planu od jego początku.

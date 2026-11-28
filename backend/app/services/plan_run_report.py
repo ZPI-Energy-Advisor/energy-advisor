@@ -14,7 +14,9 @@ w trakcie albo po „Zakończ”) czeka w `pending`. Inne zużycie niż w planie
 są na liście odchyleń, ale nie wykluczają: to jest właśnie wynik wykonania planu.
 
 Urządzenia stałe, włączane ręcznie z „Mój dom”, i produkcja PV są w osobnych sekcjach i nie zmieniają
-oszczędności. Koszty to energia razy cena kwadransu, bez bilansowania z PV: tak samo liczy plan.
+oszczędności. Koszty to energia razy cena kwadransu, a w planie z PV (ZP-121) zmiana rachunku domu w godzinach
+z tej samej reszty domu i prognozy PV co plan (`balance`), tak jak liczy plan. Ręczne włączenia i produkcja zmierzona
+w symulacji nie zmieniają kosztu urządzeń z planu: porównanie dotyczy tego, jak urządzenia wykonały plan.
 """
 
 from collections import defaultdict
@@ -34,6 +36,7 @@ from app.schemas.plan_run import (
 )
 from app.schemas.smart_home import HubCommandStatus
 from app.services.home_state_service import DayEnergy
+from app.services.pv_balance import HouseBalance
 
 
 SLOT = timedelta(minutes=15)
@@ -68,6 +71,8 @@ class RunEnergy:
     pv_devices: set[str]
     until: datetime
     complete: bool
+    # Rachunek domu z PV z planu (ZP-121); None w planach bez PV.
+    balance: HouseBalance | None = None
 
 
 def profile_cost(profile_kwh: list[float], start: datetime, prices: dict[datetime, float]) -> float | None:
@@ -104,16 +109,43 @@ def _number(value: float) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
+def _profile(slots: dict[datetime, float]) -> tuple[datetime, list[float]]:
+    start, last = min(slots), max(slots)
+    return start, [slots.get(start + index * SLOT, 0.0) for index in range(int((last - start) / SLOT) + 1)]
+
+
+def _pv_costs(run: RunEnergy, devices: list[str]) -> dict[str, float]:
+    """Koszt zmierzonego zużycia urządzeń z planu z rachunku domu z PV: urządzenia liczymy razem, bo dzielą
+    nadwyżkę paneli w tych samych godzinach."""
+    items = [
+        (device_id, *_profile(run.energy.by_device_slot[device_id]))
+        for device_id in devices if run.energy.by_device_slot.get(device_id)
+    ]
+    costs, _ = run.balance.allocate(items)
+    return {device_id: cost or 0.0 for device_id, cost in costs.items()}
+
+
+def _deviations(run: RunEnergy) -> list[PlanRunDeviationOut]:
+    names = {**run.names, **{action.device_id: action.device_name for action in run.actions}}
+    return [
+        *_command_deviations(run.actions),
+        *_error_deviations(run.errors, {action.device_id for action in run.actions}, names, run.until),
+        *_event_deviations(run.events, run.actions, names),
+    ]
+
+
+def excluded_devices(run: RunEnergy) -> set[str]:
+    """Urządzenia z planu, które nie pracowały według planu (odrzucona komenda, awaria, ręczne przełączenie)."""
+    return {deviation.device_id for deviation in _deviations(run) if deviation.excluded}
+
+
 def cost_report(run: RunEnergy) -> PlanRunCostOut:
     by_device: dict[str, list[PlanRunActionOut]] = defaultdict(list)
     for action in run.actions:
         by_device[action.device_id].append(action)
+    pv_costs = _pv_costs(run, list(by_device)) if run.balance is not None else None
     names = {**run.names, **{action.device_id: action.device_name for action in run.actions}}
-    deviations = [
-        *_command_deviations(run.actions),
-        *_error_deviations(run.errors, set(by_device), names, run.until),
-        *_event_deviations(run.events, run.actions, names),
-    ]
+    deviations = _deviations(run)
     excluded = {deviation.device_id for deviation in deviations if deviation.excluded}
 
     devices: list[PlanRunCostDeviceOut] = []
@@ -133,7 +165,7 @@ def cost_report(run: RunEnergy) -> PlanRunCostOut:
                 message=f"Zużyło {_number(after_kwh)} kWh, a według planu {_number(planned_kwh)} kWh.",
             ))
         cost_before = sum(action.cost_before or 0.0 for action in actions)
-        cost_after = _slots_cost(slots, run.prices)
+        cost_after = pv_costs.get(device_id, 0.0) if pv_costs is not None else _slots_cost(slots, run.prices)
         devices.append(PlanRunCostDeviceOut(
             device_id=device_id,
             device_name=names[device_id],

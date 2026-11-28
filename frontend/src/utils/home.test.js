@@ -13,6 +13,7 @@ import {
   realDuration,
   speedLabel,
   periodLabel,
+  planName,
 } from "./home";
 
 const device = (fields) => ({ device_name: "X", state: "off", power_kw: 0, programs: [], ...fields });
@@ -155,5 +156,19 @@ describe("periodLabel", () => {
     expect(periodLabel({ day_start: "2026-11-20T00:00:00+01:00", until: "2026-11-21T06:00:00+01:00" })).toBe(
       "20 listopada 00:00 – 21 listopada 06:00",
     );
+  });
+
+  it("dni tygodnia po „na” są w bierniku", async () => {
+    const { forWeekdayDate } = await import("./dayPlan");
+    expect(forWeekdayDate("2026-11-28")).toBe("sobotę 28.11");
+    expect(forWeekdayDate("2026-11-25")).toBe("środę 25.11");
+    expect(forWeekdayDate("2026-11-22")).toBe("niedzielę 22.11");
+    expect(forWeekdayDate("2026-11-27")).toBe("piątek 27.11");
+  });
+
+  it("przebieg planu idealnego ma swoją nazwę", () => {
+    expect(planName({ plan_date: "2026-05-14", plan_kind: "past_day" })).toBe("Plan idealny, 14 maja");
+    expect(planName({ plan_date: "2026-11-13", plan_kind: "tomorrow" })).toBe("Plan na 13 listopada");
+    expect(planName({ plan_date: "2026-11-13" })).toBe("Plan na 13 listopada");
   });
 });

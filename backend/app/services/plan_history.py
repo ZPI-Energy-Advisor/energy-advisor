@@ -66,6 +66,20 @@ def peak_by_clock(slots: list[tuple[datetime, float]], days: int) -> tuple[dict[
     return dict(peaks), used
 
 
+def average_by_clock(slots: list[tuple[datetime, float]], days: int) -> tuple[dict[int, float], list[date]]:
+    """Średni pobór (kWh w kwadransie) o każdej porze dnia z ostatnich `days` dni z danymi: zwykłe zużycie
+    reszty domu w rachunku z PV (ZP-121). Zwraca (minuta zegarowa -> kWh, dni, z których liczyliśmy)."""
+    per_day: dict[tuple[date, int], float] = defaultdict(float)
+    for start, kwh in slots:
+        per_day[(local_day(start), clock_minute(start))] += kwh
+    used = sorted({day for day, _ in per_day})[-days:]
+    totals: dict[int, float] = defaultdict(float)
+    for (day, minute), kwh in per_day.items():
+        if day in used:
+            totals[minute] += kwh
+    return {minute: kwh / len(used) for minute, kwh in totals.items()}, used
+
+
 def average_daily_energy(actions: list, days: int) -> tuple[float | None, list[date]]:
     """Średnia energia na dobę z ostatnich `days` dni z akcjami urządzenia (np. bojlera); None bez historii."""
     per_day: dict[date, float] = defaultdict(float)

@@ -176,8 +176,10 @@ jeden na użytkownika i dzień) ze statusem `draft` albo `approved`:
 
 | Metoda i ścieżka | Opis |
 |---|---|
-| `POST /api/v1/planning/plans` | Układa plan na jutro (body `{}`) albo na `plan_date` (demo). Nadpisuje plan tego dnia i wraca do `draft`; `201` z planem |
-| `GET /api/v1/planning/plans/current` | Ostatnio ułożony plan albo `null` |
+| `POST /api/v1/planning/plans` | Układa plan na jutro (body `{}`) albo na `plan_date` (plan idealny dnia z przeszłości, plan demo). Nadpisuje plan tego dnia i wraca do `draft`; `201` z planem |
+| `GET /api/v1/planning/plans/current` | Ostatni plan na jutro (`kind = tomorrow`, także plan demo) albo `null`; plan idealny go nie zasłania |
+| `GET /api/v1/planning/plans?date=RRRR-MM-DD` | Plan na ten dzień albo `null` (widok „Wybrany dzień”) |
+| `GET /api/v1/planning/past-days` | Zakres dni do planu idealnego: `first_day` (pierwszy dzień ze stawkami operatora, przy cenie dynamicznej też z RCE), `last_day` (wczoraj) i `file_periods` (okresy plików urządzeń) |
 | `POST /api/v1/planning/plans/{id}/approve` | Zatwierdza plan (`approved`, `approved_at`); cudzy albo nieistniejący plan: `404` |
 
 Ścieżka jest pod `/planning`, a nie `/home` jak w tickecie, bo plan (tak jak ustawienia) jest dla każdego
@@ -238,6 +240,110 @@ Symulacja wysyła do huba dokładnie to, więc plan i symulacja mają tę samą 
 | PV | Prognoza produkcji (ZP-118) na dobę planu; dla doby minionej pogoda z archiwum. Kilka falowników dzieli ją według produkcji w dniu referencyjnym. Bez pogody, bez paneli w profilu albo bez profilu: dzień referencyjny i uwaga dlaczego |
 | Pompa ciepła spoza planu | Przebiegi dnia referencyjnego przeskalowane do temperatury doby planu (ZP-119), w mocy pompy; nadwyżka ponad dzień referencyjny wchodzi do zapasu w limicie przyłącza |
 | Bojler spoza planu | Dzień referencyjny (zależy od zwyczajów, nie od pogody) |
+
+**Nadwyżka PV** (`pv_balance.py`, `prosumer.py`, ZP-121). Gdy plan ma prognozę PV, koszt urządzeń to zmiana
+rachunku domu w godzinach, a nie cena kwadransu razy energia. Operator bilansuje pobór i oddanie w każdej
+godzinie, więc w godzinie:
+
+- zużycie C to reszta domu i urządzenia z planu, a produkcja P to prognoza PV;
+- gdy C > P, dom płaci ceny kwadransów za część zużycia, której nie pokryły panele: (C − P) / C × Σ zużycie × cena;
+- gdy C ≤ P, dom nic nie pobiera, a oddaje P − C po wartości oddania.
+
+Bez produkcji to dokładnie energia × cena, więc plan domu bez paneli się nie zmienia. Urządzenie w godzinie
+z nadwyżką kosztuje tyle, ile dom traci na oddaniu, więc plan przesuwa je pod słońce także w G11. Gdy oddanie jest
+warte więcej niż prąd z sieci (wysoka RCE), plan unika nadwyżki.
+
+| Składnik | Skąd |
+|---|---|
+| Reszta domu | `house_load.rest_of_home`: o każdej porze większa z dwóch średnich z 7 ostatnich dni. Pierwsza to urządzenia stałe z plików urządzeń, a druga to zużycie domu z licznika (pobór − oddanie + produkcja PV z modelu, jak na ekranie „Fotowoltaika”) minus urządzenia elastyczne z plików urządzeń. Plik urządzeń z kompletem urządzeń daje to samo co licznik, a plik z samą pralką i autem uzupełnia licznik (`pv.rest_source = meter` i uwaga w planie). Do tego pompa i bojler spoza planu z `background` oraz bojler i pompa z planu. Zapas w limicie przyłącza dalej bierze maksimum urządzeń stałych |
+| Produkcja | Migawka prognozy z `background.pv_forecast` (także bez falownika w pliku, gdy profil ma panele) pomniejszona o średni błąd prognozy: MAPE z kalibracji, a bez niej 20% (najwyżej 50%) |
+| Cena zakupu | Ceny kwadransów taryfy, jak dotąd |
+| Wartość oddania | `ExportValuation`, wspólne z ekranem „Fotowoltaika”: net-billing RCE (albo RCEm) × 1,23 ze średniej 4 kwadransów godziny, ujemna cena = 0, bez cen na ten dzień średnia RCE z tych samych godzin z 14 dni (szacunek), RCEm przed publikacją wyceniana po RCE; net-metering opust × cena zakupu. Bez żadnych cen oddanie nic nie jest warte (z uwagą) |
+
+Harmonogram (`schedule(..., balance)`) wybiera miejsce grupy po zmianie rachunku przy już ułożonych akcjach,
+a ładowanie auta wypełnia kwadranse, w których kWh najmniej podnosi rachunek. Bojler i pompę ciepła (planer
+temperatury w domu i ciepła woda z pompy) plan układa przed resztą, z ceną kwadransów obniżoną do wartości oddania
+w godzinach, w których nadwyżka reszty domu pokryje grzałkę albo pompę na najniższym poziomie mocy
+(`effective_prices`).
+Na koniec koszt każdej pozycji to zmiana rachunku godzin bez planu i według planu (`allocate`): zmiana w godzinie
+dzieli się między urządzenia według zużycia × ceny kwadransu, więc pozycje sumują się do kosztu planu.
+
+W odpowiedzi planu `pv`: prognoza (`forecast_kwh`), na ile plan liczy (`planned_kwh`, `uncertainty`, `uncertainty_source`),
+skąd pogoda (`basis`, `weather_fetched_at`), wycena oddania (`export_estimated`, `export_unpriced`) i bilans paneli
+bez planu i według planu (`before`, `after`: `self_kwh`, `export_kwh`, `import_kwh`, `plan_from_pv_kwh`, `export_pln`).
+W planie jest też `balance` (reszta domu, produkcja i wartość oddania). Raport z symulacji (ZP-114) bierze koszty
+pozycji z planu, a zmierzone zużycie urządzeń z planu wycenia tym samym rachunkiem. Bez prognozy PV (brak pogody)
+plan liczy się bez paneli i mówi o tym w uwagach.
+
+Przy taryfie ze stałą ceną i nadwyżce z paneli ekran planu nie mówi już, że przesuwanie nic nie da: plan przesuwa
+urządzenia pod słońce.
+
+### Plan idealny dnia z przeszłości (ZP-152)
+
+Na ekranie „Plan na jutro” przełącznik „Jutro / Wybrany dzień” otwiera plan dnia z przeszłości, np. 14 maja,
+do prezentacji i sprawdzania planera. Plan idealny układamy z pełną wiedzą o dobie, z tych samych ustawień
+urządzeń co plan na jutro. Różnice:
+
+| | Plan na jutro | Plan idealny (`kind = past_day`) |
+|---|---|---|
+| Pogoda | Prognoza | Archiwum (`weather.past`), czyli to, co naprawdę było |
+| Produkcja PV | Prognoza pomniejszona o jej średni błąd (MAPE, bez kalibracji 20%) | Cała produkcja z archiwum (`uncertainty = 0`, `uncertainty_source = archive`). Do huba idzie ta sama energia |
+| Bez planu (dzień z plików, `day_source = files`) | Zwykła godzina z historii | Pralka, zmywarka i auto o godzinie z pliku z tego dnia (auto z energią z pliku); urządzenia, które tego dnia nie pracowały, wypadają z planu z uwagą. Pompa ciepła i bojler jak zwykle (model i termostat) |
+| Bez planu (dzień spoza plików, `day_source = settings`) | — | Jak plan na jutro: urządzenia i godziny z ustawień i historii, z uwagą |
+| Reszta domu i rezerwa przyłącza | 7 ostatnich dni w plikach | Dzień z plików: zużycie z tej doby (`until` = koniec doby, 1 dzień); spoza plików jak plan na jutro |
+
+Plan zapisuje się dla pary użytkownik + data, więc nie nadpisuje planu na jutro. Plan, który ułożono, zanim
+plany miały `kind`, jest planem idealnym, gdy jego dzień jest wcześniejszy niż dzień ułożenia. Dzień bez cen
+dla taryfy użytkownika daje `422` z komunikatem (także przy cenie dynamicznej, bo publikacja PSE nic tu nie
+zmieni), a kalendarz zaczyna się od pierwszego dnia z cenami. Plan demo (brak cen na jutro), który wypada na
+dzień z przeszłości, jest planem idealnym i ekran otwiera go w widoku „Wybrany dzień”.
+
+Uruchomiony plan idealny ustawia zegar huba na północ swojej doby, jak każdy plan (ZP-113). Przebieg zapisuje
+`plan_kind` w migawce, więc historia przebiegów i pasek przebiegu mówią „Plan idealny, 14 maja”.
+
+### Pogoda i panele na ekranie planu (ZP-122)
+
+Plan pokazuje, skąd wie o słońcu, z tego, co zapisał w chwili układania, a nie z bieżącej prognozy:
+
+- `weather`: pogoda doby planu dla komórki domu (temperatura i zachmurzenie co kwadrans, `fetched_at`,
+  `approximate_location`, `past` dla planu na miniony dzień z archiwum). Migawka jest w `background.weather`
+  i powstaje także bez paneli (wtedy `WeatherService.day` bez płaszczyzn paneli). Bez lokalizacji albo pogody
+  `weather = null`.
+- `pv.hours`: godziny z produkcją: prognoza (`forecast_kwh`), na ile plan liczy (`planned_kwh`), reszta domu
+  (`rest_kwh`), nadwyżka nad resztą domu przed urządzeniami z planu (`surplus_kwh`), urządzenia z planu (`plan_kwh`)
+  i oddanie według planu (`export_kwh`). Suma `export_kwh` to `pv.after.export_kwh`. Liczy to
+  `HouseBalance.hours`, tym samym rachunkiem godzinowym co koszty.
+- `items[].pv_kwh`: ile prądu z paneli bierze pozycja według planu (`HouseBalance.from_pv`: w godzinie panele dzielą
+  się po równo na każdą kWh zużycia, jak `plan_from_pv_kwh`, więc pozycje sumują się do niego).
+- `pv_reason`: dlaczego plan liczy się bez paneli (`no_installation`, `no_weather`, `no_profile`, `no_forecast`).
+- `pv.estimated_installation`: panele w profilu są szacunkowe.
+- `pv.export_beats_grid`: w godzinach ze słońcem oddanie jest warte więcej niż prąd z sieci (np. RCE ok.
+  1000 zł/MWh × 1,23 przy taryfie 0,63 zł/kWh w weekend). Plan wtedy nie przesuwa urządzeń pod słońce, a karta
+  i uwaga planu to tłumaczą, bo inaczej wygląda to na błąd.
+
+Na osi doby planu, pod cenami: pas zachmurzenia co godzinę (od błękitu do szarości, opis w dymku) z temperaturą
+co 3 godziny (na telefonie co 6), a pod nim słupki prądu z paneli, na który plan liczy. Godziny z nadwyżką nad resztą
+domu (co najmniej 0,05 kWh) są podświetlone na pasie paneli i pod urządzeniami, z legendą „nadwyżka z paneli”.
+W tabeli przy pozycji, która bierze z paneli co najmniej 0,05 kWh, jest np. „1,2 z 1,4 kWh z paneli”. Plan bez
+prognozy mówi to w pasie paneli (brak pogody, brak profilu), a dom bez paneli nie ma tego pasa. Karta „Prąd
+z paneli” mówi, kiedy pobrano prognozę pogody, a przy panelach szacunkowych i lokalizacji przybliżonej ma dopisek
+z linkiem do profilu.
+
+Plany ułożone przed ZP-122 nie mają tych pól: oś pokazuje wtedy same ceny.
+
+Uproszczenia, o których trzeba pamiętać:
+
+- **Depozyt jak gotówka.** Oddanie wyceniamy tak samo jak Analiza taryf i ekran „Fotowoltaika” (te same ceny RCE/RCEm
+  × 1,23 i opust, `ExportValuation`), ale w planie doby liczymy je od razu w złotówkach. Analiza taryf rozlicza depozyt
+  w okresach: pokrywa on tylko część rachunku za energię (bez dystrybucji), wygasa po 12 miesiącach, a nadwyżki
+  wraca 20–30%. To zależy od całego okresu rozliczeniowego, a nie od tego, o której godzinie jutro pracuje pralka,
+  więc w planie wartość oddania jest górną granicą. Różnica nie zmienia kierunku decyzji, gdy prąd z sieci jest dużo
+  droższy od RCE (typowo w słoneczne południe), ale przy wysokiej RCE plan może za bardzo unikać nadwyżki.
+- **Plan i symulacja mają inną produkcję.** Plan liczy na prognozę pomniejszoną o jej średni błąd, a do huba idzie
+  pełna prognoza (ZP-120). Raport z symulacji pokaże więc w części PV większą produkcję niż karta planu. Koszty
+  urządzeń z planu raport liczy na migawce z planu, więc oszczędność zostaje porównywalna.
+- **Panele szacunkowe.** Bez parametrów paneli w profilu („Nie znam parametrów”) prognoza liczy typową instalację,
+  więc nadwyżka w planie jest orientacyjna; plan o tym pisze w uwagach.
 
 **Historia pompy ciepła** (`plan_history.py`): ostatni dzień w plikach przed dniem planu, bo ogrzewanie
 zależy od pogody, a wczoraj jest bliżej jutra niż ten sam dzień tygodnia sprzed tygodnia. Z tego dnia

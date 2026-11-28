@@ -1,16 +1,17 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw, FiSun } from "react-icons/fi";
 import ActionCards from "./ActionCards";
 import Dialog from "./Dialog";
 import HeatPumpPlanCard from "./HeatPumpPlanCard";
 import IndoorTemperatureChart from "./IndoorTemperatureChart";
 import MoreInfo from "./MoreInfo";
+import PvPlanCard from "./PvPlanCard";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
-import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
+import { beforeRanges, forWeekdayDate, localTomorrow, momentRange, nextDay, planRows } from "../utils/dayPlan";
 import { afterRanges, clockOf, conflictText, formatPln, isConflict } from "../utils/schedule";
-import { formatPercent } from "../utils/format";
+import { formatKwh, formatPercent } from "../utils/format";
 import { useIsPhone } from "../hooks/useMediaQuery";
 import { CARD, CARD_FLUSH, TABLE_BODY, TABLE_HEAD, TD, TD_NUMBER, TH, TH_NUMBER, WIDE_TABLE, alertClass, buttonClass } from "./uiStyles";
 
@@ -22,7 +23,11 @@ const PRIMARY_BUTTON =
   `${buttonClass("primary", "lg")} w-full shadow-sm transition duration-150 active:scale-[0.97] ` +
   "disabled:cursor-wait disabled:active:scale-100";
 const SPINNER = <FiLoader aria-hidden="true" className="animate-spin" />;
-const SECONDARY_BUTTON = `${buttonClass("secondary", "lg")} w-full sm:w-auto`;
+const SECONDARY_BUTTON = `${buttonClass("secondary", "lg")} w-full sm:w-auto min-w-0 max-w-full`;
+
+function settingLabel(label, device, devices) {
+  return devices.length > 1 ? `${label}: ${device.device_name}` : label;
+}
 
 function Amount({ label, value, hint = null, accent = false }) {
   return (
@@ -38,7 +43,16 @@ function Amount({ label, value, hint = null, accent = false }) {
 const savingPercent = (plan) =>
   plan.cost_before > 0 ? formatPercent(plan.saving / plan.cost_before) : null;
 
-export function FlatTariffNote() {
+// `surplus`: plan ma nadwyżkę z paneli (ZP-121), więc przesuwanie pod słońce obniża rachunek także przy stałej cenie.
+export function FlatTariffNote({ surplus = false }) {
+  if (surplus) {
+    return (
+      <p className={alertClass("info")}>
+        Masz taryfę ze stałą ceną przez całą dobę, więc plan przesuwa urządzenia tylko pod słońce: w godzinach
+        nadwyżki z paneli prąd jest tańszy niż z sieci.
+      </p>
+    );
+  }
   return (
     <p className={alertClass("warning")}>
       Masz taryfę ze stałą ceną przez całą dobę, więc przesuwanie urządzeń prawie nie obniży rachunku.{" "}
@@ -47,6 +61,24 @@ export function FlatTariffNote() {
     </p>
   );
 }
+
+const SURPLUS_KWH = 0.05;
+const hasSurplus = (pv) =>
+  Boolean(pv) && Math.max(pv.before?.export_kwh ?? 0, pv.after?.export_kwh ?? 0) > SURPLUS_KWH;
+
+const PV_REASONS = {
+  no_weather: "Nie ma prognozy pogody na ten dzień, więc plan liczy się bez paneli.",
+  no_forecast: "Plan nie ma prognozy produkcji z paneli, więc liczy się bez nich.",
+  no_profile: "Bez profilu nie znamy paneli, więc plan liczy się bez nich.",
+};
+
+const pvNote = (plan) => {
+  if (plan.pv) return plan.pv.hours?.length ? null : "Prognoza nie daje tego dnia prądu z paneli.";
+  return PV_REASONS[plan.pv_reason] ?? null;
+};
+
+const fromPanels = (item) =>
+  item.pv_kwh >= SURPLUS_KWH ? `${formatKwh(item.pv_kwh)} z ${formatKwh(item.energy_kwh)} z paneli` : null;
 
 // Plan pracy urządzeń na dzień (ZP-112): koszt i ostrzeżenia, oś doby na tle cen, tabela przydziałów,
 // przyciski, a na końcu uwagi; temperatura wody w okienku.
@@ -62,7 +94,8 @@ function DayPlanView({
   const closeIndoorPump = useCallback(() => setIndoorPump(null), []);
   const indoorPumps = (plan.heat_pumps ?? []).filter((pump) => pump.mode === "indoor" && pump.temperatures?.length);
   const approved = plan.status === "approved";
-  const outdated = plan.plan_date < localTomorrow();
+  const ideal = plan.kind === "past_day";
+  const outdated = !ideal && plan.plan_date < localTomorrow();
   const rows = planRows(plan.items);
   const isPhone = useIsPhone();
   const conflicts = plan.items.filter(isConflict);
@@ -73,7 +106,7 @@ function DayPlanView({
     <div className="space-y-4">
       {outdated && (
         <div className={`${alertClass("warning")} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`} role="status">
-          <p>To plan na {weekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
+          <p>To plan na {forWeekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
           <button type="button" className={SECONDARY_BUTTON} onClick={onReplan} disabled={isReplanning}>
             <FiRefreshCw aria-hidden="true" /> {isReplanning ? "Układanie planu..." : "Ułóż plan na jutro"}
           </button>
@@ -82,8 +115,16 @@ function DayPlanView({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Plan na {weekdayDate(plan.plan_date)}</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            {ideal ? "Plan idealny na" : "Plan na"} {forWeekdayDate(plan.plan_date)}
+          </h3>
           <p className="text-xs text-gray-500">Ceny: {plan.pricing}</p>
+          {ideal && (
+            <p className="text-xs text-gray-500">
+              Pogoda z archiwum · bez planu:{" "}
+              {plan.day_source === "files" ? "tak, jak tego dnia w plikach urządzeń" : "z ustawień i historii"}
+            </p>
+          )}
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -100,7 +141,7 @@ function DayPlanView({
         <Amount label="Oszczędność" value={plan.saving} hint={savingPercent(plan)} accent />
       </div>
 
-      {flatTariff && <FlatTariffNote />}
+      {flatTariff && <FlatTariffNote surplus={hasSurplus(plan.pv)} />}
 
       {warnings.length > 0 && (
         <ul className={`${alertClass("warning")} space-y-1`} role="alert">
@@ -112,14 +153,25 @@ function DayPlanView({
         </ul>
       )}
 
+      {plan.pv && <PvPlanCard pv={plan.pv} weather={plan.weather} />}
       {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} planDate={plan.plan_date} />)}
 
       <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-300" /> bez planu</span>
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-emerald-500" /> plan, przesunięte</span>
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-400" /> plan, bez zmian</span>
+        {plan.pv?.hours?.some((hour) => hour.surplus_kwh >= SURPLUS_KWH) && (
+          <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-amber-100 border border-amber-200" /> nadwyżka z paneli</span>
+        )}
       </div>
-      <ScheduleDayChart day={plan.plan_date} actions={plan.items} prices={plan.prices} />
+      <ScheduleDayChart
+        day={plan.plan_date}
+        actions={plan.items}
+        prices={plan.prices}
+        weather={plan.weather}
+        pv={plan.pv}
+        pvNote={pvNote(plan)}
+      />
       <ScheduleDayChart
         day={nextDay(plan.plan_date)}
         actions={plan.items}
@@ -138,6 +190,7 @@ function DayPlanView({
             before: beforeRanges(item),
             after: afterRanges(item, { withDay: true }),
             afterNote: item.status === "unchanged" ? "(bez zmian)" : null,
+            extra: fromPanels(item),
             costBefore: item.cost_before,
             costAfter: item.cost_after,
           }))}
@@ -165,6 +218,11 @@ function DayPlanView({
                   <td className={TD}>
                     {afterRanges(item, { withDay: true })}
                     {item.status === "unchanged" && <span className="text-gray-500"> (bez zmian)</span>}
+                    {fromPanels(item) && (
+                      <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
+                        <FiSun aria-hidden="true" className="shrink-0" /> {fromPanels(item)}
+                      </span>
+                    )}
                   </td>
                   <td className={TD_NUMBER}>{formatPln(item.cost_before)}</td>
                   <td className={TD_NUMBER}>{formatPln(item.cost_after)}</td>
@@ -227,22 +285,26 @@ function DayPlanView({
             </p>
           </div>
         )}
-        <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>
-          <FiEdit2 aria-hidden="true" /> Edytuj ustawienia
-        </button>
-        {heaters.map((heater) => (
-          <button key={heater.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setWaterHeater(heater)}>
-            <FiDroplet aria-hidden="true" /> Temperatura wody
+        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row sm:flex-wrap" role="group" aria-label="Ustawienia planu">
+          <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>
+            <FiEdit2 aria-hidden="true" /> Edytuj ustawienia
           </button>
-        ))}
-        {indoorPumps.map((pump) => (
-          <button key={pump.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setIndoorPump(pump)}>
-            <FiHome aria-hidden="true" /> Temperatura w domu
-          </button>
-        ))}
-        {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
-        {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
+          {heaters.map((heater) => (
+            <button key={heater.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setWaterHeater(heater)}>
+              <FiDroplet aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{settingLabel("Temperatura wody", heater, heaters)}</span>
+            </button>
+          ))}
+          {indoorPumps.map((pump) => (
+            <button key={pump.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setIndoorPump(pump)}>
+              <FiHome aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{settingLabel("Temperatura w domu", pump, indoorPumps)}</span>
+            </button>
+          ))}
+        </div>
       </div>
+      {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
+      {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
 
 
       {plan.notes.length > 0 && (

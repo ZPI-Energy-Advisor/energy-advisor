@@ -20,6 +20,7 @@ from app.schemas.pv_forecast import (
     PvInstallationOut,
     PvIntervalOut,
     PvOverviewResponse,
+    PvPeriodResponse,
     PvTypicalOut,
     PvValueOut,
 )
@@ -29,6 +30,7 @@ from app.services.user_service import UserService
 from app.services.weather_service import EARLIEST_DAY
 
 router = APIRouter(prefix="/pv", tags=["PV"])
+MAX_PERIOD_DAYS = 400
 
 
 def _calibration_out(calibration) -> PvCalibrationOut:
@@ -186,6 +188,38 @@ def get_pv_day(
         ) if detail.typical else None,
         notes=detail.notes,
         intervals=[PvIntervalOut(**vars(interval)) for interval in detail.intervals],
+    )
+
+
+@router.get("/period", response_model=PvPeriodResponse)
+@limiter.limit(RATE_LIMIT_PV_SCREEN)
+def get_pv_period(
+    request: Request,
+    date_from: date = Query(alias="from"),
+    date_to: date = Query(alias="to"),
+    user: User = Depends(get_authenticated_user),
+    users: UserService = Depends(get_user_service),
+    service: PvInsightsService = Depends(get_pv_insights_service),
+):
+    if date_to < date_from or (date_to - date_from).days > MAX_PERIOD_DAYS or date_from < EARLIEST_DAY:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Podaj okres od {EARLIEST_DAY.isoformat()}, nie dłuższy niż {MAX_PERIOD_DAYS + 1} dni.",
+        )
+    profile = users.get_profile(user)
+    setup = _setup(service, user, profile)
+    summary = service.period(user.id, setup, date_from, date_to)
+    location = profile.base_info.location
+    return PvPeriodResponse(
+        date_from=date_from,
+        date_to=date_to,
+        days=summary.days,
+        model_days=summary.model_days,
+        model_kwh=summary.model_kwh,
+        actual_kwh=summary.actual_kwh,
+        export_kwh=summary.export_kwh,
+        estimated_installation=setup.installation.estimated,
+        approximate_location=bool(location and location.approximate),
     )
 
 

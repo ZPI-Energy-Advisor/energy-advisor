@@ -11,6 +11,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from app.parsers.device_records import DeviceRecord
 from app.providers.prices.base import MARKET_TIMEZONE
+from app.services.pv_balance import HouseBalance
 
 
 SLOT = timedelta(minutes=15)
@@ -272,25 +273,33 @@ class _NoPlaceLeft(Exception):
 class _Plan:
     """Bieżące rozmieszczenie: zajęte kwadranse urządzeń i obciążenie domu."""
 
-    def __init__(self, prices: dict, max_grid_kw: float | None, retry_without_place: bool):
+    def __init__(self, prices: dict, max_grid_kw: float | None, retry_without_place: bool,
+                 balance: HouseBalance | None = None):
         self.prices = prices
         self.retry_without_place = retry_without_place
         self.slot_limit_kwh = None if max_grid_kw is None else max_grid_kw * SLOT_HOURS
         self.busy = defaultdict(set)
         self.load = defaultdict(float)
+        # Z prognozą PV (ZP-121) koszt to zmiana rachunku domu w godzinach, a nie cena kwadransu razy energia.
+        self.balance = balance
+        # Zużycie ułożonych akcji (bez obciążenia `load_only`): przy PV od niego zależy, ile zostaje nadwyżki.
+        self.planned = defaultdict(float)
         # Grupy, które algorytm przesuwa; bez nich zostaje obciążenie, którego ułożenie nie zmieni.
         self.movable: list[_Group] = []
 
-    def _occupy(self, slots: Iterable[tuple[str, datetime, float]]) -> None:
+    def _occupy(self, slots: Iterable[tuple[str, datetime, float]], planned: bool = True) -> None:
         """Zajmuje kwadranse (urządzenie, kwadrans, kWh): urządzenie jest w nich zajęte, a dom obciążony."""
         for device_id, slot, kwh in slots:
             self.busy[device_id].add(slot)
             self.load[slot] += kwh
+            if planned:
+                self.planned[slot] += kwh
 
     def _free(self, slots: Iterable[tuple[str, datetime, float]]) -> None:
         for device_id, slot, kwh in slots:
             self.busy[device_id].discard(slot)
             self.load[slot] -= kwh
+            self.planned[slot] -= kwh
 
     def place(self, group: _Group) -> None:
         group.placed = True
@@ -348,6 +357,11 @@ class _Plan:
         return None
 
     def cost(self, group: _Group, offset: int) -> float:
+        if self.balance is not None:
+            added = defaultdict(float)
+            for _, slot, kwh in group.slots(offset):
+                added[slot] += kwh
+            return self.balance.delta(self.planned, added)
         return sum(self.prices[slot] * kwh for _, slot, kwh in group.slots(offset))
 
     def improve(self, group: _Group) -> bool:
@@ -398,22 +412,27 @@ class _Plan:
         session.reason = None
         self.place_session(session)
 
+    def _room(self, session: _Session, load: dict, slot: datetime) -> tuple[float, bool]:
+        """Ile sesja może wziąć w kwadransie (moc urządzenia i zapas pod limitem) i czy ogranicza to limit."""
+        room = session.max_slot_kwh
+        if self.slot_limit_kwh is None:
+            return room, False
+        headroom = self.slot_limit_kwh - load[slot]
+        return min(room, headroom), headroom < room
+
     def _spread(self, session: _Session, load: dict) -> tuple[dict[datetime, float], float, bool]:
         """Zachłanny rozkład energii sesji przy danym obciążeniu domu: (plan, energia bez miejsca, czy brakło limitu)."""
         device_id = session.action.device_id
-        candidates = sorted(
-            (slot for slot in session.window_slots() if slot in self.prices and slot not in self.busy[device_id]),
-            key=lambda slot: (round(self.prices[slot], 6), slot),
-        )
+        candidates = [slot for slot in session.window_slots() if slot in self.prices and slot not in self.busy[device_id]]
+        if self.balance is not None:
+            return self._spread_with_pv(session, load, candidates)
+        candidates.sort(key=lambda slot: (round(self.prices[slot], 6), slot))
         remaining, plan, grid_bound = session.energy_kwh, {}, False
         for slot in candidates:
             if remaining <= ENERGY_TOLERANCE_KWH:
                 break
-            room = session.max_slot_kwh
-            if self.slot_limit_kwh is not None:
-                headroom = self.slot_limit_kwh - load[slot]
-                grid_bound = grid_bound or headroom < room
-                room = min(room, headroom)
+            room, bound = self._room(session, load, slot)
+            grid_bound = grid_bound or bound
             # Poniżej minimalnej mocy ładowarka nie ładuje; ostatnia porcja może być mniejsza (krótsze ładowanie).
             if room < session.action.min_slot_kwh - POWER_TOLERANCE_KWH:
                 continue
@@ -421,6 +440,30 @@ class _Plan:
             if take > POWER_TOLERANCE_KWH:
                 plan[slot] = take
                 remaining -= take
+        return plan, remaining, grid_bound
+
+    def _spread_with_pv(self, session: _Session, load: dict, candidates: list[datetime]):
+        """Jak `_spread`, ale kolejny kwadrans to ten, w którym kWh ładowania najmniej podnosi rachunek domu:
+        nadwyżka paneli w godzinie jest tańsza niż prąd z sieci, dopóki jej starcza."""
+        remaining, plan, grid_bound = session.energy_kwh, {}, False
+        rooms = {}
+        for slot in candidates:
+            room, bound = self._room(session, load, slot)
+            grid_bound = grid_bound or bound
+            if room >= session.action.min_slot_kwh - POWER_TOLERANCE_KWH and room > POWER_TOLERANCE_KWH:
+                rooms[slot] = room
+        while remaining > ENERGY_TOLERANCE_KWH and rooms:
+            best = None
+            for slot, room in rooms.items():
+                take = min(room, remaining)
+                unit = self.balance.delta(self.planned, {slot: take}, plan) / take
+                key = (round(unit, 6), slot)
+                if best is None or key < best[0]:
+                    best = (key, slot, take)
+            _, slot, take = best
+            plan[slot] = take
+            remaining -= take
+            del rooms[slot]
         return plan, remaining, grid_bound
 
     def _fits_without_movable(self, session: _Session) -> bool:
@@ -435,6 +478,8 @@ class _Plan:
         return bool(plan) and remaining <= ENERGY_TOLERANCE_KWH
 
     def _cost_of(self, plan: dict[datetime, float]) -> float:
+        if self.balance is not None:
+            return self.balance.delta(self.planned, plan)
         return sum(self.prices[slot] * kwh for slot, kwh in plan.items())
 
     def _fits(self, plan: dict[datetime, float]) -> bool:
@@ -444,14 +489,17 @@ class _Plan:
         return all(self.load[slot] + kwh <= self.slot_limit_kwh + POWER_TOLERANCE_KWH for slot, kwh in plan.items())
 
     def add_load(self, action: ScheduleAction) -> None:
-        self._occupy((action.device_id, action.start + index * SLOT, kwh) for index, kwh in enumerate(action.profile_kwh))
+        self._occupy(
+            ((action.device_id, action.start + index * SLOT, kwh) for index, kwh in enumerate(action.profile_kwh)),
+            planned=False,
+        )
 
 
 def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | None,
-             reserve_originals: bool) -> tuple[list[_Group], list[_Session]]:
+             reserve_originals: bool, balance: HouseBalance | None = None) -> tuple[list[_Group], list[_Session]]:
     sessions = [_Session(action) for action in actions if action.mode == INTERRUPTIBLE and not action.load_only]
     groups = _groups([action for action in actions if action.mode != INTERRUPTIBLE and not action.load_only])
-    plan = _Plan(prices, max_grid_kw, retry_without_place=not reserve_originals)
+    plan = _Plan(prices, max_grid_kw, retry_without_place=not reserve_originals, balance=balance)
     for action in actions:
         if action.load_only:
             plan.add_load(action)
@@ -496,7 +544,8 @@ def _arrange(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
     return groups, sessions
 
 
-def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | None = None) -> ScheduleResult:
+def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | None = None,
+             balance: HouseBalance | None = None) -> ScheduleResult:
     """Rozmieszcza akcje `shiftable` i `interruptible` tak, żeby koszt był najmniejszy; `fixed` zostają bez zmian.
 
     `prices` to słownik: początek kwadransa w UTC -> cena za kWh. Start jest dozwolony, gdy wypada
@@ -516,6 +565,10 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
 
     Akcje `load_only` tylko obciążają dom w limicie przyłącza: produkcja PV (ujemna) zmniejsza pobór z sieci,
     a akcje z sąsiednich dób pokazują obciążenie poza okresem. Nie ma ich w wyniku ani w kosztach.
+
+    `balance` (plan na jutro z prognozą PV, ZP-121): miejsca wybieramy po zmianie rachunku domu w godzinach
+    (pv_balance.py), więc urządzenie idzie w godziny nadwyżki paneli. Koszty w wyniku zostają cenami kwadransów;
+    rachunek z PV liczy plan (`HouseBalance.allocate`).
     """
     utc_prices = {_utc(slot): price for slot, price in prices.items()}
     utc_actions = [
@@ -525,9 +578,9 @@ def schedule(actions: list[ScheduleAction], prices: dict, max_grid_kw: float | N
         for action in actions
     ]
     try:
-        groups, sessions = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=False)
+        groups, sessions = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=False, balance=balance)
     except _NoPlaceLeft:
-        groups, sessions = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=True)
+        groups, sessions = _arrange(utc_actions, utc_prices, max_grid_kw, reserve_originals=True, balance=balance)
 
     scheduled = []
     for group in groups:

@@ -65,7 +65,9 @@ from app.services.home_control_service import (
 from app.services.day_background import HISTORY, PV_TYPE, THERMOSTAT_TYPES, BackgroundDevice, DayBackground, history_runs
 from app.services.home_replay import ReplayRun, replay_commands, replay_summary
 from app.services.home_state_service import DayEnergy, day_energy
+from app.services.plan_run_live import live
 from app.services.plan_run_report import RunEnergy, cost_report, profile_cost
+from app.services.pv_balance import HouseBalance
 
 
 logger = logging.getLogger(__name__)
@@ -82,6 +84,7 @@ MAX_REPORTED_ERRORS = 50
 # gdy backend nie odpowiada, więc ostatnie kwadranse mogą dojść po końcu planu.
 REPORT_SETTLE = timedelta(minutes=5)
 HISTORY_LIMIT = 30
+SLOT = timedelta(minutes=15)
 
 
 def _kwh(value: float) -> float:
@@ -126,6 +129,9 @@ class PlanRunService:
             "prices": plan.result["prices"],
             # Od tej chwili ceny nocy po dniu planu są przybliżone (te same godziny dnia planu), gdy nie było cen.
             "approximate_from": plan.result.get("approximate_from"),
+            # Rachunek domu z PV z planu (ZP-121): reszta domu, prognoza PV i wartość oddania. Raport liczy koszt
+            # urządzeń tym samym rachunkiem; None w planach bez PV.
+            "balance": plan.result.get("balance"),
             # Temperatura wody według planu do wskaźnika na ekranie „Mój dom” (ZP-110). Migawka, bo ponowne
             # ułożenie planu nadpisuje jego wiersz.
             "water_heaters": [
@@ -138,6 +144,11 @@ class PlanRunService:
                 }
                 for heater in plan.result.get("water_heaters", [])
             ],
+            # Plan idealny dnia z przeszłości (ZP-152) albo plan na jutro: oznaczenie w historii przebiegów.
+            "plan_kind": _plan_kind(plan),
+            # Statystyki na żywo (ZP-153): pogoda doby z planu i model domu z pompą ciepła.
+            "weather": _weather_snapshot(plan.result.get("weather")),
+            "heat_pumps": _heat_pump_snapshot(plan.result.get("heat_pumps", [])),
         }
         prices = _prices(tariff)
         horizon_start = datetime.fromisoformat(plan.result["horizon_start"])
@@ -153,8 +164,11 @@ class PlanRunService:
         if not clock.simulation_id:
             # Bez simulation_id nie odróżnimy zdarzeń tego przebiegu od innych (hub sprzed ZP-95).
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=INVALID_RESPONSE_MESSAGE)
-        results = send_batch(hub_client, [command for _, command in planned] + replay_commands(runs), PLAN_FAILED_MESSAGE)
-        plan_results, replay_results = results[:len(planned)], results[len(planned):]
+        # Pozycje jednego urządzenia złączone w jedną komendę (pompa: dom i woda) idą do huba raz.
+        commands = list({id(command): command for _, command in planned}.values())
+        results = send_batch(hub_client, commands + replay_commands(runs), PLAN_FAILED_MESSAGE)
+        by_command = {id(command): result for command, result in zip(commands, results)}
+        plan_results, replay_results = [by_command[id(command)] for _, command in planned], results[len(commands):]
 
         now = datetime.now(timezone.utc)
         for previous in self.run_repository.running(owner.id):
@@ -175,7 +189,7 @@ class PlanRunService:
                 (date.fromisoformat(entry["history_day"]) for entry in replayed if entry["history_day"]), default=None,
             ),
             items=[
-                self._action(item, result, prices).model_dump(mode="json")
+                self._action(item, result, prices, with_pv=tariff["balance"] is not None).model_dump(mode="json")
                 for (item, _), result in zip(planned, plan_results, strict=True)
             ],
             replay=replay_summary(runs, replay_results).model_dump(mode="json"),
@@ -199,25 +213,49 @@ class PlanRunService:
 
     @staticmethod
     def _plan_commands(items: list[PlanItemOut]) -> list[tuple[PlanItemOut, HubCommand]]:
-        """Pozycje planu jako komendy huba ze startem z planu; pozycje bez energii (np. bojler bez grzania) pomijamy."""
+        """Pozycje planu jako komendy huba ze startem z planu; pozycje bez energii (np. bojler bez grzania) pomijamy.
+
+        Urządzenie wykonuje naraz jeden profil, a hub odrzuca drugi, który zaczyna się w trakcie pierwszego. Pompa
+        ciepła ma w planie osobno grzanie domu (cała doba) i ciepłą wodę (w kwadransach, w których nie grzeje
+        domu), więc nachodzące na siebie profile jednego urządzenia łączymy w jeden: suma kwadrans po kwadransie.
+        Te pozycje dzielą jedną komendę."""
         planned = []
+        profiles: dict[str, list[PlanItemOut]] = defaultdict(list)
         for item in items:
             if item.profile_kwh is None or (item.kind == "program" and not item.program_id):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PLAN_OUTDATED_MESSAGE)
             if not any(item.profile_kwh):
                 continue
             if item.kind == "program":
-                command = HubCommand(
+                planned.append((item, HubCommand(
                     device_id=item.device_id, command=CommandType.START_PROGRAM, program_id=item.program_id,
                     start_at=item.start,
-                )
+                )))
             else:
+                profiles[item.device_id].append(item)
+        for device_items in profiles.values():
+            device_items.sort(key=lambda item: item.start)
+            groups: list[list[PlanItemOut]] = []
+            for item in device_items:
+                if groups and item.start < max(_profile_end(other) for other in groups[-1]):
+                    groups[-1].append(item)
+                else:
+                    groups.append([item])
+            for group in groups:
+                start = group[0].start
+                length = max(int((_profile_end(item) - start) / SLOT) for item in group)
+                profile = [0.0] * length
+                for item in group:
+                    offset = int((item.start - start) / SLOT)
+                    for index, kwh in enumerate(item.profile_kwh):
+                        profile[offset + index] += kwh
                 command = HubCommand(
-                    device_id=item.device_id, command=CommandType.RUN_PROFILE, profile_kwh=item.profile_kwh,
-                    start_at=item.start,
+                    device_id=group[0].device_id, command=CommandType.RUN_PROFILE,
+                    profile_kwh=[round(kwh, 6) for kwh in profile], start_at=start,
                 )
-            planned.append((item, command))
-        return planned
+                planned.extend((item, command) for item in group)
+        order = {id(item): position for position, item in enumerate(items)}
+        return sorted(planned, key=lambda pair: order[id(pair[0])])
 
     def _background(self, owner: User, plan: DayPlan, planned_devices: set[str]) -> DayBackground:
         """Urządzenia, które pracują same: z migawki planu (ZP-120), a w planie sprzed niej z dnia referencyjnego
@@ -269,15 +307,17 @@ class PlanRunService:
         ]
 
     @staticmethod
-    def _action(item: PlanItemOut, result: HubCommandResult, prices: dict[datetime, float]) -> PlanRunActionOut:
+    def _action(item: PlanItemOut, result: HubCommandResult, prices: dict[datetime, float],
+                with_pv: bool = False) -> PlanRunActionOut:
         """Pozycja planu z wynikiem komendy i kosztami do rachunku: bez planu (od startu bazowego) i według planu.
 
         Koszty liczymy cenami kwadransów planu z pełną dokładnością (w planie są zaokrąglone do grosza);
-        bez ceny któregoś kwadransu zostaje koszt z planu.
+        bez ceny któregoś kwadransu zostaje koszt z planu. Plan z PV (ZP-121) ma koszty z rachunku domu
+        w godzinach, których nie da się policzyć z samej pozycji, więc bierzemy je z planu.
         """
         original = item.original_profile_kwh or []
-        cost_before = profile_cost(original, item.original_start, prices)
-        planned_cost = profile_cost(item.profile_kwh or [], item.start, prices)
+        cost_before = None if with_pv else profile_cost(original, item.original_start, prices)
+        planned_cost = None if with_pv else profile_cost(item.profile_kwh or [], item.start, prices)
         return PlanRunActionOut(
             action_id=item.action_id,
             device_id=item.device_id,
@@ -294,6 +334,9 @@ class PlanRunService:
             energy_before_kwh=sum(original),
             cost_before=item.cost_before if cost_before is None else cost_before,
             planned_cost=item.cost_after if planned_cost is None else planned_cost,
+            original_start=item.original_start,
+            original_profile_kwh=item.original_profile_kwh,
+            profile_kwh=item.profile_kwh,
         )
 
     # --- odczyt i zakończenie ---
@@ -319,6 +362,7 @@ class PlanRunService:
             summaries.append(PlanRunSummaryOut(
                 id=run.id,
                 plan_date=run.plan_date,
+                plan_kind=(run.tariff or {}).get("plan_kind") or "tomorrow",
                 status=run.status,
                 started_at=run.started_at,
                 ended_at=run.ended_at,
@@ -424,11 +468,14 @@ class PlanRunService:
         history = {entry["device_id"]: entry for entry in run.replayed_devices}
         actual = defaultdict(float)
         cost = None
+        live_out = None
         if sim_time is not None:
             until = min(sim_time, run.horizon_end)
             energy = self._energy(owner, run, until)
             actual = energy.by_device
             cost = self._report(owner, run, until, energy)
+            if run.tariff is not None and until > run.horizon_start:
+                live_out = live(self._run_energy(owner, run, until, energy), run.tariff)
         devices = [
             PlanRunDeviceOut(
                 device_id=device_id,
@@ -467,6 +514,7 @@ class PlanRunService:
             id=run.id,
             plan_id=run.day_plan_id,
             plan_date=run.plan_date,
+            plan_kind=(run.tariff or {}).get("plan_kind") or "tomorrow",
             status=run.status,
             simulation_id=run.simulation_id,
             started_at=run.started_at,
@@ -487,6 +535,7 @@ class PlanRunService:
             water_heaters=[
                 PlanRunWaterHeaterOut.model_validate(heater) for heater in (run.tariff or {}).get("water_heaters", [])
             ],
+            live=live_out,
         )
 
     def _energy(self, owner: User, run: PlanRun, until: datetime) -> DayEnergy:
@@ -506,12 +555,18 @@ class PlanRunService:
         return report
 
     def _cost(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> PlanRunCostOut:
+        return cost_report(self._run_energy(owner, run, until, energy))
+
+    def _run_energy(self, owner: User, run: PlanRun, until: datetime, energy: DayEnergy) -> RunEnergy:
         actions = [PlanRunActionOut.model_validate(item) for item in run.items]
         pv_devices = set(self.home_repository.device_ids_of_types(owner.id, (PV_TYPE,)))
-        return cost_report(RunEnergy(
+        prices = _prices(run.tariff)
+        balance = run.tariff.get("balance")
+        return RunEnergy(
             actions=actions,
-            prices=_prices(run.tariff),
+            prices=prices,
             max_grid_kw=run.tariff.get("max_grid_kw"),
+            balance=HouseBalance.from_json(balance, prices) if balance else None,
             energy=energy,
             events=self.event_repository.device_actions(
                 owner.id, run.simulation_id, sorted({action.device_id for action in actions}), until,
@@ -522,7 +577,51 @@ class PlanRunService:
             pv_devices=pv_devices,
             until=until,
             complete=run.status == PlanRun.COMPLETED,
-        ))
+        )
+
+
+def _profile_end(item: PlanItemOut) -> datetime:
+    return item.start + len(item.profile_kwh) * SLOT
+
+
+def _plan_kind(plan: DayPlan) -> str:
+    kind = plan.result.get("kind")
+    if kind:
+        return kind
+    return "past_day" if plan.plan_date < plan.created_at.astimezone(LOCAL_TIMEZONE).date() else "tomorrow"
+
+
+def _weather_snapshot(weather: dict | None) -> dict | None:
+    if not weather:
+        return None
+    return {
+        "past": weather.get("past", False),
+        "quarters": [
+            {"start": quarter["start"], "temperature_c": quarter["temperature_c"], "cloud_cover_pct": quarter["cloud_cover_pct"]}
+            for quarter in weather.get("quarters", [])
+        ],
+    }
+
+
+def _heat_pump_snapshot(pumps: list[dict]) -> list[dict]:
+    """Dom z pompą w planie trzymającym temperaturę (ZP-119): model domu i temperatura na dworze co kwadrans."""
+    return [
+        {
+            "device_id": pump["device_id"],
+            "device_name": pump["device_name"],
+            "indoor_c": pump["indoor_c"],
+            "band": pump["band"],
+            "loss_kw_per_k": pump["loss_kw_per_k"],
+            "capacity_kwh_per_k": pump["capacity_kwh_per_k"],
+            "floor_heating": pump["floor_heating"],
+            "quarters": [
+                {"start": point["start"], "outdoor": point["outdoor"], "after": point["after"]}
+                for point in pump.get("temperatures", [])
+            ],
+        }
+        for pump in pumps
+        if pump.get("mode") == "indoor" and pump.get("loss_kw_per_k") and pump.get("capacity_kwh_per_k")
+    ]
 
 
 def _prices(tariff: dict) -> dict[datetime, float]:

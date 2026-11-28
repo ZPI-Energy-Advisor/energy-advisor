@@ -27,6 +27,7 @@ function Figure({ label, value, hint }) {
 // (ciepło, woda, COP, stopniodni, trafność) zwinięte pod „Jak to liczymy”.
 function HeatPumpPlanCard({ pump, planDate }) {
   const short = pump.kwh < pump.target_kwh - 0.05;
+  const cold = pump.shortfall_reason ?? (pump.shortfall_reason === undefined && pump.shortfall > 0.3 ? "power" : null);
   const water = heatPumpWater(pump);
   return (
     <section className={CARD} aria-label={`Ogrzewanie: ${pump.device_name}`}>
@@ -41,10 +42,13 @@ function HeatPumpPlanCard({ pump, planDate }) {
           się {formatKwh(pump.kwh)}. W domu może być trochę chłodniej.
         </p>
       )}
-      {pump.mode === "indoor" && pump.shortfall > 0.3 && (
+      {pump.mode === "indoor" && cold && (
         <p className="mt-2 text-sm text-amber-800">
-          Przy tej pogodzie pompa nie utrzyma w domu {formatDegrees(pump.band[0])} (zabraknie ok.{" "}
-          {formatDegrees(pump.shortfall, 1)}). W domu może być chłodniej.
+          {cold === "grid"
+            ? "Limit mocy przyłącza nie zostawia pompie miejsca, żeby utrzymać"
+            : "Przy tej pogodzie pompa nie utrzyma"}{" "}
+          w domu {formatDegrees(pump.band[0])} (zabraknie ok. {formatDegrees(pump.shortfall, 1)}). W domu może być
+          chłodniej.
         </p>
       )}
       {pump.water?.shortfall > 0.5 && (

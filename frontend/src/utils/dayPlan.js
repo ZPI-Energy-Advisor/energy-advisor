@@ -20,6 +20,12 @@ export const onDay = (isoDate) => {
   return `${ON_WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
 };
 
+const WEEKDAYS_ACCUSATIVE = ["niedzielę", "poniedziałek", "wtorek", "środę", "czwartek", "piątek", "sobotę"];
+
+// Po „na”: „Plan na sobotę 28.11”.
+export const forWeekdayDate = (isoDate) =>
+  `${WEEKDAYS_ACCUSATIVE[new Date(`${isoDate}T12:00:00Z`).getUTCDay()]} ${formatDayMonth(isoDate)}`;
+
 export const weekdayDate = (isoDate) =>
   `${WEEKDAYS[new Date(`${isoDate}T12:00:00Z`).getUTCDay()]} ${formatDayMonth(isoDate)}`;
 
@@ -44,6 +50,17 @@ export const noPricesFrom = (error) => {
 // Godziny pracy bez planu, z przerwami jak w planie (np. termostat bojlera grzeje porcjami).
 export const beforeRanges = (item) =>
   afterRanges({ charging: item.original_charging, start: item.original_start, end: item.original_end }, { withDay: true });
+
+const shortDate = (isoDate) => `${isoDate.slice(8, 10)}.${isoDate.slice(5, 7)}.${isoDate.slice(0, 4)}`;
+
+// Okresy plików urządzeń, np. „05.10.2026–30.10.2026, 01.12.2026”.
+export const periodsText = (periods) =>
+  periods
+    .map(({ first_day: first, last_day: last }) => (first === last ? shortDate(first) : `${shortDate(first)}–${shortDate(last)}`))
+    .join(", ");
+
+export const inPeriods = (day, periods) =>
+  Boolean(day) && periods.some(({ first_day: first, last_day: last }) => first <= day && day <= last);
 
 // Jutro według zegara użytkownika (RRRR-MM-DD): plan na wcześniejszy dzień jest już nieaktualny.
 export const localTomorrow = (now = new Date()) => {
