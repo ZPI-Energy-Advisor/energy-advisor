@@ -298,6 +298,10 @@ dla taryfy użytkownika daje `422` z komunikatem (także przy cenie dynamicznej,
 zmieni), a kalendarz zaczyna się od pierwszego dnia z cenami. Plan demo (brak cen na jutro), który wypada na
 dzień z przeszłości, jest planem idealnym i ekran otwiera go w widoku „Wybrany dzień”.
 
+Plan jest jeden na użytkownika i dzień: plan idealny ułożony na dzień, który miał już plan (np. wczorajszy plan
+na jutro), nadpisuje go i wraca do szkicu. Przebiegi w symulacji zachowują swoją migawkę, więc raporty
+wcześniejszych przebiegów się nie zmieniają.
+
 Uruchomiony plan idealny ustawia zegar huba na północ swojej doby, jak każdy plan (ZP-113). Przebieg zapisuje
 `plan_kind` w migawce, więc historia przebiegów i pasek przebiegu mówią „Plan idealny, 14 maja”.
 

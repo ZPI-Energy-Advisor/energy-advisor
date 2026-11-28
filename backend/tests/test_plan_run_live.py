@@ -72,6 +72,13 @@ def test_saving_so_far_counts_devices_still_working_and_matches_report_at_the_en
     assert final["cost_before"] == pytest.approx(done["cost"]["cost_before"], rel=0.01, abs=0.01)
     assert final["cost_after"] == pytest.approx(done["cost"]["cost_after"], rel=0.01, abs=0.01)
     assert final["saving"] == pytest.approx(done["cost"]["saving"], rel=0.01, abs=0.01)
+    # Oszczędność w miarę pracy: pralka cała (skończyła), auto w proporcji do naładowanej energii; na końcu raport.
+    def item_saving(item):
+        return item["cost_before"] - item["cost_after"]
+    charged = sum(ev["profile_kwh"][:2]) / sum(ev["profile_kwh"])
+    expected = item_saving(items["dev_wm_01"]) + item_saving(ev) * charged
+    assert saving["progress_saving"] == pytest.approx(expected, abs=0.01)
+    assert final["progress_saving"] == pytest.approx(final["saving"], abs=0.01)
 
 
 def test_device_switched_off_by_hand_leaves_saving_so_far(home, db):
@@ -176,6 +183,17 @@ def test_indoor_temperature_follows_plan_and_drops_when_pump_is_off():
     assert following.points[39].temp_c == pytest.approx(plan.temps[39], abs=0.2)
     assert following.points[39].plan_c == plan.temps[39]
     assert following.points[40].temp_c is None and following.points[95].plan_c == plan.temps[95]
+
+
+def test_indoor_temperature_is_shown_from_the_first_moment_of_the_plan():
+    house = House.of(building_model(2010, 120, 3), "single_family_house", 120.0, 21)
+    snapshot = _pump_snapshot(house, [0.0] * 96, [21.0] * 96)
+
+    start = live(_run([], _energy({}), DAY), {"heat_pumps": [snapshot]}).indoor[0]
+
+    # Przed pierwszym pełnym kwadransem: temperatura startowa domu, a nie brak wskaźnika.
+    assert start.temp_c == house.indoor_c and start.plan_c is None
+    assert all(point.temp_c is None for point in start.points)
 
 
 def test_water_heating_of_the_pump_does_not_warm_the_house():
@@ -301,3 +319,21 @@ def test_profiles_of_one_device_that_do_not_overlap_stay_separate():
 
     assert planned[0][1] is not planned[1][1]
 
+
+
+def test_report_values_pv_sent_to_the_grid():
+    from app.services.plan_run_report import _pv as report_pv
+
+    hour = DAY + 12 * 4 * SLOT
+    energy = _energy({
+        "dev_pv_01": {hour + index * SLOT: -0.5 for index in range(4)},
+        "dev_tv": {hour: 0.6, hour + 3 * SLOT: 0.2},
+    })
+    balance = HouseBalance({}, {}, {}, {hour: 0.4})
+
+    pv = report_pv(_run([], energy, hour + 4 * SLOT, pv_devices=["dev_pv_01"], balance=balance), set())
+
+    # Raport liczy autokonsumpcję w kwadransach: zużyto 0,5 + 0,2 kWh, resztę (1,3 kWh) oddano po 0,40 zł.
+    assert (pv.production_kwh, pv.self_consumption_kwh, pv.export_kwh) == (2.0, 0.7, 1.3)
+    assert pv.export_pln == pytest.approx(1.3 * 0.4)
+    assert report_pv(_run([], energy, hour + 4 * SLOT, pv_devices=["dev_pv_01"]), set()).export_pln is None

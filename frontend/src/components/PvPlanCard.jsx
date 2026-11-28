@@ -1,17 +1,11 @@
 import { Link } from "react-router-dom";
 import { FiSun } from "react-icons/fi";
-import { formatNumber } from "../utils/format";
-import { formatPln } from "../utils/schedule";
+import { formatDateTime, formatKwh, formatPercent, formatPln } from "../utils/format";
+import { CARD, alertClass } from "./uiStyles";
 import MoreInfo from "./MoreInfo";
 
-const kwh = (value) => `${formatNumber(value, 1)} kWh`;
-const momentFormat = new Intl.DateTimeFormat("pl-PL", {
-  timeZone: "Europe/Warsaw", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-});
-const fetchedText = (iso) => {
-  const parts = Object.fromEntries(momentFormat.formatToParts(new Date(iso)).map((part) => [part.type, part.value]));
-  return `${parts.day}.${parts.month} ${parts.hour}:${parts.minute}`;
-};
+const kwh = formatKwh;
+const fetchedText = formatDateTime;
 
 function Row({ label, before, after }) {
   return (
@@ -33,7 +27,7 @@ function PvPlanCard({ pv, weather = null }) {
   const { before, after } = pv;
   const settlement = pv.settlement === "net_billing" ? "do depozytu" : "w opuście";
   return (
-    <section className="bg-white border border-gray-200 rounded-lg p-4 md:p-5 shadow-sm" aria-label="Prąd z paneli">
+    <section className={CARD} aria-label="Prąd z paneli">
       <h4 className="flex items-center gap-2 font-semibold text-gray-900">
         <FiSun aria-hidden="true" className="text-amber-500" /> Prąd z paneli
       </h4>
@@ -42,7 +36,7 @@ function PvPlanCard({ pv, weather = null }) {
           <>Z pogody z archiwum {kwh(pv.forecast_kwh)}. To pogoda, która naprawdę była, więc plan liczy na całą produkcję.</>
         ) : (
           <>
-            Prognoza {kwh(pv.forecast_kwh)}, plan liczy na {kwh(pv.planned_kwh)} (o {formatNumber(pv.uncertainty * 100, 0)}% mniej,{" "}
+            Prognoza {kwh(pv.forecast_kwh)}, plan liczy na {kwh(pv.planned_kwh)} (o {formatPercent(pv.uncertainty)} mniej,{" "}
             {pv.uncertainty_source === "history" ? "tyle średnio myli się prognoza dla Twoich paneli" : "prognoza nie jest jeszcze dopasowana do Twoich paneli"}).
           </>
         )}
@@ -53,7 +47,7 @@ function PvPlanCard({ pv, weather = null }) {
         </p>
       )}
       {pv.export_beats_grid && (
-        <p className="mt-2 rounded-md bg-sky-50 p-2 text-sm text-sky-900">
+        <p className={`${alertClass("info")} mt-2`}>
           W godzinach ze słońcem prąd oddany do sieci jest wart więcej niż prąd z sieci, więc plan nie przesuwa urządzeń
           pod słońce: nadwyżkę lepiej oddać do depozytu, a urządzenia włączyć, gdy prąd z sieci jest tani.
         </p>

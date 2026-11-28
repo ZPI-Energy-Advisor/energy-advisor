@@ -5,11 +5,9 @@ import apiClient from "../api/client";
 import DayPlanView from "./DayPlanView";
 import { getApiErrorMessage } from "../utils/energyFiles";
 import { inPeriods, periodsText } from "../utils/dayPlan";
+import { CARD, alertClass, buttonClass } from "./uiStyles";
 
-const CARD = "bg-white border border-gray-200 rounded-lg p-4 md:p-5 shadow-sm";
-const PRIMARY =
-  "w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-5 py-3 font-semibold " +
-  "text-white hover:bg-emerald-700 disabled:opacity-50";
+const PRIMARY = `${buttonClass("primary", "lg")} w-full sm:w-auto`;
 
 const errorText = (err, fallback) => {
   const detail = err?.response?.data?.detail;
@@ -113,7 +111,7 @@ function PastDayPlanner({ flatTariff, onEditSettings, canRun, initialDay = null 
 
   if (rangeError) {
     return (
-      <p className="p-3 rounded bg-red-50 text-sm text-red-700" role="alert">
+      <p className={alertClass("error")} role="alert">
         {rangeError} <Link to="/profile" className="font-semibold underline">Przejdź do profilu</Link>
       </p>
     );
@@ -146,12 +144,12 @@ function PastDayPlanner({ flatTariff, onEditSettings, canRun, initialDay = null 
             </button>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-amber-800" role="alert">
+          <p className={`${alertClass("warning")} mt-3`} role="alert">
             Nie ma cen Twojej taryfy dla żadnego dnia z przeszłości, więc planu idealnego nie ułożymy.
           </p>
         )}
         {day && !inRange && range.first_day && (
-          <p className="mt-2 text-sm text-amber-800" role="alert">
+          <p className={`${alertClass("warning")} mt-2`} role="alert">
             Wybierz dzień od {range.first_day.split("-").reverse().join(".")} do{" "}
             {range.last_day.split("-").reverse().join(".")}: tylko dla nich mamy ceny Twojej taryfy.
           </p>

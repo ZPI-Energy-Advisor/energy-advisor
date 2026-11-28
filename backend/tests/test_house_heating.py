@@ -1,8 +1,10 @@
 """Dom jako magazyn ciepła: temperatura w domu, termostat i najtańsze grzanie pompą w zakresie komfortu."""
 
 import math
+import time
 
 import pytest
+from timing import TIME_LIMIT_SCALE
 
 from app.services.heat_pump_model import building_heat_per_hdd, building_model
 from app.services.house_heating import (
@@ -144,3 +146,20 @@ def test_grid_limit_moves_heating_out_of_blocked_quarters_when_possible():
     heating = optimize(house, _outdoor(), [0.5] * SLOTS, POWER_KW, allowed=allowed)
 
     assert all(heating.kwh[slot] == 0 for slot in range(20, 28))
+
+
+@pytest.mark.perf
+def test_five_power_levels_plan_a_day_and_night_quickly():
+    """ZP-151: 5 poziomów mocy zamiast 3 wydłużają planowanie najwyżej o kilkadziesiąt procent. Limit to doba
+    i noc do 6:00 (120 kwadransów) z 5 poziomami; stara pętla z 5 poziomami była ok. 2,5 raza wolniejsza niż z 3."""
+    house = _house()
+    outdoor = [2.0 + 4 * ((slot % SLOTS) / SLOTS) for slot in range(SLOTS + 24)]
+    prices = [0.5 if slot % SLOTS < 24 else 1.0 for slot in range(SLOTS + 24)]
+    best = float("inf")
+    for _ in range(3):
+        started = time.perf_counter()
+        optimize(house, outdoor, prices, POWER_KW)
+        best = min(best, time.perf_counter() - started)
+
+    assert best < 0.06 * TIME_LIMIT_SCALE
+

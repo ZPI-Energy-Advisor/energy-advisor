@@ -23,7 +23,9 @@ const PRIMARY_BUTTON =
   `${buttonClass("primary", "lg")} w-full shadow-sm transition duration-150 active:scale-[0.97] ` +
   "disabled:cursor-wait disabled:active:scale-100";
 const SPINNER = <FiLoader aria-hidden="true" className="animate-spin" />;
-const SECONDARY_BUTTON = `${buttonClass("secondary", "lg")} w-full sm:w-auto min-w-0 max-w-full`;
+// Przyciski obok głównego: ta sama wysokość, mniejsze odstępy i tekst bez łamania, żeby na komputerze wszystkie
+// (ustawienia, woda, dom) mieściły się w jednym rzędzie z „Zatwierdź plan”.
+const SECONDARY_BUTTON = `${buttonClass("secondary")} w-full sm:w-auto min-w-0 max-w-full whitespace-nowrap py-3`;
 
 function settingLabel(label, device, devices) {
   return devices.length > 1 ? `${label}: ${device.device_name}` : label;
@@ -84,7 +86,8 @@ const fromPanels = (item) =>
 // przyciski, a na końcu uwagi; temperatura wody w okienku.
 // `onRun`: uruchomienie zatwierdzonego planu w symulacji domu; null, gdy konto nie ma domu Smart Home.
 function DayPlanView({
-  plan, flatTariff, onApprove, onEdit, onReplan, isApproving, isReplanning, approveError,
+  plan, flatTariff, onApprove, onEdit, onReplan,
+  replanNote = null, isApproving, isReplanning, approveError,
   onRun = null, isStartingRun = false, runError = null,
 }) {
   const [waterHeater, setWaterHeater] = useState(null);
@@ -106,7 +109,10 @@ function DayPlanView({
     <div className="space-y-4">
       {outdated && (
         <div className={`${alertClass("warning")} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`} role="status">
-          <p>To plan na {forWeekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
+          <div>
+            <p>To plan na {forWeekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
+            {replanNote && <p className="mt-1">{replanNote}</p>}
+          </div>
           <button type="button" className={SECONDARY_BUTTON} onClick={onReplan} disabled={isReplanning}>
             <FiRefreshCw aria-hidden="true" /> {isReplanning ? "Układanie planu..." : "Ułóż plan na jutro"}
           </button>
@@ -285,7 +291,7 @@ function DayPlanView({
             </p>
           </div>
         )}
-        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row sm:flex-wrap" role="group" aria-label="Ustawienia planu">
+        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row sm:flex-wrap xl:flex-nowrap" role="group" aria-label="Ustawienia planu">
           <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>
             <FiEdit2 aria-hidden="true" /> Edytuj ustawienia
           </button>

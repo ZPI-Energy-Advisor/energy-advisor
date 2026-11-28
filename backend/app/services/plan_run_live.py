@@ -90,7 +90,10 @@ def _indoor(run: RunEnergy, pumps: list[dict]) -> list[PlanRunIndoorOut]:
                 start=slot.astimezone(LOCAL_TIMEZONE), plan_c=quarter["after"], temp_c=simulated,
             ))
         if at is None:
-            continue
+            # Przed pierwszym pełnym kwadransem: temperatura startowa domu (ustawiona), żeby wskaźnik był od razu.
+            if not pump["quarters"]:
+                continue
+            at = _utc(pump["quarters"][0]["start"])
         result.append(PlanRunIndoorOut(
             device_id=pump["device_id"], device_name=pump["device_name"], at=at.astimezone(LOCAL_TIMEZONE),
             temp_c=round(temp, 1), plan_c=plan_c, set_c=house.indoor_c, band=pump["band"], points=points,
@@ -200,7 +203,20 @@ def _saving(run: RunEnergy) -> PlanRunSavingLiveOut | None:
                   for device_id in by_device if device_id in excluded],
         planned_saving=_money(sum((action.cost_before or 0.0) - (action.planned_cost or 0.0)
                                   for action in run.actions if action.device_id not in excluded)),
+        progress_saving=_money(
+            cost_before - cost_after if run.complete else sum(_progress(run, by_device[device_id]) for device_id in counted)
+        ),
     )
+
+
+def _progress(run: RunEnergy, actions: list) -> float:
+    """Oszczędność urządzenia z planu w proporcji do zużytej już energii z zaplanowanej (najwyżej cała)."""
+    planned_kwh = sum(action.energy_kwh or 0.0 for action in actions)
+    if planned_kwh <= 0:
+        return 0.0
+    used_kwh = sum(kwh for kwh in run.energy.by_device_slot.get(actions[0].device_id, {}).values() if kwh > 0)
+    saving = sum((action.cost_before or 0.0) - (action.planned_cost or 0.0) for action in actions)
+    return saving * min(used_kwh / planned_kwh, 1.0)
 
 
 def _priced(run: RunEnergy, slots: dict[datetime, float]) -> float:

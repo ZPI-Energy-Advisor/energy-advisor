@@ -50,7 +50,7 @@ function HomeSummary({ power, today }) {
         <Stat
           label="Koszt"
           value={formatPln(today?.cost_pln)}
-          hint={today?.cost_error ?? "Cały dom: energia pobrana z sieci (po PV), w cenach taryfy, bez opłat stałych"}
+          hint={today?.cost_error ?? "Cały dom: energia pobrana z sieci (po PV), w cenach taryfy, bez opłat stałych i bez wartości prądu oddanego do sieci"}
         />
       </div>
     </section>

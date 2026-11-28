@@ -1,7 +1,6 @@
 import { useState } from "react";
 import DataContextBar from "../components/DataContextBar";
-import DashboardPvCard from "../components/DashboardPvCard";
-import DashboardPvPeriod from "../components/DashboardPvPeriod";
+import DashboardPv from "../components/DashboardPv";
 import DashboardTariffCard from "../components/DashboardTariffCard";
 import { PageSkeleton } from "../components/Skeleton";
 import DeviceUsagePanel from "../components/DeviceUsagePanel";
@@ -166,8 +165,6 @@ function Dashboard() {
         pricingNote={pricing?.note}
       />
 
-      <DashboardPvCard />
-
       {!simulationData ? (
         <NoFileData
           emptyTitle="Brak danych do analizy"
@@ -178,7 +175,6 @@ function Dashboard() {
       ) : (
         <>
           <IncompleteDaysNotice statistics={results?.statistics} className="mb-6" />
-          <DashboardPvPeriod range={dateRange} />
 
           <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
             <SegmentedControl
@@ -374,6 +370,9 @@ function Dashboard() {
           )}
         </>
       )}
+
+      {/* Panele pod wykresem zużycia: jutro z paneli i szacunek z pogody dla okresu pliku w jednej karcie. */}
+      <DashboardPv range={simulationData && hasDataInRange(results) ? dateRange : null} />
     </div>
   );
 }

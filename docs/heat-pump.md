@@ -124,7 +124,9 @@ tylko przy niedogrzaniu ponad 0,3 °C (`SHORTFALL_WARNING_C`) i ma powód w `sho
 
 Czas planowania doby (96 kwadransów, 5 poziomów mocy, programowanie dynamiczne co 0,05 °C), mierzony
 w kontenerze: dom 120 m² ok. 35 ms, dom z dolną granicą pojemności (stała 10 h) ok. 90 ms. Przy trzech poziomach
-było to 20–60 ms, więc plan dalej liczy się od razu.
+było to 20–60 ms, więc plan dalej liczy się od razu. Stygnięcie domu w kwadransie liczymy raz na stan, a ciepło
+z każdego poziomu dodajemy (model jest liniowy w cieple): bez tego 5 poziomów było ok. 2,5 raza wolniejsze niż 3,
+a tak jest wolniejsze o ok. 50% (te same plany). Pilnuje tego test `test_five_power_levels_plan_a_day_and_night_quickly`.
 
 Najpierw planujemy ciepłą wodę (zasobnik, niżej), bo w jej kwadransach pompa nie grzeje domu. W domu bez bojlera
 woda jest zawsze planowana osobno: na godziny z ustawień albo, bez nich, na 6:00 i 18:00.

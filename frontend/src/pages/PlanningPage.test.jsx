@@ -374,10 +374,10 @@ describe("PlanningPage", () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
 
     const card = await screen.findByRole("region", { name: "Prąd z paneli" });
-    expect(within(card).getByText(/Prognoza 14,2 kWh, plan liczy na 12,5 kWh \(o 12% mniej/)).toBeTruthy();
+    expect(within(card).getByText(/Prognoza 14,20 kWh, plan liczy na 12,50 kWh \(o 12% mniej/)).toBeTruthy();
     const row = within(card).getByText("Urządzenia z planu biorą z paneli").closest("tr");
-    expect(within(row).getByText("0,3 kWh")).toBeTruthy();
-    expect(within(row).getByText("2,2 kWh")).toBeTruthy();
+    expect(within(row).getByText("0,30 kWh")).toBeTruthy();
+    expect(within(row).getByText("2,20 kWh")).toBeTruthy();
     const value = within(card).getByText("Wartość oddania do depozytu").closest("tr");
     expect(within(value).getByText("2,52 zł")).toBeTruthy();
     expect(within(value).getByText("1,95 zł")).toBeTruthy();
@@ -394,7 +394,7 @@ describe("PlanningPage", () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, pv });
 
     const card = await screen.findByRole("region", { name: "Prąd z paneli" });
-    expect(within(card).getByText(/Z pogody z archiwum 3,2 kWh. To pogoda, która naprawdę była/)).toBeTruthy();
+    expect(within(card).getByText(/Z pogody z archiwum 3,20 kWh. To pogoda, która naprawdę była/)).toBeTruthy();
     expect(within(card).queryByText(/o 0% mniej/)).toBeNull();
     expect(within(card).getByText(/prąd oddany do sieci jest wart więcej niż prąd z sieci/)).toBeTruthy();
   });
@@ -424,7 +424,7 @@ describe("PlanningPage", () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, items, pv, weather });
 
     const card = await screen.findByRole("region", { name: "Prąd z paneli" });
-    expect(within(card).getByText("Prognoza pogody pobrana 12.11 15:20.")).toBeTruthy();
+    expect(within(card).getByText("Prognoza pogody pobrana 12.11.2026, 15:20.")).toBeTruthy();
     expect(within(card).getByText(/Prognoza orientacyjna: panele w profilu są szacunkowe/)).toBeTruthy();
     expect(within(card).getByText(/Pogoda dla regionu/)).toBeTruthy();
     expect(within(card).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/profile", "/profile"]);
@@ -437,9 +437,12 @@ describe("PlanningPage", () => {
     const panels = screen.getByLabelText("Prąd z paneli co godzinę");
     expect(panels.children).toHaveLength(3);
     expect(panels.querySelectorAll("[data-surplus]")).toHaveLength(2);
-    expect(panels.children[1].getAttribute("title")).toBe("12:00: plan liczy na 1,2 kWh z paneli, nadwyżka nad resztą domu 0,9 kWh");
+    expect(panels.children[1].getAttribute("title")).toBe("12:00: plan liczy na 1,20 kWh z paneli, nadwyżka nad resztą domu 0,90 kWh");
     expect(screen.getByText("nadwyżka z paneli")).toBeTruthy();
-    expect(screen.getByText("1,2 z 1,4 kWh z paneli")).toBeTruthy();
+    expect(screen.getByText("1,20 kWh z 1,40 kWh z paneli")).toBeTruthy();
+    // Te same szczegóły godzin bez najeżdżania myszą (telefon): lista pod osią doby.
+    const details = screen.getAllByText("Godziny: pogoda i prąd z paneli")[0].closest("details");
+    expect(details.textContent).toMatch(/12:00 · [^·]*· z paneli 1,20 kWh, nadwyżka 0,90 kWh/);
   });
 
   it("plan bez prognozy PV mówi to na osi zamiast pustego pasa", async () => {
@@ -656,6 +659,21 @@ describe("PlanningPage", () => {
     expect(await screen.findByText("Plan na piątek 13.11")).toBeTruthy();
     expect(post).toHaveBeenCalledWith("/planning/plans", {});
     expect(screen.queryByText(/czyli nie na jutro/)).toBeNull();
+  });
+
+  it("plan demo na dziś bez cen na jutro: „Ułóż plan na jutro” zostawia plan z informacją zamiast pętli", async () => {
+    renderPage({ ...BODY, saved_at: "2026-11-11T14:00:00Z" }, { ...PLAN, plan_date: "2026-11-12" });
+    vi.spyOn(apiClient, "post").mockRejectedValue({ response: { status: 409, data: { detail: {
+      code: "no_prices", message: "Nie ma jeszcze cen dynamicznych na 13.11.2026. PSE publikuje ceny ok. 14:00.",
+      latest_price_date: "2026-11-12",
+    } } } });
+
+    expect(await screen.findByText(/To plan na czwartek 12\.11, czyli nie na jutro/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Ułóż plan na jutro/ }));
+
+    expect(await screen.findByText(/Nie ma jeszcze cen dynamicznych na 13\.11\.2026/)).toBeTruthy();
+    expect(screen.getByText("Plan na czwartek 12.11")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Ułóż plan demo/ })).toBeNull();
   });
 
   it("przełącznik „Wybrany dzień” pokazuje plan idealny, a „Jutro” dalej plan na jutro", async () => {

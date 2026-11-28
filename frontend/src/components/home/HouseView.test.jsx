@@ -224,17 +224,19 @@ describe("HouseView", () => {
     renderHouse([KETTLE], { planRun });
 
     expect(screen.getByTestId("timeline-time").textContent).toBe("19:00");
-    const indicators = screen.getByRole("list", { name: "Wskaźniki domu" });
+    // Woda i cena są „w domu”, czyli w lewym rogu przekroju.
+    const indicators = screen.getByRole("list", { name: "Wskaźniki: w domu" });
     expect(indicators.textContent).toContain("54°C");
     expect(within(indicators).getByLabelText("Temperatura wody (Bojler, według planu): 54°C")).toBeTruthy();
     expect(indicators.textContent).toContain("0,92 zł/kWh");
-    expect(indicators.textContent).toContain("drogo");
+    // Bez „tanio / drogo” przy cenie: poziom cen jest na pasku czasu, a ramka nie zmienia szerokości.
+    expect(indicators.textContent).not.toContain("drogo");
   });
 
   it("bez przebiegu planu pasek pokazuje samą godzinę, bez wskaźników", () => {
     renderHouse([KETTLE]);
 
     expect(screen.getByTestId("timeline-time").textContent).toBe("19:00");
-    expect(screen.queryByRole("list", { name: "Wskaźniki domu" })).toBeNull();
+    expect(screen.queryByRole("list", { name: /^Wskaźniki/ })).toBeNull();
   });
 });

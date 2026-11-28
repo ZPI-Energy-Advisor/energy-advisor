@@ -805,7 +805,8 @@ ceny. Bez odchyleń oszczędność jest równa oszczędności planu.
   "excluded": [], "pending": [],
   "manual": [{ "device_id": "dev_lamp_01", "device_name": "Lampa", "energy_kwh": 0.2, "cost": 0.12 }],
   "manual_cost": 0.12,
-  "pv": { "production_kwh": 6.4, "self_consumption_kwh": 3.1, "plan_from_pv_kwh": 0.9, "plan_kwh": 6.4 },
+  "pv": { "production_kwh": 6.4, "self_consumption_kwh": 3.1, "plan_from_pv_kwh": 0.9, "plan_kwh": 6.4,
+          "export_kwh": 3.3, "export_pln": 0.66 },
   "deviations": [{ "kind": "grid_limit", "device_id": null, "device_name": null,
                    "sim_time": "2026-10-12T19:00:00+02:00", "end": "2026-10-12T19:30:00+02:00",
                    "message": "Pobór z sieci do 4,40 kW, a limit przyłącza to 3,00 kW.", "excluded": false }]
@@ -817,9 +818,12 @@ ceny. Bez odchyleń oszczędność jest równa oszczędności planu.
   albo ręcznie włączone poza planem (`device_started` z `command_id` spoza komend przebiegu).
 - Inne zużycie niż w planie (ponad 1%) i pobór z sieci ponad `max_grid_kw` planu (plan razem z ręcznymi
   włączeniami, sąsiednie kwadranse razem) są w `deviations`, ale nie wykluczają.
-- Urządzenia stałe włączane ręcznie (`manual`) i PV (`pv`) są poza oszczędnością. Koszty to energia razy cena
-  kwadransu, bez bilansowania z PV, tak jak w planie; `pv` podaje autokonsumpcję w kwadransie i jej część
-  przypadającą na urządzenia z planu (w proporcji do ich zużycia).
+- Urządzenia stałe włączane ręcznie (`manual`) i PV (`pv`) są poza oszczędnością. Koszty liczą się tak jak
+  w planie: bez PV energia razy cena kwadransu, a w planie z PV (ZP-121) zmiana rachunku domu w godzinie, więc prąd
+  z paneli zużyty przez urządzenie kosztuje tyle, ile warte byłoby jego oddanie do sieci. Dlatego koszt „z planem”
+  bywa wyższy niż „Koszt” w bilansie doby, który liczy tylko prąd kupiony z sieci. `pv` podaje autokonsumpcję
+  w kwadransie, jej część przypadającą na urządzenia z planu (w proporcji do ich zużycia), oddanie do sieci
+  (`export_kwh`) i jego wartość (`export_pln`, None w planie bez PV).
 - Przed końcem planu (`running`, `ended`, `superseded`) raport jest niepełny (`complete: false`):
   porównuje urządzenia, których akcje skończyły się do `until`, a resztę podaje w `pending`.
 - Raport zapisuje się przy zamknięciu przebiegu i przez 5 minut jeszcze się przelicza, bo hub dosyła
@@ -853,7 +857,7 @@ Ekran odświeża przebieg razem ze stanem domu, więc wartości idą z zegarem, 
           "hours": [{ "start": "2026-10-12T13:00:00+02:00", "planned_kwh": 1.2, "actual_kwh": 1.1 }] },
   "price_now": 0.88, "export_price_now": 0.45,
   "saving": { "cost_before": 5.2, "cost_after": 3.9, "saving": 1.3, "saving_percent": 25.0, "excluded": [],
-              "planned_saving": 2.1 }
+              "planned_saving": 2.1, "progress_saving": 0.9 }
 }
 ```
 
@@ -879,8 +883,10 @@ Ekran odświeża przebieg razem ze stanem domu, więc wartości idą z zegarem, 
   z odchyleniem wykluczającym (`excluded`) wypadają tak jak w raporcie. Po końcu planu bez planu to cały
   profil, więc wynik to raport. Przebiegi sprzed ZP-153 nie mają profili: `saving = null`.
   `planned_saving` to oszczędność planu w całej dobie (bez urządzeń z odchyleniem): plan przesuwa pracę w czasie,
-  więc „do teraz” bywa w trakcie doby większe albo mniejsze (np. o 02:00 pompa bez planu już grzała, a plan
-  zaczyna później).
+  więc różnica kosztów „do teraz” (`saving`) bywa w trakcie doby większa albo mniejsza, także ujemna (np. bojler
+  według planu grzeje w nocy, a bez planu grzałby rano). Dlatego ekran pokazuje `progress_saving`: każde urządzenie
+  dokłada swoją oszczędność z planu w proporcji do energii, którą już zużyło z zaplanowanej (najwyżej całą). Rośnie
+  równo w ciągu doby, a po końcu planu to `saving`, czyli oszczędność z raportu.
 
 **Pompa ciepła w hubie.** Plan ma osobno grzanie domu (`#dom`, cała doba) i ciepłą wodę (`#woda`), a urządzenie
 wykonuje naraz jeden profil: hub odrzuciłby wodę („Trwa przebieg urządzenia”). Pozycje jednego urządzenia, których

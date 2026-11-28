@@ -458,6 +458,9 @@ function PlanningPage() {
   const [needsProfile, setNeedsProfile] = useState(false);
   const [isReplanning, setIsReplanning] = useState(false);
   const [noPrices, setNoPrices] = useState(null);
+  // Brak cen na jutro przy „Ułóż plan na jutro” z widoku planu demo: komunikat w planie zamiast powrotu do
+  // formularza, który znów proponowałby plan demo (pętla).
+  const [replanNote, setReplanNote] = useState(null);
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
@@ -514,8 +517,9 @@ function PlanningPage() {
     setSaveError(null);
   };
 
-  const createPlan = async (planDate = null) => {
+  const createPlan = async (planDate = null, { keepPlan = false } = {}) => {
     setNeedsProfile(false);
+    setReplanNote(null);
     try {
       const { data: body } = await apiClient.post("/planning/plans", planDate ? { plan_date: planDate } : {});
       if (body.kind === "past_day") {
@@ -527,9 +531,13 @@ function PlanningPage() {
       }
       showPlan(body);
     } catch (err) {
+      const missing = noPricesFrom(err);
+      if (missing && keepPlan) {
+        setReplanNote(missing.message);
+        return;
+      }
       // Błąd pokazujemy przy przycisku zapisu, także gdy plan układaliśmy z widoku planu.
       setView("form");
-      const missing = noPricesFrom(err);
       if (missing) {
         setNoPrices(missing);
         return;
@@ -545,7 +553,7 @@ function PlanningPage() {
     setIsReplanning(true);
     setSaveError(null);
     try {
-      await createPlan();
+      await createPlan(null, { keepPlan: true });
     } finally {
       setIsReplanning(false);
     }
@@ -689,6 +697,7 @@ function PlanningPage() {
           onApprove={approve}
           onEdit={() => setView("form")}
           onReplan={replan}
+          replanNote={replanNote}
           isApproving={isApproving}
           isReplanning={isReplanning}
           approveError={approveError}

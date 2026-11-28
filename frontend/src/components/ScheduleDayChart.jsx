@@ -2,6 +2,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { formatDegrees, formatKwh, formatNumber, formatPrice } from "../utils/format";
 import { actionSummary, dayOf, dayPrices, dayRows, formatDayMonth } from "../utils/schedule";
 import { cloudLabel, hourlyWeather } from "../utils/weather";
+import MoreInfo from "./MoreInfo";
 import { CARD } from "./uiStyles";
 
 const PRICE_COLOR = "#10b981";
@@ -80,6 +81,30 @@ function PvRow({ hours, note }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Szczegóły godzin z pasów pogody i paneli jako lista do rozwinięcia: podpowiedzi przy najechaniu nie działają
+// na telefonie, a tu ta sama treść jest po stuknięciu.
+function HourDetails({ weatherHours, sun }) {
+  const byHour = new Map();
+  for (const entry of weatherHours) byHour.set(entry.hour, { hour: entry.hour, weather: entry });
+  for (const entry of sun) byHour.set(entry.hour, { ...(byHour.get(entry.hour) ?? { hour: entry.hour }), sun: entry });
+  const hours = [...byHour.values()].sort((first, second) => first.hour - second.hour);
+  if (!hours.length) return null;
+  return (
+    <MoreInfo summary="Godziny: pogoda i prąd z paneli" className="mt-3">
+      <ul className="space-y-0.5 text-xs tabular-nums">
+        {hours.map(({ hour, weather, sun: panels }) => (
+          <li key={hour}>
+            <span className="font-medium text-gray-700">{hourText(hour)}</span>
+            {weather && ` · ${[weather.temperature != null ? formatDegrees(weather.temperature) : null, cloudLabel(weather.cloud)].filter(Boolean).join(", ")}`}
+            {panels && ` · z paneli ${formatKwh(panels.planned)}`}
+            {panels?.surplus && `, nadwyżka ${formatKwh(panels.surplusKwh)}`}
+          </li>
+        ))}
+      </ul>
+    </MoreInfo>
   );
 }
 
@@ -196,6 +221,7 @@ function ScheduleDayChart({ day, actions, prices, isTail = false, subtitle = nul
           </div>
         ))}
       </div>
+      <HourDetails weatherHours={weatherHours} sun={sun} />
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { FiSun } from "react-icons/fi";
 import { formatPln } from "../utils/format";
 
 // Najwyżej tyle okresów widać od razu; dłuższą listę (bojler, pompa ciepła) rozwija „pokaż wszystkie”.
@@ -19,7 +20,8 @@ function Periods({ text }) {
 
 /**
  * Akcje urządzeń jako karty na telefonie, zamiast tabeli z pięcioma kolumnami (plan na jutro, optymalizacja).
- * `items`: { key, name, program, before, after, afterNote, costBefore, costAfter }; `labels` nazywa obie strony,
+ * `items`: { key, name, program, before, after, afterNote, extra, costBefore, costAfter }; `extra` to dopisek pod
+ * godzinami po planie (np. ile prądu z paneli); `labels` nazywa obie strony,
  * np. { before: "Bez planu", after: "Według planu" }.
  */
 function ActionCards({ items, labels, ariaLabel }) {
@@ -43,6 +45,11 @@ function ActionCards({ items, labels, ariaLabel }) {
               <dd className="text-gray-900">
                 <Periods text={item.after} />
                 {item.afterNote && <span className="text-gray-500"> {item.afterNote}</span>}
+                {item.extra && (
+                  <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
+                    <FiSun aria-hidden="true" className="shrink-0" /> {item.extra}
+                  </span>
+                )}
               </dd>
             </div>
           </dl>
