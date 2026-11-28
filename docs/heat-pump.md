@@ -164,6 +164,11 @@ ogrzewania dostają cel bez części na wodę z modelu. Pompa nie grzeje domu i 
 nachodziłby na grzanie wody, ma w tych kwadransach przerwę i wydłuża się o tyle dalej, a bloku z przerwami plan
 nie przesuwa.
 
+Z prognozą PV (ZP-121) ogrzewanie domu i ciepła woda z pompy dostają ceny kwadransów obniżone do wartości oddania
+w godzinach, w których nadwyżka paneli ponad resztę domu pokryje pompę na najniższym poziomie mocy
+(`HouseBalance.effective_prices`), więc plan grzeje dom i wodę na zapas pod słońce. Koszt pompy w planie liczy potem
+rachunek godzinowy (docs/scheduling.md, „Nadwyżka PV”).
+
 Wykonanie planu w symulacji (ZP-113) wysyła pompie profil z planu, więc też jest dopasowane do pogody. Pompa
 odznaczona w planie (pracuje sama na termostacie) też jest dopasowana do temperatury, tą samą funkcją
 (`day_background.py`, ZP-120): przebiegi dnia referencyjnego zachowują kształt, a nadmiar przy mocy pompy

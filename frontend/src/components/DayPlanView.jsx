@@ -5,6 +5,7 @@ import Dialog from "./Dialog";
 import HeatPumpPlanCard from "./HeatPumpPlanCard";
 import IndoorTemperatureChart from "./IndoorTemperatureChart";
 import MoreInfo from "./MoreInfo";
+import PvPlanCard from "./PvPlanCard";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
 import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
@@ -37,7 +38,16 @@ function Amount({ label, value, hint = null, accent = false }) {
 const savingPercent = (plan) =>
   plan.cost_before > 0 ? `${((plan.saving / plan.cost_before) * 100).toFixed(1).replace(".", ",")}%` : null;
 
-export function FlatTariffNote() {
+// `surplus`: plan ma nadwyżkę z paneli (ZP-121), więc przesuwanie pod słońce obniża rachunek także przy stałej cenie.
+export function FlatTariffNote({ surplus = false }) {
+  if (surplus) {
+    return (
+      <p className="p-3 text-sm text-gray-700 bg-gray-50 rounded-lg">
+        Masz taryfę ze stałą ceną przez całą dobę, więc plan przesuwa urządzenia tylko pod słońce: w godzinach
+        nadwyżki z paneli prąd jest tańszy niż z sieci.
+      </p>
+    );
+  }
   return (
     <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">
       Masz taryfę ze stałą ceną przez całą dobę, więc przesuwanie urządzeń prawie nie obniży rachunku.{" "}
@@ -46,6 +56,10 @@ export function FlatTariffNote() {
     </p>
   );
 }
+
+const SURPLUS_KWH = 0.05;
+const hasSurplus = (pv) =>
+  Boolean(pv) && Math.max(pv.before?.export_kwh ?? 0, pv.after?.export_kwh ?? 0) > SURPLUS_KWH;
 
 // Plan pracy urządzeń na dzień (ZP-112): koszt i ostrzeżenia, oś doby na tle cen, tabela przydziałów,
 // przyciski, a na końcu uwagi; temperatura wody w okienku.
@@ -98,7 +112,7 @@ function DayPlanView({
         <Amount label="Oszczędność" value={plan.saving} hint={savingPercent(plan)} accent />
       </div>
 
-      {flatTariff && <FlatTariffNote />}
+      {flatTariff && <FlatTariffNote surplus={hasSurplus(plan.pv)} />}
 
       {warnings.length > 0 && (
         <ul className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-1" role="alert">
@@ -110,6 +124,7 @@ function DayPlanView({
         </ul>
       )}
 
+      {plan.pv && <PvPlanCard pv={plan.pv} />}
       {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} planDate={plan.plan_date} />)}
 
       <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-600">

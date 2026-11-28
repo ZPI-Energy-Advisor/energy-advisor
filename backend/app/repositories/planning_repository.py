@@ -9,6 +9,9 @@ from app.models.DeviceAction import DeviceAction
 from app.models.DeviceInstance import DeviceInstance
 from app.models.DeviceSlotUsage import DeviceSlotUsage
 from app.models.DeviceProgram import DeviceProgram
+from app.models.EnergyDataFile import EnergyDataFile
+from app.models.EnergyReading import EnergyReading
+from app.repositories.energy_reading_repository import EnergyReadingRepository
 from app.models.PlanningTemplate import PlanningTemplate
 from app.models.UserProfile import UserProfile
 
@@ -100,6 +103,54 @@ class PlanningRepository:
         # Doba więcej, żeby objąć całe doby lokalne; dokładne `days` dni wybiera plan_history.
         since = latest - timedelta(days=days + 1)
         return [tuple(row) for row in self.db.execute(fixed.where(DeviceSlotUsage.slot_start > since)).all()]
+
+    def flexible_slot_usage(self, user_id: UUID, days: int) -> list[tuple[datetime, float]]:
+        """Pobór urządzeń elastycznych (pralka, auto, bojler, pompa…) w kwadransach z ostatnich `days` dni w plikach
+        urządzeń, bez PV i bez kwadransów przykrytych nowszym plikiem. Odejmujemy go od licznika, żeby została reszta
+        domu (ZP-121): te urządzenia układa plan albo liczy je doba urządzeń spoza planu."""
+        flexible = (
+            select(DeviceSlotUsage.slot_start, DeviceSlotUsage.kwh)
+            .join(DeviceAction, DeviceAction.id == DeviceSlotUsage.device_action_id)
+            .join(DeviceInstance, DeviceInstance.id == DeviceAction.device_instance_id)
+            .where(
+                DeviceInstance.user_id == user_id,
+                DeviceInstance.flexibility_mode != DeviceInstance.FIXED,
+                DeviceSlotUsage.superseded.is_(False),
+                DeviceSlotUsage.kwh > 0,
+            )
+        )
+        latest = self.db.execute(select(func.max(flexible.subquery().c.slot_start))).scalar()
+        if latest is None:
+            return []
+        since = latest - timedelta(days=days + 1)
+        return [tuple(row) for row in self.db.execute(flexible.where(DeviceSlotUsage.slot_start > since)).all()]
+
+    def meter_readings(self, user_id: UUID, before: datetime, days: int) -> tuple[dict, set]:
+        """Odczyty licznika (czas lokalny -> pobór, oddanie, plik) z ostatnich `days` dób z odczytami przed `before`
+        (czas lokalny) i pliki licznika z jakimkolwiek oddaniem do sieci; przy nakładaniu wygrywa nowszy plik."""
+        files = self.db.execute(
+            select(EnergyDataFile.id).where(
+                EnergyDataFile.user_id == user_id,
+                EnergyDataFile.status == EnergyDataFile.STATUS_COMPLETED,
+                EnergyDataFile.source_type == EnergyDataFile.SOURCE_METER,
+            ).order_by(EnergyDataFile.uploaded_at, EnergyDataFile.id)
+        ).scalars().all()
+        if not files:
+            return {}, set()
+        readings = EnergyReadingRepository(self.db)
+        latest = self.db.execute(
+            select(func.max(EnergyReading.measured_at)).where(
+                EnergyReading.energy_data_file_id.in_(files), EnergyReading.measured_at < before,
+            )
+        ).scalar()
+        if latest is None:
+            return {}, set()
+        end = datetime.combine(latest.date() + timedelta(days=1), datetime.min.time())
+        rows = readings.merged_with_file(list(files), end - timedelta(days=days), end)
+        return (
+            {measured_at: (used, exported, file_id) for measured_at, used, exported, file_id in rows},
+            readings.files_with_export(list(files)),
+        )
 
     def flat_tariff(self, user_id: UUID) -> bool:
         """Taryfa ze stałą ceną przez całą dobę (G11 bez ceny dynamicznej): przesuwanie nic nie oszczędza."""

@@ -14,7 +14,9 @@ podłączenia auta, termostat bojlera, bloki pompy z historii.
 - pompa ciepła: bloki grzania z historii dopasowane do prognozowanej temperatury (ZP-119, heat_pump.py),
   każdy przesuwany najwyżej o `shift_hours`.
 
-Urządzenia stałe i produkcja PV nie wchodzą do kosztu planu, więc oszczędność dotyczy tylko planowanych urządzeń.
+Koszt planowanych urządzeń przy prognozie PV (ZP-121) to zmiana rachunku domu w godzinach (pv_balance.py): reszta
+domu (średnie zużycie urządzeń stałych i to, co pracuje samo) i prognoza PV pomniejszona o jej średni błąd. Plan
+przesuwa urządzenia w godziny nadwyżki paneli, a oszczędność dotyczy tylko planowanych urządzeń.
 To, co w dobie planu pracuje samo (PV z prognozy pogody, pompa ciepła i bojler spoza planu), plan zapisuje
 w `background` (ZP-120, day_background.py), a symulacja wysyła do huba dokładnie to.
 """
@@ -34,7 +36,7 @@ from app.repositories.planning_repository import PlanningRepository
 from app.schemas.day_plan import DayPlanOut, PlanItemOut
 from app.schemas.planning import PlanningDevice
 from app.schemas.schedule import ChargingPeriodOut, SchedulePriceOut
-from app.services.day_background import FORECAST, PV_TYPE, DayBackground, DayBackgroundService
+from app.services.day_background import FORECAST, PV_TYPE, DayBackground, DayBackgroundService, forecast_production
 from app.services.heat_pump import (
     DEFAULT_HEAT_PUMP_POWER_KW,
     HEAT_PUMP_TANK,
@@ -46,10 +48,14 @@ from app.services.heat_pump import (
     scale_blocks,
 )
 from app.services.heat_pump_model import DEFAULT_INDOOR_C
-from app.services.house_heating import House
+from app.services.house_heating import LEVELS, House
 from app.services.house_heating import optimize as house_optimize
 from app.services.house_heating import thermostat as house_thermostat
 from app.services.plan_history import clock_minute, day_actions, moved_to, peak_by_clock, reference_day
+from app.services.house_load import METER, rest_of_home
+from app.services.prosumer import PRICE_LOOKBACK_DAYS, ExportValuation
+from app.services.pv_forecast import NoPvInstallationError, PvForecastUnavailableError
+from app.services.pv_balance import HouseBalance, Summary, by_slot, hour_of
 from app.services.planning_service import (
     DAY_MINUTES,
     DEFAULT_READY_TIMES,
@@ -87,6 +93,11 @@ from app.services.water_heater import (
     thermostat,
 )
 
+# Prognoza PV bez kalibracji na plikach myli się o tyle (ZP-121); plan bierze produkcję pomniejszoną o błąd.
+DEFAULT_PV_UNCERTAINTY = 0.2
+MAX_PV_UNCERTAINTY = 0.5
+# Mniejsza nadwyżka to zaokrąglenia: dzień bez oddania do sieci.
+SURPLUS_KWH = 0.05
 # Plan kończy się o 06:00 dnia po dniu planu: dalej taryfa dynamiczna nie ma nawet przybliżonych cen.
 PLAN_END_MINUTES = DAY_MINUTES + 6 * 60
 # Rezerwa w limicie przyłącza na resztę domu: największy pobór urządzeń stałych z tylu ostatnich dni.
@@ -302,6 +313,99 @@ def _indoor_out(device: PlanningDevice, model, plan_temperature, house: House, b
 
 
 @dataclass
+class _PlanPv:
+    """Prąd z paneli w planie: rachunek domu, prognoza i bilans paneli przed planem i po nim."""
+
+    balance: HouseBalance
+    forecast: dict
+    uncertainty: float
+    uncertainty_source: str
+    settlement: str
+    export_estimated: bool
+    export_unpriced: bool
+    rcem_replaced: bool
+    plan_date: date
+    # Skąd zwykłe zużycie reszty domu: urządzenia stałe z plików (`devices`) albo licznik minus urządzenia (`meter`).
+    rest_source: str = "devices"
+    before: Summary | None = None
+    after: Summary | None = None
+
+    @property
+    def planned_kwh(self) -> float:
+        return sum(self.balance.production.values())
+
+    def notes(self) -> list[str]:
+        forecast = self.forecast["total_kwh"]
+        why = ("tyle średnio myli się prognoza dla Twoich paneli" if self.uncertainty_source == "history"
+               else "prognoza nie jest jeszcze dopasowana do Twoich paneli")
+        notes = [
+            f"Prąd z paneli {_day_text(self.plan_date)}: prognoza {_kwh(forecast)} kWh. Plan liczy na "
+            f"{_kwh(self.planned_kwh)} kWh, czyli o {round(self.uncertainty * 100)}% mniej ({why}), żeby nie "
+            "przesuwać urządzeń w słońce, którego może nie być."
+        ]
+        if self.before is not None and self.after is not None and forecast > 0:
+            if self.before.export_kwh < SURPLUS_KWH and self.after.export_kwh < SURPLUS_KWH:
+                notes.append(
+                    "Nadwyżki z paneli nie będzie: cały ich prąd zużyje reszta domu, więc urządzenia układamy "
+                    "tylko według cen z sieci."
+                )
+            else:
+                notes.append(
+                    f"Urządzenia z planu wezmą z paneli ok. {_kwh(self.after.plan_from_pv_kwh)} kWh "
+                    f"(bez planu {_kwh(self.before.plan_from_pv_kwh)} kWh), a do sieci pójdzie "
+                    f"{_kwh(self.after.export_kwh)} kWh (bez planu {_kwh(self.before.export_kwh)} kWh). "
+                    "W godzinach z nadwyżką urządzenie kosztuje tyle, ile dom traci na oddaniu prądu do sieci, "
+                    "a nie pełną cenę z sieci."
+                )
+        if self.rest_source == METER:
+            notes.append(
+                "Zwykłe zużycie reszty domu liczymy z licznika (pobór minus urządzenia z plików urządzeń), bo plik "
+                "urządzeń nie ma wszystkich urządzeń domu: panele najpierw pokrywają to zużycie."
+            )
+        if self.forecast.get("estimated_installation"):
+            notes.append(
+                "Panele w profilu są szacunkowe, więc nadwyżka z paneli w planie jest orientacyjna. Uzupełnij panele "
+                "w profilu, żeby plan liczył z Twojej instalacji."
+            )
+        if self.export_unpriced:
+            notes.append("Nie ma cen RCE, więc prądu oddanego do sieci nie wyceniamy: nadwyżka nic w planie nie kosztuje.")
+        elif self.export_estimated:
+            reason = ("RCEm za ten miesiąc nie jest jeszcze opublikowana, a cen RCE na ten dzień też nie ma"
+                      if self.rcem_replaced else "Cen RCE na ten dzień jeszcze nie ma")
+            notes.append(f"{reason}: wartość oddania to średnia RCE z tych samych godzin z {PRICE_LOOKBACK_DAYS} "
+                         "poprzednich dni.")
+        elif self.rcem_replaced:
+            notes.append("RCEm za ten miesiąc nie jest jeszcze opublikowana, więc oddanie wyceniamy cenami RCE.")
+        return notes
+
+    def out(self) -> dict:
+        def summary(value: Summary | None) -> dict | None:
+            if value is None:
+                return None
+            return {
+                "self_kwh": round(value.self_kwh, 2), "export_kwh": round(value.export_kwh, 2),
+                "import_kwh": round(value.import_kwh, 2), "plan_from_pv_kwh": round(value.plan_from_pv_kwh, 2),
+                "export_pln": round(value.export_pln, 2),
+            }
+
+        return {
+            "forecast_kwh": round(self.forecast["total_kwh"], 2),
+            "planned_kwh": round(self.planned_kwh, 2),
+            "uncertainty": round(self.uncertainty, 3),
+            "uncertainty_source": self.uncertainty_source,
+            "basis": self.forecast["basis"],
+            "weather_fetched_at": self.forecast["weather_fetched_at"],
+            "coefficient": self.forecast["coefficient"],
+            "settlement": self.settlement,
+            "rest_source": self.rest_source,
+            "export_estimated": self.export_estimated,
+            "export_unpriced": self.export_unpriced,
+            "before": summary(self.before),
+            "after": summary(self.after),
+        }
+
+
+@dataclass
 class _Build:
     """Akcje planu z opisami do wyniku i uwagami dla użytkownika."""
 
@@ -345,6 +449,7 @@ class PlanService:
         today=tomorrow,
         heat_pumps: HeatPumpService | None = None,
         background: DayBackgroundService | None = None,
+        market=None,
     ):
         self.planning_repository = planning_repository
         self.plan_repository = plan_repository
@@ -352,6 +457,8 @@ class PlanService:
         self.dynamic_price_repository = dynamic_price_repository
         self.heat_pumps = heat_pumps
         self.background = background
+        # Ceny RCE/RCEm do wyceny oddania przy PV (DynamicMarketPriceResolver).
+        self.market = market
         # Domyślny dzień planu: jutro (w testach stały).
         self.default_date = today
 
@@ -389,6 +496,8 @@ class PlanService:
         while slot < end:
             slots.append(slot)
             slot += SLOT
+        pv = self._pv(build, user, plan_date, slots, prices, background) if background is not None else None
+        balance = pv.balance if pv else None
         by_id = {device.device_id: device for device in enabled}
         built: dict[str, ScheduleAction | None] = {}
         # Obciążenie, którego plan nie przesuwa (kWh w każdym kwadransie): rezerwa na resztę domu, a potem
@@ -412,9 +521,19 @@ class PlanService:
             elif device.kind == "ev":
                 self._ev(build, device)
             elif device.kind == WATER_HEATER_TYPE:
-                self._water_heater(build, device, slots, prices, load, pricing.max_grid_kw)
+                heater_prices = prices
+                if balance is not None:
+                    power = device.max_power_kw or DEFAULT_WATER_HEATER_POWER_KW
+                    heater_prices = balance.effective_prices(prices, power * SLOT_HOURS)
+                self._water_heater(build, device, slots, heater_prices, load, pricing.max_grid_kw)
             elif device.kind == HEAT_PUMP_TYPE:
-                self._heat_pump(build, device, history.get(instance.id, []), user.id, slots, prices, load,
+                pump_prices = prices
+                if balance is not None:
+                    # Pompa grzeje co najmniej połową mocy (house_heating.LEVELS), więc kwadrans jest „z paneli”,
+                    # gdy nadwyżka reszty domu pokryje tyle.
+                    power = device.max_power_kw or DEFAULT_HEAT_PUMP_POWER_KW
+                    pump_prices = balance.effective_prices(prices, power * SLOT_HOURS * min(level for level in LEVELS if level))
+                self._heat_pump(build, device, history.get(instance.id, []), user.id, slots, pump_prices, load,
                                 pricing.max_grid_kw)
 
         if build.usual_start:
@@ -427,10 +546,15 @@ class PlanService:
             )
         if background is not None:
             build.notes.extend(self._background_notes(user, plan_date, background))
-        result = schedule(build.actions, prices, pricing.max_grid_kw)
+        core_balance = None
+        if balance is not None:
+            core_balance = balance.with_base(by_slot((item.start, item.profile_kwh) for item in build.extra))
+        result = schedule(build.actions, prices, pricing.max_grid_kw, core_balance)
         result.actions.extend(build.extra)
         result.cost_before += sum(item.cost_before for item in build.extra)
         result.cost_after += sum(item.cost_after for item in build.extra)
+        if pv is not None:
+            self._pv_costs(build, result, pv)
         if approximate_from:
             build.notes.insert(0, (
                 "Ceny na noc po tym dniu nie są jeszcze znane, więc przyjęliśmy ceny z tych samych godzin. "
@@ -439,6 +563,9 @@ class PlanService:
         body = self._result(build, result, prices, pricing, start, end, approximate_from)
         if background is not None:
             body["background"] = background.to_json()
+        if pv is not None:
+            body["pv"] = pv.out()
+            body["balance"] = pv.balance.to_json()
         plan = self.plan_repository.save(user.id, plan_date, body)
         return self._out(plan)
 
@@ -853,6 +980,87 @@ class PlanService:
                 mode=SHIFTABLE,
                 allowed_starts=frozenset(free),
             ), device, f"grzanie {_part_of_day(history_block.action_start)}")
+
+    def _pv(self, build: _Build, user: User, plan_date: date, slots: list[datetime], prices: dict,
+            background: DayBackground) -> "_PlanPv | None":
+        """Rachunek domu z PV na dobę planu: prognoza pomniejszona o błąd, reszta domu i wartość oddania.
+        None bez prognozy PV (wtedy plan liczy się jak bez paneli)."""
+        if background.pv_forecast is None:
+            if background.pv_reason == "no_weather":
+                build.notes.append(
+                    f"Nie ma prognozy pogody na {_day_text(plan_date)}, więc plan nie liczy na prąd z paneli."
+                )
+            return None
+        profile = self.background.profile_of(user.id)
+        snapshot = background.pv_forecast
+        history = snapshot["calibration_source"] == "history" and snapshot["mape"] is not None
+        uncertainty = min(max(snapshot["mape"], 0.0), MAX_PV_UNCERTAINTY) if history else DEFAULT_PV_UNCERTAINTY
+        production = {slot: kwh * (1 - uncertainty) for slot, kwh in forecast_production(snapshot).items()}
+
+        average, rest_source = self._rest_of_home(user, plan_date, profile)
+        base: dict[datetime, float] = {slot: average.get(clock_minute(slot), 0.0) for slot in slots}
+        for run in background.runs:
+            for index, kwh in enumerate(run.profile_kwh):
+                moment = run.start + index * SLOT
+                if kwh > 0 and moment in base:
+                    base[moment] += kwh
+
+        valuation = ExportValuation(self.market, profile)
+        sell: dict[datetime, float] = {}
+        estimated = unpriced = False
+        for hour in sorted({hour_of(slot) for slot, kwh in production.items() if kwh > 0}):
+            quarter_prices = [prices[hour + index * SLOT] for index in range(4) if hour + index * SLOT in prices]
+            if not quarter_prices:
+                continue
+            price, guessed = valuation.hour_price(hour, sum(quarter_prices) / len(quarter_prices))
+            if price is None:
+                unpriced = True
+                continue
+            sell[hour] = price
+            estimated = estimated or guessed
+        return _PlanPv(
+            balance=HouseBalance(base, production, prices, sell),
+            forecast=snapshot,
+            uncertainty=uncertainty,
+            uncertainty_source="history" if history else "default",
+            settlement=profile.pv_config.mode,
+            export_estimated=estimated,
+            export_unpriced=unpriced,
+            rcem_replaced=valuation.rcem_replaced(plan_date),
+            plan_date=plan_date,
+            rest_source=rest_source,
+        )
+
+    def _rest_of_home(self, user: User, plan_date: date, profile) -> tuple[dict[int, float], str]:
+        """Zwykłe zużycie reszty domu o każdej porze (house_load.py): z urządzeń stałych z plików, a gdy jest licznik,
+        także z licznika minus urządzenia elastyczne. Produkcję PV w dniach licznika liczy model z pogody."""
+        fixed = self.planning_repository.fixed_slot_usage(user.id, RESERVE_DAYS)
+        flexible = self.planning_repository.flexible_slot_usage(user.id, RESERVE_DAYS)
+        readings, with_export = self.planning_repository.meter_readings(
+            user.id, datetime.combine(plan_date, time()), RESERVE_DAYS,
+        )
+        production = {}
+        if readings and self.background is not None and self.background.pv_forecasts is not None:
+            forecasts = self.background.pv_forecasts
+            try:
+                setup = forecasts.setup(user.id, profile)
+                production = forecasts.modeled(setup, {moment.date() for moment in readings})
+            except (NoPvInstallationError, PvForecastUnavailableError):
+                production = {}
+        return rest_of_home(fixed, flexible, readings, with_export, production, RESERVE_DAYS)
+
+    def _pv_costs(self, build: _Build, result, pv: "_PlanPv") -> None:
+        """Koszty pozycji i planu z rachunku domu z PV (zamiast ceny kwadransu razy energia) i bilans paneli."""
+        before_items = [(item.action_id, item.original_start, item.original_profile_kwh) for item in result.actions]
+        after_items = [(item.action_id, item.start, item.profile_kwh) for item in result.actions]
+        before, total_before = pv.balance.allocate(before_items)
+        after, total_after = pv.balance.allocate(after_items)
+        for item in result.actions:
+            item.cost_before, item.cost_after = before[item.action_id], after[item.action_id]
+        result.cost_before, result.cost_after = total_before, total_after
+        pv.before = pv.balance.summary(by_slot((start, profile) for _, start, profile in before_items))
+        pv.after = pv.balance.summary(by_slot((start, profile) for _, start, profile in after_items))
+        build.notes.extend(pv.notes())
 
     def _heat_pump_water(
         self, build: _Build, device: PlanningDevice, ready_times: list[str], cop: float, daily_heat_kwh: float,

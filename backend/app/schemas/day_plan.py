@@ -131,6 +131,36 @@ class HeatPumpPlanOut(BaseModel):
     model: HeatPumpModelOut
 
 
+class PlanPvSummaryOut(BaseModel):
+    # Prąd z paneli w dobie przy prognozie z planu: autokonsumpcja, oddanie i pobór (bilans godzinowy), część
+    # paneli zużyta przez urządzenia z planu i wartość oddania.
+    self_kwh: float
+    export_kwh: float
+    import_kwh: float
+    plan_from_pv_kwh: float
+    export_pln: float
+
+
+class PlanPvOut(BaseModel):
+    """Prąd z paneli w planie (ZP-121): prognoza, ile z niej plan bierze i bilans przed planem i po nim."""
+
+    forecast_kwh: float
+    # Prognoza pomniejszona o jej średni błąd (`uncertainty`): na tyle plan liczy.
+    planned_kwh: float
+    uncertainty: float
+    uncertainty_source: Literal["history", "default"]
+    basis: str | None = None
+    weather_fetched_at: datetime | None = None
+    coefficient: float | None = None
+    settlement: str
+    # Zwykłe zużycie reszty domu: urządzenia stałe z plików albo licznik minus urządzenia.
+    rest_source: Literal["devices", "meter"] = "devices"
+    export_estimated: bool = False
+    export_unpriced: bool = False
+    before: PlanPvSummaryOut | None = None
+    after: PlanPvSummaryOut | None = None
+
+
 class DayPlanOut(BaseModel):
     id: UUID
     plan_date: date
@@ -156,3 +186,4 @@ class DayPlanOut(BaseModel):
     prices: list[SchedulePriceOut]
     water_heaters: list[WaterHeaterPlanOut] = []
     heat_pumps: list[HeatPumpPlanOut] = []
+    pv: PlanPvOut | None = None
