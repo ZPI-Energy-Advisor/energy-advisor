@@ -26,6 +26,7 @@ from app.services.home_control_service import day_midnight
 from app.services.home_replay import ReplayRun, moved_runs, replay_runs
 from app.services.plan_history import local_day
 from app.services.pv_forecast import NoPvInstallationError, PvForecastService, PvForecastUnavailableError
+from app.services.weather_service import Cell, WeatherUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,9 @@ class DayBackground:
     pv_forecast: dict | None = None
     # Dlaczego nie ma prognozy PV: no_installation, no_weather, no_profile albo no_forecast.
     pv_reason: str | None = None
+    # Pogoda doby planu (ZP-122): kwadranse [start UTC, temperatura, zachmurzenie], kiedy pobrana i czy lokalizacja
+    # jest przybliżona. None, gdy nie ma lokalizacji albo pogody.
+    weather: dict | None = None
 
     def history_days(self) -> dict[str, date]:
         return {device.device_id: device.history_day for device in self.devices if device.history_day}
@@ -73,6 +77,7 @@ class DayBackground:
         return {
             "pv_forecast": self.pv_forecast,
             "pv_reason": self.pv_reason,
+            "weather": self.weather,
             "runs": [
                 {"device_id": run.device_id, "start": run.start.isoformat(), "ref": run.ref,
                  "profile_kwh": [round(kwh, 4) + 0.0 for kwh in run.profile_kwh]}
@@ -93,6 +98,7 @@ class DayBackground:
         return cls(
             pv_forecast=data.get("pv_forecast"),
             pv_reason=data.get("pv_reason"),
+            weather=data.get("weather"),
             runs=[
                 ReplayRun(device_id=run["device_id"], start=datetime.fromisoformat(run["start"]), ref=run["ref"],
                           profile_kwh=list(run["profile_kwh"]))
@@ -183,6 +189,17 @@ def _forecast_snapshot(forecast) -> dict:
     }
 
 
+def _weather_snapshot(day, approximate: bool) -> dict:
+    return {
+        "fetched_at": day.fetched_at.isoformat() if day.fetched_at else None,
+        "approximate_location": bool(approximate),
+        "quarters": [
+            [q.start.isoformat(), None if q.temperature_c is None else round(q.temperature_c, 1), q.cloud_cover_pct]
+            for q in day.quarters if q.source is not None
+        ],
+    }
+
+
 def forecast_production(snapshot: dict | None) -> dict[datetime, float]:
     if not snapshot:
         return {}
@@ -222,6 +239,7 @@ class DayBackgroundService:
         forecast, background.pv_reason = self._forecast(user_id, plan_date)
         if forecast is not None:
             background.pv_forecast = _forecast_snapshot(forecast)
+        background.weather = self._weather(user_id, plan_date, forecast)
         devices = [
             device_id for device_id in self.home.device_ids_of_types(user_id, (PV_TYPE, *THERMOSTAT_TYPES))
             if device_id not in planned_devices
@@ -257,6 +275,21 @@ class DayBackgroundService:
                                                        days[device_id], reference, reference, reason))
         background.runs.sort(key=lambda run: (run.start, run.device_id))
         return background
+
+    def _weather(self, user_id, plan_date: date, forecast) -> dict | None:
+        if forecast is not None and forecast.weather is not None:
+            return _weather_snapshot(forecast.weather, forecast.approximate_location)
+        if self.pv_forecasts is None:
+            return None
+        profile = self.profile_of(user_id)
+        location = profile.base_info.location if profile is not None else None
+        if location is None:
+            return None
+        try:
+            day = self.pv_forecasts.weather.day(Cell.of(location), plan_date, [])
+        except WeatherUnavailableError:
+            return None
+        return _weather_snapshot(day, location.approximate)
 
     def _forecast(self, user_id, plan_date: date):
         """Prognoza PV na dobę planu i powód, gdy jej nie ma."""

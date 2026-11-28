@@ -276,6 +276,33 @@ plan liczy się bez paneli i mówi o tym w uwagach.
 Przy taryfie ze stałą ceną i nadwyżce z paneli ekran planu nie mówi już, że przesuwanie nic nie da: plan przesuwa
 urządzenia pod słońce.
 
+### Pogoda i panele na ekranie planu (ZP-122)
+
+Plan pokazuje, skąd wie o słońcu, z tego, co zapisał w chwili układania, a nie z bieżącej prognozy:
+
+- `weather`: pogoda doby planu dla komórki domu (temperatura i zachmurzenie co kwadrans, `fetched_at`,
+  `approximate_location`, `past` dla planu na miniony dzień z archiwum). Migawka jest w `background.weather`
+  i powstaje także bez paneli (wtedy `WeatherService.day` bez płaszczyzn paneli). Bez lokalizacji albo pogody
+  `weather = null`.
+- `pv.hours`: godziny z produkcją: prognoza (`forecast_kwh`), na ile plan liczy (`planned_kwh`), reszta domu
+  (`rest_kwh`), nadwyżka nad resztą domu przed urządzeniami z planu (`surplus_kwh`), urządzenia z planu (`plan_kwh`)
+  i oddanie według planu (`export_kwh`). Suma `export_kwh` to `pv.after.export_kwh`. Liczy to
+  `HouseBalance.hours`, tym samym rachunkiem godzinowym co koszty.
+- `items[].pv_kwh`: ile prądu z paneli bierze pozycja według planu (`HouseBalance.from_pv`: w godzinie panele dzielą
+  się po równo na każdą kWh zużycia, jak `plan_from_pv_kwh`, więc pozycje sumują się do niego).
+- `pv_reason`: dlaczego plan liczy się bez paneli (`no_installation`, `no_weather`, `no_profile`, `no_forecast`).
+- `pv.estimated_installation`: panele w profilu są szacunkowe.
+
+Na osi doby planu, pod cenami: pas zachmurzenia co godzinę (od błękitu do szarości, opis w dymku) z temperaturą
+co 3 godziny (na telefonie co 6), a pod nim słupki prądu z paneli, na który plan liczy. Godziny z nadwyżką nad resztą
+domu (co najmniej 0,05 kWh) są podświetlone na pasie paneli i pod urządzeniami, z legendą „nadwyżka z paneli”.
+W tabeli przy pozycji, która bierze z paneli co najmniej 0,05 kWh, jest np. „1,2 z 1,4 kWh z paneli”. Plan bez
+prognozy mówi to w pasie paneli (brak pogody, brak profilu), a dom bez paneli nie ma tego pasa. Karta „Prąd
+z paneli” mówi, kiedy pobrano prognozę pogody, a przy panelach szacunkowych i lokalizacji przybliżonej ma dopisek
+z linkiem do profilu.
+
+Plany ułożone przed ZP-122 nie mają tych pól: oś pokazuje wtedy same ceny.
+
 Uproszczenia, o których trzeba pamiętać:
 
 - **Depozyt jak gotówka.** Oddanie wyceniamy tak samo jak Analiza taryf i ekran „Fotowoltaika” (te same ceny RCE/RCEm

@@ -12,6 +12,7 @@ import PlanRunHistory from "../components/home/PlanRunHistory";
 import SimulationClock from "../components/home/SimulationClock";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useHomeState } from "../hooks/useHomeState";
+import { useSimulationWeather } from "../hooks/useSimulationWeather";
 import { usePlanRun } from "../hooks/usePlanRun";
 import { getApiErrorMessage } from "../utils/energyFiles";
 import { planBadges, shortDay } from "../utils/home";
@@ -31,6 +32,7 @@ function HomeLive({ onShowReport }) {
   const [actionError, setActionError] = useState(null);
   const [view, setView] = useState("house");
   const planRun = usePlanRun(state?.clock?.sim_time, state?.simulation_id);
+  const weather = useSimulationWeather(state?.clock?.sim_time);
 
   // Polecenie zmienia stan w hubie, więc po nim (także nieudanym) od razu pobieramy stan domu.
   const perform = async (request, describeError) => {
@@ -129,6 +131,7 @@ function HomeLive({ onShowReport }) {
             disabled={hubDown}
             onUpdate={updateClock}
             startBlocked={startBlocked}
+            weather={weather}
             plan={planRun.run && (
               <PlanRunBar
                 run={planRun.run}

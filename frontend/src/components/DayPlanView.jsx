@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw, FiSun } from "react-icons/fi";
 import Dialog from "./Dialog";
 import HeatPumpPlanCard from "./HeatPumpPlanCard";
 import IndoorTemperatureChart from "./IndoorTemperatureChart";
@@ -9,6 +9,7 @@ import PvPlanCard from "./PvPlanCard";
 import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
 import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
+import { formatNumber } from "../utils/format";
 import { afterRanges, clockOf, conflictText, formatPln, isConflict } from "../utils/schedule";
 
 const CARD = "bg-white border border-gray-200 rounded-lg p-4 md:p-5 shadow-sm";
@@ -22,7 +23,11 @@ const PRIMARY_BUTTON =
   "disabled:opacity-60 disabled:cursor-wait disabled:active:scale-100";
 const SPINNER = <FiLoader aria-hidden="true" className="animate-spin" />;
 const SECONDARY_BUTTON =
-  "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
+  "w-full sm:w-auto min-w-0 max-w-full inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
+
+function settingLabel(label, device, devices) {
+  return devices.length > 1 ? `${label}: ${device.device_name}` : label;
+}
 
 function Amount({ label, value, hint = null, accent = false }) {
   return (
@@ -60,6 +65,20 @@ export function FlatTariffNote({ surplus = false }) {
 const SURPLUS_KWH = 0.05;
 const hasSurplus = (pv) =>
   Boolean(pv) && Math.max(pv.before?.export_kwh ?? 0, pv.after?.export_kwh ?? 0) > SURPLUS_KWH;
+
+const PV_REASONS = {
+  no_weather: "Nie ma prognozy pogody na ten dzień, więc plan liczy się bez paneli.",
+  no_forecast: "Plan nie ma prognozy produkcji z paneli, więc liczy się bez nich.",
+  no_profile: "Bez profilu nie znamy paneli, więc plan liczy się bez nich.",
+};
+
+const pvNote = (plan) => {
+  if (plan.pv) return plan.pv.hours?.length ? null : "Prognoza nie daje tego dnia prądu z paneli.";
+  return PV_REASONS[plan.pv_reason] ?? null;
+};
+
+const fromPanels = (item) =>
+  item.pv_kwh >= SURPLUS_KWH ? `${formatNumber(item.pv_kwh, 1)} z ${formatNumber(item.energy_kwh, 1)} kWh z paneli` : null;
 
 // Plan pracy urządzeń na dzień (ZP-112): koszt i ostrzeżenia, oś doby na tle cen, tabela przydziałów,
 // przyciski, a na końcu uwagi; temperatura wody w okienku.
@@ -124,15 +143,25 @@ function DayPlanView({
         </ul>
       )}
 
-      {plan.pv && <PvPlanCard pv={plan.pv} />}
+      {plan.pv && <PvPlanCard pv={plan.pv} weather={plan.weather} />}
       {(plan.heat_pumps ?? []).map((pump) => <HeatPumpPlanCard key={pump.device_id} pump={pump} planDate={plan.plan_date} />)}
 
       <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-300" /> bez planu</span>
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-emerald-500" /> plan, przesunięte</span>
         <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-gray-400" /> plan, bez zmian</span>
+        {plan.pv?.hours?.some((hour) => hour.surplus_kwh >= SURPLUS_KWH) && (
+          <span className="flex items-center gap-1.5"><i className="w-4 h-2.5 rounded-sm bg-amber-100 border border-amber-200" /> nadwyżka z paneli</span>
+        )}
       </div>
-      <ScheduleDayChart day={plan.plan_date} actions={plan.items} prices={plan.prices} />
+      <ScheduleDayChart
+        day={plan.plan_date}
+        actions={plan.items}
+        prices={plan.prices}
+        weather={plan.weather}
+        pv={plan.pv}
+        pvNote={pvNote(plan)}
+      />
       <ScheduleDayChart
         day={nextDay(plan.plan_date)}
         actions={plan.items}
@@ -162,6 +191,11 @@ function DayPlanView({
                 <td className="p-3">
                   {afterRanges(item, { withDay: true })}
                   {item.status === "unchanged" && <span className="text-gray-500"> (bez zmian)</span>}
+                  {fromPanels(item) && (
+                    <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-700">
+                      <FiSun aria-hidden="true" className="shrink-0" /> {fromPanels(item)}
+                    </span>
+                  )}
                 </td>
                 <td className="p-3 text-right whitespace-nowrap">{formatPln(item.cost_before)}</td>
                 <td className="p-3 text-right whitespace-nowrap">{formatPln(item.cost_after)}</td>
@@ -223,22 +257,26 @@ function DayPlanView({
             </p>
           </div>
         )}
-        <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>
-          <FiEdit2 aria-hidden="true" /> Edytuj ustawienia
-        </button>
-        {heaters.map((heater) => (
-          <button key={heater.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setWaterHeater(heater)}>
-            <FiDroplet aria-hidden="true" /> Temperatura wody
+        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row sm:flex-wrap" role="group" aria-label="Ustawienia planu">
+          <button type="button" className={SECONDARY_BUTTON} onClick={onEdit}>
+            <FiEdit2 aria-hidden="true" /> Edytuj ustawienia
           </button>
-        ))}
-        {indoorPumps.map((pump) => (
-          <button key={pump.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setIndoorPump(pump)}>
-            <FiHome aria-hidden="true" /> Temperatura w domu
-          </button>
-        ))}
-        {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
-        {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
+          {heaters.map((heater) => (
+            <button key={heater.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setWaterHeater(heater)}>
+              <FiDroplet aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{settingLabel("Temperatura wody", heater, heaters)}</span>
+            </button>
+          ))}
+          {indoorPumps.map((pump) => (
+            <button key={pump.device_id} type="button" className={SECONDARY_BUTTON} onClick={() => setIndoorPump(pump)}>
+              <FiHome aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{settingLabel("Temperatura w domu", pump, indoorPumps)}</span>
+            </button>
+          ))}
+        </div>
       </div>
+      {approveError && <p className="text-sm text-red-600" role="alert">{approveError}</p>}
+      {runError && <p className="text-sm text-red-600" role="alert">{runError}</p>}
 
 
       {plan.notes.length > 0 && (

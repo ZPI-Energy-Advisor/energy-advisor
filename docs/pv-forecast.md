@@ -151,6 +151,19 @@ produkcji to oddanie, a reszta zużycia to pobór z sieci.
 Depozyt pokrywa tylko część rachunku za energię, co ekran mówi wprost. Godziny bez ceny z sieci (umowa z ceną
 dynamiczną przed publikacją RCE) są pomijane z dopiskiem.
 
+## Pogoda i panele poza ekranem „Fotowoltaika” (ZP-122)
+
+- **Plan na jutro:** pogoda i prąd z paneli z migawki planu na osi doby ([scheduling.md](scheduling.md)).
+- **Mój dom:** przy zegarze symulacji plakietka z temperaturą i zachmurzeniem w kwadransie zegara, z
+  `GET /weather/forecast?date=` dla doby symulacji w strefie domu (archiwum dla dni z pliku). Hook
+  `useSimulationWeather` pobiera dobę raz i przy zmianie doby; noc bez chmur (GHI = 0) ma księżyc zamiast słońca.
+- **Dashboard:** karta „Panele w tym okresie” z `GET /pv/period?from=&to=` (najwyżej 401 dni): w dniach z plików
+  wybranego okresu, do wczoraj, produkcja z modelu z zapisanej pogody (`model_kwh`, `model_days` z pełną pogodą,
+  bez pobierania z Open-Meteo) obok produkcji falownika z plików urządzeń (`actual_kwh`, gdy obejmuje wszystkie te
+  dni) albo oddania do sieci z licznika (`export_kwh`, tylko gdy plik licznika ma oddanie). Obie liczby są z tych
+  samych dni z pełną pogodą, więc dni bez pogody nie zaniżają szacunku względem pliku. Dopiski przy panelach szacunkowych
+  i lokalizacji przybliżonej mają link do profilu. Bez paneli (404) albo pogody karty nie ma.
+
 Ekran czyta bazę, więc ma osobny, wysoki limit zapytań (`RATE_LIMIT_PV_SCREEN`, 300 na minutę), a przeglądanie
 dni strzałkami go nie wyczerpie. Zapytanie użytkownika pobiera z Open-Meteo ten sam brakujący zakres pogody
 najwyżej raz na 5 minut. Bez tego dzień, którego archiwum jeszcze nie ma, pytałby o niego przy każdym kliknięciu.

@@ -26,6 +26,8 @@ class PlanItemOut(ScheduledActionOut):
     # To samo bez planu, od `original_start`: podstawa porównania rachunku przed i po planie. Różni się od
     # `profile_kwh` nie tylko startem: bojler na termostacie i auto od podłączenia zużywają energię inaczej.
     original_profile_kwh: list[float] | None = None
+    # Prąd z paneli, który pozycja bierze według planu (kWh); None w planie bez prognozy PV.
+    pv_kwh: float | None = None
 
 
 class WaterTemperatureOut(BaseModel):
@@ -120,6 +122,8 @@ class HeatPumpPlanOut(BaseModel):
     # stała czasowa domu i temperatura kwadrans po kwadransie.
     band: list[float] | None = None
     shortfall: float = 0.0
+    # Dlaczego zabraknie ciepła: "power" (pompa za słaba), "grid" (limit przyłącza), None (wystarczy).
+    shortfall_reason: Literal["power", "grid"] | None = None
     thermostat_kwh: float | None = None
     # Koszt ogrzewania domu (bez wody) według planu i bez planu, w cenach taryfy z planu.
     cost_pln: float | None = None
@@ -141,6 +145,32 @@ class PlanPvSummaryOut(BaseModel):
     export_pln: float
 
 
+class PlanPvHourOut(BaseModel):
+    # Godzina z produkcją: prognoza, na ile plan liczy, reszta domu, nadwyżka nad nią, urządzenia z planu i oddanie.
+    start: datetime
+    forecast_kwh: float
+    planned_kwh: float
+    rest_kwh: float
+    surplus_kwh: float
+    plan_kwh: float
+    export_kwh: float
+
+
+class PlanWeatherQuarterOut(BaseModel):
+    start: datetime
+    temperature_c: float | None
+    cloud_cover_pct: int | None
+
+
+class PlanWeatherOut(BaseModel):
+    """Pogoda doby planu zapisana razem z planem: prognoza albo archiwum (`past`) dla komórki domu."""
+
+    fetched_at: datetime | None = None
+    approximate_location: bool = False
+    past: bool = False
+    quarters: list[PlanWeatherQuarterOut] = []
+
+
 class PlanPvOut(BaseModel):
     """Prąd z paneli w planie (ZP-121): prognoza, ile z niej plan bierze i bilans przed planem i po nim."""
 
@@ -159,6 +189,8 @@ class PlanPvOut(BaseModel):
     export_unpriced: bool = False
     before: PlanPvSummaryOut | None = None
     after: PlanPvSummaryOut | None = None
+    estimated_installation: bool = False
+    hours: list[PlanPvHourOut] = []
 
 
 class DayPlanOut(BaseModel):
@@ -187,3 +219,6 @@ class DayPlanOut(BaseModel):
     water_heaters: list[WaterHeaterPlanOut] = []
     heat_pumps: list[HeatPumpPlanOut] = []
     pv: PlanPvOut | None = None
+    weather: PlanWeatherOut | None = None
+    # Dlaczego plan liczy się bez paneli: no_installation, no_weather, no_profile albo no_forecast.
+    pv_reason: str | None = None

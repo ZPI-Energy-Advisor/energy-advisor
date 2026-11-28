@@ -105,6 +105,17 @@ class DayData:
 
 
 @dataclass
+class PeriodSummary:
+    # Dni z plików w okresie i z nich dni z pełną pogodą (`model_days`). Na tych samych dniach: produkcja z modelu,
+    # produkcja falownika z plików urządzeń (gdy obejmują wszystkie te dni) albo oddanie do sieci z licznika.
+    days: int
+    model_days: int
+    model_kwh: float | None
+    actual_kwh: float | None
+    export_kwh: float | None
+
+
+@dataclass
 class DayDetail:
     day: date
     kind: str
@@ -241,6 +252,33 @@ class PvInsightsService:
             else:
                 periods.append((start, end))
         return periods
+
+    def period(self, user_id, setup: PvSetup, first: date, last: date) -> PeriodSummary:
+        last = min(last, self.weather.today() - timedelta(days=1))
+        days = [] if last < first else [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
+        covered = {day for start, end in self.data_periods(user_id) for day in days if start <= day <= end}
+        days = sorted(covered)
+        modeled = self.forecasts.modeled(setup, days) if days else {}
+        compared = set(modeled)
+        actual: dict[date, float] = defaultdict(float)
+        for moment, kwh in self.devices.pv_production(user_id).items():
+            day = _local_day(moment)
+            if day in compared:
+                actual[day] += kwh
+        inverter = bool(compared) and set(actual) >= compared
+        export = None
+        meter_ids = self._meter_ids(self._files(user_id))
+        if compared and not inverter and meter_ids and self.readings.files_with_export(meter_ids):
+            first, last = min(compared), max(compared)
+            readings = self._meter_readings(meter_ids, first, last + timedelta(days=1))
+            export = sum(exported for moment, (_, exported, _) in readings.items() if moment.date() in compared)
+        return PeriodSummary(
+            days=len(days),
+            model_days=len(modeled),
+            model_kwh=round(sum(sum(quarters.values()) for quarters in modeled.values()), 1) if modeled else None,
+            actual_kwh=round(sum(actual.values()), 1) if inverter else None,
+            export_kwh=round(export, 1) if export is not None else None,
+        )
 
     def days(self, user_id, profile: UserProfile) -> list[DaySummary]:
         today = self.weather.today()
