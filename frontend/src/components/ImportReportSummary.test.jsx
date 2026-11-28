@@ -77,13 +77,13 @@ describe("ImportReportSummary", () => {
   it("pokazuje pobór z sieci i energię oddaną do sieci", () => {
     render(<ImportReportSummary report={{ ...baseReport, grid_import_kwh: 1234.5, grid_export_kwh: 310.25 }} />);
 
-    expect(screen.getByText("pobór 1234,5 kWh · oddanie 310,25 kWh")).toBeTruthy();
+    expect(screen.getByText("pobór 1 234,50 kWh · oddanie 310,25 kWh")).toBeTruthy();
   });
 
   it("nie pokazuje oddania, gdy plik go nie zawiera", () => {
     render(<ImportReportSummary report={{ ...baseReport, grid_import_kwh: 12, grid_export_kwh: 0 }} />);
 
-    expect(screen.getByText("pobór 12 kWh")).toBeTruthy();
+    expect(screen.getByText("pobór 12,00 kWh")).toBeTruthy();
   });
 
   it("dla pliku urządzeń pokazuje urządzenia, kategorie, zużycie i produkcję PV", () => {
@@ -108,7 +108,7 @@ describe("ImportReportSummary", () => {
     render(<ImportReportSummary report={report} />);
 
     expect(screen.getByText("24 urządzenia · AGD, OZE")).toBeTruthy();
-    expect(screen.getByText("zużycie urządzeń 52,49 kWh · produkcja PV 14,6 kWh")).toBeTruthy();
+    expect(screen.getByText("zużycie urządzeń 52,49 kWh · produkcja PV 14,60 kWh")).toBeTruthy();
   });
 
   it("pokazuje nazwę pliku, zakres dat i liczbę dni", () => {

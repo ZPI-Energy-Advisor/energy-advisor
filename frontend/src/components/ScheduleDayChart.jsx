@@ -1,5 +1,6 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { actionSummary, dayPrices, dayRows, formatDayMonth, formatPln } from "../utils/schedule";
+import { CARD } from "./uiStyles";
 
 const PRICE_COLOR = "#10b981";
 const HOURS = [0, 6, 12, 18, 24];
@@ -39,7 +40,7 @@ function ScheduleDayChart({ day, actions, prices, isTail = false, subtitle = nul
   const rows = dayRows(actions, day);
 
   return (
-    <section className="bg-white p-4 md:p-5 rounded-lg shadow-sm border border-gray-100">
+    <section className={CARD}>
       <h3 className="font-bold text-gray-900 mb-3">
         {formatDayMonth(day)}
         {(subtitle || isTail) && (

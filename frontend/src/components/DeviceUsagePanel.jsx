@@ -20,6 +20,7 @@ import {
 import { describeBreakdown } from "../utils/tariffs";
 import { axisUnitLabel, formatAxis } from "../utils/format";
 import { ChartSkeleton } from "./Skeleton";
+import { CARD, STAT_CARD, alertClass, buttonClass } from "./uiStyles";
 
 const RESOLUTION_PREFIX = { "15m": "Średnio o", "1h": "Średnio o", "1d": "Dzień" };
 // Wykres jest skumulowany, więc Recharts animowałby osobno każdy kawałek słupka (okres × grupa), a to klatkowało.
@@ -74,7 +75,7 @@ function UsageTooltip({ active, payload, label, series, resolution }) {
 
 function Card({ label, value, hint, children }) {
   return (
-    <div className="bg-white p-5 md:p-6 rounded-lg shadow-sm border-x border-x-gray-100 border-y-4 border-y-emerald-500">
+    <div className={`${STAT_CARD} border-y-emerald-500`}>
       <p className="text-sm font-medium text-gray-500 mb-2">{label}</p>
       <p className="text-2xl md:text-3xl font-bold text-gray-900">{value}</p>
       {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
@@ -144,11 +145,11 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
   };
 
   if (error) {
-    return <div className="p-4 text-sm text-red-700 bg-red-50 rounded-lg">{error}</div>;
+    return <div className={alertClass("error")} role="alert">{error}</div>;
   }
   if (!data) {
     return (
-      <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100">
+      <div className={CARD}>
         <ChartSkeleton label="Ładowanie zużycia urządzeń..." />
       </div>
     );
@@ -194,7 +195,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
         )}
       </div>
 
-      <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100 mb-8">
+      <div className={`${CARD} mb-8`}>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-4 gap-4">
           <h3 className="text-lg font-bold text-gray-900">
             {metric === "kwh" ? "Zużycie" : "Koszt"} według {LEVEL_NAMES[path.length]}
@@ -208,7 +209,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
               <button
                 type="button"
                 onClick={() => setPath(path.slice(0, -1))}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-gray-200 bg-white font-medium text-gray-700 hover:bg-gray-50"
+                className={buttonClass("secondary", "sm")}
               >
                 <FiArrowLeft aria-hidden="true" /> Wstecz
               </button>
@@ -244,12 +245,12 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
           <p className="mb-4 text-xs md:text-sm text-gray-500">Średni profil doby w wybranym okresie.</p>
         )}
         {source.meter && rest && rest.common_days.length === 0 && (
-          <p className="mb-4 p-3 text-sm text-amber-800 bg-amber-50 rounded-lg">
+          <p className={`${alertClass("warning")} mb-4`}>
             Plik licznika i pliki urządzeń nie mają wspólnych dni z odczytami, więc nie da się policzyć reszty domu.
           </p>
         )}
         {path.length === 0 && !flexibleOnly && rest?.exceeded_days.length > 0 && (
-          <p className="mb-4 p-3 text-sm text-amber-800 bg-amber-50 rounded-lg">
+          <p className={`${alertClass("warning")} mb-4`}>
             W {rest.exceeded_days.length} dniach urządzenia zużyły więcej niż pokazał licznik – sprawdź, czy pliki dotyczą tego samego domu.
           </p>
         )}
@@ -332,7 +333,7 @@ function DeviceUsagePanel({ source, metric, resolution, toolbar, gridImport = nu
       </div>
 
       {shares.length > 0 && (
-        <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-100">
+        <div className={CARD}>
           <h3 className="text-lg font-bold text-gray-900 mb-4">Udział w zużyciu i koszcie</h3>
           <ol className="divide-y divide-gray-100">
             {shares.map((item) => (

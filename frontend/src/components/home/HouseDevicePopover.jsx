@@ -3,7 +3,6 @@ import {
   DEVICE_TYPE_LABELS,
   formatKw,
   formatKwh,
-  formatNumber,
   formatSimTime,
   hasControls,
   isControllable,
@@ -11,8 +10,10 @@ import {
   runLabel,
 } from "../../utils/home";
 import { deviceAppearance, evCharge, isProducingPv, planBadgeColor, roomLabel, roomOf } from "../../utils/houseView";
+import { DeviceControls } from "./HomeDeviceList";
 import { STATE_GLYPHS } from "./houseIcons";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "./styles";
+import { formatPercent } from "../../utils/format";
 
 function Fact({ label, children }) {
   return (
@@ -56,8 +57,11 @@ function PopoverControls({ device, disabled, onCommand }) {
   );
 }
 
-/** Dymek urządzenia z widoku domu: stan, moc, energia doby, program i sterowanie. */
-function HouseDevicePopover({ device, plan, planRun, disabled, onCommand, onClose, style }) {
+/**
+ * Dymek urządzenia z widoku domu: stan, moc, energia doby, program i sterowanie. `sheet`: panel od dołu ekranu
+ * na telefonie, z pełnym sterowaniem jak na liście (także programy pralki czy zmywarki).
+ */
+function HouseDevicePopover({ device, plan, planRun, disabled, onCommand, onClose, style, sheet = false }) {
   const appearance = deviceAppearance(device);
   const Glyph = STATE_GLYPHS[appearance.glyph];
   const typeLabel = DEVICE_TYPE_LABELS[device.device_type];
@@ -68,7 +72,11 @@ function HouseDevicePopover({ device, plan, planRun, disabled, onCommand, onClos
     <div
       role="dialog"
       aria-label={device.device_name}
-      className="absolute z-10 w-64 max-w-[calc(100%-1rem)] rounded-2xl bg-white p-4 text-sm shadow-xl ring-1 ring-slate-900/5 space-y-3"
+      className={
+        sheet
+          ? "w-full max-h-[85dvh] overflow-y-auto rounded-t-2xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-sm shadow-xl space-y-3"
+          : "absolute z-10 w-64 max-w-[calc(100%-1rem)] rounded-2xl bg-white p-4 text-sm shadow-xl ring-1 ring-slate-900/5 space-y-3"
+      }
       style={style}
     >
       <div className="flex items-start gap-2">
@@ -81,7 +89,7 @@ function HouseDevicePopover({ device, plan, planRun, disabled, onCommand, onClos
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          className={`rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 ${sheet ? "p-2.5" : "p-1.5"}`}
           aria-label="Zamknij"
         >
           <LuX aria-hidden="true" />
@@ -125,12 +133,22 @@ function HouseDevicePopover({ device, plan, planRun, disabled, onCommand, onClos
         <p className="text-xs text-gray-600">
           {charge.fraction == null
             ? "Ładowanie poza planem, bez ustalonej energii."
-            : `Naładowano ${formatNumber(charge.fraction * 100, 0)}% energii z planu ` +
+            : `Naładowano ${formatPercent(charge.fraction)} energii z planu ` +
               `(${formatKwh(charge.deliveredKwh)} z ${formatKwh(charge.plannedKwh)})`}
         </p>
       )}
 
-      <PopoverControls device={device} disabled={disabled} onCommand={onCommand} />
+      {sheet ? (
+        <div className="[&>div]:flex-wrap [&_button]:min-h-[2.75rem] [&_select]:min-h-[2.75rem] [&_select]:basis-full">
+          {hasControls(device) ? (
+            <DeviceControls device={device} disabled={disabled || !isControllable(device)} onCommand={onCommand} />
+          ) : (
+            <p className="text-xs text-gray-500">Instalacja pracuje według słońca, nie włącza się jej ręcznie.</p>
+          )}
+        </div>
+      ) : (
+        <PopoverControls device={device} disabled={disabled} onCommand={onCommand} />
+      )}
     </div>
   );
 }

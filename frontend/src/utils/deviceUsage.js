@@ -183,10 +183,4 @@ export const totals = (series) => ({
   devices: series.reduce((sum, item) => sum + item.devicesCount, 0),
 });
 
-export const formatKwh = (value) =>
-  `${value.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kWh`;
-
-export const formatPln = (value) =>
-  `${value.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
-
-export const formatShare = (value) => `${(value * 100).toLocaleString("pl-PL", { maximumFractionDigits: 1 })}%`;
+export { formatKwh, formatPln, formatPercent as formatShare } from "./format";

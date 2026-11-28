@@ -569,8 +569,8 @@ urządzenia równa się energii urządzenia (`total_kwh`, suma `energy_kwh` jego
 ## 4. Frontend → backend: dom właściciela
 
 Dom należy do konta z `HUB_HOME_USER_EMAIL` (porównanie bez wielkości liter). Tylko to konto ma
-`home_owner: true` w `GET /api/v1/users/me`, widzi ekran „Mój dom” (`/home` w menu) i „Podłącz dom”
-na nim oraz na stronie importu. Endpointy domu
+`home_owner: true` w `GET /api/v1/users/me`, widzi w menu „Mój dom” (`/home`, w grupie „Dom” obok „Plan na jutro”) i „Podłącz dom” na tym ekranie
+oraz na stronie importu. Plan na jutro widzi każde konto, ale symulację planu uruchamia tylko właściciel domu. Endpointy domu
 wymagają tokenu jak pozostałe; inne konto dostaje `403`, a przy pustym `HUB_URL` wszyscy dostają `503`.
 
 | Metoda i ścieżka | Opis |

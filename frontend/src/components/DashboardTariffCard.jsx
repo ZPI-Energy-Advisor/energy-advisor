@@ -4,9 +4,10 @@ import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { useTariffComparison } from "../hooks/useTariffComparison";
 import { formatPln } from "../utils/tariffs";
 import { entryLabel, findEntry, formatPercent } from "../utils/tariffComparison";
+import { CARD as BASE_CARD } from "./uiStyles";
 
 const CARD =
-  "bg-white p-5 md:p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative sm:col-span-2 md:col-span-1";
+  `${BASE_CARD} relative transition-shadow hover:shadow-md sm:col-span-2 md:col-span-1`;
 const LINK = "inline-flex items-center gap-1 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline";
 
 function CompareLink({ children = "Porównaj taryfy" }) {
@@ -97,7 +98,7 @@ function DashboardTariffCard({ enabled, profileTariff, currentTariff, loadError 
             w tym okresie na <span className="font-semibold">{entryLabel(recommended)}</span>
           </p>
           <div className="mt-3">
-            <CompareLink>Zobacz analizę taryf</CompareLink>
+            <CompareLink />
           </div>
         </div>
       );

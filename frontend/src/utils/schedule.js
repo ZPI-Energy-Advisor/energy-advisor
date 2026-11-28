@@ -6,12 +6,9 @@ export const dayOf = (isoTime) => isoTime.slice(0, 10);
 export const clockOf = (isoTime) => isoTime.slice(11, 16);
 export const minutesOf = (isoTime) => Number(isoTime.slice(11, 13)) * 60 + Number(isoTime.slice(14, 16));
 
-export const formatPln = (value) =>
-  value == null
-    ? "–"
-    : `${value.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
+import { formatDayMonth, formatPln } from "./format";
 
-export const formatDayMonth = (isoDate) => `${isoDate.slice(8, 10)}.${isoDate.slice(5, 7)}`;
+export { formatDayMonth, formatPln } from "./format";
 
 export const listDays = (dateFrom, dateTo) => {
   const days = [];

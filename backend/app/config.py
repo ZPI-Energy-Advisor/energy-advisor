@@ -53,6 +53,8 @@ HUB_HOME_USER_EMAIL = (os.getenv("HUB_HOME_USER_EMAIL") or "").strip().lower() o
 
 # Limity prób na /auth (ZP-134), format biblioteki limits, np. "5/minute". Liczone na adres IP.
 RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED") or "true").strip().lower() not in {"0", "false", "no"}
+# Kontener z nginx, który przekazuje /api do backendu (nazwa w sieci Dockera); jego X-Real-IP to adres klienta.
+TRUSTED_PROXY_HOST = (os.getenv("TRUSTED_PROXY_HOST") or "frontend").strip()
 RATE_LIMIT_LOGIN = os.getenv("RATE_LIMIT_LOGIN") or "5/minute"
 RATE_LIMIT_REGISTER = os.getenv("RATE_LIMIT_REGISTER") or "3/hour"
 # Sprawdzanie adresu w profilu: każde to do 3 zapytań do Nominatim (1/s dla całej aplikacji), więc bez limitu

@@ -131,6 +131,10 @@ Szczegóły: [docs/weather.md](docs/weather.md).
 dostępna pod http://localhost:5173. Obraz buduje produkcyjną wersję aplikacji (`npm run build`)
 i serwuje ją przez nginx, więc zmiany w kodzie nie są widoczne na bieżąco.
 
+Aplikacja pyta o API pod `/api/v1` na swoim adresie, a nginx w kontenerze przekazuje je do backendu,
+więc działa też z telefonu pod adresem IP komputera (np. http://192.168.1.23:5173). `VITE_API_URL` zostaw
+puste, chyba że backend jest pod innym adresem. Instalacja na telefonie (PWA): [docs/frontend-ui.md](docs/frontend-ui.md).
+
 Zmienne `VITE_API_URL` i `VITE_GOOGLE_CLIENT_ID` są wpisywane w kod podczas budowania obrazu.
 Po ich zmianie w `.env` albo po zmianach w kodzie trzeba przebudować obraz:
 

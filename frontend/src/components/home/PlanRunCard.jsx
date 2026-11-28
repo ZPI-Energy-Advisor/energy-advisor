@@ -1,6 +1,7 @@
 import { FiAlertTriangle } from "react-icons/fi";
 import { formatKwh, formatSimTime, fullDay } from "../../utils/home";
 import PlanRunCost, { DeviationList } from "./PlanRunCost";
+import { alertClass } from "../uiStyles";
 
 const actionText = (action) => {
   if (action.status === "rejected") return `Odrzucone: ${action.detail || action.code}`;
@@ -72,7 +73,7 @@ function PlanRunCard({ run }) {
       )}
 
       {run.cost && running && run.cost.deviations.length > 0 && (
-        <div className="mt-3 p-3 rounded border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+        <div className={`${alertClass("warning")} mt-3`} role="alert">
           <p className="flex items-center gap-1.5 text-sm font-semibold">
             <FiAlertTriangle aria-hidden="true" /> Odchylenia od planu
           </p>
@@ -83,7 +84,7 @@ function PlanRunCard({ run }) {
       )}
 
       {!run.cost && run.errors.length > 0 && (
-        <div className="mt-3 p-3 rounded border border-red-200 bg-red-50" role="alert">
+        <div className={`${alertClass("error")} mt-3`} role="alert">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-red-800">
             <FiAlertTriangle aria-hidden="true" /> Awarie urządzeń
           </p>

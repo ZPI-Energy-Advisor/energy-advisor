@@ -179,7 +179,7 @@ describe("schedule", () => {
 
   it("formatuje kwoty", () => {
     expect(formatPln(1.5)).toMatch(/^1,50\sz/);
-    expect(formatPln(null)).toBe("–");
+    expect(formatPln(null)).toBe("—");
   });
 
   it("brak cen nie jest konfliktem akcji", () => {

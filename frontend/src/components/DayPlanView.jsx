@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { FiAlertTriangle, FiCheckCircle, FiDroplet, FiEdit2, FiHome, FiLoader, FiPlay, FiRefreshCw } from "react-icons/fi";
+import ActionCards from "./ActionCards";
 import Dialog from "./Dialog";
 import HeatPumpPlanCard from "./HeatPumpPlanCard";
 import IndoorTemperatureChart from "./IndoorTemperatureChart";
@@ -9,19 +10,19 @@ import ScheduleDayChart from "./ScheduleDayChart";
 import WaterTemperatureChart from "./WaterTemperatureChart";
 import { beforeRanges, localTomorrow, momentRange, nextDay, planRows, weekdayDate } from "../utils/dayPlan";
 import { afterRanges, clockOf, conflictText, formatPln, isConflict } from "../utils/schedule";
+import { formatPercent } from "../utils/format";
+import { useIsPhone } from "../hooks/useMediaQuery";
+import { CARD, CARD_FLUSH, TABLE_BODY, TABLE_HEAD, TD, TD_NUMBER, TH, TH_NUMBER, WIDE_TABLE, alertClass, buttonClass } from "./uiStyles";
 
-const CARD = "bg-white border border-gray-200 rounded-lg p-4 md:p-5 shadow-sm";
 // Miejsce przycisku głównego: „Zatwierdź plan”, a po zatwierdzeniu „Uruchom symulację”. Stała szerokość,
 // żeby po zatwierdzeniu przycisk i przyciski obok nie przeskakiwały, a podpis łamał się pod przyciskiem.
 const PRIMARY_SLOT = "w-full sm:w-64 sm:shrink-0";
 // Przycisk główny: wciśnięcie widać (lekkie zmniejszenie i ciemniejszy kolor), a w trakcie żądania kręci się ikona.
 const PRIMARY_BUTTON =
-  "w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-5 py-3 font-semibold text-white " +
-  "shadow-sm transition duration-150 hover:bg-emerald-700 active:scale-[0.97] active:bg-emerald-800 " +
-  "disabled:opacity-60 disabled:cursor-wait disabled:active:scale-100";
+  `${buttonClass("primary", "lg")} w-full shadow-sm transition duration-150 active:scale-[0.97] ` +
+  "disabled:cursor-wait disabled:active:scale-100";
 const SPINNER = <FiLoader aria-hidden="true" className="animate-spin" />;
-const SECONDARY_BUTTON =
-  "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
+const SECONDARY_BUTTON = `${buttonClass("secondary", "lg")} w-full sm:w-auto`;
 
 function Amount({ label, value, hint = null, accent = false }) {
   return (
@@ -35,11 +36,11 @@ function Amount({ label, value, hint = null, accent = false }) {
 
 // Jak na ekranie optymalizacji: oszczędność w procentach kosztu bez planu.
 const savingPercent = (plan) =>
-  plan.cost_before > 0 ? `${((plan.saving / plan.cost_before) * 100).toFixed(1).replace(".", ",")}%` : null;
+  plan.cost_before > 0 ? formatPercent(plan.saving / plan.cost_before) : null;
 
 export function FlatTariffNote() {
   return (
-    <p className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg">
+    <p className={alertClass("warning")}>
       Masz taryfę ze stałą ceną przez całą dobę, więc przesuwanie urządzeń prawie nie obniży rachunku.{" "}
       <Link to="/tariffs" className="font-semibold underline">Sprawdź w Analizie taryf</Link>, ile dałaby taryfa
       G12 albo dynamiczna.
@@ -63,6 +64,7 @@ function DayPlanView({
   const approved = plan.status === "approved";
   const outdated = plan.plan_date < localTomorrow();
   const rows = planRows(plan.items);
+  const isPhone = useIsPhone();
   const conflicts = plan.items.filter(isConflict);
   const heaters = plan.water_heaters ?? [];
   const warnings = plan.warnings ?? [];
@@ -70,7 +72,7 @@ function DayPlanView({
   return (
     <div className="space-y-4">
       {outdated && (
-        <div className="flex flex-col gap-3 p-3 text-sm text-amber-900 bg-amber-50 rounded-lg sm:flex-row sm:items-center sm:justify-between" role="status">
+        <div className={`${alertClass("warning")} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`} role="status">
           <p>To plan na {weekdayDate(plan.plan_date)}, czyli nie na jutro.</p>
           <button type="button" className={SECONDARY_BUTTON} onClick={onReplan} disabled={isReplanning}>
             <FiRefreshCw aria-hidden="true" /> {isReplanning ? "Układanie planu..." : "Ułóż plan na jutro"}
@@ -101,7 +103,7 @@ function DayPlanView({
       {flatTariff && <FlatTariffNote />}
 
       {warnings.length > 0 && (
-        <ul className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-1" role="alert">
+        <ul className={`${alertClass("warning")} space-y-1`} role="alert">
           {warnings.map((warning) => (
             <li key={warning} className="flex gap-2">
               <FiAlertTriangle aria-hidden="true" className="mt-0.5 shrink-0" /> {warning}
@@ -125,39 +127,56 @@ function DayPlanView({
         subtitle={plan.approximate_from ? "do 6:00, ceny przybliżone" : "do 6:00"}
       />
 
-      <section className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-left text-gray-500 border-b border-gray-100">
-            <tr>
-              <th className="p-3 font-medium">Urządzenie</th>
-              <th className="p-3 font-medium">Bez planu</th>
-              <th className="p-3 font-medium">Według planu</th>
-              <th className="p-3 font-medium text-right">Koszt bez planu</th>
-              <th className="p-3 font-medium text-right">Koszt według planu</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((item) => (
-              <tr key={item.action_id} className="border-b border-gray-50 last:border-0">
-                <td className="p-3">
-                  {item.device_name}
-                  {item.program_name && <span className="text-gray-500"> · {item.program_name}</span>}
-                </td>
-                <td className="p-3">{beforeRanges(item)}</td>
-                <td className="p-3">
-                  {afterRanges(item, { withDay: true })}
-                  {item.status === "unchanged" && <span className="text-gray-500"> (bez zmian)</span>}
-                </td>
-                <td className="p-3 text-right whitespace-nowrap">{formatPln(item.cost_before)}</td>
-                <td className="p-3 text-right whitespace-nowrap">{formatPln(item.cost_after)}</td>
+      {isPhone ? (
+        <ActionCards
+          ariaLabel="Urządzenia w planie"
+          labels={{ before: "Bez planu", after: "Według planu" }}
+          items={rows.map((item) => ({
+            key: item.action_id,
+            name: item.device_name,
+            program: item.program_name,
+            before: beforeRanges(item),
+            after: afterRanges(item, { withDay: true }),
+            afterNote: item.status === "unchanged" ? "(bez zmian)" : null,
+            costBefore: item.cost_before,
+            costAfter: item.cost_after,
+          }))}
+        />
+      ) : (
+        <section className={`${CARD_FLUSH} overflow-x-auto`}>
+          <table className={WIDE_TABLE}>
+            <thead className={TABLE_HEAD}>
+              <tr>
+                <th scope="col" className={TH}>Urządzenie</th>
+                <th scope="col" className={TH}>Bez planu</th>
+                <th scope="col" className={TH}>Według planu</th>
+                <th scope="col" className={TH_NUMBER}>Koszt bez planu</th>
+                <th scope="col" className={TH_NUMBER}>Koszt według planu</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody className={TABLE_BODY}>
+              {rows.map((item) => (
+                <tr key={item.action_id}>
+                  <td className={TD}>
+                    {item.device_name}
+                    {item.program_name && <span className="text-gray-500"> · {item.program_name}</span>}
+                  </td>
+                  <td className={TD}>{beforeRanges(item)}</td>
+                  <td className={TD}>
+                    {afterRanges(item, { withDay: true })}
+                    {item.status === "unchanged" && <span className="text-gray-500"> (bez zmian)</span>}
+                  </td>
+                  <td className={TD_NUMBER}>{formatPln(item.cost_before)}</td>
+                  <td className={TD_NUMBER}>{formatPln(item.cost_after)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {conflicts.length > 0 && (
-        <ul className="p-3 text-sm text-amber-900 bg-amber-50 rounded-lg space-y-1">
+        <ul className={`${alertClass("warning")} space-y-1`}>
           {conflicts.map((item) => (
             <li key={item.action_id}>
               <span className="font-medium">{item.device_name} ({momentRange(item.original_start, item.original_end)}):</span>{" "}

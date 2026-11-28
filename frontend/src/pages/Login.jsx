@@ -15,6 +15,7 @@ const BENEFITS = [
 ];
 import logo from "../assets/logo/logo.svg";
 import logoDark from "../assets/logo/logo-dark.svg";
+import { buttonClass } from "../components/uiStyles";
 
 const GOOGLE_LOGIN_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const SESSION_EXPIRED_MESSAGE = "Sesja wygasła, zaloguj się ponownie.";
@@ -156,7 +157,7 @@ function Login() {
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-white">
+    <div className="flex min-h-screen w-full bg-white pt-[env(safe-area-inset-top)]">
       <div className="hidden w-1/2 flex-col items-center justify-center bg-slate-900 px-12 lg:flex">
         <img src={logoDark} alt="" className="mb-8 h-32 w-auto" />
         <h1 className="mb-4 text-5xl font-bold tracking-tight text-white text-center">
@@ -272,7 +273,7 @@ function Login() {
 
             <button
               type="submit"
-              className="flex w-full justify-center rounded-md border border-transparent bg-emerald-600 py-2.5 px-4 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+              className={`${buttonClass("primary", "lg")} w-full shadow-sm`}
             >
               {isRegister ? "Zarejestruj się" : "Zaloguj się"}
             </button>

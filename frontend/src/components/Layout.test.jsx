@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import Layout from "./Layout";
@@ -23,27 +23,91 @@ const renderLayout = (me) => {
   );
 };
 
-describe("Layout", () => {
-  it("pokazuje „Mój dom” właścicielowi domu", () => {
+const menu = () => screen.getByRole("navigation", { name: "Menu główne" });
+const menuLinks = () => within(menu()).getAllByRole("link").map((link) => link.textContent);
+
+describe("Layout: menu", () => {
+  it("prowadzi w kolejności pracy: dane, analiza, dom", () => {
+    renderLayout({ home_owner: true, profile: { has_pv: true } });
+
+    expect(within(menu()).getAllByRole("list").map((list) => list.getAttribute("aria-labelledby"))).toEqual([
+      "nav-Dane",
+      "nav-Analiza",
+      "nav-Dom",
+    ]);
+    expect(menuLinks()).toEqual([
+      "Profil",
+      "Import danych",
+      "Pulpit",
+      "Taryfy",
+      "Ceny dynamiczne",
+      "Fotowoltaika",
+      "Optymalizacja",
+      "Mój dom",
+      "Plan na jutro",
+    ]);
+    expect(screen.getByRole("list", { name: "Analiza" })).toBeTruthy();
+  });
+
+  it("właściciel domu widzi Mój dom i Plan na jutro", () => {
     renderLayout({ home_owner: true });
 
     expect(screen.getByRole("link", { name: "Mój dom" }).getAttribute("href")).toBe("/home");
+    expect(screen.getByRole("link", { name: "Plan na jutro" }).getAttribute("href")).toBe("/plan");
   });
 
-  it.each([[{ home_owner: false }], [null]])("ukrywa „Mój dom” przed innymi kontami (%o)", (me) => {
+  it.each([[{ home_owner: false }], [null]])("inne konta nie widzą „Mój dom”, ale mają Plan na jutro (%o)", (me) => {
     renderLayout(me);
 
-    expect(screen.getByRole("link", { name: "Dashboard" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Pulpit" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Mój dom" })).toBeNull();
     // Plan na jutro jest dla każdego: dotyczy urządzeń z plików, nie domu Smart Home.
     expect(screen.getByRole("link", { name: "Plan na jutro" }).getAttribute("href")).toBe("/plan");
+    expect(screen.getByRole("list", { name: "Dom" })).toBeTruthy();
+  });
+
+  it.each([
+    [{ profile: { has_pv: true } }, true],
+    [{ profile: { has_pv: false } }, false],
+    [null, false],
+  ])("Fotowoltaika tylko z PV w profilu (%o)", (me, visible) => {
+    renderLayout(me);
+
+    expect(Boolean(screen.queryByRole("link", { name: "Fotowoltaika" }))).toBe(visible);
   });
 
   it("ma jeden ekran taryf", () => {
     renderLayout(null);
 
-    expect(screen.getByRole("link", { name: "Analiza taryf" }).getAttribute("href")).toBe("/tariffs");
+    expect(screen.getByRole("link", { name: "Taryfy" }).getAttribute("href")).toBe("/tariffs");
     expect(screen.queryByRole("link", { name: "Wyniki kalkulacji" })).toBeNull();
+  });
+
+  it("tytuł karty to nazwa ekranu, także gdy pozycja nie jest w menu", () => {
+    user.me = null;
+    render(
+      <MemoryRouter initialEntries={["/schedule"]}>
+        <Layout />
+      </MemoryRouter>,
+    );
+    expect(document.title).toBe("Optymalizacja · Energy Advisor");
+  });
+
+  it("na telefonie menu otwiera się przyciskiem i zamyka po wyborze pozycji albo Escape", () => {
+    renderLayout(null);
+    const toggle = screen.getByRole("button", { name: "Otwórz menu" });
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("app-menu").className).not.toContain("-translate-x-full");
+
+    fireEvent.click(screen.getByRole("link", { name: "Taryfy" }));
+    expect(screen.getByRole("button", { name: "Otwórz menu" }).getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById("app-menu").className).toContain("-translate-x-full");
+
+    fireEvent.click(screen.getByRole("button", { name: "Otwórz menu" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Otwórz menu" }).getAttribute("aria-expanded")).toBe("false");
   });
 });
 

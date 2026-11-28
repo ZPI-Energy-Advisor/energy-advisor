@@ -50,7 +50,7 @@ describe("planning", () => {
     const preference = { enabled: true, energy_input: "kwh", energy_kwh: 10, windows: windows(["22:00", "00:00"]) };
 
     expect(validateDevice(ev, preference, 0.9).windows).toBe(
-      "W przedziałach zmieści się najwyżej 7,4 kWh (3,7 kW × 2 h), a auto potrzebuje 10,0 kWh.",
+      "W przedziałach zmieści się najwyżej 7,40 kWh (3,70 kW × 2 h), a auto potrzebuje 10,00 kWh.",
     );
     expect(validateDevice(ev, { ...preference, windows: windows(["18:00", "07:00"]) }, 0.9)).toEqual({});
   });

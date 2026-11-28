@@ -1,10 +1,11 @@
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { clockOf, formatDayMonth, dayOf } from "../utils/schedule";
+import { formatDegrees } from "../utils/format";
 
 const AFTER_COLOR = "#10b981";
 const BEFORE_COLOR = "#9ca3af";
 
-const degrees = (value) => `${value.toFixed(1).replace(".", ",")}°C`;
+const degrees = (value) => formatDegrees(value, 1);
 
 function TemperatureTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;

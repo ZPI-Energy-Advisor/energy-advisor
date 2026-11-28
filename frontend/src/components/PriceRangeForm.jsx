@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import DateRangePicker from "./DateRangePicker";
 import { countDays, formatDate, isSameRange, validateDateRange } from "../utils/energyFiles";
 import { buildPriceQuickRanges, formatDaysCount } from "../utils/dynamicPrices";
+import { buttonClass } from "./uiStyles";
 
 const quickButtonClass = (isActive) =>
   `px-3 py-2 text-xs md:text-sm font-medium rounded-lg border transition-colors whitespace-nowrap disabled:opacity-60 ${
@@ -53,7 +54,7 @@ function PriceRangeForm({ bounds, appliedRange, onApply, isLoading }) {
           type="button"
           onClick={() => onApply(draft)}
           disabled={!changed || Boolean(validationError) || isLoading}
-          className="w-full sm:w-auto bg-emerald-600 text-white px-5 py-2.5 rounded-md font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}
         >
           {isLoading ? "Ładowanie..." : "Pokaż ceny"}
         </button>

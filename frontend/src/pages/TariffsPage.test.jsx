@@ -232,7 +232,8 @@ describe("TariffsPage", () => {
 
     expect(await screen.findByText(/liczymy taryfę G11/)).toBeTruthy();
     expect(screen.getByText(/stawki taryfowe mamy od 01.01.2026/)).toBeTruthy();
-    expect(screen.getByText("G12r").getAttribute("title")).toBe("Strefy ogłasza operator.");
+    // Powód pod „Dlaczego?”: podpowiedź po najechaniu nie działa na telefonie.
+    expect(screen.getByText("Dlaczego?").closest("details").textContent).toContain("G12r: Strefy ogłasza operator.");
     const own = screen.getByRole("region", { name: "Twoja taryfa" });
     expect(within(own).getByRole("link", { name: "Uzupełnij profil" }).getAttribute("href")).toBe("/profile");
   });
@@ -374,7 +375,7 @@ describe("TariffsPage", () => {
     renderPage();
 
     const details = await screen.findByRole("region", { name: "Szczegóły rachunku: G11" });
-    expect(within(details).getByText("Zużycie w okresie").nextSibling.textContent).toBe("310 kWh");
+    expect(within(details).getByText("Zużycie w okresie").nextSibling.textContent).toBe("310,00 kWh");
     expect(within(details).getByText("Energia czynna brutto").nextSibling.textContent).toMatch(/210,50 zł/);
   });
 });

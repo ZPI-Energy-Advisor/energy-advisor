@@ -179,7 +179,7 @@ describe("PlanningPage", () => {
     fireEvent.change(within(ev).getByLabelText("Pojemność baterii"), { target: { value: "60" } });
     fireEvent.change(within(ev).getByLabelText("Teraz w baterii"), { target: { value: "40" } });
     fireEvent.change(within(ev).getByLabelText("Naładuj do"), { target: { value: "70" } });
-    expect(within(ev).getByText(/Z sieci auto pobierze ok\. 20,0 kWh/)).toBeTruthy();
+    expect(within(ev).getByText(/Z sieci auto pobierze ok\. 20,00 kWh/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Zapisz i ułóż plan" }));
 
@@ -251,17 +251,17 @@ describe("PlanningPage", () => {
 
     const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
     expect(within(heating).getByText(
-      "W piątek 13 listopada zimniej (-2°C zamiast 9°C w piątek 6 listopada), więc pompa zużyje ok. 21,4 kWh prądu, o 10,2 kWh więcej.",
+      "W piątek 13 listopada zimniej (-2°C zamiast 9°C w piątek 6 listopada), więc pompa zużyje ok. 21,40 kWh prądu, o 10,20 kWh więcej.",
     )).toBeTruthy();
     expect(within(heating).getByText("Jak to liczymy")).toBeTruthy();
     expect(within(heating).getByText(/Prognoza na ten dzień: średnio -2°C \(od -6 do 1°C\)/)).toBeTruthy();
     expect(within(heating).getByText(/W piątek 6 listopada, z którego bierzemy godziny grzania, było średnio 9°C/)).toBeTruthy();
-    expect(within(heating).getByText("62 kWh")).toBeTruthy();
+    expect(within(heating).getByText("61,80 kWh")).toBeTruthy();
     expect(within(heating).getByText("20,2 stopniodni")).toBeTruthy();
     expect(within(heating).getByText("2,8")).toBeTruthy();
     expect(within(heating).getByText("ogrzewanie podłogowe")).toBeTruthy();
-    expect(within(heating).getByText("21,4 kWh")).toBeTruthy();
-    expect(within(heating).getByText("wtedy 11,2 kWh")).toBeTruthy();
+    expect(within(heating).getByText("21,40 kWh")).toBeTruthy();
+    expect(within(heating).getByText("wtedy 11,20 kWh")).toBeTruthy();
     expect(within(heating).getByText(/Dopasowane do zużycia pompy z Twoich plików \(120 dni, w tym 90 z ogrzewaniem\)/)).toBeTruthy();
     expect(within(heating).getByText(/myli średnio o 7%/)).toBeTruthy();
     expect(within(heating).queryByText(/zmieści się/)).toBeNull();
@@ -282,7 +282,7 @@ describe("PlanningPage", () => {
 
     const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
     expect(within(heating).getByText(
-      "W piątek 13 listopada średnio -2°C. Plan trzyma w domu 20–22°C i zużyje ok. 18,3 kWh prądu, grzejąc głównie w tańszych godzinach.",
+      "W piątek 13 listopada średnio -2°C. Plan trzyma w domu 20–22°C i zużyje ok. 18,30 kWh prądu, grzejąc głównie w tańszych godzinach.",
     )).toBeTruthy();
     expect(within(heating).getByText(/dom stygnie przy tej pogodzie o ok. 0,5°C na godzinę/)).toBeTruthy();
     expect(within(heating).getByText("Koszt ogrzewania")).toBeTruthy();
@@ -306,7 +306,7 @@ describe("PlanningPage", () => {
     renderPage({ ...BODY, saved_at: "2026-11-12T14:00:00Z" }, { ...PLAN, heat_pumps: [pump] });
 
     const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
-    expect(within(heating).getByText(/zużyje ok. 21,4 kWh prądu przy 23°C w domu/)).toBeTruthy();
+    expect(within(heating).getByText(/zużyje ok. 21,40 kWh prądu przy 23°C w domu/)).toBeTruthy();
     expect(within(heating).getByText(/Ciepła woda w zasobniku 200 l będzie gotowa na 06:30 i 19:00/)).toBeTruthy();
     // Plan na dzień z przeszłości: pogoda z archiwum, a zakres bez powtórzenia, gdy min i max są równe.
     expect(within(heating).getByText(/^Pogoda z archiwum: średnio 3°C\. /)).toBeTruthy();
@@ -322,7 +322,7 @@ describe("PlanningPage", () => {
 
     const heating = await screen.findByRole("region", { name: "Ogrzewanie: Pompa ciepła" });
     expect(within(heating).getByText("grzejniki")).toBeTruthy();
-    expect(within(heating).getByText(/ok. 41,5 kWh prądu pompy, ale przy jej mocy zmieści się 30,0 kWh/)).toBeTruthy();
+    expect(within(heating).getByText(/ok. 41,50 kWh prądu pompy, ale przy jej mocy zmieści się 30,00 kWh/)).toBeTruthy();
     expect(within(heating).getByText(/Liczone z profilu \(rok budowy i metraż\)/)).toBeTruthy();
   });
 

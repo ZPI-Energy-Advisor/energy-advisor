@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useEnergyFiles } from "../hooks/useEnergyFiles";
 import { buildQuickRanges, isSameRange, validateDateRange } from "../utils/energyFiles";
+import { buttonClass } from "./uiStyles";
 
 const inputClass =
   "w-full sm:w-auto bg-gray-50 border text-gray-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500";
@@ -91,7 +92,7 @@ function DateRangeForm({ bounds, appliedRange, onApplied }) {
           <button
             type="submit"
             disabled={!canApply}
-            className="bg-emerald-600 text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={buttonClass("primary")}
           >
             Zastosuj
           </button>

@@ -1,22 +1,22 @@
-import { formatNumber } from "./format";
+import { formatDegrees, formatKwh, formatNumber, formatPercent } from "./format";
 import { onDay } from "./dayPlan";
 
-export const formatDegrees = (value) => `${formatNumber(Math.round(value) + 0, 0)}°C`;
+export { formatDegrees };
 
 // Zakres doby w nawiasie; bez nawiasu, gdy najniższa i najwyższa są takie same (wtedy wystarczy średnia).
 export const temperatureRange = (temperature) =>
   Math.round(temperature.min_c) === Math.round(temperature.max_c)
     ? ""
-    : ` (od ${formatNumber(Math.round(temperature.min_c) + 0, 0)} do ${formatDegrees(temperature.max_c)})`;
+    : ` (od ${formatNumber(Math.round(temperature.min_c), 0)} do ${formatDegrees(temperature.max_c)})`;
 
-const kwh = (value, digits = 1) => `${formatNumber(value, digits)} kWh`;
+const kwh = formatKwh;
 
 const days = (count) => (count === 1 ? "1 dnia" : `${count} dni`);
 
 export const describeHeatModel = (model) => {
   const perDegreeDay = `ok. ${kwh(model.heat_per_hdd)} ciepła na stopniodzień`;
   if (model.source === "history") {
-    const error = model.mape != null ? `; dobowe zużycie myli średnio o ${formatNumber(model.mape * 100, 0)}%` : "";
+    const error = model.mape != null ? `; dobowe zużycie myli średnio o ${formatPercent(model.mape)}` : "";
     return `Dopasowane do zużycia pompy z Twoich plików (${days(model.days)}, w tym ${model.heating_days} z ogrzewaniem): `
       + `dom potrzebuje ${perDegreeDay}${error}.`;
   }
@@ -38,7 +38,7 @@ export const heatPumpReference = (pump) =>
 
 // Dom jako magazyn ciepła: jak szybko stygnie bez grzania (plan pilnujący temperatury w domu).
 export const describeCooling = (pump) =>
-  `Bez grzania dom stygnie przy tej pogodzie o ok. ${formatNumber(pump.cooling_per_hour, 1)}°C na godzinę, `
+  `Bez grzania dom stygnie przy tej pogodzie o ok. ${formatDegrees(pump.cooling_per_hour, 1)} na godzinę, `
   + "więc plan może grzeć na zapas w tanich godzinach i przerwać grzanie, kiedy prąd jest drogi.";
 
 // Doba planu z przeszłości (plan demo) ma pogodę z archiwum, a nie z prognozy.

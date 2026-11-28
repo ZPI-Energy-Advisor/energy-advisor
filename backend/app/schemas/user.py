@@ -12,6 +12,8 @@ class ProfileTariffSummary(BaseModel):
     needs_update: bool = False
     # Taryfa zapisana w profilu (TariffTypeEnum), także gdy operator nie ma jej stawek w cenniku.
     tariff_type: str | None = None
+    # Profil ma fotowoltaikę (rozliczenie inne niż „bez PV”); menu pokazuje wtedy ekran Fotowoltaika.
+    has_pv: bool = False
 
 
 class PrivacyPolicyStatus(BaseModel):

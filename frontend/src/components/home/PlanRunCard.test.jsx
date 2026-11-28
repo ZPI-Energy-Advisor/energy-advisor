@@ -103,7 +103,7 @@ describe("PlanRunCard (raport przebiegu)", () => {
     const more = [...cost.querySelectorAll("details")].find((item) => item.querySelector("summary").textContent === "Więcej");
     expect(more.textContent).toContain("Włączone ręcznie: Lampa salon 0,20 kWh (0,12 zł).");
     expect(more.textContent).toContain(
-      "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64% ich zużycia).",
+      "PV wyprodukowało 6,40 kWh. Od razu w domu zużyto 3,10 kWh, z czego 0,90 kWh wzięły urządzenia z planu (64,3% ich zużycia).",
     );
     const deviations = within(cost).getByRole("list", { name: "Odchylenia od planu", hidden: true });
     expect(deviations.textContent).toContain(

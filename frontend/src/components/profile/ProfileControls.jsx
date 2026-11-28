@@ -1,3 +1,5 @@
+import { CARD } from "../uiStyles";
+
 // Elementy formularza profilu: sekcja, pole z podpowiedzią i błędem, pole liczby z jednostką, licznik, karty wyboru.
 
 export const inputClass =
@@ -11,7 +13,7 @@ function borderClass(error, missing) {
 
 export function Section({ title, description, children }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+    <section className={CARD}>
       <h3 className="text-base font-semibold text-gray-900">{title}</h3>
       {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
       <div className="mt-5 grid gap-5 sm:grid-cols-2">{children}</div>

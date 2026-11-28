@@ -61,3 +61,31 @@ def test_retry_after_text_in_polish(seconds, text):
 
 def test_rate_limit_message():
     assert rate_limit_message(60) == "Zbyt wiele prób. Spróbuj ponownie za 1 minutę."
+
+
+def _request(client_host: str, real_ip: str | None = None):
+    from starlette.requests import Request
+
+    headers = [(b"x-real-ip", real_ip.encode())] if real_ip else []
+    return Request({"type": "http", "client": (client_host, 12345), "headers": headers})
+
+
+def test_client_ip_takes_real_ip_only_from_trusted_proxy(monkeypatch):
+    from app.core import rate_limit
+
+    monkeypatch.setattr(rate_limit, "_trusted_proxy_ips", lambda: {"172.21.0.7"})
+
+    # nginx kontenera frontendu przekazuje adres telefonu w X-Real-IP.
+    assert rate_limit.client_ip(_request("172.21.0.7", "192.168.1.50")) == "192.168.1.50"
+    # Ktoś łączący się wprost z portem 8000 nie obejdzie limitu podrobionym nagłówkiem.
+    assert rate_limit.client_ip(_request("192.168.1.99", "10.0.0.1")) == "192.168.1.99"
+    # Bez nagłówka liczy się adres połączenia, także od proxy.
+    assert rate_limit.client_ip(_request("172.21.0.7")) == "172.21.0.7"
+
+
+def test_trusted_proxy_outside_docker_trusts_nobody(monkeypatch):
+    from app.core import rate_limit
+
+    monkeypatch.setattr(rate_limit, "TRUSTED_PROXY_HOST", "nie-ma-takiego-hosta.invalid")
+
+    assert rate_limit._trusted_proxy_ips() == set()

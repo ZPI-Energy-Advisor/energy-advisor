@@ -21,7 +21,7 @@ describe("DashboardPvCard", () => {
     vi.spyOn(apiClient, "get").mockResolvedValue({ data: OVERVIEW });
     renderCard();
 
-    expect((await screen.findByRole("link")).textContent).toMatch(/Jutro z paneli ok\. 2,0 kWh\.Prognoza PV/);
+    expect((await screen.findByRole("link")).textContent).toMatch(/Jutro z paneli ok\. 2,04 kWh\.Prognoza PV/);
   });
 
   it("bez instalacji PV w profilu nic nie pokazuje", async () => {
@@ -31,5 +31,12 @@ describe("DashboardPvCard", () => {
     await vi.waitFor(() => expect(get).toHaveBeenCalled());
     await Promise.resolve();
     expect(container.textContent).toBe("");
+  });
+
+  it("przy błędzie serwera mówi, że nie udało się pobrać prognozy", async () => {
+    vi.spyOn(apiClient, "get").mockRejectedValue(Object.assign(new Error("500"), { response: { status: 500 } }));
+    renderCard();
+
+    expect((await screen.findByRole("status")).textContent).toMatch(/Nie udało się pobrać prognozy produkcji z paneli/);
   });
 });

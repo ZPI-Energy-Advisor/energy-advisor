@@ -19,6 +19,7 @@ import {
   isResolutionAllowed,
   resolveResolution,
 } from "../utils/dynamicPrices";
+import { CARD, EMPTY_CARD, alertClass } from "../components/uiStyles";
 
 const toggleClass = (isActive) =>
   `flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -27,7 +28,7 @@ const toggleClass = (isActive) =>
 
 function StatTile({ label, value, hint }) {
   return (
-    <div className="bg-white p-4 md:p-5 rounded-lg shadow-sm border border-gray-100">
+    <div className={CARD}>
       <p className="text-xs md:text-sm font-medium text-gray-500 mb-1">{label}</p>
       <div className="text-lg md:text-2xl font-bold text-gray-900">{value}</div>
       {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
@@ -104,7 +105,7 @@ function DynamicPricesPage() {
   return (
     <div className="max-w-6xl mx-auto pb-12">
       <h2 className="text-xl font-bold text-gray-900 border-b border-gray-200 pb-4 mb-6 md:mb-8">
-        Ceny dynamiczne energii
+        Ceny dynamiczne
       </h2>
 
       <ProfileTariffNotice
@@ -117,7 +118,7 @@ function DynamicPricesPage() {
       <TomorrowPriceCards />
 
       {error && (
-        <div role="alert" className="mb-6 p-3 text-sm text-red-600 bg-red-50 rounded-lg flex items-start justify-between gap-3">
+        <div role="alert" className={`${alertClass("error")} mb-6 flex items-start justify-between gap-3`}>
           <span>
             {error}
             {history ? " Wyświetlane są nadal poprzednie dane." : ""}
@@ -129,7 +130,7 @@ function DynamicPricesPage() {
       )}
 
       {!hasAnyPrices ? (
-        <div className="bg-white p-8 md:p-10 rounded-lg shadow-sm border border-emerald-100 text-center">
+        <div className={EMPTY_CARD}>
           <h3 className="text-xl font-bold text-gray-800 mb-2">Brak zapisanych cen dynamicznych</h3>
           <p className="text-gray-500 text-sm md:text-base">
             Ceny pobieramy codziennie po 15:00. Zajrzyj tu później.
@@ -137,7 +138,7 @@ function DynamicPricesPage() {
         </div>
       ) : (
         <>
-          <section aria-label="Okres" className="mb-6 md:mb-8 bg-white border border-gray-100 rounded-lg shadow-sm p-4 md:p-5">
+          <section aria-label="Okres" className={`${CARD} mb-6 md:mb-8`}>
             <h3 className="font-semibold text-gray-900 mb-4">Wybierz okres</h3>
             <PriceRangeForm
               key={`${appliedRange.from}:${appliedRange.to}`}
@@ -207,6 +208,15 @@ function DynamicPricesPage() {
                 })}
               </div>
             </div>
+            {/* Powód nieaktywnej rozdzielczości wprost pod wykresem: podpowiedź po najechaniu nie działa na telefonie. */}
+            {PRICE_RESOLUTIONS.some((option) => !isResolutionAllowed(option.value, appliedRange)) && (
+              <p className="-mt-2 mb-3 text-xs text-gray-500">
+                {PRICE_RESOLUTIONS.filter((option) => !isResolutionAllowed(option.value, appliedRange))
+                  .map((option) => `${option.label}: dla zakresu do ${option.maxDays} dni`)
+                  .join(" · ")}
+                .
+              </p>
+            )}
 
             {hasPricesInRange ? (
               <PriceChart history={history} resolution={resolution} />

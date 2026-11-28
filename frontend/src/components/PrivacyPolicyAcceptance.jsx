@@ -1,6 +1,7 @@
 import { useState } from "react";
 import PrivacyPolicyContent from "./PrivacyPolicyContent";
 import { formatPolicyVersion, usePrivacyPolicy } from "../hooks/usePrivacyPolicy";
+import { alertClass, buttonClass } from "./uiStyles";
 
 // Okno akceptacji polityki, którego nie da się zamknąć bez decyzji: przy pierwszym logowaniu przez Google
 // i po zmianie wersji polityki. `onAccept` dostaje wersję, którą użytkownik widział.
@@ -36,7 +37,7 @@ function PrivacyPolicyAcceptance({ title, intro, acceptLabel, onAccept, cancelLa
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {loadError && (
-            <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-600">
+            <p role="alert" className={alertClass("error")}>
               {loadError}
             </p>
           )}
@@ -68,7 +69,7 @@ function PrivacyPolicyAcceptance({ title, intro, acceptLabel, onAccept, cancelLa
               type="button"
               onClick={onCancel}
               disabled={busy}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className={buttonClass("secondary")}
             >
               {cancelLabel}
             </button>
@@ -76,7 +77,7 @@ function PrivacyPolicyAcceptance({ title, intro, acceptLabel, onAccept, cancelLa
               type="button"
               onClick={accept}
               disabled={!policy || !checked || busy}
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className={buttonClass("primary")}
             >
               {acceptLabel}
             </button>

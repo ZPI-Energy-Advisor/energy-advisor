@@ -1,3 +1,5 @@
+import { formatPercent as formatShare } from "./format";
+
 export const OPERATOR_NAMES = {
   PGE: "PGE Dystrybucja",
   TAURON: "TAURON Dystrybucja",
@@ -71,9 +73,8 @@ export const profileEntry = (comparison) =>
 
 export const entryLabel = (entry) => [entry.label, entry.name].filter(Boolean).join(" · ");
 
-const percentFormatter = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 });
-
-export const formatPercent = (value) => (value == null ? null : `${percentFormatter.format(value)}%`);
+// Procent z backendu (np. 12,3 dla 12,3%); null bez wartości, żeby karta mogła pominąć dopisek.
+export const formatPercent = (value) => (value == null ? null : formatShare(value / 100));
 
 // Taryfa pokazana w szczegółach: wybrana przez użytkownika, a domyślnie taryfa z profilu albo najtańsza.
 export const detailsKey = (comparison, chosenKey) => {

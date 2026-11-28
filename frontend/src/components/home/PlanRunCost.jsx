@@ -1,5 +1,6 @@
-import { formatKwh, formatNumber, formatPln, formatSimTime, periodLabel } from "../../utils/home";
+import { formatKwh, formatPln, formatSimTime, periodLabel } from "../../utils/home";
 import MoreInfo from "../MoreInfo";
+import { formatPercent } from "../../utils/format";
 
 const DEVIATION_LABELS = {
   rejected: "Odrzucona komenda",
@@ -38,7 +39,7 @@ export function DeviationList({ deviations }) {
 
 // „(12% ich zużycia)”: jaka część energii urządzeń z planu poszła prosto z paneli.
 const pvShare = (pv) =>
-  pv.plan_kwh > 0 ? ` (${formatNumber((pv.plan_from_pv_kwh / pv.plan_kwh) * 100, 0)}% ich zużycia)` : "";
+  pv.plan_kwh > 0 ? ` (${formatPercent(pv.plan_from_pv_kwh / pv.plan_kwh)} ich zużycia)` : "";
 
 // Koszt według planu tylko wtedy, gdy różni się od zmierzonego (o co najmniej grosz): przy planie wykonanym
 // co do kWh to ta sama kwota drugi raz.
@@ -68,7 +69,7 @@ function Fact({ label, children }) {
 // z planu) i z planem (zmierzone w symulacji), tymi samymi cenami. Urządzenia stałe i PV są poza oszczędnością:
 // na wierzchu tylko ich sumy, a szczegóły i odchylenia pod „Więcej”.
 function PlanRunCost({ cost, horizonStart = null }) {
-  const percent = cost.saving_percent == null ? null : `${formatNumber(cost.saving_percent, 1)}% kosztu bez planu`;
+  const percent = cost.saving_percent == null ? null : `${formatPercent(cost.saving_percent / 100)} kosztu bez planu`;
   const hasDetails = cost.manual.length > 0 || cost.pv || cost.deviations.length > 0;
   const outsideHouse = cost.manual.length > 0 || cost.pv;
   return (
