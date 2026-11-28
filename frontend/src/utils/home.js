@@ -193,6 +193,10 @@ const fullDayFormat = new Intl.DateTimeFormat("pl-PL", {
 });
 /** „19 października” */
 export const shortDay = (day) => shortDayFormat.format(noon(day));
+
+// Nazwa przebiegu: plan idealny dnia z przeszłości (ZP-152) albo plan na dzień.
+export const planName = (run) =>
+  run.plan_kind === "past_day" ? `Plan idealny, ${shortDay(run.plan_date)}` : `Plan na ${shortDay(run.plan_date)}`;
 /** „19 października 2026” */
 export const fullDay = (day) => fullDayFormat.format(noon(day));
 /** „niedziela, 19 października 2026” */

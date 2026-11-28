@@ -10,7 +10,7 @@ Ceny kwadransów liczy wspólna funkcja `quarter_prices`, tak jak energię i dys
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -134,6 +134,12 @@ class SchedulePriceService:
             dynamic_instead_of_profile=instead_of_profile,
             missing_rates=quarters.missing_rates,
         )
+
+    def first_priced_day(self, user_id: UUID) -> tuple[date | None, bool]:
+        """Pierwszy dzień ze stawkami operatora z profilu i czy umowa ma cenę dynamiczną (wtedy liczy się też RCE)."""
+        profile = self._profile(user_id)
+        _, dynamic = TariffChoice().resolve(profile)
+        return self.tariff_repository.first_valid_from(operator=profile.base_info.distribution_operator), dynamic
 
     @staticmethod
     def _breakdown(prices) -> dict[str, float] | None:

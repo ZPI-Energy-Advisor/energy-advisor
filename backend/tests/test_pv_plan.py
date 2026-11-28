@@ -342,6 +342,9 @@ def test_export_worth_more_than_grid_keeps_washer_out_of_surplus(db, home, weath
     washer, = plan["items"]
     # Oddanie warte 1,2 × 1,23 zł, a prąd z sieci 1 zł: pranie z paneli traci więcej, niż kosztuje sieć.
     assert washer["status"] == "unchanged"
+    assert plan["pv"]["export_beats_grid"] is True
+    assert any("prąd oddany do sieci jest wart więcej niż prąd z sieci (średnio 1,48 wobec 1,00 zł/kWh)" in note
+               for note in plan["notes"])
 
 
 def test_no_weather_plans_without_panels_and_says_so(db, home, weather_cell):

@@ -1,10 +1,11 @@
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.v1.deps import get_authenticated_user, get_plan_service, get_planning_service
 from app.models.User import User
-from app.schemas.day_plan import DayPlanOut, DayPlanRequest
+from app.schemas.day_plan import DayPlanOut, DayPlanRequest, PastDaysOut
 from app.schemas.planning import PlanningPreferences, PlanningPreferencesOut
 from app.services.plan_service import PlanService
 from app.services.planning_service import PlanningService
@@ -55,8 +56,27 @@ def get_current_day_plan(
     user: User = Depends(get_authenticated_user),
     service: PlanService = Depends(get_plan_service),
 ):
-    """Ostatnio ułożony plan użytkownika albo null."""
+    """Ostatni plan na jutro (albo plan demo) albo null. Plan idealny dnia z przeszłości go nie zasłania."""
     return service.current(user)
+
+
+@router.get("/plans", response_model=DayPlanOut | None)
+def get_day_plan(
+    plan_date: date = Query(alias="date"),
+    user: User = Depends(get_authenticated_user),
+    service: PlanService = Depends(get_plan_service),
+):
+    """Plan na ten dzień (np. plan idealny dnia z przeszłości, ZP-152) albo null."""
+    return service.for_date(user, plan_date)
+
+
+@router.get("/past-days", response_model=PastDaysOut)
+def get_past_days(
+    user: User = Depends(get_authenticated_user),
+    service: PlanService = Depends(get_plan_service),
+):
+    """Zakres dni do planu idealnego: od pierwszego dnia z cenami taryfy do wczoraj, i okresy plików urządzeń."""
+    return service.past_days(user)
 
 
 @router.post("/plans/{plan_id}/approve", response_model=DayPlanOut)

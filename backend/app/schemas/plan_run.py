@@ -61,6 +61,11 @@ class PlanRunActionOut(BaseModel):
     energy_before_kwh: float | None = None
     cost_before: float | None = None
     planned_cost: float | None = None
+    # Profile bez planu i według planu (ZP-153): oszczędność do teraz kwadrans po kwadransie. None w przebiegach
+    # sprzed tej zmiany.
+    original_start: datetime | None = None
+    original_profile_kwh: list[float] | None = None
+    profile_kwh: list[float] | None = None
 
 
 class PlanRunDeviceOut(BaseModel):
@@ -190,6 +195,8 @@ class PlanRunSummaryOut(BaseModel):
 
     id: UUID
     plan_date: date
+    # `past_day`: plan idealny dnia z przeszłości (ZP-152); `tomorrow`: plan na jutro.
+    plan_kind: Literal["tomorrow", "past_day"] = "tomorrow"
     status: Literal["running", "completed", "ended", "superseded"]
     started_at: datetime
     ended_at: datetime | None = None
@@ -201,10 +208,87 @@ class PlanRunSummaryOut(BaseModel):
     deviations: int | None = None
 
 
+class PlanRunIndoorPointOut(BaseModel):
+    # Temperatura w domu na końcu kwadransu zaczętego o `start`: według planu i z symulacji (None po `until`).
+    start: datetime
+    plan_c: float
+    temp_c: float | None = None
+
+
+class PlanRunIndoorOut(BaseModel):
+    """Temperatura w domu z pompą ciepła na końcu ostatniego pełnego kwadransa (`at`): z modelu domu z planu
+    na energii pompy zmierzonej w symulacji, obok temperatury według planu i zakresu komfortu."""
+
+    device_id: str
+    device_name: str
+    at: datetime
+    temp_c: float
+    plan_c: float | None = None
+    set_c: float
+    band: list[float]
+    points: list[PlanRunIndoorPointOut] = []
+
+
+class PlanRunWeatherNowOut(BaseModel):
+    start: datetime
+    temperature_c: float | None = None
+    cloud_cover_pct: int | None = None
+    # Prognoza (plan na jutro) albo archiwum (plan idealny).
+    past: bool = False
+
+
+class PlanRunPvHourOut(BaseModel):
+    # Godzina doby: produkcja, na którą liczy plan, i produkcja zmierzona w symulacji (None po `until`).
+    start: datetime
+    planned_kwh: float | None = None
+    actual_kwh: float | None = None
+
+
+class PlanRunPvLiveOut(BaseModel):
+    """Panele od początku planu w bilansie godzinowym: zużyte w domu i oddane do sieci sumują się do produkcji."""
+
+    production_kwh: float
+    self_kwh: float
+    export_kwh: float
+    # Wartość oddania (z migawki planu); None, gdy plan nie ma wyceny oddania.
+    export_pln: float | None = None
+    # Produkcja, na którą plan liczy w całej dobie (None w planie bez PV), i godziny doby.
+    planned_kwh: float | None = None
+    hours: list[PlanRunPvHourOut] = []
+
+
+class PlanRunSavingLiveOut(BaseModel):
+    """Oszczędność do teraz: urządzenia z planu od początku planu do `until`, bez planu (profil bazowy przycięty)
+    i z planem (energia zmierzona), tym samym rachunkiem co raport. Bez urządzeń z odchyleniem."""
+
+    cost_before: float
+    cost_after: float
+    saving: float
+    saving_percent: float | None = None
+    excluded: list[PlanRunDeviceRefOut] = []
+    # Oszczędność, którą plan daje w całej dobie: w trakcie doby „do teraz” może być większa albo mniejsza,
+    # bo plan przesuwa pracę w czasie.
+    planned_saving: float | None = None
+
+
+class PlanRunLiveOut(BaseModel):
+    """Statystyki na żywo w czasie symulacji (ZP-153), liczone przy odczycie z migawki przebiegu i zdarzeń."""
+
+    until: datetime
+    indoor: list[PlanRunIndoorOut] = []
+    weather: PlanRunWeatherNowOut | None = None
+    pv: PlanRunPvLiveOut | None = None
+    # Cena kWh z sieci w bieżącym kwadransie i wartość kWh oddanej w tej godzinie (None bez PV w planie).
+    price_now: float | None = None
+    export_price_now: float | None = None
+    saving: PlanRunSavingLiveOut | None = None
+
+
 class PlanRunOut(BaseModel):
     id: UUID
     plan_id: UUID
     plan_date: date
+    plan_kind: Literal["tomorrow", "past_day"] = "tomorrow"
     status: Literal["running", "completed", "ended", "superseded"]
     simulation_id: str
     started_at: datetime
@@ -232,3 +316,4 @@ class PlanRunOut(BaseModel):
     # przyjął ceny z tych samych godzin dnia planu. None, gdy wszystkie ceny są prawdziwe.
     prices_approximate_from: datetime | None = None
     water_heaters: list[PlanRunWaterHeaterOut] = []
+    live: PlanRunLiveOut | None = None

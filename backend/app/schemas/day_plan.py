@@ -10,8 +10,23 @@ from app.schemas.schedule import ScheduledActionOut, SchedulePriceOut
 
 
 class DayPlanRequest(BaseModel):
-    # Bez daty: jutro. Data z przeszłości służy do demo, gdy cen na jutro jeszcze nie ma.
+    # Bez daty: jutro. Data z przeszłości to plan idealny tamtej doby (ZP-152) albo plan demo, gdy cen na jutro
+    # jeszcze nie ma.
     plan_date: date | None = None
+
+
+class PlanFilePeriodOut(BaseModel):
+    first_day: date
+    last_day: date
+
+
+class PastDaysOut(BaseModel):
+    """Dni, na które da się ułożyć plan idealny: od pierwszego dnia z cenami taryfy do wczoraj, i okresy plików
+    urządzeń (w nich „bez planu” to to, co dom naprawdę robił)."""
+
+    first_day: date | None
+    last_day: date
+    file_periods: list[PlanFilePeriodOut]
 
 
 class PlanItemOut(ScheduledActionOut):
@@ -130,6 +145,10 @@ class HeatPumpPlanOut(BaseModel):
     thermostat_cost_pln: float | None = None
     cooling_per_hour: float | None = None
     time_constant_h: float | None = None
+    # Model domu z planera (house_heating.House): temperatura w domu na żywo w symulacji (ZP-153).
+    loss_kw_per_k: float | None = None
+    capacity_kwh_per_k: float | None = None
+    floor_heating: bool | None = None
     temperatures: list[HeatPumpIndoorPointOut] = []
     water: HeatPumpWaterOut | None = None
     model: HeatPumpModelOut
@@ -178,7 +197,7 @@ class PlanPvOut(BaseModel):
     # Prognoza pomniejszona o jej średni błąd (`uncertainty`): na tyle plan liczy.
     planned_kwh: float
     uncertainty: float
-    uncertainty_source: Literal["history", "default"]
+    uncertainty_source: Literal["history", "default", "archive"]
     basis: str | None = None
     weather_fetched_at: datetime | None = None
     coefficient: float | None = None
@@ -190,6 +209,8 @@ class PlanPvOut(BaseModel):
     before: PlanPvSummaryOut | None = None
     after: PlanPvSummaryOut | None = None
     estimated_installation: bool = False
+    # W godzinach ze słońcem oddanie do sieci jest warte więcej niż prąd z sieci: plan nie przesuwa pod słońce.
+    export_beats_grid: bool = False
     hours: list[PlanPvHourOut] = []
 
 
@@ -197,6 +218,12 @@ class DayPlanOut(BaseModel):
     id: UUID
     plan_date: date
     status: Literal["draft", "approved"]
+    # `tomorrow`: plan na jutro (także plan demo na ostatni dzień z cenami); `past_day`: plan idealny dnia
+    # z przeszłości (ZP-152), z pogodą z archiwum.
+    kind: Literal["tomorrow", "past_day"] = "tomorrow"
+    # Tylko plan idealny: `files`, gdy dzień jest w plikach urządzeń (bez planu to, co dom naprawdę robił),
+    # a `settings`, gdy nie (urządzenia i godziny z ustawień, jak w planie na jutro).
+    day_source: Literal["files", "settings"] | None = None
     created_at: datetime
     approved_at: datetime | None = None
     # Zakres planu: doba planu i noc po niej do 06:00 (np. zmywarka albo auto przez północ).

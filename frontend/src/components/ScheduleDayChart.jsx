@@ -17,18 +17,20 @@ const skyColor = (cloud) => {
 };
 
 const hourText = (hour) => `${String(hour).padStart(2, "0")}:00`;
+// Godziny doby jako 24 kolumny siatki: bez szczelin z zaokrągleń szerokości w procentach.
+const HOUR_GRID = { display: "grid", gridTemplateColumns: "repeat(24, minmax(0, 1fr))" };
+const hourCell = (hour) => ({ gridColumn: `${hour + 1}`, gridRow: "1" });
 
 function WeatherRow({ hours }) {
   return (
     <div className="flex mt-1">
       <div className={`${LABEL_WIDTH} text-xs text-gray-500`}>Pogoda</div>
       <div className="flex-1 min-w-0">
-        <div className="relative h-3 rounded-sm bg-gray-100 overflow-hidden" aria-label="Zachmurzenie co godzinę">
+        <div className="h-3 rounded-sm bg-gray-100 overflow-hidden" style={HOUR_GRID} aria-label="Zachmurzenie co godzinę">
           {hours.map((entry) => (
             <div
               key={entry.hour}
-              className="absolute inset-y-0"
-              style={{ left: `${(entry.hour / 24) * 100}%`, width: `${100 / 24}%`, backgroundColor: skyColor(entry.cloud) }}
+              style={{ ...hourCell(entry.hour), backgroundColor: skyColor(entry.cloud) }}
               title={`${hourText(entry.hour)}: ${cloudLabel(entry.cloud) ?? "brak danych"}${
                 entry.temperature != null ? `, ${formatNumber(entry.temperature, 0)}°C` : ""}`}
             />
@@ -58,12 +60,12 @@ function PvRow({ hours, note }) {
       {note ? (
         <p className="flex-1 min-w-0 text-xs text-gray-500" role="note">{note}</p>
       ) : (
-        <div className="flex-1 min-w-0 relative h-8 bg-gray-50 rounded-sm" aria-label="Prąd z paneli co godzinę">
+        <div className="flex-1 min-w-0 h-8 bg-gray-50 rounded-sm" style={HOUR_GRID} aria-label="Prąd z paneli co godzinę">
           {hours.map((entry) => (
             <div
               key={entry.hour}
-              className={`absolute inset-y-0 flex items-end ${entry.surplus ? "bg-amber-100" : ""}`}
-              style={{ left: `${(entry.hour / 24) * 100}%`, width: `${100 / 24}%` }}
+              className={`flex items-end ${entry.surplus ? "bg-amber-100" : ""}`}
+              style={hourCell(entry.hour)}
               title={`${hourText(entry.hour)}: plan liczy na ${formatNumber(entry.planned, 1)} kWh z paneli${
                 entry.surplus ? `, nadwyżka nad resztą domu ${formatNumber(entry.surplusKwh, 1)} kWh` : ""}`}
               data-surplus={entry.surplus || undefined}
@@ -105,13 +107,9 @@ function SurplusShade({ hours }) {
   const surplus = hours.filter((entry) => entry.surplus);
   if (!surplus.length) return null;
   return (
-    <div aria-hidden="true" className="absolute inset-0 -z-10 !mt-0">
+    <div aria-hidden="true" className="absolute inset-0 -z-10 !mt-0" style={HOUR_GRID}>
       {surplus.map((entry) => (
-        <div
-          key={entry.hour}
-          className="absolute inset-y-0 bg-amber-100"
-          style={{ left: `${(entry.hour / 24) * 100}%`, width: `${100 / 24}%` }}
-        />
+        <div key={entry.hour} className="bg-amber-100" style={hourCell(entry.hour)} />
       ))}
     </div>
   );

@@ -265,7 +265,9 @@ class PvInsightsService:
             day = _local_day(moment)
             if day in compared:
                 actual[day] += kwh
-        inverter = bool(compared) and set(actual) >= compared
+        # Dzień w okresie pliku z falownikiem ma produkcję z pliku, także zero (panele pod śniegiem).
+        spans = self.devices.pv_inverter_file_spans(user_id)
+        inverter = bool(compared) and all(any(first <= day <= last for first, last in spans) for day in compared)
         export = None
         meter_ids = self._meter_ids(self._files(user_id))
         if compared and not inverter and meter_ids and self.readings.files_with_export(meter_ids):

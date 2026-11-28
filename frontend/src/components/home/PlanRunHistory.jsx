@@ -112,6 +112,11 @@ function PlanRunHistory({ openId = null }) {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
               <div>
                 <span className="font-medium text-gray-900">{weekdayDay(run.plan_date)}</span>
+                {run.plan_kind === "past_day" && (
+                  <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                    plan idealny
+                  </span>
+                )}
                 <span className="text-gray-600"> · {STATUS_TEXT[run.status] ?? run.status}</span>
                 {/* Streszczenie tylko przy zwiniętym raporcie: rozwinięty pokazuje te same liczby pod spodem. */}
                 {open !== run.id && (
